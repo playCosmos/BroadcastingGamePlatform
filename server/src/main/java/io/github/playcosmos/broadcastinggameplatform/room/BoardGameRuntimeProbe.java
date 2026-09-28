@@ -19,6 +19,10 @@ public final class BoardGameRuntimeProbe {
 
     private BoardGameRuntimeProbe() {}
 
+    public static void main(String[] args) {
+        System.exit(run());
+    }
+
     public static int run() {
         Path root = null;
         try {
