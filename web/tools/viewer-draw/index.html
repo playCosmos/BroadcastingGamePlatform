@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Viewer Draw Overlay</title>
+  <style>
+    html,body{margin:0;width:100%;height:100%;overflow:hidden;background:transparent;color:#fff;font-family:Inter,Pretendard,system-ui,sans-serif}
+    body{display:grid;place-items:center}
+    .stage{width:min(94vw,1400px);min-height:68vh;display:grid;place-items:center}
+    .waiting{padding:16px 24px;border-radius:999px;background:rgba(4,9,14,.78);font-weight:900;letter-spacing:.04em}
+    .title{text-align:center;margin-bottom:20px;font-size:clamp(22px,3vw,46px);font-weight:950;text-shadow:0 3px 18px #000}
+    .winners{display:grid;gap:12px;width:min(760px,90vw)}
+    .winner{display:flex;justify-content:space-between;padding:18px 24px;border:2px solid rgba(137,201,255,.7);border-radius:18px;background:rgba(8,20,31,.88);font-size:clamp(20px,3vw,40px);font-weight:950;box-shadow:0 20px 60px rgba(0,0,0,.4)}
+    canvas{width:min(92vw,1200px);height:min(36vw,430px);border-radius:20px;background:#12080a}
+    .numbers{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:18px}
+    .number{min-width:76px;padding:14px 16px;border-radius:14px;background:#f6e7d5;color:#63271c;text-align:center;font:950 clamp(24px,4vw,54px) ui-monospace,monospace;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+  </style>
+</head>
+<body>
+  <main class="stage">
+    <div id="waiting" class="waiting">추첨을 기다리는 중...</div>
+    <section id="result" hidden>
+      <div class="title" id="title"></div>
+      <div class="winners" id="winners"></div>
+      <canvas id="numberCanvas" hidden></canvas>
+      <div class="numbers" id="numbers"></div>
+    </section>
+  </main>
+  <script src="/tools/viewer-draw/viewer-draw-overlay.js"></script>
+</body>
+</html>
