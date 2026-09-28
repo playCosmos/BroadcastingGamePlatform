@@ -10,7 +10,7 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public final class BoardGameDatabase implements DatabaseAccess {
-    private static final int CURRENT_SCHEMA_VERSION = 10;
+    private static final int CURRENT_SCHEMA_VERSION = 11;
     private static final String[] MIGRATIONS = {
         "/db/migration/V4__board_rooms.sql",
         "/db/migration/V5__board_room_live_status.sql",
@@ -21,7 +21,8 @@ public final class BoardGameDatabase implements DatabaseAccess {
         "/db/migration/V10__multi_active_room_policy.sql",
         "/db/migration/V11__persistent_admin_auth.sql",
         "/db/migration/V12__admin_access_approval.sql",
-        "/db/migration/V13__provider_identity.sql"
+        "/db/migration/V13__provider_identity.sql",
+        "/db/migration/V14__provider_scoped_player_identity.sql"
     };
 
     private final Path databasePath;
