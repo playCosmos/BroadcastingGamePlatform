@@ -11,7 +11,8 @@
 - D3 Room / Auth / Persistence: **IMPLEMENTED**
 - D4 Chat Integration: **IMPLEMENTED**
 - D5 Overlay / Broadcast UI: **IMPLEMENTED**
-- D6 Qualification / restart recovery: PLANNED
+- D6 Automated Qualification / Restart Recovery: **IMPLEMENTED**
+- D6 Physical mobile/stylus field validation: PENDING
 
 게임 ID: `drawing_guess`
 
@@ -704,16 +705,30 @@ drawing.match.completed
 - 라운드 전환
 - 정답 공개 연출
 
-### D6 — Qualification
+### D6 — Qualification — AUTOMATED RECOVERY IMPLEMENTED
 
-- 모바일
-- 펜 입력
-- 다수 Overlay
-- WebSocket reconnect
-- server restart
-- Canvas history
-- 정답 정보 누출 검사
-- Board/Yacht 회귀
+자동 검증 완료:
+
+- server restart 후 ACTIVE Room/Match/Round 복구
+- 동일 drawingCode 유지
+- SQLite 기반 Canvas stroke history/sequence 복구
+- 이전 프로세스에서 발급한 Drawer Token 즉시 무효화
+- 관리자 재접속 시 새 Drawer Token 재발급
+- Drawer View에서 lastSequence까지 history를 먼저 재생한 후 쓰기 허용
+- 이미 열린 관리자 페이지의 구 Token 재접속 루프 차단 및 자동 Token 교환
+- 제한시간이 지난 ACTIVE Round의 부팅 시 자동 완료
+- 실행 중 제한시간 Round 자동 완료
+- Round 완료 시 persistent Canvas session 폐기
+- 진행 중 answer/acceptedAnswers/drawerToken/provider userId 비노출
+- 기존 D0~D5 및 Board/Viewer Draw 회귀
+- Windows 패키지 빌드/자산 검증
+
+수동/현장 검증 잔여:
+
+- 실제 iOS/Android 터치 브라우저
+- 실제 스타일러스/펜 압력 및 장시간 입력
+- OBS 다중 인스턴스 장시간 soak
+- 방송 환경 네트워크 단절/복구 soak
 
 ---
 
@@ -786,3 +801,55 @@ OBS URL은 라운드별 drawingCode가 아니라 다음 형태의 고정 URL을 
 ```
 
 Overlay가 Public Room 상태에서 현재 drawingCode를 확인해 WebSocket 채널을 자동 전환한다.
+
+
+## 20. D6 Restart Recovery 설계
+
+Round Canvas는 다음 데이터를 SQLite에 영속화한다.
+
+```text
+drawing_guess_canvas_session
+- round_id
+- drawing_code
+- drawer_token_hash
+- created_at / expires_at
+- last_sequence
+- state
+
+drawing_guess_canvas_event
+- round_id
+- sequence
+- event_json
+- created_at
+```
+
+보안 원칙:
+
+- Drawer Token 평문은 DB에 저장하지 않는다.
+- DB에는 SHA-256 hash만 저장한다.
+- 서버 프로세스 시작 시 ACTIVE Canvas session의 Token을 강제로 회전한다.
+- 기존 프로세스에서 발급된 Token은 재시작 후 쓸 수 없다.
+- 인증된 운영자만 `drawer-recovery` API를 통해 새 Token과 Private Prompt를 교환한다.
+
+복구 흐름:
+
+```text
+Server restart
+→ SQLite Canvas session/history load
+→ Token hash rotation
+→ ACTIVE Round reconciliation
+→ expired Round complete
+→ WebSocket start
+
+OBS
+→ stable roomId public state
+→ same drawingCode
+→ persisted history replay
+
+Drawer Admin
+→ active Round 발견
+→ POST drawer-recovery
+→ Private Prompt + new Drawer Token
+→ lastSequence까지 history replay
+→ 이후 새 stroke write
+```
