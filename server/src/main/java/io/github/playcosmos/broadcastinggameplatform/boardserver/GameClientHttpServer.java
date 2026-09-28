@@ -377,7 +377,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 Map.of(
                     "id", "drawing_guess",
                     "name", "Drawing Guess",
-                    "status", "PROTOTYPE",
+                    "status", "AVAILABLE",
                     "adminPath", "/admin/games/drawing-guess/"
                 )
             ),
