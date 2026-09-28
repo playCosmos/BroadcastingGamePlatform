@@ -1,6 +1,13 @@
 # Viewer Draw / 시청자 추첨 계획
 
-상태: **PLANNED**
+상태: **IN DEVELOPMENT**
+
+구현 현황:
+
+- V0 Viewer Draw Core: **IMPLEMENTED**
+- V1 Number Draw Migration: **IMPLEMENTED**
+- V2 Chat Entry Collection: PLANNED
+- V3+ Marble Physics / Machine: PLANNED
 
 플랫폼 분류: **Broadcast Tool / Interaction Module**
 
@@ -1145,7 +1152,7 @@ lazygyu/roulette에서 특히 검토할 부분:
 
 ## 24. 개발 단계
 
-### V0 — Viewer Draw Core
+### V0 — Viewer Draw Core — IMPLEMENTED
 
 - DrawEntry
 - EntrySource
@@ -1155,7 +1162,7 @@ lazygyu/roulette에서 특히 검토할 부분:
 - result/history
 - audit
 
-### V1 — Number Draw Migration
+### V1 — Number Draw Migration — IMPLEMENTED
 
 - 기존 번호 추첨 코드 추출
 - 서버 권위 RNG
