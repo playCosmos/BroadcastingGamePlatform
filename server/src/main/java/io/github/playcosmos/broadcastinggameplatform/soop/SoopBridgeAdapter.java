@@ -9,7 +9,7 @@ import com.github.getcurrentthread.soopapi.event.model.JoinChannelEvent;
 import com.github.getcurrentthread.soopapi.event.model.ReconnectedEvent;
 import com.github.getcurrentthread.soopapi.event.model.ReconnectingEvent;
 import com.github.getcurrentthread.soopapi.event.model.SendBalloonEvent;
-import io.github.playcosmos.broadcastinggameplatform.config.BridgeConfig;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
 import java.time.Duration;
 import java.util.Objects;
 import java.util.concurrent.Executors;
@@ -24,7 +24,7 @@ import java.util.function.Consumer;
 public final class SoopBridgeAdapter implements AutoCloseable {
     private static final long JOIN_TIMEOUT_SECONDS = 30;
 
-    private volatile BridgeConfig config;
+    private volatile SoopProviderConfig config;
     private final SoopRuntimeState state;
     private final Consumer<SoopDonation> donationSink;
     private final BiConsumer<String, BaseEvent> channelEventSink;
@@ -39,7 +39,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
     private volatile SOOPClient client;
 
     public SoopBridgeAdapter(
-        BridgeConfig config,
+        SoopProviderConfig config,
         SoopRuntimeState state,
         Consumer<SoopDonation> donationSink,
         BiConsumer<String, BaseEvent> channelEventSink
@@ -52,7 +52,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
 
     public void start() {
         var current = config;
-        if (!current.soop().enabled()) {
+        if (!current.enabled()) {
             state.status("DISABLED");
             System.out.println("[soop] disabled by config");
             return;
@@ -65,7 +65,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
         scheduleProbe(0);
     }
 
-    public void applyConfig(BridgeConfig newConfig) {
+    public void applyConfig(SoopProviderConfig newConfig) {
         if (closed.get()) return;
         var normalized = Objects.requireNonNull(newConfig, "newConfig").normalized();
         config = normalized;
@@ -76,7 +76,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
             generation.incrementAndGet();
             connectionAttempt.incrementAndGet();
             closeClient();
-            if (!normalized.soop().enabled()) {
+            if (!normalized.enabled()) {
                 state.status("DISABLED");
                 System.out.println("[soop] disabled by updated config");
                 return;
@@ -95,7 +95,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
     public void reconnectNow() {
         if (closed.get()) return;
         var currentConfig = config;
-        if (!currentConfig.soop().enabled()) {
+        if (!currentConfig.enabled()) {
             state.status("DISABLED");
             return;
         }
@@ -130,7 +130,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
                             state.status("CONNECTION_FAILED");
                             state.error(unwrap(error));
                             System.err.println("[soop] manual reconnect failed: " + describe(error));
-                            scheduleProbe(config.soop().offlinePollSeconds());
+                            scheduleProbe(config.offlinePollSeconds());
                         });
                     });
                     scheduleConnectionTimeout(currentGeneration, attempt);
@@ -140,7 +140,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
                     state.status("CONNECTION_FAILED");
                     state.error(reconnectError);
                     System.err.println("[soop] manual reconnect failed: " + describe(reconnectError));
-                    scheduleProbe(config.soop().offlinePollSeconds());
+                    scheduleProbe(config.offlinePollSeconds());
                 }
                 return;
             }
@@ -152,7 +152,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
         });
     }
 
-    private static boolean hasStreamerId(BridgeConfig value) {
+    private static boolean hasStreamerId(SoopProviderConfig value) {
         return value.streamerId() != null
             && !value.streamerId().isBlank()
             && !"STREAMER_ID".equals(value.streamerId());
@@ -178,7 +178,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
         if (closed.get()) return;
 
         var activeConfig = config;
-        if (!activeConfig.soop().enabled()) {
+        if (!activeConfig.enabled()) {
             state.status("DISABLED");
             return;
         }
@@ -207,7 +207,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
                 generation.incrementAndGet();
                 connectionAttempt.incrementAndGet();
                 closeClient();
-                scheduleProbe(config.soop().offlinePollSeconds());
+                scheduleProbe(config.offlinePollSeconds());
                 return;
             }
 
@@ -227,7 +227,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
                 generation.incrementAndGet();
                 connectionAttempt.incrementAndGet();
                 closeClient();
-                scheduleProbe(config.soop().offlinePollSeconds());
+                scheduleProbe(config.offlinePollSeconds());
             }
         });
     }
@@ -249,7 +249,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
             // Keep the registered SOOP client so a later manual reconnect can call
             // forceReconnect(), which tears down an in-flight/backoff connection even
             // when SOOPChatClient.isConnected() is false.
-            scheduleProbe(config.soop().offlinePollSeconds());
+            scheduleProbe(config.offlinePollSeconds());
         }, JOIN_TIMEOUT_SECONDS, TimeUnit.SECONDS);
     }
 
@@ -320,7 +320,7 @@ public final class SoopBridgeAdapter implements AutoCloseable {
             state.status(event.causedByError() ? "DISCONNECTED_ERROR" : "DISCONNECTED");
             if (event.causedByError()) state.error(new IllegalStateException(event.reason()));
             System.out.println("[soop] disconnected: code=" + event.statusCode() + " reason=" + event.reason());
-            scheduleProbe(config.soop().offlinePollSeconds());
+            scheduleProbe(config.offlinePollSeconds());
         });
     }
 
