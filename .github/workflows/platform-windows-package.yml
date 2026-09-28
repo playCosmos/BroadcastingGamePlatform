@@ -88,6 +88,9 @@ jobs:
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingGuessOverlayStateProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingGuessRecoveryProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.RoomProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
