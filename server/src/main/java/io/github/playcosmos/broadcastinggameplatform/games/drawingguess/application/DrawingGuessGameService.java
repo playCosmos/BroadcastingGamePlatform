@@ -46,13 +46,19 @@ public final class DrawingGuessGameService {
         DrawingSyncService.Session drawingSession
     ) {}
 
+    public record PublicParticipant(
+        String participantId,
+        String displayName,
+        int score
+    ) {}
+
     public record PublicRoomSnapshot(
         String roomId,
         String name,
         DrawerPolicy drawerPolicy,
         String state,
         int roundDurationSeconds,
-        List<DrawingGuessRepository.Participant> participants,
+        List<PublicParticipant> participants,
         DrawingGuessRepository.Match activeMatch,
         DrawingGuessRepository.RoundPublic activeRound
     ) {}
@@ -191,13 +197,22 @@ public final class DrawingGuessGameService {
             }
         }
 
+        List<PublicParticipant> publicParticipants =
+            room.participants().stream()
+                .map(participant -> new PublicParticipant(
+                    participant.participantId(),
+                    participant.displayName(),
+                    participant.score()
+                ))
+                .toList();
+
         return new PublicRoomSnapshot(
             room.roomId(),
             room.name(),
             room.drawerPolicy(),
             room.state(),
             room.roundDurationSeconds(),
-            room.participants(),
+            publicParticipants,
             match,
             round
         );
