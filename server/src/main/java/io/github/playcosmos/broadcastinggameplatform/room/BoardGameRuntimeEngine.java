@@ -5,7 +5,7 @@ import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import io.github.playcosmos.broadcastinggameplatform.db.DatabaseAccess;
-import io.github.playcosmos.broadcastinggameplatform.soop.SoopDonation;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -51,10 +51,14 @@ public final class BoardGameRuntimeEngine {
         this.randomInt = Objects.requireNonNull(randomInt, "randomInt");
     }
 
-    public synchronized ProcessResult process(SoopDonation donation) throws SQLException {
+    public synchronized ProcessResult process(DonationEvent donation) throws SQLException {
         validateDonation(donation);
         String fingerprint = fingerprint(donation);
-        var matches = findMatchingRooms(donation.donorId(), donation.balloonCount());
+        var matches = findMatchingRooms(
+            donation.provider(),
+            donation.userId(),
+            donation.amount()
+        );
 
         var events = new ArrayList<BoardTurnEvent>();
         int duplicateRooms = 0;
@@ -113,12 +117,13 @@ public final class BoardGameRuntimeEngine {
             throw new IllegalArgumentException("soopId is required");
         }
 
+        String provider;
         String displayName;
         int balloonTrigger;
 
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
-                 SELECT p.display_name, p.balloon_trigger
+                 SELECT p.provider_id, p.display_name, p.balloon_trigger
                  FROM board_room br
                  JOIN board_room_player p ON p.room_id = br.room_id
                  WHERE br.room_id = ?
@@ -137,17 +142,20 @@ public final class BoardGameRuntimeEngine {
                         "manual turn is unavailable for this player or room state"
                     );
                 }
+                provider = rows.getString("provider_id");
                 displayName = rows.getString("display_name");
                 balloonTrigger = rows.getInt("balloon_trigger");
             }
         }
 
         String manualEventId = "manual-turn-" + UUID.randomUUID();
-        var donation = new SoopDonation(
+        var donation = new DonationEvent(
+            provider,
             "operator",
             normalizedSoopId,
             displayName,
             balloonTrigger,
+            "manual",
             0,
             "{\"event_id\":\"" + manualEventId
                 + "\",\"source\":\"operator\"}",
@@ -251,6 +259,7 @@ public final class BoardGameRuntimeEngine {
                     connection,
                     event,
                     "operator-position:" + UUID.randomUUID(),
+                    "OPERATOR",
                     "operator",
                     0
                 );
@@ -514,7 +523,7 @@ public final class BoardGameRuntimeEngine {
 
     private RoomProcessResult processRoom(
         String roomId,
-        SoopDonation donation,
+        DonationEvent donation,
         String fingerprint
     ) throws SQLException {
         return processRoom(roomId, donation, fingerprint, true);
@@ -522,7 +531,7 @@ public final class BoardGameRuntimeEngine {
 
     private RoomProcessResult processRoom(
         String roomId,
-        SoopDonation donation,
+        DonationEvent donation,
         String fingerprint,
         boolean requireActive
     ) throws SQLException {
@@ -541,7 +550,10 @@ public final class BoardGameRuntimeEngine {
                 var board = mutableBoard(loadRuntimeBoard(connection, roomId));
                 var players = loadPlayerStates(connection, roomId);
                 var player = players.stream()
-                    .filter(value -> value.soopId.equals(donation.donorId()))
+                    .filter(value ->
+                        value.providerId.equalsIgnoreCase(donation.provider())
+                            && value.soopId.equals(donation.userId())
+                    )
                     .findFirst()
                     .orElseThrow(() -> new SQLException("matched room player state is missing"));
 
@@ -673,9 +685,9 @@ public final class BoardGameRuntimeEngine {
                     eventId,
                     roomId,
                     sequence,
-                    donation.donorId(),
+                    donation.userId(),
                     donation.nickname(),
-                    donation.balloonCount(),
+                    donation.amount(),
                     player.soopId,
                     player.displayName,
                     turnGenerator,
@@ -694,8 +706,9 @@ public final class BoardGameRuntimeEngine {
                     connection,
                     event,
                     fingerprint,
-                    donation.donorId(),
-                    donation.balloonCount()
+                    donation.provider(),
+                    donation.userId(),
+                    donation.amount()
                 );
 
                 connection.commit();
@@ -711,8 +724,9 @@ public final class BoardGameRuntimeEngine {
     }
 
     private List<RoomMatch> findMatchingRooms(
-        String soopId,
-        int balloonCount
+        String provider,
+        String userId,
+        int amount
     ) throws SQLException {
         var rooms = new ArrayList<RoomMatch>();
         try (var connection = database.open();
@@ -725,12 +739,14 @@ public final class BoardGameRuntimeEngine {
                    AND br.lifecycle_state IN ('ACTIVE', 'PAUSED')
                    AND br.expires_at IS NOT NULL
                    AND datetime(br.expires_at) > datetime('now')
+                   AND p.provider_id = ?
                    AND p.soop_id = ?
                    AND p.balloon_trigger = ?
                  ORDER BY br.updated_at DESC, br.created_at DESC
                  """)) {
-            statement.setString(1, soopId);
-            statement.setInt(2, balloonCount);
+            statement.setString(1, provider);
+            statement.setString(2, userId);
+            statement.setInt(3, amount);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                     rooms.add(new RoomMatch(
@@ -747,7 +763,7 @@ public final class BoardGameRuntimeEngine {
 
     private String deferPausedDonation(
         RoomMatch room,
-        SoopDonation donation,
+        DonationEvent donation,
         String fingerprint
     ) throws SQLException {
         try (var connection = database.open()) {
@@ -780,22 +796,23 @@ public final class BoardGameRuntimeEngine {
 
             try (var statement = connection.prepareStatement("""
                 INSERT INTO board_game_deferred_donation(
-                    room_id, source_fingerprint, state, streamer_id,
-                    donor_id, nickname, balloon_count, fan_order,
-                    raw_payload, received_at_epoch_ms, created_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    room_id, source_fingerprint, state, provider_id,
+                    streamer_id, donor_id, nickname, balloon_count,
+                    fan_order, raw_payload, received_at_epoch_ms, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """)) {
                 statement.setString(1, room.roomId());
                 statement.setString(2, fingerprint);
                 statement.setString(3, state);
-                statement.setString(4, donation.streamerId());
-                statement.setString(5, donation.donorId());
-                statement.setString(6, donation.nickname());
-                statement.setInt(7, donation.balloonCount());
-                statement.setInt(8, donation.fanOrder());
-                statement.setString(9, donation.rawPayload());
-                statement.setLong(10, donation.receivedAtEpochMs());
-                statement.setString(11, Instant.now().toString());
+                statement.setString(4, donation.provider());
+                statement.setString(5, donation.channelId());
+                statement.setString(6, donation.userId());
+                statement.setString(7, donation.nickname());
+                statement.setInt(8, donation.amount());
+                statement.setInt(9, donation.supporterOrder());
+                statement.setString(10, donation.rawPayload());
+                statement.setLong(11, donation.occurredAtEpochMs());
+                statement.setString(12, Instant.now().toString());
                 statement.executeUpdate();
             }
 
@@ -854,9 +871,9 @@ public final class BoardGameRuntimeEngine {
         var result = new ArrayList<DeferredDonation>();
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
-                 SELECT id, source_fingerprint, streamer_id, donor_id,
-                        nickname, balloon_count, fan_order, raw_payload,
-                        received_at_epoch_ms
+                 SELECT id, source_fingerprint, provider_id,
+                        streamer_id, donor_id, nickname, balloon_count,
+                        fan_order, raw_payload, received_at_epoch_ms
                  FROM board_game_deferred_donation
                  WHERE room_id = ? AND state = 'QUEUED'
                  ORDER BY id ASC
@@ -867,11 +884,13 @@ public final class BoardGameRuntimeEngine {
                     result.add(new DeferredDonation(
                         rows.getLong("id"),
                         rows.getString("source_fingerprint"),
-                        new SoopDonation(
+                        new DonationEvent(
+                            rows.getString("provider_id"),
                             rows.getString("streamer_id"),
                             rows.getString("donor_id"),
                             rows.getString("nickname"),
                             rows.getInt("balloon_count"),
+                            "donation",
                             rows.getInt("fan_order"),
                             rows.getString("raw_payload"),
                             rows.getLong("received_at_epoch_ms")
@@ -959,16 +978,17 @@ public final class BoardGameRuntimeEngine {
 
         try (var statement = connection.prepareStatement("""
             INSERT OR IGNORE INTO board_game_player_state(
-                room_id, player_index, soop_id, position, laps,
+                room_id, player_index, provider_id, soop_id, position, laps,
                 skip_next_throws, updated_at
-            ) VALUES (?, ?, ?, 0, 0, 0, ?)
+            ) VALUES (?, ?, ?, ?, 0, 0, 0, ?)
             """)) {
             for (int i = 0; i < room.config().players().size(); i++) {
                 var player = room.config().players().get(i);
                 statement.setString(1, room.roomId());
                 statement.setInt(2, i);
-                statement.setString(3, player.soopId());
-                statement.setString(4, now);
+                statement.setString(3, player.provider());
+                statement.setString(4, player.soopId());
+                statement.setString(5, now);
                 statement.addBatch();
             }
             statement.executeBatch();
@@ -1002,8 +1022,9 @@ public final class BoardGameRuntimeEngine {
     private static List<MutablePlayer> loadPlayerStates(Connection connection, String roomId) throws SQLException {
         var result = new ArrayList<MutablePlayer>();
         try (var statement = connection.prepareStatement("""
-            SELECT ps.player_index, ps.soop_id, ps.position, ps.laps,
-                   ps.skip_next_throws, ps.next_throw_multiplier,
+            SELECT ps.player_index, ps.provider_id, ps.soop_id,
+                   ps.position, ps.laps, ps.skip_next_throws,
+                   ps.next_throw_multiplier,
                    ps.ignore_next_landing_effects, p.display_name
             FROM board_game_player_state ps
             JOIN board_room_player p
@@ -1018,6 +1039,7 @@ public final class BoardGameRuntimeEngine {
                     result.add(new MutablePlayer(
                         roomId,
                         rows.getInt("player_index"),
+                        rows.getString("provider_id"),
                         rows.getString("soop_id"),
                         rows.getString("display_name"),
                         rows.getInt("position"),
@@ -1101,24 +1123,26 @@ public final class BoardGameRuntimeEngine {
         Connection connection,
         BoardTurnEvent event,
         String fingerprint,
+        String sourceProvider,
         String donorId,
         int balloonCount
     ) throws SQLException {
         try (var statement = connection.prepareStatement("""
             INSERT INTO board_game_event(
                 event_id, room_id, event_sequence, source_fingerprint,
-                source_donor_id, source_balloon_count, event_type,
-                payload_json, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, 'board.turn', ?, ?)
+                source_provider, source_donor_id, source_balloon_count,
+                event_type, payload_json, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, 'board.turn', ?, ?)
             """)) {
             statement.setString(1, event.eventId());
             statement.setString(2, event.roomId());
             statement.setLong(3, event.sequence());
             statement.setString(4, fingerprint);
-            statement.setString(5, donorId);
-            statement.setInt(6, balloonCount);
-            statement.setString(7, GSON.toJson(event));
-            statement.setString(8, event.createdAt());
+            statement.setString(5, sourceProvider);
+            statement.setString(6, donorId);
+            statement.setInt(7, balloonCount);
+            statement.setString(8, GSON.toJson(event));
+            statement.setString(9, event.createdAt());
             statement.executeUpdate();
         }
     }
@@ -1449,19 +1473,20 @@ public final class BoardGameRuntimeEngine {
         );
     }
 
-    private static String fingerprint(SoopDonation donation) throws SQLException {
-        String explicitEventId = extractSoopEventId(donation.rawPayload());
+    private static String fingerprint(DonationEvent donation) throws SQLException {
+        String explicitEventId = extractProviderEventId(donation.rawPayload());
         if (explicitEventId != null) {
             return "event:" + explicitEventId;
         }
 
         try {
-            String material = String.valueOf(donation.streamerId()) + "\u0000"
-                + donation.donorId() + "\u0000"
-                + donation.balloonCount() + "\u0000"
-                + donation.fanOrder() + "\u0000"
+            String material = String.valueOf(donation.provider()) + "\u0000"
+                + String.valueOf(donation.channelId()) + "\u0000"
+                + donation.userId() + "\u0000"
+                + donation.amount() + "\u0000"
+                + donation.supporterOrder() + "\u0000"
                 + String.valueOf(donation.rawPayload()) + "\u0000"
-                + donation.receivedAtEpochMs();
+                + donation.occurredAtEpochMs();
             byte[] digest = MessageDigest.getInstance("SHA-256")
                 .digest(material.getBytes(StandardCharsets.UTF_8));
             return "fingerprint:" + HexFormat.of().formatHex(digest);
@@ -1470,7 +1495,7 @@ public final class BoardGameRuntimeEngine {
         }
     }
 
-    private static String extractSoopEventId(String rawPayload) {
+    private static String extractProviderEventId(String rawPayload) {
         if (rawPayload == null || rawPayload.isBlank()) return null;
 
         try {
@@ -1512,13 +1537,16 @@ public final class BoardGameRuntimeEngine {
         return null;
     }
 
-    private static void validateDonation(SoopDonation donation) {
+    private static void validateDonation(DonationEvent donation) {
         Objects.requireNonNull(donation, "donation");
-        if (donation.donorId() == null || donation.donorId().isBlank()) {
-            throw new IllegalArgumentException("donorId is required");
+        if (donation.provider() == null || donation.provider().isBlank()) {
+            throw new IllegalArgumentException("provider is required");
         }
-        if (donation.balloonCount() <= 0) {
-            throw new IllegalArgumentException("balloonCount must be positive");
+        if (donation.userId() == null || donation.userId().isBlank()) {
+            throw new IllegalArgumentException("userId is required");
+        }
+        if (donation.amount() <= 0) {
+            throw new IllegalArgumentException("donation amount must be positive");
         }
     }
 
@@ -1542,7 +1570,7 @@ public final class BoardGameRuntimeEngine {
     private record DeferredDonation(
         long id,
         String fingerprint,
-        SoopDonation donation
+        DonationEvent donation
     ) {}
 
     private record DrainResult(
@@ -1576,6 +1604,7 @@ public final class BoardGameRuntimeEngine {
     private static final class MutablePlayer {
         private final String roomId;
         private final int playerIndex;
+        private final String providerId;
         private final String soopId;
         private final String displayName;
         private int position;
@@ -1587,6 +1616,7 @@ public final class BoardGameRuntimeEngine {
         private MutablePlayer(
             String roomId,
             int playerIndex,
+            String providerId,
             String soopId,
             String displayName,
             int position,
@@ -1597,6 +1627,7 @@ public final class BoardGameRuntimeEngine {
         ) {
             this.roomId = roomId;
             this.playerIndex = playerIndex;
+            this.providerId = providerId == null ? "SOOP" : providerId;
             this.soopId = soopId;
             this.displayName = displayName;
             this.position = position;
