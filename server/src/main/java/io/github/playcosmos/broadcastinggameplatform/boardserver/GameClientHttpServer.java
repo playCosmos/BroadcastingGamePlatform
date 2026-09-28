@@ -3,6 +3,8 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
 import java.io.IOException;
@@ -50,6 +52,8 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final HttpClient adminHttpClient;
     private final URI adminBaseUri;
     private final AdminAuthStore adminAuthStore;
+    private final PlatformEventBus platformEvents;
+    private final ProviderRegistry providers;
     private final AtomicReference<String> adminBootstrapToken;
 
     public GameClientHttpServer(
@@ -58,6 +62,26 @@ public final class GameClientHttpServer implements AutoCloseable {
         RoomService rooms,
         BoardGameRuntimeEngine runtime,
         AdminAuthStore adminAuthStore
+    ) throws IOException {
+        this(
+            config,
+            workingDirectory,
+            rooms,
+            runtime,
+            adminAuthStore,
+            new PlatformEventBus(),
+            new ProviderRegistry()
+        );
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config,
+        Path workingDirectory,
+        RoomService rooms,
+        BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore,
+        PlatformEventBus platformEvents,
+        ProviderRegistry providers
     ) throws IOException {
         var normalized = config.normalized();
         this.config = normalized;
@@ -68,6 +92,8 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.rooms = rooms;
         this.runtime = runtime;
         this.adminAuthStore = adminAuthStore;
+        this.platformEvents = platformEvents;
+        this.providers = providers;
         try {
             this.adminBootstrapToken = new AtomicReference<>(
                 adminAuthStore.bootstrapTokenOrCreate(
@@ -96,16 +122,17 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
 
         server.createContext("/health", this::health);
+        server.createContext("/api/v1/platform", this::platformInfo);
+        server.createContext("/api/v1/providers", this::platformProviders);
+        server.createContext("/api/v1/events/recent", this::recentPlatformEvents);
         server.createContext("/api/client/config", this::clientConfig);
         server.createContext("/api/state", this::proxyAdminState);
         server.createContext("/api/board/rooms", this::boardRooms);
         server.createContext("/games/board/", this::serveBoardAsset);
+        server.createContext("/assets/", this::servePublicAsset);
         server.createContext("/api/admin/access", this::adminAccess);
         server.createContext("/admin", this::serveAdmin);
-        server.createContext("/", exchange -> {
-            exchange.sendResponseHeaders(404, -1);
-            exchange.close();
-        });
+        server.createContext("/", this::servePlatformLanding);
     }
 
     public void start() {
@@ -217,8 +244,97 @@ public final class GameClientHttpServer implements AutoCloseable {
         if (!requireGetOrHead(exchange)) return;
         sendJson(exchange, 200, Map.of(
             "status", "ok",
-            "product", "RamyaniGamesClient",
+            "product", "BroadcastingGamePlatform",
             "time", OffsetDateTime.now().toString()
+        ));
+    }
+
+    private void platformInfo(HttpExchange exchange) throws IOException {
+        corsPublic(exchange);
+        if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(204, -1);
+            exchange.close();
+            return;
+        }
+        if (!requireGetOrHead(exchange)) return;
+
+        sendJson(exchange, 200, Map.of(
+            "product", "BroadcastingGamePlatform",
+            "apiVersion", "v1",
+            "games", java.util.List.of(
+                Map.of(
+                    "id", "board",
+                    "name", "보드게임",
+                    "status", "AVAILABLE",
+                    "adminPath", "/admin/games/board/"
+                )
+            ),
+            "providers", java.util.List.of(
+                Map.of(
+                    "id", "SOOP",
+                    "status", "AVAILABLE",
+                    "capabilities", java.util.List.of(
+                        "chat",
+                        "donation"
+                    )
+                ),
+                Map.of(
+                    "id", "CHZZK",
+                    "status", "PLANNED",
+                    "capabilities", java.util.List.of(
+                        "chat",
+                        "donation"
+                    )
+                )
+            )
+        ));
+    }
+
+    private void platformProviders(HttpExchange exchange) throws IOException {
+        if (!requireGetOrHead(exchange)) return;
+        if (!isAdminSession(exchange)) {
+            sendJson(exchange, 401, Map.of(
+                "error",
+                "administrator authentication required"
+            ));
+            return;
+        }
+        sendJson(exchange, 200, Map.of(
+            "providers", providers.snapshots()
+        ));
+    }
+
+    private void recentPlatformEvents(
+        HttpExchange exchange
+    ) throws IOException {
+        if (!requireGetOrHead(exchange)) return;
+        if (!isAdminSession(exchange)) {
+            sendJson(exchange, 401, Map.of(
+                "error",
+                "administrator authentication required"
+            ));
+            return;
+        }
+
+        int limit = 50;
+        String rawLimit = queryParameter(
+            exchange.getRequestURI().getRawQuery(),
+            "limit"
+        );
+        if (rawLimit != null && !rawLimit.isBlank()) {
+            try {
+                limit = Integer.parseInt(rawLimit.trim());
+            } catch (NumberFormatException error) {
+                sendJson(exchange, 400, Map.of(
+                    "error",
+                    "limit must be an integer"
+                ));
+                return;
+            }
+        }
+
+        sendJson(exchange, 200, Map.of(
+            "events", platformEvents.recent(limit)
         ));
     }
 
@@ -416,21 +532,25 @@ public final class GameClientHttpServer implements AutoCloseable {
         }
 
         if ("/admin".equals(path) || "/admin/".equals(path)) {
-            redirect(exchange, "/admin/board-admin.html");
+            redirect(exchange, "/admin/index.html");
             return;
         }
 
         String relative = path.substring("/admin/".length());
+        if (relative.endsWith("/")) {
+            relative += "index.html";
+        }
         if (!isAllowedAdminAsset(relative)) {
             exchange.sendResponseHeaders(404, -1);
             exchange.close();
             return;
         }
 
+        Path adminRoot = webRoot.resolve("admin").normalize();
         serveFile(
             exchange,
-            webRoot.resolve(relative).normalize(),
-            webRoot
+            adminRoot.resolve(relative).normalize(),
+            adminRoot
         );
     }
 
@@ -476,7 +596,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     ) throws IOException {
         String path = exchange.getRequestURI().getPath();
         if ("/admin".equals(path) || "/admin/".equals(path)) {
-            redirect(exchange, "/admin/board-admin.html");
+            redirect(exchange, "/admin/index.html");
             return;
         }
         redirect(
@@ -575,7 +695,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         if (isAdminSession(exchange)) {
             sendJson(exchange, 200, Map.of(
                 "status", "AUTHENTICATED",
-                "redirect", "/admin/board-admin.html"
+                "redirect", "/admin/index.html"
             ));
             return;
         }
@@ -638,7 +758,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         if (isAdminSession(exchange)) {
             sendJson(exchange, 200, Map.of(
                 "status", "AUTHENTICATED",
-                "redirect", "/admin/board-admin.html"
+                "redirect", "/admin/index.html"
             ));
             return;
         }
@@ -698,7 +818,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             setAdminSessionCookie(exchange, sessionId);
             sendJson(exchange, 200, Map.of(
                 "status", "APPROVED",
-                "redirect", "/admin/board-admin.html"
+                "redirect", "/admin/index.html"
             ));
         } catch (java.sql.SQLException error) {
             sendJson(exchange, 500, Map.of(
@@ -818,6 +938,38 @@ public final class GameClientHttpServer implements AutoCloseable {
         serveFile(exchange, requested, allowedRoot);
     }
 
+    private void servePublicAsset(HttpExchange exchange)
+        throws IOException {
+        if (!requireGetOrHead(exchange)) return;
+        String path = exchange.getRequestURI().getPath();
+        if (path == null || !path.startsWith("/assets/")) {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+            return;
+        }
+        Path allowedRoot = webRoot.resolve("assets").normalize();
+        Path requested = webRoot
+            .resolve(path.substring(1))
+            .normalize();
+        serveFile(exchange, requested, allowedRoot);
+    }
+
+    private void servePlatformLanding(HttpExchange exchange)
+        throws IOException {
+        String path = exchange.getRequestURI().getPath();
+        if (!"/".equals(path)) {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+            return;
+        }
+        if (!requireGetOrHead(exchange)) return;
+        serveFile(
+            exchange,
+            webRoot.resolve("index.html").normalize(),
+            webRoot
+        );
+    }
+
     private static void serveFile(
         HttpExchange exchange,
         Path requested,
@@ -861,9 +1013,8 @@ public final class GameClientHttpServer implements AutoCloseable {
     }
 
     private static boolean isAllowedAdminAsset(String relative) {
-        return "board-admin.html".equals(relative)
-            || "board-room.html".equals(relative)
-            || relative.startsWith("soop/admin/")
+        return "index.html".equals(relative)
+            || relative.startsWith("assets/")
             || relative.startsWith("games/board/");
     }
 
@@ -1046,7 +1197,7 @@ public final class GameClientHttpServer implements AutoCloseable {
               <meta charset="utf-8">
               <meta name="viewport" content="width=device-width, initial-scale=1">
               <meta name="color-scheme" content="dark">
-              <title>Ramyani Games Server · 관리자 인증</title>
+              <title>방송 게임 플랫폼 · 관리자 인증</title>
               <style>
                 *{box-sizing:border-box}
                 body{margin:0;min-height:100vh;display:grid;place-items:center;background:#0a0d11;color:#d8dee7;font-family:system-ui,sans-serif}
@@ -1100,7 +1251,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 const box = document.getElementById("approvalBox");
                 const code = document.getElementById("approvalCode");
                 const status = document.getElementById("approvalStatus");
-                const storageKey = "ramyani.adminApproval.v1";
+                const storageKey = "broadcastingGamePlatform.adminApproval.v1";
                 let timer = 0;
 
                 function clearSaved() {
@@ -1130,7 +1281,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                     if (body.status === "APPROVED" || body.status === "AUTHENTICATED") {
                       clearSaved();
                       status.textContent = "승인되었습니다. 관리자 페이지로 이동합니다.";
-                      window.location.replace(body.redirect || "/admin/board-admin.html");
+                      window.location.replace(body.redirect || "/admin/index.html");
                       return;
                     }
                     if (body.status === "EXPIRED" || response.status === 410) {
@@ -1164,7 +1315,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                     });
                     const body = await response.json().catch(() => ({}));
                     if (body.status === "AUTHENTICATED") {
-                      window.location.replace(body.redirect || "/admin/board-admin.html");
+                      window.location.replace(body.redirect || "/admin/index.html");
                       return;
                     }
                     if (!response.ok) {
