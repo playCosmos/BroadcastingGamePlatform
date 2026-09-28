@@ -5,8 +5,10 @@
 구현 현황:
 
 - D0 Canvas Prototype: **IMPLEMENTED**
-- D1 Canvas Sync: PLANNED
-- D2+ Game Core / Room / Chat / Overlay: PLANNED
+- D1 Canvas Sync: **IMPLEMENTED**
+- D2 Classic Guess Core Foundation: **IMPLEMENTED**
+- D2 Score Policy: PLANNED
+- D3+ Room / Chat / Game Overlay: PLANNED
 
 게임 ID: `drawing_guess`
 
@@ -659,7 +661,7 @@ drawing.match.completed
 - DPR 대응
 - 모바일 입력
 
-### D1 — Canvas Sync
+### D1 — Canvas Sync — IMPLEMENTED
 
 - stroke command
 - WebSocket 전달
@@ -667,7 +669,7 @@ drawing.match.completed
 - reconnect
 - history replay
 
-### D2 — Drawing Guess Core
+### D2 — Drawing Guess Core — FOUNDATION IMPLEMENTED
 
 - Prompt
 - Round
