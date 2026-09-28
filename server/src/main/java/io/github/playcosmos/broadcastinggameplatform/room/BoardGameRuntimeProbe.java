@@ -469,7 +469,7 @@ public final class BoardGameRuntimeProbe {
     }
 
     private static void expirePauseGrace(
-        BridgeDatabase database,
+        BoardGameDatabase database,
         String roomId
     ) throws SQLException {
         try (var connection = database.open();
@@ -484,7 +484,7 @@ public final class BoardGameRuntimeProbe {
     }
 
     private static void patchRuntimeCell(
-        BridgeDatabase database,
+        BoardGameDatabase database,
         String roomId,
         int cellIndex,
         CellState replacement
@@ -538,7 +538,7 @@ public final class BoardGameRuntimeProbe {
     }
 
     private static void patchCell(
-        BridgeDatabase database,
+        BoardGameDatabase database,
         String roomId,
         int cellIndex,
         CellState replacement
