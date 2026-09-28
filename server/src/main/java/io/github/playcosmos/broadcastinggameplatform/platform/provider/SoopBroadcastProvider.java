@@ -1,6 +1,5 @@
 package io.github.playcosmos.broadcastinggameplatform.platform.provider;
 
-import io.github.playcosmos.broadcastinggameplatform.config.BridgeConfig;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChannelEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
@@ -16,7 +15,7 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
     private final SoopBridgeAdapter adapter;
 
     public SoopBroadcastProvider(
-        BridgeConfig config,
+        SoopProviderConfig config,
         PlatformEventBus eventBus
     ) {
         Objects.requireNonNull(eventBus, "eventBus");
