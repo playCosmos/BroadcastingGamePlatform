@@ -41,6 +41,7 @@ public final class ViewerDrawService {
 
     public record Session(
         String sessionId,
+        String publicCode,
         String name,
         String mode,
         String entrySource,
@@ -63,6 +64,7 @@ public final class ViewerDrawService {
     ) throws SQLException {
         String normalizedMode = normalizeMode(mode);
         String sessionId = UUID.randomUUID().toString();
+        String publicCode = createPublicCode();
         String now = Instant.now().toString();
         String normalizedName = name == null || name.isBlank()
             ? defaultName(normalizedMode)
@@ -80,17 +82,18 @@ public final class ViewerDrawService {
             try {
                 try (var statement = connection.prepareStatement("""
                     INSERT INTO viewer_draw_session(
-                        session_id, name, mode, entry_source, state,
+                        session_id, public_code, name, mode, entry_source, state,
                         config_json, entry_count, created_at, updated_at
-                    ) VALUES (?, ?, ?, 'MANUAL_LIST', 'DRAFT', ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, 'MANUAL_LIST', 'DRAFT', ?, ?, ?, ?)
                     """)) {
                     statement.setString(1, sessionId);
-                    statement.setString(2, normalizedName);
-                    statement.setString(3, normalizedMode);
-                    statement.setString(4, GSON.toJson(normalizedConfig));
-                    statement.setInt(5, entries.size());
-                    statement.setString(6, now);
+                    statement.setString(2, publicCode);
+                    statement.setString(3, normalizedName);
+                    statement.setString(4, normalizedMode);
+                    statement.setString(5, GSON.toJson(normalizedConfig));
+                    statement.setInt(6, entries.size());
                     statement.setString(7, now);
+                    statement.setString(8, now);
                     statement.executeUpdate();
                 }
 
@@ -144,6 +147,7 @@ public final class ViewerDrawService {
 
     public Session find(String sessionId) throws SQLException {
         Map<String, Object> config;
+        String publicCode;
         String name;
         String mode;
         String entrySource;
@@ -156,7 +160,7 @@ public final class ViewerDrawService {
 
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
-                 SELECT name, mode, entry_source, state, config_json,
+                 SELECT public_code, name, mode, entry_source, state, config_json,
                         frozen_entry_hash, entry_count, created_at,
                         updated_at, completed_at
                  FROM viewer_draw_session
@@ -165,6 +169,7 @@ public final class ViewerDrawService {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
                 if (!rows.next()) throw new NoSuchElementException("viewer draw session not found");
+                publicCode = rows.getString("public_code");
                 name = rows.getString("name");
                 mode = rows.getString("mode");
                 entrySource = rows.getString("entry_source");
@@ -217,10 +222,28 @@ public final class ViewerDrawService {
         }
 
         return new Session(
-            sessionId, name, mode, entrySource, state, config, hash,
+            sessionId, publicCode, name, mode, entrySource, state, config, hash,
             entryCount, createdAt, updatedAt, completedAt,
             List.copyOf(entries), drawResult
         );
+    }
+
+    public Session findByPublicCode(String publicCode) throws SQLException {
+        String normalized = normalizePublicCode(publicCode);
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT session_id
+                 FROM viewer_draw_session
+                 WHERE public_code = ?
+                 """)) {
+            statement.setString(1, normalized);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new NoSuchElementException("viewer draw session not found");
+                }
+                return find(rows.getString(1));
+            }
+        }
     }
 
     public Session freeze(String sessionId) throws SQLException {
@@ -421,6 +444,21 @@ public final class ViewerDrawService {
         } catch (Exception error) {
             throw new IllegalStateException("failed to hash frozen entry set", error);
         }
+    }
+
+    private static String createPublicCode() {
+        final String alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+        StringBuilder value = new StringBuilder(6);
+        for (int index = 0; index < 6; index++) {
+            value.append(alphabet.charAt(RANDOM.nextInt(alphabet.length())));
+        }
+        return value.toString();
+    }
+
+    private static String normalizePublicCode(String value) {
+        return value == null
+            ? ""
+            : value.trim().toUpperCase(Locale.ROOT);
     }
 
     private static String normalizeMode(String mode) {
