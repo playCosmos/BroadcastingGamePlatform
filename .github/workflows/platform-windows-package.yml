@@ -51,6 +51,9 @@ jobs:
         run: |
           $jar = "target/broadcasting-game-platform-server-0.1.0-SNAPSHOT.jar"
 
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.RoomProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
