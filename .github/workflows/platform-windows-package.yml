@@ -36,6 +36,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/viewer-draw.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/drawing-guess-canvas.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/tools/viewer-draw/viewer-draw-overlay.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/board-room-admin.js
@@ -118,6 +120,9 @@ jobs:
             "web/admin/assets/viewer-draw-number.js",
             "web/admin/assets/viewer-draw.js",
             "web/admin/tools/viewer-draw/index.html",
+            "web/admin/games/drawing-guess/index.html",
+            "web/admin/assets/drawing-guess.css",
+            "web/admin/assets/drawing-guess-canvas.js",
             "web/tools/viewer-draw/index.html",
             "web/tools/viewer-draw/viewer-draw-overlay.js",
             "web/admin/games/board/index.html",
