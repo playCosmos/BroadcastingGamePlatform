@@ -11,7 +11,6 @@ import io.github.playcosmos.broadcastinggameplatform.operations.WindowsConsoleEn
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomHttpHandler;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
-import io.github.playcosmos.broadcastinggameplatform.soop.SoopDonation;
 import java.awt.Desktop;
 import java.net.URI;
 import java.nio.file.Path;
@@ -124,17 +123,7 @@ public final class PlatformServerMain {
                     return;
                 }
                 try {
-                    var result = runtime.process(
-                        new SoopDonation(
-                            donation.channelId(),
-                            donation.userId(),
-                            donation.nickname(),
-                            donation.amount(),
-                            donation.supporterOrder(),
-                            donation.rawPayload(),
-                            donation.occurredAtEpochMs()
-                        )
-                    );
+                    var result = runtime.process(donation);
                     if (
                         result.processedRooms() > 0 ||
                         result.duplicateRooms() > 0 ||
@@ -235,7 +224,7 @@ public final class PlatformServerMain {
         };
 
         Runnable explicitExit = () -> {
-            Thread.ofPlatform().daemon(true).name("board-server-exit-watchdog").start(() -> {
+            Thread.ofPlatform().daemon(true).name("platform-server-exit-watchdog").start(() -> {
                 try {
                     Thread.sleep(EXIT_WATCHDOG_MILLIS);
                 } catch (InterruptedException ignored) {
@@ -275,9 +264,6 @@ public final class PlatformServerMain {
 
     private static Path applicationRoot() {
         String override = System.getenv("BROADCASTING_GAME_PLATFORM_HOME");
-        if (override == null || override.isBlank()) {
-            override = System.getenv("RAMYANI_BOARD_GAME_SERVER_HOME");
-        }
         if (override != null && !override.isBlank()) {
             return Path.of(override).toAbsolutePath().normalize();
         }
