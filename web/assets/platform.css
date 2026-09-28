@@ -46,3 +46,23 @@ h1{margin:0;font-size:clamp(44px,7.6vw,82px);line-height:.98;letter-spacing:-.05
 .api-note strong{font-size:13px}.api-note span,footer{color:var(--muted);font-size:12px;line-height:1.6}
 footer{margin-top:24px}
 @media(max-width:760px){.shell{width:min(100% - 22px,1120px);padding-top:38px}.game-grid{grid-template-columns:1fr}.game-card{min-height:230px}.game-body{margin-top:44px}}
+
+.integration-section,.event-section{margin-top:28px}
+.provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+.provider-card{padding:18px;border:1px solid var(--line);border-radius:15px;background:rgba(14,20,26,.86)}
+.provider-title{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.provider-title strong{font-size:18px}
+.provider-status{padding:4px 7px;border:1px solid #36536d;border-radius:999px;color:#a9d5fb;font-size:10px;font-weight:900}
+.provider-status.planned{border-color:#4a465f;color:#aaa2d8}
+.provider-card dl{display:grid;gap:8px;margin:16px 0 0}
+.provider-card dl div{display:grid;grid-template-columns:90px minmax(0,1fr);gap:10px;padding-top:8px;border-top:1px solid #202832}
+.provider-card dt{color:#71808e;font-size:11px;font-weight:800}
+.provider-card dd{margin:0;color:#d5dee7;font-size:12px;overflow-wrap:anywhere}
+.provider-card p{margin:16px 0 0;color:var(--muted);line-height:1.6;font-size:12px}
+.small-button{padding:8px 11px;border:1px solid #354250;border-radius:9px;background:#111820;color:#d3dce5;font:inherit;font-size:11px;font-weight:850;cursor:pointer}
+.event-list{display:grid;gap:7px}
+.event-item{display:grid;grid-template-columns:130px minmax(0,1fr);gap:12px;align-items:start;padding:12px 14px;border:1px solid #222c35;border-radius:11px;background:#0d1319}
+.event-badge{color:#8fc8f5;font-size:9px;font-weight:900;letter-spacing:.05em}
+.event-body strong{font-size:12px}.event-body p{margin:4px 0 0;color:#aab5c0;font-size:12px;line-height:1.55;white-space:pre-wrap;overflow-wrap:anywhere}
+.event-empty{padding:18px;border:1px dashed #2d3843;border-radius:11px;color:#7e8b98;text-align:center;font-size:12px}
+@media(max-width:760px){.provider-grid{grid-template-columns:1fr}.event-item{grid-template-columns:1fr;gap:5px}}
