@@ -101,6 +101,8 @@ Viewer Draw는 게임이 아니라 방송용 공용 도구다.
 
 - 내부 ID: `viewer_draw`
 - 참가자 원천: Manual / Chat / Game Room / Imported / Donation
+- 기본 Entry Source는 Manual이며 Chat/Donation/Game Room 연동은 선택 옵션
+- Provider 연결 없이도 Viewer Draw 기본 추첨은 독립 동작
 - 추첨 시작 시 참가자 집합 Freeze
 - Random Draw
 - Number Draw
