@@ -69,11 +69,21 @@ public final class RoomModels {
     }
 
     public record PlayerInput(
+        String provider,
         String soopId,
         String displayName,
         String profileImageUrl,
         int balloonTrigger
-    ) {}
+    ) {
+        public PlayerInput(
+            String soopId,
+            String displayName,
+            String profileImageUrl,
+            int balloonTrigger
+        ) {
+            this("SOOP", soopId, displayName, profileImageUrl, balloonTrigger);
+        }
+    }
 
     public record PlayerLiveStatus(
         String status,
@@ -84,12 +94,23 @@ public final class RoomModels {
     ) {}
 
     public record PlayerConfig(
+        String provider,
         String soopId,
         String displayName,
         String profileImageUrl,
         int balloonTrigger,
         PlayerLiveStatus live
-    ) {}
+    ) {
+        public PlayerConfig(
+            String soopId,
+            String displayName,
+            String profileImageUrl,
+            int balloonTrigger,
+            PlayerLiveStatus live
+        ) {
+            this("SOOP", soopId, displayName, profileImageUrl, balloonTrigger, live);
+        }
+    }
 
     public record BoardInput(
         String sizingMode,
