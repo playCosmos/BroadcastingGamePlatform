@@ -321,13 +321,33 @@
       }
     });
 
-    next.addEventListener("close", () => {
+    next.addEventListener("close", (event) => {
       if (socket === next) socket = null;
       if (closingForReplacement) {
         closingForReplacement = false;
         return;
       }
       if (!syncSession) return;
+
+      const reason = String(event.reason || "").toLowerCase();
+      const authLost =
+        event.code === 1008
+        && (
+          reason.includes("drawer token")
+          || reason.includes("write authorization")
+        );
+
+      if (authLost) {
+        syncSession = null;
+        replayingHistory = false;
+        replayTargetSequence = 0;
+        syncStatus.textContent = "TOKEN EXPIRED";
+        window.dispatchEvent(
+          new CustomEvent("drawing-guess-drawer-auth-lost")
+        );
+        return;
+      }
+
       syncStatus.textContent = "RECONNECT";
       reconnectTimer = window.setTimeout(() => {
         if (replayingHistory) {
