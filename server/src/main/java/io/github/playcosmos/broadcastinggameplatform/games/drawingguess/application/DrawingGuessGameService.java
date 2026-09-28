@@ -9,14 +9,13 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
-import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
 
 public final class DrawingGuessGameService {
+    private static final Duration DRAWING_SESSION_GRACE =
+        Duration.ofMinutes(15);
+
     private final DrawingGuessRepository repository;
     private final DrawingSyncService drawingSync;
-    private final Map<String, String> drawingCodeByRound =
-        new ConcurrentHashMap<>();
 
     public DrawingGuessGameService(
         DrawingGuessRepository repository,
@@ -99,6 +98,13 @@ public final class DrawingGuessGameService {
         String answer,
         String completedAt,
         List<DrawingGuessRepository.CorrectGuessRecord> correctGuesses
+    ) {}
+
+    public record RecoveryReport(
+        int activeRounds,
+        int restoredCanvasSessions,
+        int recreatedCanvasSessions,
+        int expiredRounds
     ) {}
 
     public record PublicRoomSnapshot(
@@ -199,10 +205,9 @@ public final class DrawingGuessGameService {
             startedAt,
             expiresAt
         );
-        var drawingSession = drawingSync.createSession();
-        drawingCodeByRound.put(
+        var drawingSession = drawingSync.createRoundSession(
             privateRound.roundId(),
-            drawingSession.drawingCode()
+            expiresAt.plus(DRAWING_SESSION_GRACE)
         );
 
         return new RoundStart(
@@ -216,11 +221,92 @@ public final class DrawingGuessGameService {
         String roundId
     ) throws SQLException {
         var completed = repository.completeRound(roundId);
-        String drawingCode = drawingCodeByRound.remove(roundId);
-        if (drawingCode != null) {
-            drawingSync.closeSession(drawingCode);
+        drawingSync.closeSessionForRound(roundId);
+        return completed;
+    }
+
+    public RecoveryReport recoverAfterRestart()
+        throws SQLException {
+        int active = 0;
+        int restored = 0;
+        int recreated = 0;
+        int expired = 0;
+        Instant now = Instant.now();
+
+        for (var round : repository.findActiveRounds()) {
+            active += 1;
+            Instant expiresAt = Instant.parse(round.expiresAt());
+            if (!now.isBefore(expiresAt)) {
+                repository.completeRound(round.roundId());
+                drawingSync.closeSessionForRound(round.roundId());
+                expired += 1;
+                continue;
+            }
+
+            String existingCode = drawingSync.drawingCodeForRound(
+                round.roundId()
+            );
+            drawingSync.ensureRoundSession(
+                round.roundId(),
+                expiresAt.plus(DRAWING_SESSION_GRACE)
+            );
+            if (existingCode == null) {
+                recreated += 1;
+            } else {
+                restored += 1;
+            }
+        }
+
+        return new RecoveryReport(
+            active,
+            restored,
+            recreated,
+            expired
+        );
+    }
+
+    public int expireTimedOutRounds() throws SQLException {
+        Instant now = Instant.now();
+        int completed = 0;
+        for (var round : repository.findActiveRounds()) {
+            Instant expiresAt = Instant.parse(round.expiresAt());
+            if (now.isBefore(expiresAt)) continue;
+
+            try {
+                repository.completeRound(round.roundId());
+                drawingSync.closeSessionForRound(round.roundId());
+                completed += 1;
+            } catch (IllegalStateException ignored) {
+                // A concurrent admin action may have completed it first.
+            }
         }
         return completed;
+    }
+
+    public DrawingSyncService.Session reissueDrawerSession(
+        String roundId
+    ) throws SQLException {
+        var round = repository.findRoundPrivate(roundId);
+        if (!"ACTIVE".equals(round.state())) {
+            throw new IllegalStateException(
+                "drawer session requires an ACTIVE round"
+            );
+        }
+
+        Instant expiresAt = Instant.parse(round.expiresAt());
+        if (!Instant.now().isBefore(expiresAt)) {
+            repository.completeRound(roundId);
+            drawingSync.closeSessionForRound(roundId);
+            throw new IllegalStateException(
+                "round already expired"
+            );
+        }
+
+        drawingSync.ensureRoundSession(
+            roundId,
+            expiresAt.plus(DRAWING_SESSION_GRACE)
+        );
+        return drawingSync.reissueDrawerToken(roundId);
     }
 
     public DrawingGuessRepository.Match completeMatch(
@@ -459,7 +545,7 @@ public final class DrawingGuessGameService {
                 round = repository.findRoundPublic(
                     privateRound.roundId()
                 );
-                drawingCode = drawingCodeByRound.get(
+                drawingCode = drawingSync.drawingCodeForRound(
                     privateRound.roundId()
                 );
             } else {
