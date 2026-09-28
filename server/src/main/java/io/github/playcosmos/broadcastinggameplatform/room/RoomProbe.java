@@ -443,7 +443,7 @@ public final class RoomProbe {
     }
 
     private static void setRoomNearExpiry(
-        BridgeDatabase database,
+        BoardGameDatabase database,
         String roomId,
         int retentionMinutes,
         int remainingMinutes
@@ -466,7 +466,7 @@ public final class RoomProbe {
     }
 
     private static void expireRoom(
-        BridgeDatabase database,
+        BoardGameDatabase database,
         String roomId
     ) throws Exception {
         try (var connection = database.open();
