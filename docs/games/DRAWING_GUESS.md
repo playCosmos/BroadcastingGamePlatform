@@ -1,6 +1,12 @@
 # Drawing Guess 게임 모듈 계획
 
-상태: **PLANNED**
+상태: **IN DEVELOPMENT**
+
+구현 현황:
+
+- D0 Canvas Prototype: **IMPLEMENTED**
+- D1 Canvas Sync: PLANNED
+- D2+ Game Core / Room / Chat / Overlay: PLANNED
 
 게임 ID: `drawing_guess`
 
@@ -642,7 +648,7 @@ drawing.match.completed
 
 ## 17. 구현 단계
 
-### D0 — Canvas Prototype
+### D0 — Canvas Prototype — IMPLEMENTED
 
 - HTML5 Canvas
 - Pointer Events
