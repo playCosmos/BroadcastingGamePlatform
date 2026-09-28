@@ -42,6 +42,7 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
                     event instanceof
                         com.github.getcurrentthread.soopapi.event.model.ChatMessageEvent chat
                 ) {
+                    state.chatReceived();
                     eventBus.publish(
                         new ChatMessageEvent(
                             ID,
