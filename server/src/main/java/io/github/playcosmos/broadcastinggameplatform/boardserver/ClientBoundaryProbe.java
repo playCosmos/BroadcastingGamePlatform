@@ -41,8 +41,15 @@ public final class ClientBoundaryProbe {
                 StandardCharsets.UTF_8
             );
             Files.writeString(
-                webRoot.resolve("board-admin.html"),
-                "<!doctype html><title>admin</title>",
+                webRoot.resolve("index.html"),
+                "<!doctype html><title>platform</title>",
+                StandardCharsets.UTF_8
+            );
+            Path adminRoot = webRoot.resolve("admin");
+            Files.createDirectories(adminRoot);
+            Files.writeString(
+                adminRoot.resolve("index.html"),
+                "<!doctype html><title>platform admin</title>",
                 StandardCharsets.UTF_8
             );
 
@@ -239,6 +246,35 @@ public final class ClientBoundaryProbe {
                 "committed room code must authorize runtime reads"
             );
 
+            var landingResponse = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/")
+                ).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                landingResponse.statusCode() == 200
+                    && landingResponse.body().contains("platform"),
+                "platform landing must be public"
+            );
+
+            var platformApiResponse = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/platform")
+                ).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                platformApiResponse.statusCode() == 200
+                    && platformApiResponse.body().contains(
+                        "\"BroadcastingGamePlatform\""
+                    )
+                    && platformApiResponse.body().contains(
+                        "\"board\""
+                    ),
+                "platform API must expose the board module"
+            );
+
             var boardResponse = client.send(
                 HttpRequest.newBuilder(
                     base.resolve("/games/board/index.html")
@@ -322,7 +358,7 @@ public final class ClientBoundaryProbe {
                 "bootstrap token must redirect after authentication"
             );
             require(
-                "/admin/board-admin.html".equals(
+                "/admin/index.html".equals(
                     bootstrapResponse.headers()
                         .firstValue("Location")
                         .orElse("")
@@ -379,7 +415,7 @@ public final class ClientBoundaryProbe {
 
             var authenticatedAdminPage = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/admin/board-admin.html")
+                    base.resolve("/admin/index.html")
                 )
                 .header("Cookie", sessionCookie)
                 .GET().build(),
@@ -445,7 +481,7 @@ public final class ClientBoundaryProbe {
 
             var afterRestartAdminPage = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/admin/board-admin.html")
+                    base.resolve("/admin/index.html")
                 )
                 .header("Cookie", sessionCookie)
                 .GET().build(),
@@ -554,7 +590,7 @@ public final class ClientBoundaryProbe {
 
             var approvedAdminPage = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/admin/board-admin.html")
+                    base.resolve("/admin/index.html")
                 )
                 .header("Cookie", approvalCookie)
                 .GET().build(),
