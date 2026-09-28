@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>방송 게임 플랫폼 · Drawing Guess 운영</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/admin/assets/drawing-guess.css">
+</head>
+<body>
+  <main class="shell drawing-admin">
+    <header class="hero compact">
+      <p class="eyebrow">DRAWING GUESS / ROOM OPERATION</p>
+      <div class="operation-title">
+        <div>
+          <h1 id="roomTitle">Drawing Guess</h1>
+          <p class="lead" id="roomMeta">룸을 불러오는 중...</p>
+        </div>
+        <strong class="room-code-large" id="roomCode">------</strong>
+      </div>
+      <div class="hero-actions">
+        <a class="secondary" href="/admin/games/drawing-guess/">← 새 룸</a>
+        <a class="secondary" href="/admin/">운영자 홈</a>
+      </div>
+    </header>
+
+    <section class="operation-grid">
+      <aside class="operation-sidebar">
+        <article class="draw-panel">
+          <div class="section-head compact-head">
+            <div>
+              <p class="eyebrow">MATCH</p>
+              <h2>게임 진행</h2>
+            </div>
+            <span class="state-badge" id="roomState">-</span>
+          </div>
+
+          <label class="field">
+            <span>전체 라운드 수</span>
+            <input id="totalRounds" type="number" min="1" max="200" value="3">
+          </label>
+          <button class="primary-button full" id="startMatchButton" type="button">Match 시작</button>
+
+          <div class="match-status">
+            <div><span>Match</span><strong id="matchId">-</strong></div>
+            <div><span>Round</span><strong id="roundIndex">-</strong></div>
+            <div><span>출제자</span><strong id="drawerName">-</strong></div>
+          </div>
+        </article>
+
+        <article class="draw-panel prompt-panel">
+          <p class="eyebrow">ROUND PROMPT</p>
+          <h2>제시어</h2>
+
+          <label class="field">
+            <span>Prompt ID</span>
+            <input id="promptId" type="text" placeholder="자동 생성 가능">
+          </label>
+          <label class="field">
+            <span>정답</span>
+            <input id="answer" type="text" placeholder="예: 프라이팬">
+          </label>
+          <label class="field">
+            <span>허용 답안 · 한 줄에 하나</span>
+            <textarea id="acceptedAnswers" rows="4" placeholder="후라이팬&#10;프라이 팬"></textarea>
+          </label>
+
+          <button class="primary-button full" id="startRoundButton" type="button" disabled>Round 시작</button>
+          <button class="tool-button full" id="completeRoundButton" type="button" disabled>Round 완료</button>
+          <button class="tool-button danger full" id="completeMatchButton" type="button" disabled>Match 완료</button>
+          <p class="status-line" id="operationStatus">준비 중...</p>
+        </article>
+
+        <article class="draw-panel">
+          <p class="eyebrow">PARTICIPANTS</p>
+          <h2>점수</h2>
+          <div class="scoreboard" id="scoreboard"></div>
+        </article>
+      </aside>
+
+      <section class="drawing-layout operation-canvas-layout">
+        <aside class="tool-panel">
+          <div class="tool-section">
+            <span class="tool-label">도구</span>
+            <div class="tool-grid">
+              <button class="tool-button active" type="button" data-tool="pen">Pen</button>
+              <button class="tool-button" type="button" data-tool="eraser">Eraser</button>
+            </div>
+          </div>
+
+          <label class="tool-section">
+            <span class="tool-label">색상</span>
+            <div class="color-row">
+              <input id="brushColor" type="color" value="#151515">
+              <span id="colorValue">#151515</span>
+            </div>
+          </label>
+
+          <label class="tool-section">
+            <span class="tool-label">브러시 크기 <strong id="brushSizeValue">8</strong></span>
+            <input id="brushSize" type="range" min="2" max="48" value="8">
+          </label>
+
+          <div class="tool-section">
+            <span class="tool-label">편집</span>
+            <div class="tool-grid">
+              <button class="tool-button" id="undoButton" type="button">Undo</button>
+              <button class="tool-button" id="redoButton" type="button">Redo</button>
+              <button class="tool-button danger" id="clearButton" type="button">Clear</button>
+            </div>
+          </div>
+
+          <div class="canvas-stats">
+            <div><span>Strokes</span><strong id="strokeCount">0</strong></div>
+            <div><span>Pointer</span><strong id="pointerType">-</strong></div>
+            <div><span>Canvas</span><strong id="canvasSize">-</strong></div>
+          </div>
+
+          <div class="sync-panel">
+            <span class="tool-label">Round Canvas Sync</span>
+            <div class="sync-info">
+              <div><span>Code</span><strong id="drawingCode">------</strong></div>
+              <div><span>Status</span><strong id="syncStatus">OFF</strong></div>
+            </div>
+            <label class="sync-url">
+              <span>OBS Overlay</span>
+              <input id="drawingOverlayUrl" type="text" readonly>
+            </label>
+            <button class="tool-button" id="copyDrawingOverlay" type="button" disabled>Overlay URL 복사</button>
+          </div>
+        </aside>
+
+        <section class="canvas-panel">
+          <div class="canvas-head">
+            <div>
+              <p class="eyebrow">PRIVATE DRAWER VIEW</p>
+              <h2>그림판</h2>
+            </div>
+            <span class="prototype-badge" id="roundBadge">NO ROUND</span>
+          </div>
+
+          <div class="private-answer" id="privateAnswer" hidden>
+            <span>현재 정답</span>
+            <strong id="privateAnswerText">-</strong>
+          </div>
+
+          <div class="canvas-wrap" id="canvasWrap">
+            <canvas id="drawingCanvas"></canvas>
+          </div>
+          <p class="canvas-help">공개 Overlay에는 정답/허용답안이 전송되지 않습니다. Round 시작 시 별도 Drawer Token으로 Canvas 송신 권한을 얻습니다.</p>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <script src="/admin/assets/drawing-guess-canvas.js"></script>
+  <script src="/admin/assets/drawing-guess-room.js"></script>
+</body>
+</html>
