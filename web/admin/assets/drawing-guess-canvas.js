@@ -244,6 +244,22 @@
     });
   }
 
+  async function attachSyncSession(session) {
+    if (!session?.drawingCode || !session?.drawerToken) {
+      throw new Error("유효한 Drawing Sync 세션이 필요합니다.");
+    }
+
+    syncSession = session;
+    drawingCode.textContent = session.drawingCode;
+    overlayUrl.value = new URL(
+      "/games/drawing-guess/?drawingCode="
+        + encodeURIComponent(session.drawingCode),
+      window.location.origin
+    ).href;
+    copyOverlay.disabled = false;
+    await connectDrawer(session);
+  }
+
   async function createSyncSession() {
     startSyncButton.disabled = true;
     syncStatus.textContent = "CREATING";
@@ -260,15 +276,7 @@
         throw new Error(body.error || `HTTP ${response.status}`);
       }
 
-      syncSession = body;
-      drawingCode.textContent = body.drawingCode;
-      overlayUrl.value = new URL(
-        "/games/drawing-guess/?drawingCode="
-          + encodeURIComponent(body.drawingCode),
-        window.location.origin
-      ).href;
-      copyOverlay.disabled = false;
-      await connectDrawer(body);
+      await attachSyncSession(body);
     } catch (error) {
       syncStatus.textContent = "ERROR";
       console.error(error);
@@ -421,6 +429,24 @@
     window.clearTimeout(pointFlushTimer);
     try { socket?.close(1000, "page unload"); } catch {}
   }, { once: true });
+
+  window.DrawingGuessCanvas = {
+    attachSyncSession,
+    clear() {
+      strokes = [];
+      redoStack = [];
+      activeStroke = null;
+      activePointerId = null;
+      pendingPoints = [];
+      window.clearTimeout(pointFlushTimer);
+      pointFlushTimer = 0;
+      sendSync("canvas.clear");
+      renderAll();
+    },
+    syncStatus() {
+      return syncStatus.textContent;
+    }
+  };
 
   renderAll();
 })();
