@@ -3,6 +3,8 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingGuessGameService;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
@@ -143,6 +145,12 @@ public final class ClientBoundaryProbe {
             var adminAuthStore = new AdminAuthStore(database);
             var viewerDraw = new ViewerDrawService(database);
             var drawingSync = new DrawingSyncService();
+            var drawingRepository =
+                new DrawingGuessRepository(database);
+            var drawingGame = new DrawingGuessGameService(
+                drawingRepository,
+                drawingSync
+            );
             server = new GameClientHttpServer(
                 config,
                 root,
@@ -152,7 +160,8 @@ public final class ClientBoundaryProbe {
                 new PlatformEventBus(),
                 new ProviderRegistry(),
                 viewerDraw,
-                drawingSync
+                drawingSync,
+                drawingGame
             );
             server.start();
             require(
@@ -665,15 +674,200 @@ public final class ClientBoundaryProbe {
                 "public drawing session must never expose drawer token"
             );
 
+            var drawingRoomCreate = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/rooms"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    """
+                    {
+                      "name":"Boundary Drawing Room",
+                      "drawerPolicy":"ROTATING_DRAWER",
+                      "scoreProfile":"FAST_GUESS",
+                      "roundDurationSeconds":60,
+                      "participants":[
+                        {
+                          "participantId":"p1",
+                          "provider":"SOOP",
+                          "userId":"secret-user-1",
+                          "displayName":"P1"
+                        },
+                        {
+                          "participantId":"p2",
+                          "provider":"SOOP",
+                          "userId":"secret-user-2",
+                          "displayName":"P2"
+                        }
+                      ]
+                    }
+                    """
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingRoomCreate.statusCode() == 201,
+                "drawing guess room must be created by admin"
+            );
+            var drawingRoomJson = JsonParser.parseString(
+                drawingRoomCreate.body()
+            ).getAsJsonObject();
+            String drawingRoomId = drawingRoomJson
+                .get("roomId")
+                .getAsString();
+            require(
+                drawingRoomId.matches("[A-HJ-NP-Z2-9]{6}"),
+                "drawing guess room code must be six characters"
+            );
+
+            var drawingReady = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/rooms/"
+                            + drawingRoomId + "/ready"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingReady.statusCode() == 200
+                    && drawingReady.body().contains(
+                        "\"state\":\"READY\""
+                    ),
+                "drawing guess room must become READY"
+            );
+
+            var drawingMatchStart = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/rooms/"
+                            + drawingRoomId + "/matches"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"totalRounds\":2}"
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingMatchStart.statusCode() == 201,
+                "drawing guess match must start"
+            );
+            String drawingMatchId = JsonParser.parseString(
+                drawingMatchStart.body()
+            ).getAsJsonObject()
+                .get("matchId")
+                .getAsString();
+
+            var drawingRoundStart = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/matches/"
+                            + drawingMatchId + "/rounds"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    """
+                    {
+                      "promptId":"boundary-prompt",
+                      "answer":"사과",
+                      "acceptedAnswers":["apple","사 과"]
+                    }
+                    """
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingRoundStart.statusCode() == 201
+                    && drawingRoundStart.body().contains("drawerToken")
+                    && drawingRoundStart.body().contains("사과"),
+                "private round start must include answer and drawer token"
+            );
+
+            var drawingRoundJson = JsonParser.parseString(
+                drawingRoundStart.body()
+            ).getAsJsonObject();
+            String drawingRoundId = drawingRoundJson
+                .getAsJsonObject("publicRound")
+                .get("roundId")
+                .getAsString();
+
+            var drawingPublicRoom = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/public/"
+                            + drawingRoomId
+                    )
+                )
+                .GET()
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingPublicRoom.statusCode() == 200
+                    && drawingPublicRoom.body().contains(
+                        "\"roomId\":\"" + drawingRoomId + "\""
+                    )
+                    && !drawingPublicRoom.body().contains("사과")
+                    && !drawingPublicRoom.body().contains("apple")
+                    && !drawingPublicRoom.body().contains("drawerToken")
+                    && !drawingPublicRoom.body().contains("secret-user-1")
+                    && !drawingPublicRoom.body().contains("secret-user-2"),
+                "public drawing room must hide answers, tokens, and provider user IDs"
+            );
+
+            var drawingRoundComplete = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/rounds/"
+                            + drawingRoundId + "/complete"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingRoundComplete.statusCode() == 200
+                    && drawingRoundComplete.body().contains(
+                        "\"state\":\"COMPLETED\""
+                    ),
+                "drawing guess round must complete"
+            );
+
             String bootstrapBeforeRestart =
                 server.adminBootstrapUrl();
             server.close();
+            var restartDrawingSync =
+                new DrawingSyncService();
             server = new GameClientHttpServer(
                 config,
                 root,
                 rooms,
                 runtime,
-                new AdminAuthStore(database)
+                new AdminAuthStore(database),
+                new PlatformEventBus(),
+                new ProviderRegistry(),
+                new ViewerDrawService(database),
+                restartDrawingSync,
+                new DrawingGuessGameService(
+                    new DrawingGuessRepository(database),
+                    restartDrawingSync
+                )
             );
             server.start();
 
