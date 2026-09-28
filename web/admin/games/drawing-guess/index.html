@@ -13,7 +13,7 @@
     <header class="hero compact">
       <p class="eyebrow">DRAWING GUESS / D0 CANVAS PROTOTYPE</p>
       <h1>Drawing Guess</h1>
-      <p class="lead">HTML5 Canvas + Pointer Events 기반 그림 입력 프로토타입입니다. 현재 단계는 서버 동기화 전 로컬 Canvas 기능 검증입니다.</p>
+      <p class="lead">HTML5 Canvas + Pointer Events 기반 그림 입력과 D1 실시간 Overlay 동기화를 검증합니다. 공개 Overlay는 읽기 전용이고 Drawer만 별도 토큰으로 stroke를 발행합니다.</p>
       <div class="hero-actions">
         <a class="secondary" href="/admin/">← 운영자 홈</a>
       </div>
@@ -56,6 +56,20 @@
           <div><span>Pointer</span><strong id="pointerType">-</strong></div>
           <div><span>Canvas</span><strong id="canvasSize">-</strong></div>
         </div>
+
+        <div class="sync-panel">
+          <span class="tool-label">D1 Canvas Sync</span>
+          <button class="tool-button sync-start" id="startSyncButton" type="button">Overlay 동기화 시작</button>
+          <div class="sync-info">
+            <div><span>Code</span><strong id="drawingCode">------</strong></div>
+            <div><span>Status</span><strong id="syncStatus">OFF</strong></div>
+          </div>
+          <label class="sync-url">
+            <span>OBS Overlay</span>
+            <input id="drawingOverlayUrl" type="text" readonly>
+          </label>
+          <button class="tool-button" id="copyDrawingOverlay" type="button" disabled>Overlay URL 복사</button>
+        </div>
       </aside>
 
       <section class="canvas-panel">
@@ -64,7 +78,7 @@
             <p class="eyebrow">HTML5 CANVAS</p>
             <h2>그림판</h2>
           </div>
-          <span class="prototype-badge">LOCAL PROTOTYPE</span>
+          <span class="prototype-badge">D1 SYNC PROTOTYPE</span>
         </div>
         <div class="canvas-wrap" id="canvasWrap">
           <canvas id="drawingCanvas"></canvas>
