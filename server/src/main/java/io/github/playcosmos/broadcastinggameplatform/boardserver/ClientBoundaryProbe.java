@@ -52,6 +52,13 @@ public final class ClientBoundaryProbe {
                 "<!doctype html><title>platform admin</title>",
                 StandardCharsets.UTF_8
             );
+            Path boardAdminRoot = adminRoot.resolve("games/board");
+            Files.createDirectories(boardAdminRoot);
+            Files.writeString(
+                boardAdminRoot.resolve("index.html"),
+                "<!doctype html><title>board room creator</title>",
+                StandardCharsets.UTF_8
+            );
 
             int adminPort = freePort();
             int clientPort = freePort();
@@ -333,6 +340,20 @@ public final class ClientBoundaryProbe {
                 "admin authentication page must offer token entry and approval request"
             );
 
+            var unauthenticatedBoardCreator = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/admin/games/board/")
+                ).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                unauthenticatedBoardCreator.statusCode() == 401
+                    && unauthenticatedBoardCreator.body().contains(
+                        "action=\"/admin/games/board/\""
+                    ),
+                "board creator authentication must preserve requested route"
+            );
+
             var unauthenticatedPost = client.send(
                 HttpRequest.newBuilder(
                     base.resolve("/api/board/rooms")
@@ -347,9 +368,13 @@ public final class ClientBoundaryProbe {
                 "room mutation must require admin session"
             );
 
+            URI bootstrapUri = URI.create(server.adminBootstrapUrl());
             var bootstrapResponse = client.send(
                 HttpRequest.newBuilder(
-                    URI.create(server.adminBootstrapUrl())
+                    base.resolve(
+                        "/admin/games/board/?"
+                            + bootstrapUri.getRawQuery()
+                    )
                 ).GET().build(),
                 HttpResponse.BodyHandlers.discarding()
             );
@@ -358,12 +383,12 @@ public final class ClientBoundaryProbe {
                 "bootstrap token must redirect after authentication"
             );
             require(
-                "/admin/index.html".equals(
+                "/admin/games/board/".equals(
                     bootstrapResponse.headers()
                         .firstValue("Location")
                         .orElse("")
                 ),
-                "bootstrap redirect target mismatch"
+                "bootstrap authentication must return to board creator"
             );
 
             String setCookie = bootstrapResponse.headers()
@@ -415,7 +440,7 @@ public final class ClientBoundaryProbe {
 
             var authenticatedAdminPage = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/admin/index.html")
+                    base.resolve("/admin/games/board/")
                 )
                 .header("Cookie", sessionCookie)
                 .GET().build(),
@@ -481,7 +506,7 @@ public final class ClientBoundaryProbe {
 
             var afterRestartAdminPage = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/admin/index.html")
+                    base.resolve("/admin/games/board/")
                 )
                 .header("Cookie", sessionCookie)
                 .GET().build(),
@@ -532,7 +557,13 @@ public final class ClientBoundaryProbe {
 
             var approvalRequest = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/api/admin/access/request")
+                    base.resolve(
+                        "/api/admin/access/request?returnTo="
+                            + java.net.URLEncoder.encode(
+                                "/admin/games/board/",
+                                StandardCharsets.UTF_8
+                            )
+                    )
                 )
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build(),
@@ -569,6 +600,11 @@ public final class ClientBoundaryProbe {
                     base.resolve(
                         "/api/admin/access/status?requestId="
                             + requestId
+                            + "&returnTo="
+                            + java.net.URLEncoder.encode(
+                                "/admin/games/board/",
+                                StandardCharsets.UTF_8
+                            )
                     )
                 )
                 .GET().build(),
@@ -578,6 +614,9 @@ public final class ClientBoundaryProbe {
                 approvalStatus.statusCode() == 200
                     && approvalStatus.body().contains(
                         "\"status\":\"APPROVED\""
+                    )
+                    && approvalStatus.body().contains(
+                        "\"redirect\":\"/admin/games/board/\""
                     ),
                 "approved request must exchange for an admin session"
             );
@@ -590,7 +629,7 @@ public final class ClientBoundaryProbe {
 
             var approvedAdminPage = client.send(
                 HttpRequest.newBuilder(
-                    base.resolve("/admin/index.html")
+                    base.resolve("/admin/games/board/")
                 )
                 .header("Cookie", approvalCookie)
                 .GET().build(),
