@@ -11,6 +11,7 @@ import io.github.playcosmos.broadcastinggameplatform.operations.WindowsConsoleEn
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomHttpHandler;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
+import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawService;
 import java.awt.Desktop;
 import java.net.URI;
 import java.nio.file.Path;
@@ -151,6 +152,7 @@ public final class PlatformServerMain {
             }
         );
 
+        var viewerDraw = new ViewerDrawService(database);
         var adminAuthStore = new AdminAuthStore(database);
         var clientHttp = new GameClientHttpServer(
             config,
@@ -159,7 +161,8 @@ public final class PlatformServerMain {
             runtime,
             adminAuthStore,
             platformEvents,
-            providers
+            providers,
+            viewerDraw
         );
         var http = new BoardGameHttpServer(
             config,
