@@ -109,7 +109,12 @@ public final class DrawingGuessGameService {
         }
 
         var room = repository.findRoom(match.roomId());
-        int roundIndex = nextRoundIndex(matchId, match);
+        int roundIndex = repository.nextRoundIndex(matchId);
+        if (roundIndex >= match.totalRounds()) {
+            throw new IllegalStateException(
+                "all configured rounds are already completed"
+            );
+        }
         String drawer = drawerForRound(room, roundIndex);
 
         Instant startedAt = now == null ? Instant.now() : now;
@@ -184,25 +189,6 @@ public final class DrawingGuessGameService {
             match,
             round
         );
-    }
-
-    private int nextRoundIndex(
-        String matchId,
-        DrawingGuessRepository.Match match
-    ) throws SQLException {
-        var active = repository.findActiveRoundByMatch(matchId);
-        if (active != null) return active.roundIndex();
-
-        int current = match.currentRoundIndex();
-        try {
-            repository.findRoundPublicByMatchIndex(
-                matchId,
-                current
-            );
-            return current + 1;
-        } catch (java.util.NoSuchElementException ignored) {
-            return current;
-        }
     }
 
     private String drawerForRound(
