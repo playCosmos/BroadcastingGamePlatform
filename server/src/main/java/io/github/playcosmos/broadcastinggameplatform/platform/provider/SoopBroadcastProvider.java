@@ -1,6 +1,7 @@
 package io.github.playcosmos.broadcastinggameplatform.platform.provider;
 
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChannelEvent;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.soop.SoopBridgeAdapter;
@@ -36,17 +37,45 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
                     donation.receivedAtEpochMs()
                 )
             ),
-            (channelId, event) -> eventBus.publish(
-                new ChannelEvent(
-                    ID,
-                    channelId,
-                    event == null
-                        ? "unknown"
-                        : event.getClass().getSimpleName(),
-                    String.valueOf(event),
-                    System.currentTimeMillis()
-                )
-            )
+            (channelId, event) -> {
+                if (
+                    event instanceof
+                        com.github.getcurrentthread.soopapi.event.model.ChatMessageEvent chat
+                ) {
+                    eventBus.publish(
+                        new ChatMessageEvent(
+                            ID,
+                            channelId,
+                            chat.senderId(),
+                            chat.senderNickname(),
+                            chat.message(),
+                            chat.raw(),
+                            chat.timestamp()
+                        )
+                    );
+                    return;
+                }
+
+                if (
+                    event instanceof
+                        com.github.getcurrentthread.soopapi.event.model.SendBalloonEvent
+                ) {
+                    // DonationEvent is emitted by the dedicated donation sink.
+                    return;
+                }
+
+                eventBus.publish(
+                    new ChannelEvent(
+                        ID,
+                        channelId,
+                        event == null
+                            ? "unknown"
+                            : event.getClass().getSimpleName(),
+                        String.valueOf(event),
+                        System.currentTimeMillis()
+                    )
+                );
+            }
         );
     }
 
