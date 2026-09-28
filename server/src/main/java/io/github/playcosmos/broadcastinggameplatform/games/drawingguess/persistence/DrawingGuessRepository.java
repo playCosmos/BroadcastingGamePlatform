@@ -25,6 +25,7 @@ public final class DrawingGuessRepository {
     private static final String CODE_ALPHABET =
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int MAX_PARTICIPANTS = 20;
+    private static final int MAX_DYNAMIC_PARTICIPANTS = 5000;
 
     private final DatabaseAccess database;
 
@@ -36,8 +37,24 @@ public final class DrawingGuessRepository {
         String participantId,
         String provider,
         String userId,
-        String displayName
-    ) {}
+        String displayName,
+        boolean canDraw
+    ) {
+        public ParticipantInput(
+            String participantId,
+            String provider,
+            String userId,
+            String displayName
+        ) {
+            this(
+                participantId,
+                provider,
+                userId,
+                displayName,
+                true
+            );
+        }
+    }
 
     public record Participant(
         int order,
@@ -45,7 +62,8 @@ public final class DrawingGuessRepository {
         String provider,
         String userId,
         String displayName,
-        int score
+        int score,
+        boolean canDraw
     ) {}
 
     public record Room(
@@ -56,6 +74,9 @@ public final class DrawingGuessRepository {
         ScoreProfile scoreProfile,
         ClassicScorePolicy.Config scoreConfig,
         int roundDurationSeconds,
+        boolean chatGuessEnabled,
+        String chatProvider,
+        String chatChannelId,
         String state,
         String createdAt,
         String updatedAt,
@@ -115,6 +136,30 @@ public final class DrawingGuessRepository {
         int roundDurationSeconds,
         List<ParticipantInput> participantInputs
     ) throws SQLException {
+        return createRoom(
+            name,
+            drawerPolicy,
+            streamerParticipantId,
+            scoreConfig,
+            roundDurationSeconds,
+            true,
+            null,
+            null,
+            participantInputs
+        );
+    }
+
+    public Room createRoom(
+        String name,
+        DrawerPolicy drawerPolicy,
+        String streamerParticipantId,
+        ClassicScorePolicy.Config scoreConfig,
+        int roundDurationSeconds,
+        boolean chatGuessEnabled,
+        String chatProvider,
+        String chatChannelId,
+        List<ParticipantInput> participantInputs
+    ) throws SQLException {
         DrawerPolicy policy = drawerPolicy == null
             ? DrawerPolicy.ROTATING_DRAWER
             : drawerPolicy;
@@ -124,9 +169,12 @@ public final class DrawingGuessRepository {
         List<ParticipantInput> participants =
             normalizeParticipants(participantInputs);
 
-        if (participants.isEmpty()) {
+        if (
+            policy == DrawerPolicy.ROTATING_DRAWER
+            && participants.stream().filter(ParticipantInput::canDraw).count() < 2
+        ) {
             throw new IllegalArgumentException(
-                "at least one participant is required"
+                "ROTATING_DRAWER requires at least two drawable participants"
             );
         }
         if (roundDurationSeconds < 10 || roundDurationSeconds > 600) {
@@ -147,14 +195,12 @@ public final class DrawingGuessRepository {
             );
         }
 
-        if (
-            policy == DrawerPolicy.ROTATING_DRAWER
-            && participants.size() < 2
-        ) {
-            throw new IllegalArgumentException(
-                "ROTATING_DRAWER requires at least two participants"
-            );
-        }
+        String normalizedChatProvider = chatProvider == null
+            ? null
+            : chatProvider.trim().toUpperCase(Locale.ROOT);
+        String normalizedChatChannelId = chatChannelId == null
+            ? null
+            : chatChannelId.trim();
 
         String roomId = allocateRoomCode();
         String now = Instant.now().toString();
@@ -170,8 +216,9 @@ public final class DrawingGuessRepository {
                       room_id, name, drawer_policy,
                       streamer_participant_id, score_profile,
                       score_config_json, round_duration_seconds,
+                      chat_guess_enabled, chat_provider, chat_channel_id,
                       state, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)
                     """)) {
                     statement.setString(1, roomId);
                     statement.setString(2, roomName);
@@ -180,8 +227,23 @@ public final class DrawingGuessRepository {
                     statement.setString(5, config.profile().name());
                     statement.setString(6, GSON.toJson(config));
                     statement.setInt(7, roundDurationSeconds);
-                    statement.setString(8, now);
-                    statement.setString(9, now);
+                    statement.setInt(8, chatGuessEnabled ? 1 : 0);
+                    statement.setString(
+                        9,
+                        normalizedChatProvider == null
+                            || normalizedChatProvider.isBlank()
+                            ? null
+                            : normalizedChatProvider
+                    );
+                    statement.setString(
+                        10,
+                        normalizedChatChannelId == null
+                            || normalizedChatChannelId.isBlank()
+                            ? null
+                            : normalizedChatChannelId
+                    );
+                    statement.setString(11, now);
+                    statement.setString(12, now);
                     statement.executeUpdate();
                 }
 
@@ -190,8 +252,8 @@ public final class DrawingGuessRepository {
                     try (var statement = connection.prepareStatement("""
                         INSERT INTO drawing_guess_participant(
                           room_id, participant_order, participant_id,
-                          provider_id, user_id, display_name, score
-                        ) VALUES (?, ?, ?, ?, ?, ?, 0)
+                          provider_id, user_id, display_name, score, can_draw
+                        ) VALUES (?, ?, ?, ?, ?, ?, 0, ?)
                         """)) {
                         statement.setString(1, roomId);
                         statement.setInt(2, order++);
@@ -199,6 +261,7 @@ public final class DrawingGuessRepository {
                         statement.setString(4, participant.provider());
                         statement.setString(5, participant.userId());
                         statement.setString(6, participant.displayName());
+                        statement.setInt(7, participant.canDraw() ? 1 : 0);
                         statement.executeUpdate();
                     }
                 }
@@ -535,6 +598,9 @@ public final class DrawingGuessRepository {
         ScoreProfile profile;
         ClassicScorePolicy.Config scoreConfig;
         int roundDurationSeconds;
+        boolean chatGuessEnabled;
+        String chatProvider;
+        String chatChannelId;
         String state;
         String createdAt;
         String updatedAt;
@@ -543,7 +609,8 @@ public final class DrawingGuessRepository {
              var statement = connection.prepareStatement("""
                  SELECT name, drawer_policy, streamer_participant_id,
                         score_profile, score_config_json,
-                        round_duration_seconds, state,
+                        round_duration_seconds, chat_guess_enabled,
+                        chat_provider, chat_channel_id, state,
                         created_at, updated_at
                  FROM drawing_guess_room
                  WHERE room_id = ?
@@ -572,6 +639,10 @@ public final class DrawingGuessRepository {
                 roundDurationSeconds = rows.getInt(
                     "round_duration_seconds"
                 );
+                chatGuessEnabled =
+                    rows.getInt("chat_guess_enabled") != 0;
+                chatProvider = rows.getString("chat_provider");
+                chatChannelId = rows.getString("chat_channel_id");
                 state = rows.getString("state");
                 createdAt = rows.getString("created_at");
                 updatedAt = rows.getString("updated_at");
@@ -582,7 +653,8 @@ public final class DrawingGuessRepository {
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
                  SELECT participant_order, participant_id,
-                        provider_id, user_id, display_name, score
+                        provider_id, user_id, display_name, score,
+                        can_draw
                  FROM drawing_guess_participant
                  WHERE room_id = ?
                  ORDER BY participant_order
@@ -597,7 +669,8 @@ public final class DrawingGuessRepository {
                             rows.getString("provider_id"),
                             rows.getString("user_id"),
                             rows.getString("display_name"),
-                            rows.getInt("score")
+                            rows.getInt("score"),
+                            rows.getInt("can_draw") != 0
                         )
                     );
                 }
@@ -612,6 +685,9 @@ public final class DrawingGuessRepository {
             profile,
             scoreConfig,
             roundDurationSeconds,
+            chatGuessEnabled,
+            chatProvider,
+            chatChannelId,
             state,
             createdAt,
             updatedAt,
@@ -935,7 +1011,8 @@ public final class DrawingGuessRepository {
                     userId == null || userId.isBlank()
                         ? null
                         : userId,
-                    displayName
+                    displayName,
+                    value.canDraw()
                 )
             );
             if (result.size() > MAX_PARTICIPANTS) {
