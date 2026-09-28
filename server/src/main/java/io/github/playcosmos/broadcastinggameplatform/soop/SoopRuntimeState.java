@@ -13,7 +13,9 @@ public final class SoopRuntimeState {
     private final AtomicReference<String> title = new AtomicReference<>();
     private final AtomicReference<String> lastError = new AtomicReference<>();
     private final AtomicReference<String> lastDonationAt = new AtomicReference<>();
+    private final AtomicReference<String> lastChatAt = new AtomicReference<>();
     private final AtomicLong donationEvents = new AtomicLong();
+    private final AtomicLong chatEvents = new AtomicLong();
 
     public SoopRuntimeState(String streamerId) {
         streamerId(streamerId);
@@ -55,6 +57,11 @@ public final class SoopRuntimeState {
         lastDonationAt.set(OffsetDateTime.now().toString());
     }
 
+    public void chatReceived() {
+        chatEvents.incrementAndGet();
+        lastChatAt.set(OffsetDateTime.now().toString());
+    }
+
     public Map<String, Object> snapshot() {
         var result = new LinkedHashMap<String, Object>();
         result.put("streamerId", streamerId.get());
@@ -63,6 +70,8 @@ public final class SoopRuntimeState {
         result.put("title", title.get());
         result.put("donationEvents", donationEvents.get());
         result.put("lastDonationAt", lastDonationAt.get());
+        result.put("chatEvents", chatEvents.get());
+        result.put("lastChatAt", lastChatAt.get());
         result.put("lastError", lastError.get());
         return result;
     }
