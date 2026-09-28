@@ -1,0 +1,22 @@
+{
+  "streamerId": "",
+  "server": {
+    "host": "127.0.0.1",
+    "port": 17830,
+    "websocketPort": 17831,
+    "openBrowserOnStart": true,
+    "clientHost": "0.0.0.0",
+    "clientPort": 17832,
+    "publicBaseUrl": "",
+    "publicWebSocketUrl": ""
+  },
+  "storage": {
+    "databasePath": "./data/platform.db",
+    "webRoot": "./web",
+    "logDirectory": "./logs"
+  },
+  "soop": {
+    "enabled": true,
+    "offlinePollSeconds": 30
+  }
+}
