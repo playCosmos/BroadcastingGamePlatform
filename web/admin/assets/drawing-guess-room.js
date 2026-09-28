@@ -31,6 +31,36 @@
     )?.displayName || participantId || "-";
   }
 
+  function renderCorrectGuesses() {
+    const root = $("roundCorrectList");
+    if (!root) return;
+    root.replaceChildren();
+
+    const guesses = activeRound?.correctGuesses || [];
+    guesses.forEach((guess) => {
+      const row = document.createElement("div");
+      row.className = "round-correct-row";
+
+      const rank = document.createElement("span");
+      rank.textContent = `#${guess.rank}`;
+
+      const name = document.createElement("strong");
+      name.textContent = guess.displayName;
+
+      const score = document.createElement("small");
+      score.textContent = `+${guess.scoreAwarded}`;
+
+      row.append(rank, name, score);
+      root.appendChild(row);
+    });
+
+    if (!root.childElementCount) {
+      const empty = document.createElement("small");
+      empty.textContent = "정답자 없음";
+      root.appendChild(empty);
+    }
+  }
+
   function renderScoreboard() {
     const root = $("scoreboard");
     root.replaceChildren();
@@ -110,6 +140,7 @@
     }
 
     renderScoreboard();
+    renderCorrectGuesses();
   }
 
   async function refreshRoom() {
@@ -267,6 +298,19 @@
   $("completeRoundButton").addEventListener("click", completeRound);
   $("completeMatchButton").addEventListener("click", completeMatch);
 
+  let refreshInFlight = false;
+  async function pollRoom() {
+    if (refreshInFlight) return;
+    refreshInFlight = true;
+    try {
+      await refreshRoom();
+    } catch (error) {
+      console.warn("[drawing-room] refresh failed", error);
+    } finally {
+      refreshInFlight = false;
+    }
+  }
+
   refreshRoom()
     .then(() => {
       $("operationStatus").textContent = "운영 준비됨";
@@ -274,4 +318,9 @@
     .catch((error) => {
       $("operationStatus").textContent = "오류: " + error.message;
     });
+
+  const pollTimer = window.setInterval(pollRoom, 1200);
+  window.addEventListener("beforeunload", () => {
+    window.clearInterval(pollTimer);
+  }, { once: true });
 })();
