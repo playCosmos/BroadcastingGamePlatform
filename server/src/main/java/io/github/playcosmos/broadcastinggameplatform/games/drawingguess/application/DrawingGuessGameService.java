@@ -70,6 +70,11 @@ public final class DrawingGuessGameService {
         DrawingSyncService.Session drawingSession
     ) {}
 
+    public record DrawerRecovery(
+        DrawingGuessRepository.RoundPrivate privateRound,
+        DrawingSyncService.Session drawingSession
+    ) {}
+
     public record ChatGuessResult(
         String status,
         String roomId,
@@ -283,13 +288,13 @@ public final class DrawingGuessGameService {
         return completed;
     }
 
-    public DrawingSyncService.Session reissueDrawerSession(
+    public DrawerRecovery recoverDrawerRound(
         String roundId
     ) throws SQLException {
         var round = repository.findRoundPrivate(roundId);
         if (!"ACTIVE".equals(round.state())) {
             throw new IllegalStateException(
-                "drawer session requires an ACTIVE round"
+                "drawer recovery requires an ACTIVE round"
             );
         }
 
@@ -306,7 +311,10 @@ public final class DrawingGuessGameService {
             roundId,
             expiresAt.plus(DRAWING_SESSION_GRACE)
         );
-        return drawingSync.reissueDrawerToken(roundId);
+        return new DrawerRecovery(
+            round,
+            drawingSync.reissueDrawerToken(roundId)
+        );
     }
 
     public DrawingGuessRepository.Match completeMatch(
