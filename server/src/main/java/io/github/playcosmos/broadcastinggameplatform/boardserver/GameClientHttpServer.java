@@ -692,10 +692,16 @@ public final class GameClientHttpServer implements AutoCloseable {
             exchange.close();
             return;
         }
+        String returnTo = normalizedAdminReturnPath(
+            queryParameter(
+                exchange.getRequestURI().getRawQuery(),
+                "returnTo"
+            )
+        );
         if (isAdminSession(exchange)) {
             sendJson(exchange, 200, Map.of(
                 "status", "AUTHENTICATED",
-                "redirect", "/admin/index.html"
+                "redirect", returnTo
             ));
             return;
         }
@@ -738,7 +744,8 @@ public final class GameClientHttpServer implements AutoCloseable {
                 "requestId", requestId,
                 "approvalCode", approvalCode,
                 "expiresAt", expiresAt.toString(),
-                "expiresInSeconds", APPROVAL_TTL.toSeconds()
+                "expiresInSeconds", APPROVAL_TTL.toSeconds(),
+                "returnTo", returnTo
             ));
         } catch (java.sql.SQLException error) {
             sendJson(exchange, 500, Map.of(
@@ -755,10 +762,16 @@ public final class GameClientHttpServer implements AutoCloseable {
             exchange.close();
             return;
         }
+        String returnTo = normalizedAdminReturnPath(
+            queryParameter(
+                exchange.getRequestURI().getRawQuery(),
+                "returnTo"
+            )
+        );
         if (isAdminSession(exchange)) {
             sendJson(exchange, 200, Map.of(
                 "status", "AUTHENTICATED",
-                "redirect", "/admin/index.html"
+                "redirect", returnTo
             ));
             return;
         }
@@ -818,7 +831,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             setAdminSessionCookie(exchange, sessionId);
             sendJson(exchange, 200, Map.of(
                 "status", "APPROVED",
-                "redirect", "/admin/index.html"
+                "redirect", returnTo
             ));
         } catch (java.sql.SQLException error) {
             sendJson(exchange, 500, Map.of(
@@ -1161,6 +1174,24 @@ public final class GameClientHttpServer implements AutoCloseable {
         return null;
     }
 
+    private static String normalizedAdminReturnPath(String value) {
+        if (value == null || value.isBlank()) {
+            return "/admin/index.html";
+        }
+
+        String path = value.trim();
+        if (
+            !path.startsWith("/admin/")
+            || path.startsWith("//")
+            || path.contains("\\")
+            || path.contains("\r")
+            || path.contains("\n")
+        ) {
+            return "/admin/index.html";
+        }
+        return path;
+    }
+
     private static String queryWithoutToken(String rawQuery) {
         if (rawQuery == null || rawQuery.isBlank()) return "";
 
@@ -1185,6 +1216,10 @@ public final class GameClientHttpServer implements AutoCloseable {
         HttpExchange exchange,
         String errorMessage
     ) throws IOException {
+        String returnTo = normalizedAdminReturnPath(
+            exchange.getRequestURI().getPath()
+        );
+        String returnToJs = GSON.toJson(returnTo);
         String error = errorMessage == null || errorMessage.isBlank()
             ? ""
             : "<p class=\"error\">"
@@ -1227,7 +1262,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 """ + error + """
                 <section class="section">
                   <h2>관리자 토큰 입력</h2>
-                  <form method="get" action="/admin/">
+                  <form method="get" action=""" + escapeHtml(returnTo) + """>
                     <input name="token" autocomplete="off" spellcheck="false" required placeholder="관리자 토큰" aria-label="관리자 토큰">
                     <button type="submit">토큰으로 인증</button>
                   </form>
@@ -1252,6 +1287,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 const code = document.getElementById("approvalCode");
                 const status = document.getElementById("approvalStatus");
                 const storageKey = "broadcastingGamePlatform.adminApproval.v1";
+                const returnTo = """ + returnToJs + """;
                 let timer = 0;
 
                 function clearSaved() {
@@ -1274,14 +1310,16 @@ public final class GameClientHttpServer implements AutoCloseable {
                   try {
                     const response = await fetch(
                       "/api/admin/access/status?requestId="
-                        + encodeURIComponent(value.requestId),
+                        + encodeURIComponent(value.requestId)
+                        + "&returnTo="
+                        + encodeURIComponent(returnTo),
                       { cache: "no-store" }
                     );
                     const body = await response.json().catch(() => ({}));
                     if (body.status === "APPROVED" || body.status === "AUTHENTICATED") {
                       clearSaved();
                       status.textContent = "승인되었습니다. 관리자 페이지로 이동합니다.";
-                      window.location.replace(body.redirect || "/admin/index.html");
+                      window.location.replace(body.redirect || returnTo);
                       return;
                     }
                     if (body.status === "EXPIRED" || response.status === 410) {
@@ -1309,13 +1347,17 @@ public final class GameClientHttpServer implements AutoCloseable {
                   button.disabled = true;
                   status.textContent = "승인 코드 생성 중…";
                   try {
-                    const response = await fetch("/api/admin/access/request", {
+                    const response = await fetch(
+                      "/api/admin/access/request?returnTo="
+                        + encodeURIComponent(returnTo),
+                      {
                       method: "POST",
                       headers: { "Accept": "application/json" }
-                    });
+                      }
+                    );
                     const body = await response.json().catch(() => ({}));
                     if (body.status === "AUTHENTICATED") {
-                      window.location.replace(body.redirect || "/admin/index.html");
+                      window.location.replace(body.redirect || returnTo);
                       return;
                     }
                     if (!response.ok) {
