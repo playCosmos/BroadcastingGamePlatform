@@ -320,19 +320,14 @@ public final class DrawingSyncService {
                 expiresAt
             );
 
-            if (persist) {
-                if (database == null) {
-                    throw new IllegalStateException(
-                        "persistent drawing database is unavailable"
-                    );
-                }
-                if (!persistNewState(state)) {
-                    continue;
-                }
+            boolean shouldPersist =
+                persist && database != null;
+            if (shouldPersist && !persistNewState(state)) {
+                continue;
             }
 
             if (states.putIfAbsent(code, state) != null) {
-                if (persist) deletePersistedState(roundId);
+                if (shouldPersist) deletePersistedState(roundId);
                 continue;
             }
             if (roundId != null) {
