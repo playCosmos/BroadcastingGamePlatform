@@ -60,7 +60,28 @@ public final class PlatformServerMain {
         );
         roomService.terminateExpiredRooms();
 
-        var drawingSync = new DrawingSyncService();
+        var drawingSync = new DrawingSyncService(database);
+        var drawingRepository = new DrawingGuessRepository(database);
+        var drawingGame = new DrawingGuessGameService(
+            drawingRepository,
+            drawingSync
+        );
+        var drawingRecovery = drawingGame.recoverAfterRestart();
+        if (
+            drawingRecovery.activeRounds() > 0
+            || drawingRecovery.expiredRounds() > 0
+        ) {
+            System.out.println(
+                "[drawing-guess] recovery active="
+                    + drawingRecovery.activeRounds()
+                    + " restoredCanvas="
+                    + drawingRecovery.restoredCanvasSessions()
+                    + " recreatedCanvas="
+                    + drawingRecovery.recreatedCanvasSessions()
+                    + " expiredRounds="
+                    + drawingRecovery.expiredRounds()
+            );
+        }
 
         var websocket = new BoardGameWebSocketServer(
             config.server().clientHost(),
@@ -109,6 +130,23 @@ public final class PlatformServerMain {
                 System.err.println("[board-room] expiry scan failed: " + error.getMessage());
             }
         }, 1, 1, TimeUnit.MINUTES);
+
+        lifecycleExecutor.scheduleAtFixedRate(() -> {
+            try {
+                int expired = drawingGame.expireTimedOutRounds();
+                if (expired > 0) {
+                    System.out.println(
+                        "[drawing-guess] auto-completed expired rounds="
+                            + expired
+                    );
+                }
+            } catch (Exception error) {
+                System.err.println(
+                    "[drawing-guess] expiry scan failed: "
+                        + error.getMessage()
+                );
+            }
+        }, 1, 1, TimeUnit.SECONDS);
 
         var roomHttp = new RoomHttpHandler(roomService, runtime);
 
@@ -160,11 +198,6 @@ public final class PlatformServerMain {
         );
 
         var viewerDraw = new ViewerDrawService(database);
-        var drawingRepository = new DrawingGuessRepository(database);
-        var drawingGame = new DrawingGuessGameService(
-            drawingRepository,
-            drawingSync
-        );
         var drawingChatSubscription = platformEvents.subscribe(
             ChatMessageEvent.class,
             chat -> {
