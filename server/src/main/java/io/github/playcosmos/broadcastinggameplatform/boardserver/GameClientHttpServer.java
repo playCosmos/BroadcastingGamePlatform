@@ -295,6 +295,18 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "name", "보드게임",
                     "status", "AVAILABLE",
                     "adminPath", "/admin/games/board/"
+                ),
+                Map.of(
+                    "id", "yacht",
+                    "name", "Yacht",
+                    "status", "PLANNED",
+                    "adminPath", "/admin/games/yacht/"
+                ),
+                Map.of(
+                    "id", "drawing_guess",
+                    "name", "Drawing Guess",
+                    "status", "PROTOTYPE",
+                    "adminPath", "/admin/games/drawing-guess/"
                 )
             ),
             "tools", java.util.List.of(
