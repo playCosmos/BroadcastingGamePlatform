@@ -24,13 +24,14 @@
 - Provider: CHZZK (추후)
 - Game Module: Board (현재)
 - Game Module: Yacht (계획, Yahtzee 계열)
+- Game Module: Drawing Guess (계획, HTML5 Canvas 기반)
 - 추가 게임: 게임별 독립 모듈로 확장
 
 보드게임은 플랫폼의 첫 게임일 뿐이며, SOOP 연결 코드나 플랫폼 인증/HTTP/API 생명주기를 게임 모듈 안에 중복 구현하지 않습니다.
 
 자세한 구조는 `docs/ARCHITECTURE.md`를 참고합니다.
 
-Yacht 계획은 `docs/games/YACHT.md`를 기준 문서로 사용합니다.
+Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWING_GUESS.md`를 기준 문서로 사용합니다.
 
 ## 현재 웹 흐름
 
