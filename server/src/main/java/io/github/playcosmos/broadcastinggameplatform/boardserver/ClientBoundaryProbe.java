@@ -2,8 +2,12 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import com.google.gson.JsonParser;
 import com.sun.net.httpserver.HttpServer;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
+import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawService;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.URI;
@@ -137,12 +141,18 @@ public final class ClientBoundaryProbe {
             );
 
             var adminAuthStore = new AdminAuthStore(database);
+            var viewerDraw = new ViewerDrawService(database);
+            var drawingSync = new DrawingSyncService();
             server = new GameClientHttpServer(
                 config,
                 root,
                 rooms,
                 runtime,
-                adminAuthStore
+                adminAuthStore,
+                new PlatformEventBus(),
+                new ProviderRegistry(),
+                viewerDraw,
+                drawingSync
             );
             server.start();
             require(
@@ -368,6 +378,37 @@ public final class ClientBoundaryProbe {
                 "room mutation must require admin session"
             );
 
+            var unauthenticatedViewerDraw = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/tools/viewer-draw/sessions")
+                )
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"mode\":\"NUMBER\",\"config\":{\"maxNumber\":45,\"drawCount\":7}}"
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                unauthenticatedViewerDraw.statusCode() == 401,
+                "viewer draw creation must require admin session"
+            );
+
+            var unauthenticatedDrawingSession = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/prototype/session"
+                    )
+                )
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                unauthenticatedDrawingSession.statusCode() == 401,
+                "drawing sync creation must require admin session"
+            );
+
             URI bootstrapUri = URI.create(server.adminBootstrapUrl());
             var bootstrapResponse = client.send(
                 HttpRequest.newBuilder(
@@ -483,6 +524,145 @@ public final class ClientBoundaryProbe {
                         "\"proxied\":true"
                     ),
                 "authenticated mutation must proxy to local admin"
+            );
+
+            var viewerDrawCreate = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/tools/viewer-draw/sessions")
+                )
+                .header("Cookie", sessionCookie)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"name\":\"Boundary Number Draw\",\"mode\":\"NUMBER\","
+                        + "\"entries\":[],\"config\":{\"maxNumber\":45,\"drawCount\":7}}"
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                viewerDrawCreate.statusCode() == 201,
+                "authenticated viewer draw session must be created"
+            );
+            var viewerDrawJson = JsonParser.parseString(
+                viewerDrawCreate.body()
+            ).getAsJsonObject();
+            String viewerDrawId = viewerDrawJson
+                .get("sessionId")
+                .getAsString();
+            String viewerDrawCode = viewerDrawJson
+                .get("publicCode")
+                .getAsString();
+            require(
+                viewerDrawCode.matches("[A-HJ-NP-Z2-9]{6}"),
+                "viewer draw public code must be six characters"
+            );
+
+            var viewerDrawFreeze = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/sessions/"
+                            + viewerDrawId + "/freeze"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                viewerDrawFreeze.statusCode() == 200
+                    && viewerDrawFreeze.body().contains(
+                        "\"state\":\"FROZEN\""
+                    ),
+                "viewer draw must freeze before execution"
+            );
+
+            var viewerDrawStart = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/sessions/"
+                            + viewerDrawId + "/start"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                viewerDrawStart.statusCode() == 200
+                    && viewerDrawStart.body().contains(
+                        "\"state\":\"COMPLETED\""
+                    )
+                    && viewerDrawStart.body().contains(
+                        "\"numbers\""
+                    ),
+                "number draw must complete through authenticated API"
+            );
+
+            var viewerDrawPublic = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/public/"
+                            + viewerDrawCode
+                    )
+                ).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                viewerDrawPublic.statusCode() == 200
+                    && viewerDrawPublic.body().contains(
+                        "\"publicCode\":\"" + viewerDrawCode + "\""
+                    )
+                    && viewerDrawPublic.body().contains(
+                        "\"result\""
+                    ),
+                "viewer draw public code must expose read-only result"
+            );
+
+            var drawingSessionCreate = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/prototype/session"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .POST(HttpRequest.BodyPublishers.noBody())
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingSessionCreate.statusCode() == 201,
+                "authenticated drawing sync session must be created"
+            );
+            var drawingSessionJson = JsonParser.parseString(
+                drawingSessionCreate.body()
+            ).getAsJsonObject();
+            String drawingCode = drawingSessionJson
+                .get("drawingCode")
+                .getAsString();
+            require(
+                drawingSessionJson.has("drawerToken")
+                    && drawingCode.matches("[A-HJ-NP-Z2-9]{6}"),
+                "private drawing session must return drawer token and code"
+            );
+
+            var drawingPublic = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/games/drawing-guess/prototype/public/"
+                            + drawingCode
+                    )
+                ).GET().build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                drawingPublic.statusCode() == 200
+                    && drawingPublic.body().contains(
+                        "\"drawingCode\":\"" + drawingCode + "\""
+                    )
+                    && !drawingPublic.body().contains("drawerToken"),
+                "public drawing session must never expose drawer token"
             );
 
             String bootstrapBeforeRestart =
