@@ -947,6 +947,25 @@ public final class DrawingGuessRepository {
         }
     }
 
+    public RoundPrivate findLatestCompletedRoundByMatch(
+        String matchId
+    ) throws SQLException {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT round_id
+                 FROM drawing_guess_round
+                 WHERE match_id = ? AND state = 'COMPLETED'
+                 ORDER BY round_index DESC
+                 LIMIT 1
+                 """)) {
+            statement.setString(1, matchId);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) return null;
+                return findRoundPrivate(rows.getString(1));
+            }
+        }
+    }
+
     public Match findMatch(String matchId) throws SQLException {
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
