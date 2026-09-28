@@ -57,7 +57,7 @@ public final class ServerManagementProbe {
                     ""
                 ),
                 new BoardServerConfig.Storage(
-                    "./data/board-game.db",
+                    "./data/platform.db",
                     "./web",
                     "./logs"
                 ),
@@ -65,7 +65,7 @@ public final class ServerManagementProbe {
             ).normalized();
 
             var database = new BoardGameDatabase(
-                root.resolve("data/board-game.db")
+                root.resolve("data/platform.db")
             );
             database.initialize();
 
@@ -193,12 +193,12 @@ public final class ServerManagementProbe {
                 "pending admin approval count missing"
             );
             require(
-                state.body().contains("\"version\":\"0.8.1\""),
+                state.body().contains("\"version\":\"0.1.0\""),
                 "server version missing"
             );
             require(
                 state.body().contains(
-                    "\"roomAdminUiVersion\":\"0.8.1\""
+                    "\"roomAdminUiVersion\":\"0.1.0\""
                 ),
                 "room admin UI version missing"
             );
