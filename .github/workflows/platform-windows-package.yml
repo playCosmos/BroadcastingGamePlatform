@@ -38,6 +38,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/games/drawing-guess/drawing-guess-overlay.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/tools/viewer-draw/viewer-draw-overlay.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/board-room-admin.js
@@ -65,6 +67,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.RoomProbe
@@ -123,6 +128,9 @@ jobs:
             "web/admin/games/drawing-guess/index.html",
             "web/admin/assets/drawing-guess.css",
             "web/admin/assets/drawing-guess-canvas.js",
+            "web/games/drawing-guess/index.html",
+            "web/games/drawing-guess/drawing-guess-overlay.css",
+            "web/games/drawing-guess/drawing-guess-overlay.js",
             "web/tools/viewer-draw/index.html",
             "web/tools/viewer-draw/viewer-draw-overlay.js",
             "web/admin/games/board/index.html",
