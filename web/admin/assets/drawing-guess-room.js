@@ -91,6 +91,22 @@
     }
   }
 
+  function stableOverlayUrl() {
+    return new URL(
+      "/games/drawing-guess/?roomId="
+        + encodeURIComponent(roomId),
+      window.location.origin
+    ).href;
+  }
+
+  function exposeStableOverlayUrl() {
+    const input = $("drawingOverlayUrl");
+    const copy = $("copyDrawingOverlay");
+    if (!input || !copy || !roomId) return;
+    input.value = stableOverlayUrl();
+    copy.disabled = false;
+  }
+
   function renderRoom() {
     $("roomCode").textContent = room?.roomId || "------";
     $("roomTitle").textContent = room?.name || "Drawing Guess";
@@ -141,6 +157,7 @@
 
     renderScoreboard();
     renderCorrectGuesses();
+    exposeStableOverlayUrl();
   }
 
   async function refreshRoom() {
@@ -228,6 +245,7 @@
       await window.DrawingGuessCanvas.attachSyncSession(
         started.drawingSession
       );
+      exposeStableOverlayUrl();
 
       $("operationStatus").textContent =
         "Round 시작 · OBS Overlay 동기화 연결됨";
