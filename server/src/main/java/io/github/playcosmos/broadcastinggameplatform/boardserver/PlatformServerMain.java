@@ -5,6 +5,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingS
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingGuessGameService;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
@@ -164,6 +165,37 @@ public final class PlatformServerMain {
             drawingRepository,
             drawingSync
         );
+        var drawingChatSubscription = platformEvents.subscribe(
+            ChatMessageEvent.class,
+            chat -> {
+                try {
+                    var result = drawingGame.processChatMessage(chat);
+                    if (
+                        result.correct()
+                        || "AMBIGUOUS_ROOM_BINDING".equals(
+                            result.status()
+                        )
+                    ) {
+                        System.out.println(
+                            "[drawing-guess] chat status="
+                                + result.status()
+                                + " provider=" + chat.provider()
+                                + " user=" + chat.userId()
+                                + " room=" + result.roomId()
+                                + " round=" + result.roundId()
+                                + " rank=" + result.rank()
+                                + " score=" + result.guesserScore()
+                        );
+                    }
+                } catch (Exception error) {
+                    System.err.println(
+                        "[drawing-guess] chat processing failed: "
+                            + error.getMessage()
+                    );
+                }
+            }
+        );
+
         var adminAuthStore = new AdminAuthStore(database);
         var clientHttp = new GameClientHttpServer(
             config,
@@ -234,6 +266,7 @@ public final class PlatformServerMain {
             catch (InterruptedException error) { Thread.currentThread().interrupt(); }
             catch (Exception ignored) {}
             try { boardDonationSubscription.close(); } catch (Exception ignored) {}
+            try { drawingChatSubscription.close(); } catch (Exception ignored) {}
             try { providers.close(); } catch (Exception ignored) {}
             try { fileLog.close(); } catch (Exception ignored) {}
             shutdown.countDown();
