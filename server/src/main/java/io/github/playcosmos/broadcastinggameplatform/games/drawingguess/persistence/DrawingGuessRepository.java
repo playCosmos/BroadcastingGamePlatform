@@ -619,6 +619,21 @@ public final class DrawingGuessRepository {
         );
     }
 
+    public int nextRoundIndex(String matchId)
+        throws SQLException {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT COALESCE(MAX(round_index), -1) + 1
+                 FROM drawing_guess_round
+                 WHERE match_id = ?
+                 """)) {
+            statement.setString(1, matchId);
+            try (var rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : 0;
+            }
+        }
+    }
+
     public Match findActiveMatchByRoom(String roomId)
         throws SQLException {
         try (var connection = database.open();
