@@ -7,8 +7,11 @@
 - D0 Canvas Prototype: **IMPLEMENTED**
 - D1 Canvas Sync: **IMPLEMENTED**
 - D2 Classic Guess Core Foundation: **IMPLEMENTED**
-- D2 Score Policy: PLANNED
-- D3+ Room / Chat / Game Overlay: PLANNED
+- D2 Score Policy: **IMPLEMENTED**
+- D3 Room / Auth / Persistence: **IMPLEMENTED**
+- D4 Chat Integration: **IMPLEMENTED**
+- D5 Overlay / Broadcast UI: **IMPLEMENTED**
+- D6 Qualification / restart recovery: PLANNED
 
 게임 ID: `drawing_guess`
 
@@ -678,21 +681,21 @@ drawing.match.completed
 - STREAMER_DRAWER
 - ROTATING_DRAWER
 
-### D3 — Room / Auth
+### D3 — Room / Auth — IMPLEMENTED
 
 - 6자리 Room Code
 - Private Drawer 권한
 - Public Overlay
 - 정답 데이터 분리
 
-### D4 — Chat Integration
+### D4 — Chat Integration — IMPLEMENTED
 
 - SOOP ChatMessageEvent
 - 현재 룸/라운드 정답 판정
 - 중복 채팅 방지
 - Provider + userId 참가자 식별
 
-### D5 — Overlay / Broadcast UI
+### D5 — Overlay / Broadcast UI — IMPLEMENTED
 
 - OBS Overlay
 - 타이머
@@ -730,3 +733,56 @@ drawing.match.completed
 - 게임 서버가 룸/권한/event sequence를 관리
 - 정답 판정은 서버에서 수행
 
+
+
+## 19. 현재 구현된 Classic Guess 운영 흐름
+
+현재 구현은 다음 흐름으로 실제 동작한다.
+
+```text
+Drawing Guess 룸 생성
+→ STREAMER_DRAWER / ROTATING_DRAWER 선택
+→ FAST_GUESS / RANKED / NO_SCORE 선택
+→ 선택적으로 SOOP 채팅 정답 활성화
+→ Match 시작
+→ 관리자 Private View에서 제시어 입력
+→ Round 시작
+→ Round 전용 Drawer Token 발급
+→ HTML5 Canvas stroke 전송
+→ OBS는 roomId 고정 URL로 현재 drawingCode 자동 추적
+→ SOOP ChatMessageEvent 정답 판정
+→ 정답자 자동 등록/점수 반영
+→ Round 종료
+→ Drawer Token 폐기
+→ OBS에서 정답 공개
+→ 다음 Round
+```
+
+### 채팅 참가자 정책
+
+- 채팅 정답 기능은 룸별 선택 옵션이다.
+- STREAMER_DRAWER는 사전 참가자 0명으로 생성 가능하다.
+- 오답 채팅은 참가자로 등록하지 않는다.
+- 최초 정답 시 Provider + userId 기준으로 동적 참가자로 등록한다.
+- 동적 채팅 참가자는 `can_draw=false`이며 ROTATING_DRAWER 순서에 들어가지 않는다.
+- 현재 출제자가 연결된 Provider 계정으로 정답을 제출하면 무시한다.
+- 동일 Provider/채널에 여러 활성 룸이 동시에 매칭되면 중복 득점을 피하기 위해 fail-closed 처리한다.
+
+### 공개 Overlay 보안
+
+진행 중 Public Room/Overlay에는 다음을 전송하지 않는다.
+
+- answer
+- acceptedAnswers
+- drawerToken
+- Provider userId
+
+Round가 완료되고 다음 Round가 아직 시작되지 않은 동안에만 대표 정답 `answer`를 공개 Reveal 데이터로 제공한다.
+
+OBS URL은 라운드별 drawingCode가 아니라 다음 형태의 고정 URL을 사용한다.
+
+```text
+/games/drawing-guess/?roomId=XXXXXX
+```
+
+Overlay가 Public Room 상태에서 현재 drawingCode를 확인해 WebSocket 채널을 자동 전환한다.
