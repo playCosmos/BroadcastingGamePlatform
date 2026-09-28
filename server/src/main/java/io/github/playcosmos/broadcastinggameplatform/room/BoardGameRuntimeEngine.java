@@ -986,7 +986,7 @@ public final class BoardGameRuntimeEngine {
                 var player = room.config().players().get(i);
                 statement.setString(1, room.roomId());
                 statement.setInt(2, i);
-                statement.setString(3, player.provider());
+                statement.setString(3, normalizedProvider(player.provider()));
                 statement.setString(4, player.soopId());
                 statement.setString(5, now);
                 statement.addBatch();
@@ -1550,6 +1550,12 @@ public final class BoardGameRuntimeEngine {
         }
     }
 
+    private static String normalizedProvider(String value) {
+        return value == null || value.isBlank()
+            ? "SOOP"
+            : value.trim().toUpperCase(java.util.Locale.ROOT);
+    }
+
     private static String shortUuid() {
         return UUID.randomUUID().toString().replace("-", "").substring(0, 8);
     }
@@ -1627,7 +1633,7 @@ public final class BoardGameRuntimeEngine {
         ) {
             this.roomId = roomId;
             this.playerIndex = playerIndex;
-            this.providerId = providerId == null ? "SOOP" : providerId;
+            this.providerId = normalizedProvider(providerId);
             this.soopId = soopId;
             this.displayName = displayName;
             this.position = position;
