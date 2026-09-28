@@ -32,6 +32,12 @@ jobs:
         run: |
           node --check web/admin/assets/platform-admin.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/viewer-draw-number.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/viewer-draw.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/tools/viewer-draw/viewer-draw-overlay.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/board-room-admin.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/board-room-operation.js
@@ -54,6 +60,9 @@ jobs:
           $jar = "target/broadcasting-game-platform-server-0.1.0-SNAPSHOT.jar"
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.RoomProbe
@@ -105,6 +114,12 @@ jobs:
             "web/assets/platform.css",
             "web/admin/index.html",
             "web/admin/assets/platform-admin.js",
+            "web/admin/assets/viewer-draw.css",
+            "web/admin/assets/viewer-draw-number.js",
+            "web/admin/assets/viewer-draw.js",
+            "web/admin/tools/viewer-draw/index.html",
+            "web/tools/viewer-draw/index.html",
+            "web/tools/viewer-draw/viewer-draw-overlay.js",
             "web/admin/games/board/index.html",
             "web/admin/games/board/room.html",
             "web/admin/assets/board-room-admin.js",
