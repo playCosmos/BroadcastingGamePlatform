@@ -430,18 +430,37 @@
     try { socket?.close(1000, "page unload"); } catch {}
   }, { once: true });
 
+  function resetLocalCanvas() {
+    strokes = [];
+    redoStack = [];
+    activeStroke = null;
+    activePointerId = null;
+    pendingPoints = [];
+    window.clearTimeout(pointFlushTimer);
+    pointFlushTimer = 0;
+    renderAll();
+  }
+
+  function detachSyncSession() {
+    syncSession = null;
+    window.clearTimeout(reconnectTimer);
+    reconnectTimer = 0;
+    closingForReplacement = true;
+    try { socket?.close(1000, "round complete"); } catch {}
+    socket = null;
+    drawingCode.textContent = "------";
+    syncStatus.textContent = "OFF";
+    overlayUrl.value = "";
+    copyOverlay.disabled = true;
+  }
+
   window.DrawingGuessCanvas = {
     attachSyncSession,
+    resetLocal: resetLocalCanvas,
+    detachSyncSession,
     clear() {
-      strokes = [];
-      redoStack = [];
-      activeStroke = null;
-      activePointerId = null;
-      pendingPoints = [];
-      window.clearTimeout(pointFlushTimer);
-      pointFlushTimer = 0;
+      resetLocalCanvas();
       sendSync("canvas.clear");
-      renderAll();
     },
     syncStatus() {
       return syncStatus.textContent;
