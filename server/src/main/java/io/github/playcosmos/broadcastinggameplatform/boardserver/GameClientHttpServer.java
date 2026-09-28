@@ -36,7 +36,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
     private static final Base64.Encoder TOKEN_ENCODER =
         Base64.getUrlEncoder().withoutPadding();
-    private static final String SESSION_COOKIE = "RAMYANI_ADMIN_SESSION";
+    private static final String SESSION_COOKIE = "BGP_ADMIN_SESSION";
     private static final Duration SESSION_TTL = Duration.ofHours(12);
     private static final Duration APPROVAL_TTL = Duration.ofMinutes(10);
     private static final int MAX_PENDING_APPROVALS = 32;
@@ -138,7 +138,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     public void start() {
         server.start();
         System.out.println(
-            "[game-client-http] listening on http://"
+            "[platform-public-http] listening on http://"
                 + server.getAddress().getHostString()
                 + ":" + server.getAddress().getPort()
         );
