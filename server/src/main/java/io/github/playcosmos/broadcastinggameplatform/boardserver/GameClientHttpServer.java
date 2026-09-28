@@ -4,6 +4,11 @@ import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.ClassicScorePolicy;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingGuessGameService;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.DrawerPolicy;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.ScoreProfile;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
@@ -59,6 +64,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final ProviderRegistry providers;
     private final ViewerDrawService viewerDraw;
     private final DrawingSyncService drawingSync;
+    private final DrawingGuessGameService drawingGame;
     private final AtomicReference<String> adminBootstrapToken;
 
     public GameClientHttpServer(
@@ -134,6 +140,32 @@ public final class GameClientHttpServer implements AutoCloseable {
         ViewerDrawService viewerDraw,
         DrawingSyncService drawingSync
     ) throws IOException {
+        this(
+            config,
+            workingDirectory,
+            rooms,
+            runtime,
+            adminAuthStore,
+            platformEvents,
+            providers,
+            viewerDraw,
+            drawingSync,
+            null
+        );
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config,
+        Path workingDirectory,
+        RoomService rooms,
+        BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore,
+        PlatformEventBus platformEvents,
+        ProviderRegistry providers,
+        ViewerDrawService viewerDraw,
+        DrawingSyncService drawingSync,
+        DrawingGuessGameService drawingGame
+    ) throws IOException {
         var normalized = config.normalized();
         this.config = normalized;
         this.webRoot = resolveWebRoot(
@@ -147,6 +179,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.providers = providers;
         this.viewerDraw = viewerDraw;
         this.drawingSync = drawingSync;
+        this.drawingGame = drawingGame;
         try {
             this.adminBootstrapToken = new AtomicReference<>(
                 adminAuthStore.bootstrapTokenOrCreate(
@@ -182,6 +215,10 @@ public final class GameClientHttpServer implements AutoCloseable {
         server.createContext(
             "/api/v1/games/drawing-guess/prototype",
             this::drawingGuessPrototypeApi
+        );
+        server.createContext(
+            "/api/v1/games/drawing-guess",
+            this::drawingGuessGameApi
         );
         server.createContext("/api/client/config", this::clientConfig);
         server.createContext("/api/state", this::proxyAdminState);
@@ -420,6 +457,388 @@ public final class GameClientHttpServer implements AutoCloseable {
         sendJson(exchange, 200, Map.of(
             "events", platformEvents.recent(limit)
         ));
+    }
+
+    private record DrawingParticipantRequest(
+        String participantId,
+        String provider,
+        String userId,
+        String displayName
+    ) {}
+
+    private record DrawingRoomCreateRequest(
+        String name,
+        String drawerPolicy,
+        String streamerParticipantId,
+        String scoreProfile,
+        Integer maxGuessPoints,
+        Integer minGuessPoints,
+        Integer rankPenaltyPoints,
+        Integer drawerPointsPerCorrect,
+        Integer roundDurationSeconds,
+        List<DrawingParticipantRequest> participants
+    ) {}
+
+    private record DrawingMatchStartRequest(
+        Integer totalRounds
+    ) {}
+
+    private record DrawingRoundStartRequest(
+        String promptId,
+        String answer,
+        List<String> acceptedAnswers
+    ) {}
+
+    private void drawingGuessGameApi(
+        HttpExchange exchange
+    ) throws IOException {
+        if (drawingGame == null) {
+            sendJson(exchange, 503, Map.of(
+                "error", "drawing guess game service is unavailable"
+            ));
+            return;
+        }
+
+        String path = exchange.getRequestURI().getPath();
+        String publicPrefix = "/api/v1/games/drawing-guess/public/";
+        if (path != null && path.startsWith(publicPrefix)) {
+            corsPublic(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            if (!requireGetOrHead(exchange)) return;
+
+            String roomId = path.substring(publicPrefix.length())
+                .trim()
+                .toUpperCase(Locale.ROOT);
+            if (roomId.length() != 6 || roomId.contains("/")) {
+                sendJson(exchange, 404, Map.of(
+                    "error", "drawing guess room not found"
+                ));
+                return;
+            }
+
+            try {
+                sendJson(
+                    exchange,
+                    200,
+                    drawingGame.publicRoom(roomId)
+                );
+            } catch (java.util.NoSuchElementException error) {
+                sendJson(exchange, 404, Map.of(
+                    "error", "drawing guess room not found"
+                ));
+            } catch (Exception error) {
+                sendJson(exchange, 400, Map.of(
+                    "error", safeMessage(error)
+                ));
+            }
+            return;
+        }
+
+        if (!isAdminSession(exchange)) {
+            sendJson(exchange, 401, Map.of(
+                "error", "administrator authentication required"
+            ));
+            return;
+        }
+
+        try {
+            String roomsBase = "/api/v1/games/drawing-guess/rooms";
+            String matchesBase = "/api/v1/games/drawing-guess/matches";
+            String roundsBase = "/api/v1/games/drawing-guess/rounds";
+
+            if (roomsBase.equals(path)) {
+                if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    exchange.sendResponseHeaders(405, -1);
+                    exchange.close();
+                    return;
+                }
+
+                var request = readJson(
+                    exchange,
+                    DrawingRoomCreateRequest.class
+                );
+                var defaults = ClassicScorePolicy.Config.defaults();
+                ScoreProfile scoreProfile = enumValue(
+                    ScoreProfile.class,
+                    request.scoreProfile(),
+                    defaults.profile()
+                );
+                DrawerPolicy drawerPolicy = enumValue(
+                    DrawerPolicy.class,
+                    request.drawerPolicy(),
+                    DrawerPolicy.ROTATING_DRAWER
+                );
+                var scoreConfig = new ClassicScorePolicy.Config(
+                    scoreProfile,
+                    positiveOrDefault(
+                        request.maxGuessPoints(),
+                        defaults.maxGuessPoints()
+                    ),
+                    nonNegativeOrDefault(
+                        request.minGuessPoints(),
+                        defaults.minGuessPoints()
+                    ),
+                    nonNegativeOrDefault(
+                        request.rankPenaltyPoints(),
+                        defaults.rankPenaltyPoints()
+                    ),
+                    nonNegativeOrDefault(
+                        request.drawerPointsPerCorrect(),
+                        defaults.drawerPointsPerCorrect()
+                    )
+                );
+
+                List<DrawingGuessRepository.ParticipantInput> participants =
+                    request.participants() == null
+                        ? List.of()
+                        : request.participants().stream()
+                            .map(value ->
+                                new DrawingGuessRepository.ParticipantInput(
+                                    value.participantId(),
+                                    value.provider(),
+                                    value.userId(),
+                                    value.displayName()
+                                )
+                            )
+                            .toList();
+
+                var room = drawingGame.createRoom(
+                    new DrawingGuessGameService.CreateRoomCommand(
+                        request.name(),
+                        drawerPolicy,
+                        request.streamerParticipantId(),
+                        scoreConfig,
+                        positiveOrDefault(
+                            request.roundDurationSeconds(),
+                            80
+                        ),
+                        participants
+                    )
+                );
+                sendJson(exchange, 201, room);
+                return;
+            }
+
+            if (path != null && path.startsWith(roomsBase + "/")) {
+                String route = path.substring((roomsBase + "/").length());
+                int slash = route.indexOf('/');
+                String roomId = slash < 0
+                    ? route
+                    : route.substring(0, slash);
+                String action = slash < 0
+                    ? ""
+                    : route.substring(slash + 1);
+
+                if (action.isBlank()) {
+                    if (!requireGetOrHead(exchange)) return;
+                    sendJson(
+                        exchange,
+                        200,
+                        drawingGame.publicRoom(roomId)
+                    );
+                    return;
+                }
+
+                if (
+                    "ready".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    sendJson(
+                        exchange,
+                        200,
+                        drawingGame.markReady(roomId)
+                    );
+                    return;
+                }
+
+                if (
+                    "matches".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    var request = readJson(
+                        exchange,
+                        DrawingMatchStartRequest.class
+                    );
+                    sendJson(
+                        exchange,
+                        201,
+                        drawingGame.startMatch(
+                            roomId,
+                            positiveOrDefault(
+                                request.totalRounds(),
+                                3
+                            )
+                        )
+                    );
+                    return;
+                }
+
+                sendJson(exchange, 404, Map.of(
+                    "error", "route not found"
+                ));
+                return;
+            }
+
+            if (path != null && path.startsWith(matchesBase + "/")) {
+                String route = path.substring((matchesBase + "/").length());
+                int slash = route.indexOf('/');
+                if (slash < 0) {
+                    sendJson(exchange, 404, Map.of(
+                        "error", "route not found"
+                    ));
+                    return;
+                }
+
+                String matchId = route.substring(0, slash);
+                String action = route.substring(slash + 1);
+
+                if (
+                    "rounds".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    var request = readJson(
+                        exchange,
+                        DrawingRoundStartRequest.class
+                    );
+                    sendJson(
+                        exchange,
+                        201,
+                        drawingGame.startRound(
+                            matchId,
+                            new DrawingGuessGameService.StartRoundCommand(
+                                request.promptId(),
+                                request.answer(),
+                                request.acceptedAnswers()
+                            ),
+                            Instant.now()
+                        )
+                    );
+                    return;
+                }
+
+                if (
+                    "complete".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    sendJson(
+                        exchange,
+                        200,
+                        drawingGame.completeMatch(matchId)
+                    );
+                    return;
+                }
+
+                sendJson(exchange, 404, Map.of(
+                    "error", "route not found"
+                ));
+                return;
+            }
+
+            if (path != null && path.startsWith(roundsBase + "/")) {
+                String route = path.substring((roundsBase + "/").length());
+                int slash = route.indexOf('/');
+                if (slash < 0) {
+                    sendJson(exchange, 404, Map.of(
+                        "error", "route not found"
+                    ));
+                    return;
+                }
+
+                String roundId = route.substring(0, slash);
+                String action = route.substring(slash + 1);
+                if (
+                    "complete".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    sendJson(
+                        exchange,
+                        200,
+                        drawingGame.completeRound(roundId)
+                    );
+                    return;
+                }
+            }
+
+            sendJson(exchange, 404, Map.of(
+                "error", "route not found"
+            ));
+        } catch (java.util.NoSuchElementException error) {
+            sendJson(exchange, 404, Map.of(
+                "error", safeMessage(error)
+            ));
+        } catch (Exception error) {
+            sendJson(exchange, 400, Map.of(
+                "error", safeMessage(error)
+            ));
+        }
+    }
+
+    private <T> T readJson(
+        HttpExchange exchange,
+        Class<T> type
+    ) throws IOException {
+        byte[] body = exchange.getRequestBody().readNBytes(
+            MAX_PROXY_BODY_BYTES + 1
+        );
+        if (body.length > MAX_PROXY_BODY_BYTES) {
+            throw new IllegalArgumentException(
+                "request body too large"
+            );
+        }
+        T value = GSON.fromJson(
+            new String(body, StandardCharsets.UTF_8),
+            type
+        );
+        if (value == null) {
+            throw new IllegalArgumentException(
+                "JSON body is required"
+            );
+        }
+        return value;
+    }
+
+    private static int positiveOrDefault(
+        Integer value,
+        int fallback
+    ) {
+        return value == null || value <= 0
+            ? fallback
+            : value;
+    }
+
+    private static int nonNegativeOrDefault(
+        Integer value,
+        int fallback
+    ) {
+        return value == null || value < 0
+            ? fallback
+            : value;
+    }
+
+    private static <E extends Enum<E>> E enumValue(
+        Class<E> type,
+        String value,
+        E fallback
+    ) {
+        if (value == null || value.isBlank()) return fallback;
+        return Enum.valueOf(
+            type,
+            value.trim().toUpperCase(Locale.ROOT)
+        );
     }
 
     private void drawingGuessPrototypeApi(
