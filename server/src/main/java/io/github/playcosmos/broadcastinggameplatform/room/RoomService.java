@@ -157,6 +157,7 @@ public final class RoomService {
                     displayName = player.soopId();
                 }
                 return new PlayerConfig(
+                    player.provider(),
                     player.soopId(),
                     displayName,
                     player.profileImageUrl(),
@@ -758,24 +759,25 @@ public final class RoomService {
     ) throws SQLException {
         try (var statement = connection.prepareStatement("""
             INSERT INTO board_room_player(
-                room_id, player_index, soop_id, display_name,
+                room_id, player_index, provider_id, soop_id, display_name,
                 profile_image_url, balloon_trigger,
                 live_status, live_bno, live_title, live_checked_at, live_check_error
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """)) {
             for (int i = 0; i < players.size(); i++) {
                 var player = players.get(i);
                 statement.setString(1, roomId);
                 statement.setInt(2, i);
-                statement.setString(3, player.soopId());
-                statement.setString(4, player.displayName());
-                statement.setString(5, player.profileImageUrl());
-                statement.setInt(6, player.balloonTrigger());
-                statement.setString(7, player.live() == null ? "NOT_CHECKED" : player.live().status());
-                statement.setString(8, player.live() == null ? null : player.live().bno());
-                statement.setString(9, player.live() == null ? null : player.live().title());
-                statement.setString(10, player.live() == null ? null : player.live().checkedAt());
-                statement.setString(11, player.live() == null ? null : player.live().error());
+                statement.setString(3, player.provider());
+                statement.setString(4, player.soopId());
+                statement.setString(5, player.displayName());
+                statement.setString(6, player.profileImageUrl());
+                statement.setInt(7, player.balloonTrigger());
+                statement.setString(8, player.live() == null ? "NOT_CHECKED" : player.live().status());
+                statement.setString(9, player.live() == null ? null : player.live().bno());
+                statement.setString(10, player.live() == null ? null : player.live().title());
+                statement.setString(11, player.live() == null ? null : player.live().checkedAt());
+                statement.setString(12, player.live() == null ? null : player.live().error());
                 statement.addBatch();
             }
             statement.executeBatch();
@@ -792,7 +794,7 @@ public final class RoomService {
         }
 
         var normalized = new ArrayList<PlayerConfig>();
-        var soopIds = new HashSet<String>();
+        var providerUsers = new HashSet<String>();
 
         for (int i = 0; i < Math.min(players.size(), MAX_PLAYERS); i++) {
             var player = players.get(i);
@@ -802,11 +804,23 @@ public final class RoomService {
                 continue;
             }
 
+            String provider = normalizeText(player.provider(), "SOOP").toUpperCase();
+            if (!Set.of("SOOP").contains(provider)) {
+                errors.add(new ValidationError(
+                    prefix + ".provider",
+                    "provider is not supported yet: " + provider
+                ));
+            }
+
             String soopId = normalizeText(player.soopId(), "");
+            String providerUserKey = provider + "\u0000" + soopId;
             if (soopId.isBlank()) {
-                errors.add(new ValidationError(prefix + ".soopId", "SOOP id is required"));
-            } else if (!soopIds.add(soopId)) {
-                errors.add(new ValidationError(prefix + ".soopId", "SOOP id must be unique in room"));
+                errors.add(new ValidationError(prefix + ".soopId", "broadcast user id is required"));
+            } else if (!providerUsers.add(providerUserKey)) {
+                errors.add(new ValidationError(
+                    prefix + ".soopId",
+                    "broadcast user id must be unique per provider in room"
+                ));
             }
 
             if (player.balloonTrigger() <= 0) {
@@ -814,6 +828,7 @@ public final class RoomService {
             }
 
             normalized.add(new PlayerConfig(
+                provider,
                 soopId,
                 normalizeText(player.displayName(), ""),
                 blankToNull(player.profileImageUrl()),
