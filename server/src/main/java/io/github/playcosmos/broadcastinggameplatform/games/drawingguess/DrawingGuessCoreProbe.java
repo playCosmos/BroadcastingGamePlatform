@@ -1,11 +1,13 @@
 package io.github.playcosmos.broadcastinggameplatform.games.drawingguess;
 
 import com.google.gson.Gson;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.ClassicScorePolicy;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawerSelector;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.GuessJudge;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.ClassicGuessRound;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.DrawerPolicy;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.DrawingPrompt;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.ScoreProfile;
 import java.time.Instant;
 import java.util.List;
 
@@ -77,6 +79,10 @@ public final class DrawingGuessCoreProbe {
             first.correct() && first.correctRank() == 1,
             "first correct rank mismatch"
         );
+        require(
+            first.guesserScore() > 0 && first.drawerScore() > 0,
+            "default score policy must award first correct guess"
+        );
 
         var duplicate = round.submitGuess(
             "p2",
@@ -116,6 +122,61 @@ public final class DrawingGuessCoreProbe {
             privateJson.contains("프라이팬")
                 && privateJson.contains("후라이팬"),
             "private snapshot must contain answer data"
+        );
+
+        var scorePolicy = new ClassicScorePolicy(
+            new ClassicScorePolicy.Config(
+                ScoreProfile.FAST_GUESS,
+                500,
+                100,
+                25,
+                50
+            )
+        );
+        var earlyScore = scorePolicy.score(
+            new io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingScorePolicy.ScoreContext(
+                java.time.Duration.ofSeconds(60),
+                java.time.Duration.ofSeconds(5),
+                1,
+                4
+            )
+        );
+        var lateScore = scorePolicy.score(
+            new io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingScorePolicy.ScoreContext(
+                java.time.Duration.ofSeconds(60),
+                java.time.Duration.ofSeconds(55),
+                1,
+                4
+            )
+        );
+        require(
+            earlyScore.guesserPoints() > lateScore.guesserPoints(),
+            "FAST_GUESS must reward earlier correct guesses"
+        );
+        require(
+            earlyScore.drawerPoints() == 50,
+            "drawer score increment mismatch"
+        );
+
+        var noScore = new ClassicScorePolicy(
+            new ClassicScorePolicy.Config(
+                ScoreProfile.NO_SCORE,
+                500,
+                100,
+                25,
+                50
+            )
+        ).score(
+            new io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingScorePolicy.ScoreContext(
+                java.time.Duration.ofSeconds(60),
+                java.time.Duration.ofSeconds(5),
+                1,
+                4
+            )
+        );
+        require(
+            noScore.guesserPoints() == 0 && noScore.drawerPoints() == 0,
+            "NO_SCORE profile must award zero points"
         );
 
         var streamer = new DrawerSelector(
