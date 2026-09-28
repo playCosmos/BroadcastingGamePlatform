@@ -768,6 +768,21 @@ public final class GameClientHttpServer implements AutoCloseable {
 
                 String roundId = route.substring(0, slash);
                 String action = route.substring(slash + 1);
+
+                if (
+                    "drawer-recovery".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    sendJson(
+                        exchange,
+                        200,
+                        drawingGame.recoverDrawerRound(roundId)
+                    );
+                    return;
+                }
+
                 if (
                     "complete".equals(action)
                     && "POST".equalsIgnoreCase(
