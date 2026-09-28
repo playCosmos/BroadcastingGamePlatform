@@ -2,6 +2,8 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import com.google.gson.Gson;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingGuessGameService;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
@@ -157,6 +159,11 @@ public final class PlatformServerMain {
         );
 
         var viewerDraw = new ViewerDrawService(database);
+        var drawingRepository = new DrawingGuessRepository(database);
+        var drawingGame = new DrawingGuessGameService(
+            drawingRepository,
+            drawingSync
+        );
         var adminAuthStore = new AdminAuthStore(database);
         var clientHttp = new GameClientHttpServer(
             config,
@@ -167,7 +174,8 @@ public final class PlatformServerMain {
             platformEvents,
             providers,
             viewerDraw,
-            drawingSync
+            drawingSync,
+            drawingGame
         );
         var http = new BoardGameHttpServer(
             config,
