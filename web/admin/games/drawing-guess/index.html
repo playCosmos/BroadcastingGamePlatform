@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>방송 게임 플랫폼 · Drawing Guess Canvas Prototype</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/admin/assets/drawing-guess.css">
+</head>
+<body>
+  <main class="shell drawing-admin">
+    <header class="hero compact">
+      <p class="eyebrow">DRAWING GUESS / D0 CANVAS PROTOTYPE</p>
+      <h1>Drawing Guess</h1>
+      <p class="lead">HTML5 Canvas + Pointer Events 기반 그림 입력 프로토타입입니다. 현재 단계는 서버 동기화 전 로컬 Canvas 기능 검증입니다.</p>
+      <div class="hero-actions">
+        <a class="secondary" href="/admin/">← 운영자 홈</a>
+      </div>
+    </header>
+
+    <section class="drawing-layout">
+      <aside class="tool-panel">
+        <div class="tool-section">
+          <span class="tool-label">도구</span>
+          <div class="tool-grid">
+            <button class="tool-button active" type="button" data-tool="pen">Pen</button>
+            <button class="tool-button" type="button" data-tool="eraser">Eraser</button>
+          </div>
+        </div>
+
+        <label class="tool-section">
+          <span class="tool-label">색상</span>
+          <div class="color-row">
+            <input id="brushColor" type="color" value="#151515">
+            <span id="colorValue">#151515</span>
+          </div>
+        </label>
+
+        <label class="tool-section">
+          <span class="tool-label">브러시 크기 <strong id="brushSizeValue">8</strong></span>
+          <input id="brushSize" type="range" min="2" max="48" value="8">
+        </label>
+
+        <div class="tool-section">
+          <span class="tool-label">편집</span>
+          <div class="tool-grid">
+            <button class="tool-button" id="undoButton" type="button">Undo</button>
+            <button class="tool-button" id="redoButton" type="button">Redo</button>
+            <button class="tool-button danger" id="clearButton" type="button">Clear</button>
+          </div>
+        </div>
+
+        <div class="canvas-stats">
+          <div><span>Strokes</span><strong id="strokeCount">0</strong></div>
+          <div><span>Pointer</span><strong id="pointerType">-</strong></div>
+          <div><span>Canvas</span><strong id="canvasSize">-</strong></div>
+        </div>
+      </aside>
+
+      <section class="canvas-panel">
+        <div class="canvas-head">
+          <div>
+            <p class="eyebrow">HTML5 CANVAS</p>
+            <h2>그림판</h2>
+          </div>
+          <span class="prototype-badge">LOCAL PROTOTYPE</span>
+        </div>
+        <div class="canvas-wrap" id="canvasWrap">
+          <canvas id="drawingCanvas"></canvas>
+        </div>
+        <p class="canvas-help">마우스 · 터치 · 스타일러스 지원. 좌표는 내부적으로 0~1 정규화 값으로 저장되며 창 크기가 바뀌어도 stroke를 다시 렌더링합니다.</p>
+      </section>
+    </section>
+  </main>
+  <script src="/admin/assets/drawing-guess-canvas.js"></script>
+</body>
+</html>
