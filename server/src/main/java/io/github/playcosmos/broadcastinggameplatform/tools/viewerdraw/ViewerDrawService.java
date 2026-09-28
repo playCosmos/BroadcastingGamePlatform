@@ -20,7 +20,7 @@ import java.util.UUID;
 public final class ViewerDrawService {
     private static final Gson GSON = new Gson();
     private static final SecureRandom RANDOM = new SecureRandom();
-    private static final String RNG_ALGORITHM = "SHA1PRNG-compatible SecureRandom / rejection-free Fisher-Yates";
+    private static final String RNG_ALGORITHM = "java.security.SecureRandom + Fisher-Yates";
     private static final int MAX_ENTRIES = 10000;
     private static final int MAX_NUMBER = 999;
     private static final int MAX_NUMBER_DRAW_COUNT = 7;
