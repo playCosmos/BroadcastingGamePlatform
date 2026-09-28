@@ -3,6 +3,7 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
@@ -57,6 +58,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final PlatformEventBus platformEvents;
     private final ProviderRegistry providers;
     private final ViewerDrawService viewerDraw;
+    private final DrawingSyncService drawingSync;
     private final AtomicReference<String> adminBootstrapToken;
 
     public GameClientHttpServer(
@@ -108,6 +110,30 @@ public final class GameClientHttpServer implements AutoCloseable {
         ProviderRegistry providers,
         ViewerDrawService viewerDraw
     ) throws IOException {
+        this(
+            config,
+            workingDirectory,
+            rooms,
+            runtime,
+            adminAuthStore,
+            platformEvents,
+            providers,
+            viewerDraw,
+            null
+        );
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config,
+        Path workingDirectory,
+        RoomService rooms,
+        BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore,
+        PlatformEventBus platformEvents,
+        ProviderRegistry providers,
+        ViewerDrawService viewerDraw,
+        DrawingSyncService drawingSync
+    ) throws IOException {
         var normalized = config.normalized();
         this.config = normalized;
         this.webRoot = resolveWebRoot(
@@ -120,6 +146,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.platformEvents = platformEvents;
         this.providers = providers;
         this.viewerDraw = viewerDraw;
+        this.drawingSync = drawingSync;
         try {
             this.adminBootstrapToken = new AtomicReference<>(
                 adminAuthStore.bootstrapTokenOrCreate(
@@ -152,10 +179,18 @@ public final class GameClientHttpServer implements AutoCloseable {
         server.createContext("/api/v1/providers", this::platformProviders);
         server.createContext("/api/v1/events/recent", this::recentPlatformEvents);
         server.createContext("/api/v1/tools/viewer-draw", this::viewerDrawApi);
+        server.createContext(
+            "/api/v1/games/drawing-guess/prototype",
+            this::drawingGuessPrototypeApi
+        );
         server.createContext("/api/client/config", this::clientConfig);
         server.createContext("/api/state", this::proxyAdminState);
         server.createContext("/api/board/rooms", this::boardRooms);
         server.createContext("/games/board/", this::serveBoardAsset);
+        server.createContext(
+            "/games/drawing-guess/",
+            this::serveDrawingGuessAsset
+        );
         server.createContext("/tools/viewer-draw/", this::serveViewerDrawAsset);
         server.createContext("/assets/", this::servePublicAsset);
         server.createContext("/api/admin/access", this::adminAccess);
@@ -385,6 +420,70 @@ public final class GameClientHttpServer implements AutoCloseable {
         sendJson(exchange, 200, Map.of(
             "events", platformEvents.recent(limit)
         ));
+    }
+
+    private void drawingGuessPrototypeApi(
+        HttpExchange exchange
+    ) throws IOException {
+        if (drawingSync == null) {
+            sendJson(exchange, 503, Map.of(
+                "error", "drawing sync service is unavailable"
+            ));
+            return;
+        }
+
+        String path = exchange.getRequestURI().getPath();
+        String publicPrefix =
+            "/api/v1/games/drawing-guess/prototype/public/";
+
+        if (path != null && path.startsWith(publicPrefix)) {
+            corsPublic(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            if (!requireGetOrHead(exchange)) return;
+
+            String code = path.substring(publicPrefix.length())
+                .trim()
+                .toUpperCase(Locale.ROOT);
+            try {
+                sendJson(exchange, 200, drawingSync.findPublic(code));
+            } catch (java.util.NoSuchElementException error) {
+                sendJson(exchange, 404, Map.of(
+                    "error", "drawing session not found"
+                ));
+            }
+            return;
+        }
+
+        if (!isAdminSession(exchange)) {
+            sendJson(exchange, 401, Map.of(
+                "error", "administrator authentication required"
+            ));
+            return;
+        }
+
+        String createPath =
+            "/api/v1/games/drawing-guess/prototype/session";
+        if (createPath.equals(path)) {
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+                return;
+            }
+            try {
+                sendJson(exchange, 201, drawingSync.createSession());
+            } catch (Exception error) {
+                sendJson(exchange, 500, Map.of(
+                    "error", safeMessage(error)
+                ));
+            }
+            return;
+        }
+
+        sendJson(exchange, 404, Map.of("error", "route not found"));
     }
 
     private record ViewerDrawCreateRequest(
@@ -1146,6 +1245,33 @@ public final class GameClientHttpServer implements AutoCloseable {
         Path allowedRoot = webRoot.resolve("games/board").normalize();
 
         serveFile(exchange, requested, allowedRoot);
+    }
+
+    private void serveDrawingGuessAsset(HttpExchange exchange)
+        throws IOException {
+        if (!requireGetOrHead(exchange)) return;
+        String path = exchange.getRequestURI().getPath();
+        if (
+            path == null
+            || !path.startsWith("/games/drawing-guess/")
+        ) {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+            return;
+        }
+
+        String relative = path.substring(
+            "/games/drawing-guess/".length()
+        );
+        if (relative.isBlank()) relative = "index.html";
+        Path allowedRoot = webRoot
+            .resolve("games/drawing-guess")
+            .normalize();
+        serveFile(
+            exchange,
+            allowedRoot.resolve(relative).normalize(),
+            allowedRoot
+        );
     }
 
     private void serveViewerDrawAsset(HttpExchange exchange)
