@@ -93,6 +93,14 @@ public final class DrawingGuessGameService {
         int score
     ) {}
 
+    public record CompletedRoundReveal(
+        String roundId,
+        int roundIndex,
+        String answer,
+        String completedAt,
+        List<DrawingGuessRepository.CorrectGuessRecord> correctGuesses
+    ) {}
+
     public record PublicRoomSnapshot(
         String roomId,
         String name,
@@ -101,7 +109,9 @@ public final class DrawingGuessGameService {
         int roundDurationSeconds,
         List<PublicParticipant> participants,
         DrawingGuessRepository.Match activeMatch,
-        DrawingGuessRepository.RoundPublic activeRound
+        DrawingGuessRepository.RoundPublic activeRound,
+        String drawingCode,
+        CompletedRoundReveal lastCompletedRound
     ) {}
 
     public DrawingGuessRepository.Room createRoom(
@@ -439,6 +449,8 @@ public final class DrawingGuessGameService {
         var room = repository.findRoom(roomId);
         var match = repository.findActiveMatchByRoom(roomId);
         DrawingGuessRepository.RoundPublic round = null;
+        String drawingCode = null;
+        CompletedRoundReveal lastCompletedRound = null;
         if (match != null) {
             var privateRound = repository.findActiveRoundByMatch(
                 match.matchId()
@@ -447,6 +459,27 @@ public final class DrawingGuessGameService {
                 round = repository.findRoundPublic(
                     privateRound.roundId()
                 );
+                drawingCode = drawingCodeByRound.get(
+                    privateRound.roundId()
+                );
+            } else {
+                var completed = repository
+                    .findLatestCompletedRoundByMatch(
+                        match.matchId()
+                    );
+                if (completed != null) {
+                    var completedPublic = repository.findRoundPublic(
+                        completed.roundId()
+                    );
+                    lastCompletedRound =
+                        new CompletedRoundReveal(
+                            completed.roundId(),
+                            completed.roundIndex(),
+                            completed.prompt().answer(),
+                            completed.completedAt(),
+                            completedPublic.correctGuesses()
+                        );
+                }
             }
         }
 
@@ -467,7 +500,9 @@ public final class DrawingGuessGameService {
             room.roundDurationSeconds(),
             publicParticipants,
             match,
-            round
+            round,
+            drawingCode,
+            lastCompletedRound
         );
     }
 
