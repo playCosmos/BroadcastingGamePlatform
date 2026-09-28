@@ -362,6 +362,17 @@
     }
   }
 
+  window.addEventListener(
+    "drawing-guess-drawer-auth-lost",
+    () => {
+      attachedRoundId = null;
+      if (!activeRound || drawerRecoveryInFlight) return;
+      recoverDrawerIfNeeded().catch((error) => {
+        console.warn("[drawing-room] drawer recovery failed", error);
+      });
+    }
+  );
+
   $("startMatchButton").addEventListener("click", startMatch);
   $("startRoundButton").addEventListener("click", startRound);
   $("completeRoundButton").addEventListener("click", completeRound);
