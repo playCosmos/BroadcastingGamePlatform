@@ -38,6 +38,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/drawing-guess-create.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/drawing-guess-room.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/games/drawing-guess/drawing-guess-overlay.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/tools/viewer-draw/viewer-draw-overlay.js
@@ -132,8 +136,11 @@ jobs:
             "web/admin/assets/viewer-draw.js",
             "web/admin/tools/viewer-draw/index.html",
             "web/admin/games/drawing-guess/index.html",
+            "web/admin/games/drawing-guess/room.html",
             "web/admin/assets/drawing-guess.css",
             "web/admin/assets/drawing-guess-canvas.js",
+            "web/admin/assets/drawing-guess-create.js",
+            "web/admin/assets/drawing-guess-room.js",
             "web/games/drawing-guess/index.html",
             "web/games/drawing-guess/drawing-guess-overlay.css",
             "web/games/drawing-guess/drawing-guess-overlay.js",
