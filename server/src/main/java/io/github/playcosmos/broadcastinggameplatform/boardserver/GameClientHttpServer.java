@@ -7,6 +7,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEve
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
+import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawService;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -26,6 +27,7 @@ import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -54,6 +56,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final AdminAuthStore adminAuthStore;
     private final PlatformEventBus platformEvents;
     private final ProviderRegistry providers;
+    private final ViewerDrawService viewerDraw;
     private final AtomicReference<String> adminBootstrapToken;
 
     public GameClientHttpServer(
@@ -83,6 +86,28 @@ public final class GameClientHttpServer implements AutoCloseable {
         PlatformEventBus platformEvents,
         ProviderRegistry providers
     ) throws IOException {
+        this(
+            config,
+            workingDirectory,
+            rooms,
+            runtime,
+            adminAuthStore,
+            platformEvents,
+            providers,
+            null
+        );
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config,
+        Path workingDirectory,
+        RoomService rooms,
+        BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore,
+        PlatformEventBus platformEvents,
+        ProviderRegistry providers,
+        ViewerDrawService viewerDraw
+    ) throws IOException {
         var normalized = config.normalized();
         this.config = normalized;
         this.webRoot = resolveWebRoot(
@@ -94,6 +119,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.adminAuthStore = adminAuthStore;
         this.platformEvents = platformEvents;
         this.providers = providers;
+        this.viewerDraw = viewerDraw;
         try {
             this.adminBootstrapToken = new AtomicReference<>(
                 adminAuthStore.bootstrapTokenOrCreate(
@@ -125,10 +151,12 @@ public final class GameClientHttpServer implements AutoCloseable {
         server.createContext("/api/v1/platform", this::platformInfo);
         server.createContext("/api/v1/providers", this::platformProviders);
         server.createContext("/api/v1/events/recent", this::recentPlatformEvents);
+        server.createContext("/api/v1/tools/viewer-draw", this::viewerDrawApi);
         server.createContext("/api/client/config", this::clientConfig);
         server.createContext("/api/state", this::proxyAdminState);
         server.createContext("/api/board/rooms", this::boardRooms);
         server.createContext("/games/board/", this::serveBoardAsset);
+        server.createContext("/tools/viewer-draw/", this::serveViewerDrawAsset);
         server.createContext("/assets/", this::servePublicAsset);
         server.createContext("/api/admin/access", this::adminAccess);
         server.createContext("/admin", this::serveAdmin);
@@ -269,6 +297,15 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "adminPath", "/admin/games/board/"
                 )
             ),
+            "tools", java.util.List.of(
+                Map.of(
+                    "id", "viewer_draw",
+                    "name", "시청자 추첨",
+                    "status", "AVAILABLE",
+                    "adminPath", "/admin/tools/viewer-draw/",
+                    "modes", java.util.List.of("RANDOM", "NUMBER")
+                )
+            ),
             "providers", java.util.List.of(
                 Map.of(
                     "id", "SOOP",
@@ -336,6 +373,154 @@ public final class GameClientHttpServer implements AutoCloseable {
         sendJson(exchange, 200, Map.of(
             "events", platformEvents.recent(limit)
         ));
+    }
+
+    private record ViewerDrawCreateRequest(
+        String name,
+        String mode,
+        List<String> entries,
+        Map<String, Object> config
+    ) {}
+
+    private void viewerDrawApi(HttpExchange exchange) throws IOException {
+        String path = exchange.getRequestURI().getPath();
+        if (viewerDraw == null) {
+            sendJson(exchange, 503, Map.of(
+                "error", "viewer draw service is unavailable"
+            ));
+            return;
+        }
+
+        String publicPrefix = "/api/v1/tools/viewer-draw/public/";
+        if (path != null && path.startsWith(publicPrefix)) {
+            corsPublic(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            if (!requireGetOrHead(exchange)) return;
+            String code = path.substring(publicPrefix.length())
+                .trim()
+                .toUpperCase(Locale.ROOT);
+            if (code.length() != 6 || code.contains("/")) {
+                sendJson(exchange, 404, Map.of("error", "draw not found"));
+                return;
+            }
+            try {
+                var session = viewerDraw.findByPublicCode(code);
+                var payload = new LinkedHashMap<String, Object>();
+                payload.put("publicCode", session.publicCode());
+                payload.put("name", session.name());
+                payload.put("mode", session.mode());
+                payload.put("state", session.state());
+                payload.put("entryCount", session.entryCount());
+                payload.put("config", session.config());
+                payload.put("result", session.result());
+                payload.put("completedAt", session.completedAt());
+                sendJson(exchange, 200, payload);
+            } catch (java.util.NoSuchElementException error) {
+                sendJson(exchange, 404, Map.of("error", "draw not found"));
+            } catch (Exception error) {
+                sendJson(exchange, 400, Map.of("error", safeMessage(error)));
+            }
+            return;
+        }
+
+        if (!isAdminSession(exchange)) {
+            sendJson(exchange, 401, Map.of(
+                "error", "administrator authentication required"
+            ));
+            return;
+        }
+
+        String base = "/api/v1/tools/viewer-draw/sessions";
+        if (base.equals(path) || (base + "/").equals(path)) {
+            if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    sendJson(exchange, 200, Map.of(
+                        "sessions", viewerDraw.recent(30)
+                    ));
+                } catch (Exception error) {
+                    sendJson(exchange, 400, Map.of("error", safeMessage(error)));
+                }
+                return;
+            }
+            if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    byte[] body = exchange.getRequestBody().readNBytes(
+                        MAX_PROXY_BODY_BYTES + 1
+                    );
+                    if (body.length > MAX_PROXY_BODY_BYTES) {
+                        sendJson(exchange, 413, Map.of("error", "request body too large"));
+                        return;
+                    }
+                    var request = GSON.fromJson(
+                        new String(body, StandardCharsets.UTF_8),
+                        ViewerDrawCreateRequest.class
+                    );
+                    if (request == null) {
+                        sendJson(exchange, 400, Map.of("error", "JSON body is required"));
+                        return;
+                    }
+                    var created = viewerDraw.create(
+                        request.name(),
+                        request.mode(),
+                        request.entries(),
+                        request.config()
+                    );
+                    sendJson(exchange, 201, created);
+                } catch (Exception error) {
+                    sendJson(exchange, 400, Map.of("error", safeMessage(error)));
+                }
+                return;
+            }
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (path == null || !path.startsWith(base + "/")) {
+            sendJson(exchange, 404, Map.of("error", "route not found"));
+            return;
+        }
+
+        String route = path.substring((base + "/").length());
+        String action = "";
+        String sessionId = route;
+        int slash = route.indexOf('/');
+        if (slash >= 0) {
+            sessionId = route.substring(0, slash);
+            action = route.substring(slash + 1);
+        }
+
+        try {
+            if (action.isBlank() && "GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 200, viewerDraw.find(sessionId));
+                return;
+            }
+            if ("freeze".equals(action) && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 200, viewerDraw.freeze(sessionId));
+                return;
+            }
+            if ("start".equals(action) && "POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(exchange, 200, viewerDraw.start(sessionId));
+                return;
+            }
+            if (
+                ("freeze".equals(action) || "start".equals(action))
+                && !"POST".equalsIgnoreCase(exchange.getRequestMethod())
+            ) {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "route not found"));
+        } catch (java.util.NoSuchElementException error) {
+            sendJson(exchange, 404, Map.of("error", safeMessage(error)));
+        } catch (Exception error) {
+            sendJson(exchange, 400, Map.of("error", safeMessage(error)));
+        }
     }
 
     private void clientConfig(HttpExchange exchange) throws IOException {
@@ -951,6 +1136,25 @@ public final class GameClientHttpServer implements AutoCloseable {
         serveFile(exchange, requested, allowedRoot);
     }
 
+    private void serveViewerDrawAsset(HttpExchange exchange)
+        throws IOException {
+        if (!requireGetOrHead(exchange)) return;
+        String path = exchange.getRequestURI().getPath();
+        if (path == null || !path.startsWith("/tools/viewer-draw/")) {
+            exchange.sendResponseHeaders(404, -1);
+            exchange.close();
+            return;
+        }
+        String relative = path.substring("/tools/viewer-draw/".length());
+        if (relative.isBlank()) relative = "index.html";
+        Path allowedRoot = webRoot.resolve("tools/viewer-draw").normalize();
+        serveFile(
+            exchange,
+            allowedRoot.resolve(relative).normalize(),
+            allowedRoot
+        );
+    }
+
     private void servePublicAsset(HttpExchange exchange)
         throws IOException {
         if (!requireGetOrHead(exchange)) return;
@@ -1028,7 +1232,8 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static boolean isAllowedAdminAsset(String relative) {
         return "index.html".equals(relative)
             || relative.startsWith("assets/")
-            || relative.startsWith("games/board/");
+            || relative.startsWith("games/board/")
+            || relative.startsWith("tools/viewer-draw/");
     }
 
     private String resolvedWebSocketUrl(HttpExchange exchange) {
