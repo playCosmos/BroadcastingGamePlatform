@@ -182,6 +182,12 @@ public final class DrawingSyncService {
         }
     }
 
+    public boolean closeSession(String code) {
+        String normalized = normalizeCode(code);
+        if (normalized.isBlank()) return false;
+        return states.remove(normalized) != null;
+    }
+
     public int activeSessionCount() {
         cleanupExpired();
         return states.size();
