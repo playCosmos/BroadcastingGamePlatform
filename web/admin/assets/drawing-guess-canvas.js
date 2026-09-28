@@ -77,10 +77,8 @@
     if (!stroke?.points?.length) return;
     const points = stroke.points;
     ctx.save();
-    ctx.globalCompositeOperation = stroke.tool === "eraser"
-      ? "destination-out"
-      : "source-over";
-    ctx.strokeStyle = stroke.tool === "eraser" ? "#000000" : stroke.color;
+    ctx.globalCompositeOperation = "source-over";
+    ctx.strokeStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
     ctx.lineWidth = stroke.width;
 
     if (points.length === 1) {
@@ -93,11 +91,7 @@
         0,
         Math.PI * 2
       );
-      if (stroke.tool === "eraser") {
-        ctx.fillStyle = "#000000";
-      } else {
-        ctx.fillStyle = stroke.color;
-      }
+      ctx.fillStyle = stroke.tool === "eraser" ? "#ffffff" : stroke.color;
       ctx.fill();
       ctx.restore();
       return;
@@ -200,7 +194,8 @@
 
   document.getElementById("clearButton").addEventListener("click", () => {
     if (!strokes.length) return;
-    redoStack.push(...strokes.splice(0));
+    strokes = [];
+    redoStack = [];
     renderAll();
   });
 
