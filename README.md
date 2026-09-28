@@ -53,7 +53,7 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 
 - Board: AVAILABLE
 - Viewer Draw: V0 Core + V1 Number Draw IMPLEMENTED
-- Drawing Guess: D0 Canvas + D1 Sync + D2 Score/Core + D3 Room/Persistence + D4 SOOP Chat Guess + D5 Broadcast Overlay IMPLEMENTED
+- Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
 - Yacht: PLANNED
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: PLANNED
