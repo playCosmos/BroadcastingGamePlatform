@@ -81,7 +81,8 @@ Drawing Guess는 플랫폼의 다음 게임 모듈 후보로 계획한다.
 - 게임 ID: `drawing_guess`
 - HTML5 Canvas API 기반 그림 입력
 - Pointer Events로 마우스/터치/펜 입력 통합
-- 방송인 전담 출제 및 참가자 순환 출제 모드
+- v1은 방송인 전담 출제 + 참가자 순환 출제의 Classic Guess
+- 이후 Telephone / Drawing Transformation / Collaborative / Animation Mode Pack으로 확장 가능
 - Public Overlay에는 정답 데이터를 전달하지 않음
 - Canvas는 bitmap 스트리밍이 아니라 stroke command/WebSocket 동기화
 - 채팅은 정답 입력에 자연스럽게 연결하되 후원은 필수 규칙으로 두지 않음
