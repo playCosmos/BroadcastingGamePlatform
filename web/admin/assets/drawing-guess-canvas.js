@@ -32,6 +32,8 @@
   let pointFlushTimer = 0;
   let pendingPoints = [];
   let closingForReplacement = false;
+  let replayingHistory = false;
+  let replayTargetSequence = 0;
 
   const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
@@ -128,6 +130,69 @@
     redoButton.disabled = redoStack.length === 0;
   }
 
+  function applySyncedEvent(message) {
+    const type = message?.type;
+    const payload = message?.payload || {};
+
+    if (type === "canvas.stroke.begin") {
+      const incoming = payload.stroke;
+      if (!incoming?.strokeId) return;
+      if (
+        strokes.some(
+          (stroke) => stroke.strokeId === incoming.strokeId
+        )
+      ) {
+        return;
+      }
+
+      strokes.push({
+        strokeId: incoming.strokeId,
+        tool: incoming.tool === "eraser" ? "eraser" : "pen",
+        color: incoming.color || "#151515",
+        width: Number(incoming.width) || 8,
+        points: Array.isArray(incoming.points)
+          ? incoming.points.slice()
+          : []
+      });
+      redoStack = [];
+      renderAll();
+      return;
+    }
+
+    if (type === "canvas.stroke.points") {
+      const stroke = strokes.find(
+        (candidate) => candidate.strokeId === payload.strokeId
+      );
+      if (!stroke || !Array.isArray(payload.points)) return;
+      stroke.points.push(...payload.points);
+      renderAll();
+      return;
+    }
+
+    if (type === "canvas.undo") {
+      const removed = strokes.pop();
+      if (removed) redoStack.push(removed);
+      renderAll();
+      return;
+    }
+
+    if (type === "canvas.redo") {
+      const restored = redoStack.pop();
+      if (restored) strokes.push(restored);
+      renderAll();
+      return;
+    }
+
+    if (type === "canvas.clear") {
+      resetLocalCanvas();
+      return;
+    }
+
+    if (type === "canvas.stroke.end") {
+      renderAll();
+    }
+  }
+
   function sendSync(type, payload = {}) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify({ type, payload }));
@@ -181,7 +246,10 @@
     for (const stroke of strokes) sendStrokeSnapshot(stroke);
   }
 
-  async function connectDrawer(session) {
+  async function connectDrawer(
+    session,
+    { recoverHistory = false } = {}
+  ) {
     const response = await fetch("/api/client/config", { cache: "no-store" });
     if (!response.ok) throw new Error("WebSocket 설정을 읽지 못했습니다.");
     const config = await response.json();
@@ -200,12 +268,32 @@
     url.searchParams.set("drawingCode", session.drawingCode);
     url.searchParams.set("drawerToken", session.drawerToken);
 
+    if (recoverHistory) {
+      resetLocalCanvas();
+      replayTargetSequence = Number(session.lastSequence) || 0;
+      replayingHistory = replayTargetSequence > 0;
+    } else {
+      replayTargetSequence = 0;
+      replayingHistory = false;
+    }
+
     const next = new WebSocket(url);
     socket = next;
-    syncStatus.textContent = "CONNECTING";
+    syncStatus.textContent = recoverHistory
+      ? "RECOVERING"
+      : "CONNECTING";
 
     next.addEventListener("open", () => {
       if (socket !== next) return;
+      if (recoverHistory) {
+        if (replayTargetSequence === 0) {
+          replayingHistory = false;
+          syncStatus.textContent = "CONNECTED";
+        } else {
+          syncStatus.textContent = "RECOVERING";
+        }
+        return;
+      }
       syncStatus.textContent = "CONNECTED";
       resyncAllStrokes();
     });
@@ -217,10 +305,19 @@
         if (message.type === "drawing.error") {
           syncStatus.textContent = "ERROR";
           console.warn("[drawing-sync]", message.message);
+          return;
+        }
+
+        if (replayingHistory) {
+          applySyncedEvent(message);
+          const sequence = Number(message.sequence) || 0;
+          if (sequence >= replayTargetSequence) {
+            replayingHistory = false;
+            syncStatus.textContent = "CONNECTED";
+          }
         }
       } catch {
-        // The drawer does not replay its own history. Local Canvas is authoritative
-        // for the current drawer UI; public overlays replay server events.
+        // Ignore malformed/non-drawing messages.
       }
     });
 
@@ -233,7 +330,13 @@
       if (!syncSession) return;
       syncStatus.textContent = "RECONNECT";
       reconnectTimer = window.setTimeout(() => {
-        connectDrawer(syncSession).catch(() => {
+        if (replayingHistory) {
+          resetLocalCanvas();
+        }
+        connectDrawer(
+          syncSession,
+          { recoverHistory: replayingHistory }
+        ).catch(() => {
           syncStatus.textContent = "OFFLINE";
         });
       }, 1000);
@@ -244,7 +347,10 @@
     });
   }
 
-  async function attachSyncSession(session) {
+  async function attachSyncSession(
+    session,
+    { recoverHistory = false } = {}
+  ) {
     if (!session?.drawingCode || !session?.drawerToken) {
       throw new Error("유효한 Drawing Sync 세션이 필요합니다.");
     }
@@ -257,7 +363,7 @@
       window.location.origin
     ).href;
     copyOverlay.disabled = false;
-    await connectDrawer(session);
+    await connectDrawer(session, { recoverHistory });
   }
 
   async function createSyncSession() {
@@ -443,6 +549,8 @@
 
   function detachSyncSession() {
     syncSession = null;
+    replayingHistory = false;
+    replayTargetSequence = 0;
     window.clearTimeout(reconnectTimer);
     reconnectTimer = 0;
     closingForReplacement = true;
