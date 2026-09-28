@@ -18,7 +18,8 @@
         participantId: `p${index + 1}`,
         provider,
         userId,
-        displayName
+        displayName,
+        canDraw: true
       };
     });
   }
@@ -43,14 +44,30 @@
       root.appendChild(row);
     });
 
-    $("createStatus").textContent = participants.length
-      ? `${participants.length}명 준비됨`
-      : "참가자를 입력하세요.";
+    if (participants.length) {
+      $("createStatus").textContent =
+        `${participants.length}명 출제 참가자 준비됨`;
+    } else if ($("drawerPolicy").value === "STREAMER_DRAWER") {
+      $("createStatus").textContent =
+        $("chatGuessEnabled").checked
+          ? "사전 참가자 없음 · 정답 채팅 시청자를 자동 등록합니다."
+          : "사전 참가자 없음 · 점수 참가자 없이 진행합니다.";
+    } else {
+      $("createStatus").textContent =
+        "순환 출제를 위해 참가자 2명 이상을 입력하세요.";
+    }
   }
 
   function updatePolicyUi() {
     $("streamerIdField").hidden =
       $("drawerPolicy").value !== "STREAMER_DRAWER";
+    refreshPreview();
+  }
+
+  function updateChatUi() {
+    $("chatBindingFields").hidden =
+      !$("chatGuessEnabled").checked;
+    refreshPreview();
   }
 
   async function api(path, options = {}) {
@@ -72,11 +89,6 @@
   async function createRoom() {
     const button = $("createRoomButton");
     const participants = parseParticipants();
-    if (!participants.length) {
-      $("createStatus").textContent = "참가자를 1명 이상 입력하세요.";
-      return;
-    }
-
     if (
       $("drawerPolicy").value === "ROTATING_DRAWER"
       && participants.length < 2
@@ -111,6 +123,13 @@
             roundDurationSeconds: Number(
               $("roundDurationSeconds").value
             ),
+            chatGuessEnabled: $("chatGuessEnabled").checked,
+            chatProvider: $("chatGuessEnabled").checked
+              ? $("chatProvider").value
+              : null,
+            chatChannelId: $("chatGuessEnabled").checked
+              ? $("chatChannelId").value.trim() || null
+              : null,
             participants
           })
         }
@@ -134,8 +153,9 @@
 
   $("participants").addEventListener("input", refreshPreview);
   $("drawerPolicy").addEventListener("change", updatePolicyUi);
+  $("chatGuessEnabled").addEventListener("change", updateChatUi);
   $("createRoomButton").addEventListener("click", createRoom);
 
   updatePolicyUi();
-  refreshPreview();
+  updateChatUi();
 })();
