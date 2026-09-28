@@ -1,6 +1,6 @@
 package io.github.playcosmos.broadcastinggameplatform.room;
 
-import io.github.playcosmos.broadcastinggameplatform.db.BridgeDatabase;
+import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabase;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -18,7 +18,7 @@ public final class RoomOperationProbe {
         Path root = null;
         try {
             root = Files.createTempDirectory("room-operation-probe-");
-            var database = new BridgeDatabase(root.resolve("probe.db"));
+            var database = new BoardGameDatabase(root.resolve("probe.db"));
             database.initialize();
 
             var rooms = new RoomService(database, players -> players.stream()
