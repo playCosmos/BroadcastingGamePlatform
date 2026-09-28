@@ -1,14 +1,17 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import com.google.gson.Gson;
-import io.github.playcosmos.broadcastinggameplatform.config.BridgeConfig;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
 import io.github.playcosmos.broadcastinggameplatform.operations.WindowsConsoleEncoding;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomHttpHandler;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
-import io.github.playcosmos.broadcastinggameplatform.soop.SoopBridgeAdapter;
-import io.github.playcosmos.broadcastinggameplatform.soop.SoopRuntimeState;
+import io.github.playcosmos.broadcastinggameplatform.soop.SoopDonation;
 import java.awt.Desktop;
 import java.net.URI;
 import java.nio.file.Path;
@@ -101,36 +104,37 @@ public final class PlatformServerMain {
         }, 1, 1, TimeUnit.MINUTES);
 
         var roomHttp = new RoomHttpHandler(roomService, runtime);
-        var soopState = new SoopRuntimeState(config.streamerId());
 
-        var bridgeConfig = new BridgeConfig(
-            config.streamerId(),
-            BridgeConfig.defaults().ticket(),
-            new BridgeConfig.Server(
-                config.server().host(),
-                config.server().port(),
-                config.server().websocketPort(),
-                config.server().openBrowserOnStart()
-            ),
-            new BridgeConfig.Storage(
-                config.storage().databasePath(),
-                "./unused-tickets",
-                config.storage().webRoot(),
-                "./unused-backups",
-                config.storage().logDirectory()
-            ),
-            new BridgeConfig.Soop(
+        var platformEvents = new PlatformEventBus();
+        var providers = new ProviderRegistry();
+        var soop = new SoopBroadcastProvider(
+            new SoopProviderConfig(
+                config.streamerId(),
                 config.soop().enabled(),
                 config.soop().offlinePollSeconds()
-            )
-        ).normalized();
+            ).normalized(),
+            platformEvents
+        );
+        providers.register(soop);
 
-        var soop = new SoopBridgeAdapter(
-            bridgeConfig,
-            soopState,
+        var boardDonationSubscription = platformEvents.subscribe(
+            DonationEvent.class,
             donation -> {
+                if (!SoopBroadcastProvider.ID.equals(donation.provider())) {
+                    return;
+                }
                 try {
-                    var result = runtime.process(donation);
+                    var result = runtime.process(
+                        new SoopDonation(
+                            donation.channelId(),
+                            donation.userId(),
+                            donation.nickname(),
+                            donation.amount(),
+                            donation.supporterOrder(),
+                            donation.rawPayload(),
+                            donation.occurredAtEpochMs()
+                        )
+                    );
                     if (
                         result.processedRooms() > 0 ||
                         result.duplicateRooms() > 0 ||
@@ -138,8 +142,9 @@ public final class PlatformServerMain {
                         result.ignoredRooms() > 0
                     ) {
                         System.out.println(
-                            "[board-game] donor=" + donation.donorId()
-                                + " balloons=" + donation.balloonCount()
+                            "[board-game] provider=" + donation.provider()
+                                + " donor=" + donation.userId()
+                                + " amount=" + donation.amount()
                                 + " matched=" + result.matchedRooms()
                                 + " processed=" + result.processedRooms()
                                 + " queued=" + result.queuedRooms()
@@ -148,11 +153,13 @@ public final class PlatformServerMain {
                         );
                     }
                 } catch (Exception error) {
-                    System.err.println("[board-game] donation processing failed: " + error.getMessage());
+                    System.err.println(
+                        "[board-game] donation processing failed: "
+                            + error.getMessage()
+                    );
                     error.printStackTrace(System.err);
                 }
-            },
-            (bid, event) -> {}
+            }
         );
 
         var adminAuthStore = new AdminAuthStore(database);
@@ -161,14 +168,16 @@ public final class PlatformServerMain {
             root,
             roomService,
             runtime,
-            adminAuthStore
+            adminAuthStore,
+            platformEvents,
+            providers
         );
         var http = new BoardGameHttpServer(
             config,
             root,
             database.path(),
             websocket::connectedClients,
-            soopState::snapshot,
+            soop::snapshot,
             roomHttp,
             roomService,
             serverPolicies,
@@ -179,11 +188,11 @@ public final class PlatformServerMain {
             clientHttp::approveAdminAccess,
             clientHttp::revokeAdminSessions,
             clientHttp::rotateAdminAccess,
-            soop::reconnectNow
+            soop::reconnect
         );
         http.start();
         clientHttp.start();
-        soop.start();
+        providers.startAll();
 
         String adminUrl = clientHttp.localAdminBootstrapUrl();
         String serverManagementUrl = "http://127.0.0.1:"
@@ -219,7 +228,8 @@ public final class PlatformServerMain {
             try { websocket.stop(2000); }
             catch (InterruptedException error) { Thread.currentThread().interrupt(); }
             catch (Exception ignored) {}
-            try { soop.close(); } catch (Exception ignored) {}
+            try { boardDonationSubscription.close(); } catch (Exception ignored) {}
+            try { providers.close(); } catch (Exception ignored) {}
             try { fileLog.close(); } catch (Exception ignored) {}
             shutdown.countDown();
         };
@@ -245,8 +255,8 @@ public final class PlatformServerMain {
         var tray = PlatformTrayController.install(
             serverManagementUrl,
             adminUrl,
-            soopState::status,
-            soop::reconnectNow,
+            soop::status,
+            soop::reconnect,
             explicitExit
         );
         trayRef.set(tray);
