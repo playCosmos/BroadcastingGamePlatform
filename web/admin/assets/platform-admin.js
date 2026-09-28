@@ -17,6 +17,10 @@
     $("soopProviderStatus").textContent = text(soop.status, "미설정");
     $("soopStreamerId").textContent = text(soop.streamerId, "미설정");
     $("soopBroadcastTitle").textContent = text(soop.title, "방송 정보 없음");
+    $("soopChatEvents").textContent =
+      Number.isFinite(Number(soop.chatEvents))
+        ? String(Number(soop.chatEvents))
+        : "0";
     $("soopDonationEvents").textContent =
       Number.isFinite(Number(soop.donationEvents))
         ? String(Number(soop.donationEvents))
