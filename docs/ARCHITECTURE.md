@@ -4,7 +4,7 @@
 
 Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여러 게임 모듈에 전달하는 플랫폼이다.
 
-현재 구현 범위는 SOOP + 보드게임이며, CHZZK은 추후 Provider 추가 대상으로 둔다.
+현재 구현 범위는 SOOP + Board이며, 두 번째 게임 모듈로 Yacht를 계획한다. CHZZK은 추후 Provider 추가 대상으로 둔다.
 
 ## 계층
 
@@ -21,7 +21,9 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - `/api/v1/providers`: 인증된 운영자의 Provider 상태 조회
    - `/api/v1/events/recent`: 인증된 운영자의 최근 공용 이벤트 조회
 4. **Game Module**
-   - 현재: Board
+   - Board: 현재 구현
+   - Yacht: 계획, Yahtzee 계열 5주사위/13카테고리 규칙
+   - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Admin/Auth**
    - bootstrap token 링크
@@ -34,8 +36,11 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 - `/`: 플랫폼 랜딩
 - `/admin/`: 인증 후 플랫폼 운영 홈
 - `/admin/games/board/`: 보드게임 룸 생성
-- `/admin/games/board/room.html?roomId=...`: 룸 운영
-- `/games/board/`: OBS/방송용 보드 클라이언트
+- `/admin/games/board/room.html?roomId=...`: Board 룸 운영
+- `/games/board/`: OBS/방송용 Board 클라이언트
+- `/admin/games/yacht/`: Yacht 룸 생성 (계획)
+- `/admin/games/yacht/room.html?roomId=...`: Yacht 룸 운영 (계획)
+- `/games/yacht/`: OBS/방송용 Yacht 클라이언트 (계획)
 - `/api/v1/*`: 플랫폼 API
 
 ## 확장 원칙
@@ -51,3 +56,18 @@ CHZZK Provider가 공용 Event Bus에 이벤트를 발행하고, 게임 모듈�
 현재 룸 생성 UI는 SOOP만 허용하지만 DB는 Provider 범위 사용자 ID를 지원하므로 CHZZK 추가 시 동일 문자열 ID 충돌을 피할 수 있다.
 
 기존 보드 DB의 provider 정보가 없는 참가자는 마이그레이션/런타임에서 `SOOP`으로 처리한다.
+
+
+## Yacht 계획
+
+Yacht는 플랫폼의 두 번째 게임 모듈로 계획한다.
+
+- 외부 표시명: `Yacht`
+- 게임 ID: `yacht`
+- Yahtzee 계열 13카테고리 점수 방식
+- 서버 권위형 주사위 RNG/점수 계산
+- Board와 별도 게임 모듈/별도 DB 테이블
+- SOOP/CHZZK 입력은 Platform Event Bus와 YachtInputPolicy를 통해 전달
+- 구현 전 기준 문서: `docs/games/YACHT.md`
+
+Yacht 구현을 이유로 Board 도메인을 성급하게 범용화하지 않는다. 실제 중복이 확인되는 룸 코드, 공개 read 인증, Provider identity, WebSocket room routing 등의 기능만 플랫폼 공용 계층으로 추출한다.
