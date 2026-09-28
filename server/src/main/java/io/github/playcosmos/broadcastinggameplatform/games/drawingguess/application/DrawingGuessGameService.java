@@ -4,6 +4,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingS
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.DrawerPolicy;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.DrawingPrompt;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.Instant;
@@ -31,8 +32,32 @@ public final class DrawingGuessGameService {
         String streamerParticipantId,
         ClassicScorePolicy.Config scoreConfig,
         int roundDurationSeconds,
+        boolean chatGuessEnabled,
+        String chatProvider,
+        String chatChannelId,
         List<DrawingGuessRepository.ParticipantInput> participants
-    ) {}
+    ) {
+        public CreateRoomCommand(
+            String name,
+            DrawerPolicy drawerPolicy,
+            String streamerParticipantId,
+            ClassicScorePolicy.Config scoreConfig,
+            int roundDurationSeconds,
+            List<DrawingGuessRepository.ParticipantInput> participants
+        ) {
+            this(
+                name,
+                drawerPolicy,
+                streamerParticipantId,
+                scoreConfig,
+                roundDurationSeconds,
+                true,
+                null,
+                null,
+                participants
+            );
+        }
+    }
 
     public record StartRoundCommand(
         String promptId,
@@ -45,6 +70,22 @@ public final class DrawingGuessGameService {
         DrawingGuessRepository.RoundPrivate privateRound,
         DrawingSyncService.Session drawingSession
     ) {}
+
+    public record ChatGuessResult(
+        String status,
+        String roomId,
+        String roundId,
+        String participantId,
+        String displayName,
+        int rank,
+        int guesserScore,
+        int drawerScore
+    ) {
+        public boolean correct() {
+            return "CORRECT".equals(status)
+                || "DUPLICATE_CORRECT".equals(status);
+        }
+    }
 
     public record PublicParticipant(
         String participantId,
@@ -75,6 +116,9 @@ public final class DrawingGuessGameService {
             command.streamerParticipantId(),
             command.scoreConfig(),
             command.roundDurationSeconds(),
+            command.chatGuessEnabled(),
+            command.chatProvider(),
+            command.chatChannelId(),
             command.participants()
         );
     }
@@ -181,6 +225,215 @@ public final class DrawingGuessGameService {
         return repository.completeMatch(matchId);
     }
 
+    public synchronized ChatGuessResult processChatMessage(
+        ChatMessageEvent event
+    ) throws SQLException {
+        if (
+            event == null
+            || event.provider() == null
+            || event.provider().isBlank()
+            || event.userId() == null
+            || event.userId().isBlank()
+            || event.message() == null
+            || event.message().isBlank()
+        ) {
+            return new ChatGuessResult(
+                "IGNORED",
+                null,
+                null,
+                null,
+                null,
+                0,
+                0,
+                0
+            );
+        }
+
+        List<DrawingGuessRepository.Room> rooms =
+            repository.findRoomsForChatEvent(
+                event.provider(),
+                event.channelId()
+            );
+
+        if (rooms.isEmpty()) {
+            return new ChatGuessResult(
+                "NO_ACTIVE_ROOM",
+                null,
+                null,
+                null,
+                null,
+                0,
+                0,
+                0
+            );
+        }
+
+        if (rooms.size() > 1) {
+            return new ChatGuessResult(
+                "AMBIGUOUS_ROOM_BINDING",
+                null,
+                null,
+                null,
+                null,
+                0,
+                0,
+                0
+            );
+        }
+
+        var room = rooms.get(0);
+        var match = repository.findActiveMatchByRoom(
+            room.roomId()
+        );
+        if (match == null) {
+            return new ChatGuessResult(
+                "NO_ACTIVE_MATCH",
+                room.roomId(),
+                null,
+                null,
+                event.nickname(),
+                0,
+                0,
+                0
+            );
+        }
+
+        var round = repository.findActiveRoundByMatch(
+            match.matchId()
+        );
+        if (round == null) {
+            return new ChatGuessResult(
+                "NO_ACTIVE_ROUND",
+                room.roomId(),
+                null,
+                null,
+                event.nickname(),
+                0,
+                0,
+                0
+            );
+        }
+
+        Instant guessedAt = event.occurredAtEpochMs() > 0
+            ? Instant.ofEpochMilli(event.occurredAtEpochMs())
+            : Instant.now();
+        Instant expiresAt = Instant.parse(round.expiresAt());
+        if (!guessedAt.isBefore(expiresAt)) {
+            return new ChatGuessResult(
+                "ROUND_EXPIRED",
+                room.roomId(),
+                round.roundId(),
+                null,
+                event.nickname(),
+                0,
+                0,
+                0
+            );
+        }
+
+        var existing = repository.findParticipantByProviderUser(
+            room.roomId(),
+            event.provider(),
+            event.userId()
+        );
+        if (
+            existing != null
+            && round.drawerParticipantId().equals(
+                existing.participantId()
+            )
+        ) {
+            return new ChatGuessResult(
+                "DRAWER_IGNORED",
+                room.roomId(),
+                round.roundId(),
+                existing.participantId(),
+                existing.displayName(),
+                0,
+                0,
+                0
+            );
+        }
+
+        var judge = new GuessJudge();
+        if (!judge.isCorrect(round.prompt(), event.message())) {
+            return new ChatGuessResult(
+                "WRONG",
+                room.roomId(),
+                round.roundId(),
+                existing == null ? null : existing.participantId(),
+                event.nickname(),
+                0,
+                0,
+                0
+            );
+        }
+
+        var participant = existing != null
+            ? existing
+            : repository.ensureChatParticipant(
+                room.roomId(),
+                event.provider(),
+                event.userId(),
+                event.nickname()
+            );
+
+        var publicRound = repository.findRoundPublic(
+            round.roundId()
+        );
+        for (var correct : publicRound.correctGuesses()) {
+            if (
+                correct.participantId().equals(
+                    participant.participantId()
+                )
+            ) {
+                return new ChatGuessResult(
+                    "DUPLICATE_CORRECT",
+                    room.roomId(),
+                    round.roundId(),
+                    participant.participantId(),
+                    participant.displayName(),
+                    correct.rank(),
+                    correct.scoreAwarded(),
+                    0
+                );
+            }
+        }
+
+        int rank = publicRound.correctGuesses().size() + 1;
+        Instant startedAt = Instant.parse(round.startedAt());
+        var award = new ClassicScorePolicy(
+            room.scoreConfig()
+        ).score(
+            new DrawingScorePolicy.ScoreContext(
+                Duration.between(startedAt, expiresAt),
+                Duration.between(startedAt, guessedAt),
+                rank,
+                Math.max(0, room.participants().size() - 1)
+            )
+        );
+
+        repository.recordCorrectGuess(
+            round.roundId(),
+            participant.participantId(),
+            participant.displayName(),
+            rank,
+            award.guesserPoints(),
+            award.drawerPoints(),
+            guessedAt
+        );
+
+        return new ChatGuessResult(
+            "CORRECT",
+            room.roomId(),
+            round.roundId(),
+            participant.participantId(),
+            participant.displayName(),
+            rank,
+            award.guesserPoints(),
+            award.drawerPoints()
+        );
+    }
+
     public PublicRoomSnapshot publicRoom(String roomId)
         throws SQLException {
         var room = repository.findRoom(roomId);
@@ -227,6 +480,7 @@ public final class DrawingGuessGameService {
         }
 
         List<String> order = room.participants().stream()
+            .filter(DrawingGuessRepository.Participant::canDraw)
             .map(DrawingGuessRepository.Participant::participantId)
             .toList();
         return new DrawerSelector(
