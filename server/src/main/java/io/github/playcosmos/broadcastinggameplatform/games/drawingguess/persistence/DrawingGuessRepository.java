@@ -929,6 +929,29 @@ public final class DrawingGuessRepository {
         }
     }
 
+    public List<RoundPrivate> findActiveRounds()
+        throws SQLException {
+        var roundIds = new ArrayList<String>();
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT round_id
+                 FROM drawing_guess_round
+                 WHERE state = 'ACTIVE'
+                 ORDER BY started_at
+                 """);
+             var rows = statement.executeQuery()) {
+            while (rows.next()) {
+                roundIds.add(rows.getString(1));
+            }
+        }
+
+        var result = new ArrayList<RoundPrivate>();
+        for (String roundId : roundIds) {
+            result.add(findRoundPrivate(roundId));
+        }
+        return List.copyOf(result);
+    }
+
     public RoundPrivate findActiveRoundByMatch(String matchId)
         throws SQLException {
         try (var connection = database.open();
