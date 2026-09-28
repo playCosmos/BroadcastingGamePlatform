@@ -23,7 +23,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 4. **Game Module**
    - Board: 현재 구현
    - Yacht: 계획, Yahtzee 계열 5주사위/13카테고리 규칙
-   - Drawing Guess: Classic Guess D0~D5 구현, HTML5 Canvas 기반 그림 퀴즈
+   - Drawing Guess: Classic Guess D0~D6 구현, HTML5 Canvas 기반 그림 퀴즈
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Broadcast Tool**
@@ -102,6 +102,9 @@ Drawing Guess는 현재 Classic Guess D0~D5가 구현된 게임 모듈이다.
 - Round별 Drawer Token은 Round 종료 시 폐기
 - OBS는 roomId 고정 URL로 현재 drawingCode를 자동 추적
 - Round 종료 후에만 대표 정답을 공개 Reveal 데이터로 노출
+- Canvas session/history는 SQLite에 영속화해 서버 재시작 후 동일 drawingCode/sequence를 복구
+- Drawer Token은 평문 저장하지 않고 hash만 영속화하며 프로세스 재시작 시 강제 회전
+- 인증된 관리자 Drawer View는 active Round 복구 시 새 Token과 Private Prompt를 재교환
 - 후원은 Drawing Guess 필수 규칙으로 사용하지 않음
 - 기준 문서: `docs/games/DRAWING_GUESS.md`
 
