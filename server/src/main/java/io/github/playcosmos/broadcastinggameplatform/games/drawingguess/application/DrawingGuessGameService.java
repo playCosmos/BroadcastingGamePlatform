@@ -9,10 +9,13 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class DrawingGuessGameService {
     private final DrawingGuessRepository repository;
     private final DrawingSyncService drawingSync;
+    private final Map<String, String> drawingCodeByRound =
+        new ConcurrentHashMap<>();
 
     public DrawingGuessGameService(
         DrawingGuessRepository repository,
@@ -137,6 +140,10 @@ public final class DrawingGuessGameService {
             expiresAt
         );
         var drawingSession = drawingSync.createSession();
+        drawingCodeByRound.put(
+            privateRound.roundId(),
+            drawingSession.drawingCode()
+        );
 
         return new RoundStart(
             repository.findRoundPublic(privateRound.roundId()),
@@ -148,7 +155,12 @@ public final class DrawingGuessGameService {
     public DrawingGuessRepository.RoundPrivate completeRound(
         String roundId
     ) throws SQLException {
-        return repository.completeRound(roundId);
+        var completed = repository.completeRound(roundId);
+        String drawingCode = drawingCodeByRound.remove(roundId);
+        if (drawingCode != null) {
+            drawingSync.closeSession(drawingCode);
+        }
+        return completed;
     }
 
     public DrawingGuessRepository.Match completeMatch(
