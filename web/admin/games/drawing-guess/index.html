@@ -2,91 +2,89 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>방송 게임 플랫폼 · Drawing Guess Canvas Prototype</title>
+  <title>방송 게임 플랫폼 · Drawing Guess 룸 생성</title>
   <link rel="stylesheet" href="/assets/platform.css">
   <link rel="stylesheet" href="/admin/assets/drawing-guess.css">
 </head>
 <body>
   <main class="shell drawing-admin">
     <header class="hero compact">
-      <p class="eyebrow">DRAWING GUESS / D0 CANVAS PROTOTYPE</p>
+      <p class="eyebrow">DRAWING GUESS / ROOM CREATE</p>
       <h1>Drawing Guess</h1>
-      <p class="lead">HTML5 Canvas + Pointer Events 기반 그림 입력과 D1 실시간 Overlay 동기화를 검증합니다. 공개 Overlay는 읽기 전용이고 Drawer만 별도 토큰으로 stroke를 발행합니다.</p>
+      <p class="lead">방송인 전담 출제 또는 참가자 순환 출제를 선택하고 참가자·점수·라운드 시간을 설정합니다.</p>
       <div class="hero-actions">
         <a class="secondary" href="/admin/">← 운영자 홈</a>
       </div>
     </header>
 
-    <section class="drawing-layout">
-      <aside class="tool-panel">
-        <div class="tool-section">
-          <span class="tool-label">도구</span>
-          <div class="tool-grid">
-            <button class="tool-button active" type="button" data-tool="pen">Pen</button>
-            <button class="tool-button" type="button" data-tool="eraser">Eraser</button>
-          </div>
-        </div>
+    <section class="drawing-create-grid">
+      <article class="draw-panel">
+        <h2>게임 설정</h2>
 
-        <label class="tool-section">
-          <span class="tool-label">색상</span>
-          <div class="color-row">
-            <input id="brushColor" type="color" value="#151515">
-            <span id="colorValue">#151515</span>
-          </div>
+        <label class="field">
+          <span>룸 이름</span>
+          <input id="roomName" type="text" value="Drawing Guess" maxlength="80">
         </label>
 
-        <label class="tool-section">
-          <span class="tool-label">브러시 크기 <strong id="brushSizeValue">8</strong></span>
-          <input id="brushSize" type="range" min="2" max="48" value="8">
+        <label class="field">
+          <span>출제 방식</span>
+          <select id="drawerPolicy">
+            <option value="STREAMER_DRAWER">방송인이 계속 출제</option>
+            <option value="ROTATING_DRAWER">참가자가 돌아가며 출제</option>
+          </select>
         </label>
 
-        <div class="tool-section">
-          <span class="tool-label">편집</span>
-          <div class="tool-grid">
-            <button class="tool-button" id="undoButton" type="button">Undo</button>
-            <button class="tool-button" id="redoButton" type="button">Redo</button>
-            <button class="tool-button danger" id="clearButton" type="button">Clear</button>
-          </div>
-        </div>
+        <label class="field" id="streamerIdField">
+          <span>방송인 내부 ID</span>
+          <input id="streamerParticipantId" type="text" value="streamer" maxlength="80">
+          <small>방송인을 참가자 점수판에 넣지 않아도 됩니다.</small>
+        </label>
 
-        <div class="canvas-stats">
-          <div><span>Strokes</span><strong id="strokeCount">0</strong></div>
-          <div><span>Pointer</span><strong id="pointerType">-</strong></div>
-          <div><span>Canvas</span><strong id="canvasSize">-</strong></div>
-        </div>
-
-        <div class="sync-panel">
-          <span class="tool-label">D1 Canvas Sync</span>
-          <button class="tool-button sync-start" id="startSyncButton" type="button">Overlay 동기화 시작</button>
-          <div class="sync-info">
-            <div><span>Code</span><strong id="drawingCode">------</strong></div>
-            <div><span>Status</span><strong id="syncStatus">OFF</strong></div>
-          </div>
-          <label class="sync-url">
-            <span>OBS Overlay</span>
-            <input id="drawingOverlayUrl" type="text" readonly>
+        <div class="inline-fields">
+          <label class="field">
+            <span>라운드 시간(초)</span>
+            <input id="roundDurationSeconds" type="number" min="10" max="600" value="80">
           </label>
-          <button class="tool-button" id="copyDrawingOverlay" type="button" disabled>Overlay URL 복사</button>
+          <label class="field">
+            <span>점수 정책</span>
+            <select id="scoreProfile">
+              <option value="FAST_GUESS">빠른 정답 우대</option>
+              <option value="RANKED">정답 순위형</option>
+              <option value="NO_SCORE">점수 없음</option>
+            </select>
+          </label>
         </div>
-      </aside>
 
-      <section class="canvas-panel">
-        <div class="canvas-head">
-          <div>
-            <p class="eyebrow">HTML5 CANVAS</p>
-            <h2>그림판</h2>
+        <details class="score-details">
+          <summary>점수 세부 설정</summary>
+          <div class="score-grid">
+            <label class="field"><span>최대 정답 점수</span><input id="maxGuessPoints" type="number" min="0" value="500"></label>
+            <label class="field"><span>최소 정답 점수</span><input id="minGuessPoints" type="number" min="0" value="100"></label>
+            <label class="field"><span>순위당 감점</span><input id="rankPenaltyPoints" type="number" min="0" value="25"></label>
+            <label class="field"><span>정답 1명당 출제자 점수</span><input id="drawerPointsPerCorrect" type="number" min="0" value="50"></label>
           </div>
-          <span class="prototype-badge">D1 SYNC PROTOTYPE</span>
+        </details>
+      </article>
+
+      <article class="draw-panel">
+        <h2>참가자</h2>
+        <p class="helper">한 줄에 한 명. 기본은 표시명만 입력합니다. SOOP 계정까지 연결하려면 <code>표시명 | SOOP | 사용자ID</code> 형식을 사용할 수 있습니다.</p>
+        <label class="field">
+          <span>참가자 목록</span>
+          <textarea id="participants" rows="14" placeholder="철수&#10;영희&#10;민수 | SOOP | user123"></textarea>
+        </label>
+        <div class="participant-preview" id="participantPreview"></div>
+
+        <div class="draw-actions">
+          <button class="primary-button" id="createRoomButton" type="button">룸 생성</button>
         </div>
-        <div class="canvas-wrap" id="canvasWrap">
-          <canvas id="drawingCanvas"></canvas>
-        </div>
-        <p class="canvas-help">마우스 · 터치 · 스타일러스 지원. 좌표는 내부적으로 0~1 정규화 값으로 저장되며 창 크기가 바뀌어도 stroke를 다시 렌더링합니다.</p>
-      </section>
+        <p class="status-line" id="createStatus">참가자를 입력하세요.</p>
+      </article>
     </section>
   </main>
-  <script src="/admin/assets/drawing-guess-canvas.js"></script>
+
+  <script src="/admin/assets/drawing-guess-create.js"></script>
 </body>
 </html>
