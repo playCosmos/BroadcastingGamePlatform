@@ -23,6 +23,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 4. **Game Module**
    - Board: 현재 구현
    - Yacht: 계획, Yahtzee 계열 5주사위/13카테고리 규칙
+   - Drawing Guess: 계획, HTML5 Canvas 기반 그림 퀴즈
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Admin/Auth**
@@ -71,3 +72,17 @@ Yacht는 플랫폼의 두 번째 게임 모듈로 계획한다.
 - 구현 전 기준 문서: `docs/games/YACHT.md`
 
 Yacht 구현을 이유로 Board 도메인을 성급하게 범용화하지 않는다. 실제 중복이 확인되는 룸 코드, 공개 read 인증, Provider identity, WebSocket room routing 등의 기능만 플랫폼 공용 계층으로 추출한다.
+
+
+## Drawing Guess 계획
+
+Drawing Guess는 플랫폼의 다음 게임 모듈 후보로 계획한다.
+
+- 게임 ID: `drawing_guess`
+- HTML5 Canvas API 기반 그림 입력
+- Pointer Events로 마우스/터치/펜 입력 통합
+- 방송인 전담 출제 및 참가자 순환 출제 모드
+- Public Overlay에는 정답 데이터를 전달하지 않음
+- Canvas는 bitmap 스트리밍이 아니라 stroke command/WebSocket 동기화
+- 채팅은 정답 입력에 자연스럽게 연결하되 후원은 필수 규칙으로 두지 않음
+- 기준 문서: `docs/games/DRAWING_GUESS.md`
