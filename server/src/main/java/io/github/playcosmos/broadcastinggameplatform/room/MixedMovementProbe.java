@@ -2,7 +2,7 @@ package io.github.playcosmos.broadcastinggameplatform.room;
 
 import com.google.gson.JsonParser;
 import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabase;
-import io.github.playcosmos.broadcastinggameplatform.soop.SoopDonation;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -65,7 +65,7 @@ public final class MixedMovementProbe {
                 )
             );
 
-            var first = runtime.process(new SoopDonation(
+            var first = runtime.process(new DonationEvent(
                 "streamer", "soop-a", "A", 100, 1, "mixed-1", 1_000L
             ));
             require(first.events().size() == 1, "first mixed turn missing");
@@ -77,7 +77,7 @@ public final class MixedMovementProbe {
             require(firstTurn.throwResolutions().stream().allMatch(r -> r.dice() != null && r.yut() == null),
                 "dice turn must not switch to yut");
 
-            var second = runtime.process(new SoopDonation(
+            var second = runtime.process(new DonationEvent(
                 "streamer", "soop-a", "A", 100, 2, "mixed-2", 2_000L
             ));
             require(second.events().size() == 1, "second mixed turn missing");
