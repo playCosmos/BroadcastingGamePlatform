@@ -434,11 +434,393 @@ Entity 후보:
 
 Marbles on Stream의 physics-driven Race, Royale, Grand Prix, 다양한 Track 개념은 UX 참고 대상으로 삼되 자산/트랙을 복제하지 않는다.
 
+Viewer Draw의 장기 컨셉은 단순 Track Editor가 아니라 **Goldberg Machine / Marble Machine 기반 Machine Designer**다.
+
 후속:
 
-- Map Editor
-- Community Map
-- map validation
+- Machine Designer
+- Community Machine
+- machine validation
+- reusable component library
+- sound/instrument profile
+- draw rule profile
+
+---
+
+## 13.1 Goldberg / Marble Machine 컨셉
+
+물리 추첨 화면은 단순 경주 코스보다 다음 감각을 지향한다.
+
+~~~text
+Marble 투입
+→ 램프/레일
+→ 핀/범퍼 충돌
+→ 기어/회전체
+→ 시소/게이트
+→ 깔때기/분배기
+→ 종/차임/실로폰 바
+→ 연쇄 장치
+→ 최종 출구/당첨 슬롯
+~~~
+
+즉 결과가 만들어지는 과정 자체가 **골드버그 장치를 구경하는 방송 콘텐츠**가 되도록 한다.
+
+Marble Machine 컨셉에서는 물리 움직임이 소리와 결합된다.
+
+~~~text
+collision
+→ impact strength
+→ component/material
+→ sound event
+→ Web Audio playback
+~~~
+
+물리 시뮬레이션과 사운드는 같은 이벤트를 공유하지만 역할은 분리한다.
+
+---
+
+## 13.2 Machine Component 모델
+
+Machine Designer는 데이터 기반 컴포넌트를 배치하는 방식으로 계획한다.
+
+~~~text
+MachineComponent
+├─ id
+├─ type
+├─ transform
+├─ physicsShape
+├─ physicsMaterial
+├─ motion
+├─ trigger
+├─ audioProfile
+├─ visualProfile
+└─ drawRole
+~~~
+
+### 기본 물리 컴포넌트
+
+- Ramp
+- Rail
+- Wall
+- Peg
+- Bumper
+- Funnel
+- Spiral
+- Gate
+- Splitter
+- Seesaw
+- Pendulum
+- Rotator
+- Gear
+- Paddle
+- Elevator
+- Launcher
+- Dropper
+- Collector
+- Finish Gate
+- Elimination Pit
+
+### Marble Machine / 악기 컴포넌트
+
+- Bell
+- Chime
+- Xylophone Bar
+- Metal Plate
+- Wood Block
+- Drum Pad
+- String Pluck Trigger
+- Clicker
+- Rattle
+- Resonator
+
+악기 컴포넌트도 실제 충돌체가 될 수 있다.
+
+단, **소리만 발생하는 장식 Trigger**와 **실제로 Marble 궤적을 바꾸는 Physics Component**는 명확하게 구분한다.
+
+---
+
+## 13.3 Sound Design
+
+웹 클라이언트에서는 **Web Audio API**를 우선 사용한다.
+
+사운드 시스템 후보:
+
+~~~text
+Physics Contact
+      ↓
+CollisionSoundEvent
+      ↓
+SoundMaterial / InstrumentProfile
+      ↓
+Gain / Pitch / Pan / Filter
+      ↓
+Web Audio API
+~~~
+
+CollisionSoundEvent에는 최소 다음 값을 제공한다.
+
+- componentId
+- marbleId
+- materialA
+- materialB
+- relative velocity
+- impulse strength
+- collision position
+- timestamp
+
+이 값을 이용해 같은 부품이라도 충돌 세기에 따라 다른 소리를 낼 수 있다.
+
+예:
+
+~~~text
+약한 충돌  → 낮은 gain
+강한 충돌  → 높은 gain + 다른 sample layer
+좌측 충돌  → left pan
+우측 충돌  → right pan
+Marble 속도 → pitch/velocity variation
+~~~
+
+### Material Sound Profile
+
+예:
+
+- metal
+- wood
+- glass
+- rubber
+- plastic
+- stone
+
+### Instrument Profile
+
+예:
+
+~~~text
+Xylophone C4
+Xylophone D4
+Xylophone E4
+Bell C5
+Bell G5
+Kick
+Snare
+HiHat
+Wood Click
+~~~
+
+Machine 제작자가 부품마다 음정을 설정할 수 있도록 한다.
+
+이를 이용하면 단순 효과음뿐 아니라 Marble이 이동하며 짧은 멜로디나 리듬을 연주하는 장치를 설계할 수 있다.
+
+---
+
+## 13.4 사운드와 공정성 분리
+
+사운드 연출이 추첨 물리에 영향을 주면 안 된다.
+
+기본 원칙:
+
+~~~text
+Physics → Audio
+Audio -X→ Physics
+~~~
+
+즉 pitch, sample, volume, filter, reverb 변경은 Marble 궤적을 바꾸지 않는다.
+
+반대로 Bell, Xylophone Bar 같은 **실제 물리 부품**을 옮기면 충돌 구조가 바뀌므로 Machine version/hash가 변경되어야 한다.
+
+Audit에는 다음을 분리 기록한다.
+
+~~~text
+physicsMachineHash
+audioProfileHash
+visualProfileHash
+~~~
+
+- 물리 구조 변경 → 추첨 결과에 영향 가능
+- 소리/색상 변경 → 결과에 영향 없음
+
+이 구분을 Admin UI에서도 명확하게 표시한다.
+
+---
+
+## 13.5 Sound 안정성
+
+Marble 수가 많으면 충돌음이 폭증할 수 있으므로 반드시 제한한다.
+
+지원:
+
+- collision cooldown
+- 동일 component polyphony limit
+- global voice limit
+- minimum impulse threshold
+- near-identical collision merge
+- priority voice stealing
+- limiter/compressor
+
+예:
+
+~~~text
+작은 접촉/굴림 → 무시 또는 loop ambience
+유효 충돌     → one-shot
+강한 충돌     → accented one-shot
+연속 타격     → rate limited
+~~~
+
+OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적을 방지한다.
+
+---
+
+## 13.6 Machine Designer
+
+장기적으로 Admin에 시각적 편집기를 제공한다.
+
+예상 경로:
+
+~~~text
+/admin/tools/viewer-draw/machines/
+~~~
+
+편집 기능:
+
+- Canvas 위 component 배치
+- drag / rotate / resize
+- snap/grid
+- duplicate/delete
+- layer
+- collision shape preview
+- spawn point
+- finish/output slot
+- gravity 설정
+- moving component motion 설정
+- material 설정
+- sound/instrument 설정
+- test marble 투입
+- simulation preview
+- validation
+- 저장/불러오기
+- versioning
+
+기존 lazygyu/roulette의 StageDef/Map Entity 구조를 참고하되, 우리 쪽에서는 **MachineDefinition**으로 확장한다.
+
+~~~text
+MachineDefinition
+├─ metadata
+├─ physics
+├─ spawn
+├─ components[]
+├─ outputs[]
+├─ camera
+├─ audio
+└─ drawRule
+~~~
+
+---
+
+## 13.7 추첨 방식 자체를 Machine으로 설계
+
+Machine은 반드시 “먼저 골인한 Marble이 당첨”일 필요가 없다.
+
+Machine의 output과 drawRule을 조합해 다양한 추첨 방식을 설계할 수 있다.
+
+### RACE_FINISH
+
+~~~text
+먼저 Finish Gate 통과
+→ 순위대로 당첨
+~~~
+
+### SLOT_COLLECTION
+
+~~~text
+여러 Marble이 분기 장치를 통과
+→ 특정 Winner Slot에 들어간 Marble 당첨
+~~~
+
+### LAST_SURVIVOR
+
+~~~text
+장치에서 Marble이 순차 탈락
+→ 마지막 남은 Marble 당첨
+~~~
+
+### CASCADE_SELECTION
+
+~~~text
+1차 Gate
+→ 후보 수 축소
+→ 2차 Machine
+→ 최종 1~N명
+~~~
+
+### RANDOM_OUTPUT_BUCKET
+
+~~~text
+Marble이 골드버그 장치를 거쳐 여러 출구 중 하나로 낙하
+→ 당첨 표시 Output에 들어간 참가자 선택
+~~~
+
+### ORDERED_OUTPUT
+
+~~~text
+Output A = 1등
+Output B = 2등
+Output C = 3등
+~~~
+
+이를 통해 **추첨 방식 자체를 물리 장치 설계로 표현**할 수 있게 한다.
+
+---
+
+## 13.8 Machine Validation
+
+사용자 제작 Machine은 시작 전에 검증한다.
+
+검증 후보:
+
+- spawn이 유효한가
+- output/finish가 존재하는가
+- Marble이 영구 격리될 수 있는 영역이 있는가
+- 물리 body 수가 상한 이내인가
+- moving component 속도가 안전 범위인가
+- winnerCount를 만들 수 있는 구조인가
+- 동일 참가자에 구조적 편향이 있는가
+- simulation timeout 가능성이 과도하지 않은가
+
+완전한 수학적 공정성 증명까지 요구하지는 않지만, 명백한 invalid machine은 실행을 막는다.
+
+공식 내장 Machine은 대량 Monte Carlo 시뮬레이션으로 slot/spawn별 결과 편향을 측정한다.
+
+---
+
+## 13.9 공식 Machine Profile
+
+초기 내장 프로필 후보:
+
+### CLASSIC_RACE
+
+직관적인 낙하/레이스형.
+
+### GOLDBERG_CHAIN
+
+기어, 시소, 게이트, 도미노형 연쇄 장치를 통과하는 긴 추첨.
+
+### MARBLE_MUSIC
+
+Bell/Xylophone/Metal Plate 등을 지나며 음악적 소리를 만드는 추첨.
+
+### FUNNEL_CHAOS
+
+깔때기, 핀, 범퍼 중심의 확률적 분기형.
+
+### MULTI_SLOT
+
+여러 당첨 슬롯으로 Marble이 분배되는 다수 당첨 추첨.
+
+### ELIMINATION_MACHINE
+
+장치를 통과하며 Marble 수가 줄어드는 생존형.
+
+이 Profile은 모두 같은 Viewer Draw 참가자/Freeze/Audit 모델을 사용한다.
 
 ---
 
@@ -801,3 +1183,8 @@ lazygyu/roulette에서 특히 검토할 부분:
 - 결과/설정/참가자 snapshot을 Audit 기록
 - 다수 당첨자 지원
 - 일반 Random과 물리 Marble의 결과 결정 모델을 명확히 구분
+- Marble 물리 추첨의 장기 컨셉은 Goldberg Machine / Marble Machine
+- Machine Designer에서 물리 구조, Output, 추첨 Rule, Sound/Instrument를 설계 가능하게 한다
+- 충돌 이벤트를 Web Audio API 기반 사운드로 변환한다
+- Sound/Visual 변경은 Physics 결과와 분리하며 physicsMachineHash로 공정성 경계를 관리한다
+- Race뿐 아니라 Slot/Elimination/Cascade/Multi-output 방식도 Machine draw rule로 지원한다
