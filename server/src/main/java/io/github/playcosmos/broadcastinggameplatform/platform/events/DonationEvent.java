@@ -11,6 +11,28 @@ public record DonationEvent(
     String rawPayload,
     long occurredAtEpochMs
 ) implements PlatformEvent {
+    public DonationEvent(
+        String channelId,
+        String userId,
+        String nickname,
+        int amount,
+        int supporterOrder,
+        String rawPayload,
+        long occurredAtEpochMs
+    ) {
+        this(
+            "SOOP",
+            channelId,
+            userId,
+            nickname,
+            amount,
+            "balloon",
+            supporterOrder,
+            rawPayload,
+            occurredAtEpochMs
+        );
+    }
+
     @Override
     public String type() {
         return "donation";
