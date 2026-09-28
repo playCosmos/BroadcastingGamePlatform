@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>방송 게임 플랫폼 · 운영자</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+</head>
+<body>
+  <main class="shell admin-home">
+    <header class="hero compact">
+      <p class="eyebrow">BROADCASTING GAME PLATFORM / ADMIN</p>
+      <h1>게임 운영</h1>
+      <p class="lead">방송에 사용할 게임을 선택하고 룸을 생성합니다.</p>
+      <div class="hero-actions">
+        <a class="secondary" href="/">플랫폼 랜딩</a>
+      </div>
+    </header>
+
+    <section class="section-head">
+      <div>
+        <p class="eyebrow">AVAILABLE GAME</p>
+        <h2>보드게임</h2>
+      </div>
+    </section>
+
+    <section class="game-grid single">
+      <a class="game-card available linked" href="/admin/games/board/">
+        <div class="game-top">
+          <span class="badge">READY</span>
+          <span class="game-no">GAME 01</span>
+        </div>
+        <div class="game-body">
+          <h3>보드게임 룸 생성</h3>
+          <p>참가자 SOOP ID, 후원 트리거, 보드 형상, 이동 방식, 사용자 지시문을 설정한 뒤 방송용 룸을 생성합니다.</p>
+          <span class="action">룸 생성 화면 열기 →</span>
+        </div>
+      </a>
+    </section>
+
+    <section class="api-note">
+      <strong>Platform API</strong>
+      <span>SOOP 채팅·후원 이벤트와 게임 모듈을 공용 API/Event 계층으로 연결합니다.</span>
+    </section>
+  </main>
+</body>
+</html>

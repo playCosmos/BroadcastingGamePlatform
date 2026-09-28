@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <meta name="theme-color" content="#090c10">
+  <title>방송 게임 플랫폼</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <p class="eyebrow">BROADCASTING GAME PLATFORM</p>
+      <h1>방송과 게임을<br>하나의 플랫폼으로</h1>
+      <p class="lead">SOOP 채팅·후원 이벤트를 게임에 연결하고, 방송용 게임을 룸 단위로 생성·운영합니다.</p>
+      <div class="hero-actions">
+        <a class="primary" href="/admin/">운영자 페이지</a>
+        <a class="secondary" href="/api/v1/platform">API 상태</a>
+      </div>
+    </header>
+
+    <section class="section-head">
+      <div>
+        <p class="eyebrow">GAME MODULES</p>
+        <h2>게임</h2>
+      </div>
+      <span class="count">1 AVAILABLE</span>
+    </section>
+
+    <section class="game-grid">
+      <article class="game-card available">
+        <div class="game-top">
+          <span class="badge">AVAILABLE</span>
+          <span class="game-no">GAME 01</span>
+        </div>
+        <div class="game-body">
+          <h3>보드게임</h3>
+          <p>참가자별 후원 조건으로 턴을 실행하고 주사위·윷·칸 지시문을 처리하는 방송 연동 보드게임입니다.</p>
+          <a href="/admin/games/board/">룸 생성하기 →</a>
+        </div>
+      </article>
+      <article class="game-card planned">
+        <div class="game-top">
+          <span class="badge">PLATFORM</span>
+          <span class="game-no">PROVIDERS</span>
+        </div>
+        <div class="game-body">
+          <h3>SOOP 우선 연동</h3>
+          <p>채팅과 후원 이벤트는 플랫폼 공용 Provider/Event 계층에서 처리합니다. CHZZK Provider는 같은 인터페이스로 추후 추가합니다.</p>
+        </div>
+      </article>
+    </section>
+
+    <footer>현재 게임 모듈은 보드게임 하나만 제공합니다. Roulette/Lotto 기능은 포함하지 않습니다.</footer>
+  </main>
+</body>
+</html>
