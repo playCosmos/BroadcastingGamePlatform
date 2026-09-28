@@ -1,5 +1,6 @@
 CREATE TABLE IF NOT EXISTS viewer_draw_session (
   session_id TEXT PRIMARY KEY,
+  public_code TEXT NOT NULL UNIQUE,
   name TEXT NOT NULL,
   mode TEXT NOT NULL CHECK(mode IN ('RANDOM','NUMBER')),
   entry_source TEXT NOT NULL DEFAULT 'MANUAL_LIST',
