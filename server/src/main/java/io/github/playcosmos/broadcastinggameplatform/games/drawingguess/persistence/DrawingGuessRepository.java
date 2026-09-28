@@ -619,6 +619,42 @@ public final class DrawingGuessRepository {
         );
     }
 
+    public Match findActiveMatchByRoom(String roomId)
+        throws SQLException {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT match_id
+                 FROM drawing_guess_match
+                 WHERE room_id = ? AND state = 'ACTIVE'
+                 ORDER BY started_at DESC
+                 LIMIT 1
+                 """)) {
+            statement.setString(1, normalizeRoomId(roomId));
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) return null;
+                return findMatch(rows.getString(1));
+            }
+        }
+    }
+
+    public RoundPrivate findActiveRoundByMatch(String matchId)
+        throws SQLException {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT round_id
+                 FROM drawing_guess_round
+                 WHERE match_id = ? AND state = 'ACTIVE'
+                 ORDER BY round_index DESC
+                 LIMIT 1
+                 """)) {
+            statement.setString(1, matchId);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) return null;
+                return findRoundPrivate(rows.getString(1));
+            }
+        }
+    }
+
     public Match findMatch(String matchId) throws SQLException {
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
