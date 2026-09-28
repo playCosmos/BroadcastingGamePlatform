@@ -1233,6 +1233,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         return "index.html".equals(relative)
             || relative.startsWith("assets/")
             || relative.startsWith("games/board/")
+            || relative.startsWith("games/drawing-guess/")
             || relative.startsWith("tools/viewer-draw/");
     }
 
