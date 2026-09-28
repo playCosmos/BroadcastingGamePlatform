@@ -3,7 +3,7 @@ package io.github.playcosmos.broadcastinggameplatform.room;
 import com.google.gson.Gson;
 import com.google.gson.JsonParser;
 import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabase;
-import io.github.playcosmos.broadcastinggameplatform.soop.SoopDonation;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.SQLException;
@@ -172,7 +172,7 @@ public final class BoardGameRuntimeProbe {
                 )
             );
 
-            var donation = new SoopDonation(
+            var donation = new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
@@ -211,7 +211,7 @@ public final class BoardGameRuntimeProbe {
             require(duplicate.duplicateRooms() == 1, "duplicate donation must be detected");
             require(dispatched.size() == 1, "duplicate donation must not redispatch");
 
-            var wrongAmount = runtime.process(new SoopDonation(
+            var wrongAmount = runtime.process(new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
@@ -227,7 +227,7 @@ public final class BoardGameRuntimeProbe {
             require(snapshot.sequence() == 1, "duplicate/wrong donation must not advance sequence");
 
             runtime.pauseRoom(created.roomId(), "QUEUE", 10);
-            var queuedOne = runtime.process(new SoopDonation(
+            var queuedOne = runtime.process(new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
@@ -236,7 +236,7 @@ public final class BoardGameRuntimeProbe {
                 "runtime-probe-queue-1",
                 3_000L
             ));
-            var queuedTwo = runtime.process(new SoopDonation(
+            var queuedTwo = runtime.process(new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
@@ -250,7 +250,7 @@ public final class BoardGameRuntimeProbe {
             require(dispatched.size() == 1, "queued donations must not dispatch before resume");
 
             expirePauseGrace(database, created.roomId());
-            var afterGrace = runtime.process(new SoopDonation(
+            var afterGrace = runtime.process(new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
@@ -274,7 +274,7 @@ public final class BoardGameRuntimeProbe {
             require(dispatched.size() == 3, "resume must dispatch queued turns in order");
 
             runtime.pauseRoom(created.roomId(), "IGNORE", 10);
-            var ignoredDonation = new SoopDonation(
+            var ignoredDonation = new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
@@ -364,7 +364,7 @@ public final class BoardGameRuntimeProbe {
                 )
             );
 
-            var multiplierSetup = runtime.process(new SoopDonation(
+            var multiplierSetup = runtime.process(new DonationEvent(
                 "streamer", "soop-a", "A", 100, 5,
                 "runtime-probe-multiplier-setup", 6_000L
             ));
@@ -372,7 +372,7 @@ public final class BoardGameRuntimeProbe {
             var multiplierState = runtime.snapshot(created.roomId()).players().get(0);
             require(multiplierState.nextThrowMultiplier() == 2, "multiplier cell must arm x2 for next actual throw");
 
-            var multiplied = runtime.process(new SoopDonation(
+            var multiplied = runtime.process(new DonationEvent(
                 "streamer", "soop-a", "A", 100, 6,
                 "runtime-probe-multiplied", 7_000L
             ));
@@ -386,7 +386,7 @@ public final class BoardGameRuntimeProbe {
                 "ignore-next-landing cell must arm one ignored landing"
             );
 
-            var ignoredLanding = runtime.process(new SoopDonation(
+            var ignoredLanding = runtime.process(new DonationEvent(
                 "streamer", "soop-a", "A", 100, 7,
                 "runtime-probe-ignore-landing", 8_000L
             ));
@@ -397,7 +397,7 @@ public final class BoardGameRuntimeProbe {
                 "cell 10 START effect must be ignored once"
             );
 
-            var moveToStart = runtime.process(new SoopDonation(
+            var moveToStart = runtime.process(new DonationEvent(
                 "streamer", "soop-a", "A", 100, 8,
                 "runtime-probe-start", 9_000L
             ));
@@ -419,7 +419,7 @@ public final class BoardGameRuntimeProbe {
                 "runtime probe must allow two active rooms at limit two"
             );
 
-            var multiRoomDonation = runtime.process(new SoopDonation(
+            var multiRoomDonation = runtime.process(new DonationEvent(
                 "streamer",
                 "soop-a",
                 "A",
