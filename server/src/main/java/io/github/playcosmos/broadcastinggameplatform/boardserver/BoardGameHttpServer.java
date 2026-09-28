@@ -28,8 +28,8 @@ import java.util.function.Supplier;
 
 public final class BoardGameHttpServer implements AutoCloseable {
     private static final Gson GSON = new Gson();
-    private static final String VERSION = "0.8.1";
-    private static final String ROOM_ADMIN_UI_VERSION = "0.8.1";
+    private static final String VERSION = "0.1.0";
+    private static final String ROOM_ADMIN_UI_VERSION = "0.1.0";
     private static final int MAX_MANAGEMENT_BODY_BYTES = 16 * 1024;
 
     private final HttpServer server;
@@ -93,7 +93,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
             }
             sendJson(exchange, 200, Map.of(
                 "status", "ok",
-                "product", "RamyaniGamesServer",
+                "product", "BroadcastingGamePlatformServer",
                 "instanceId", instanceId,
                 "time", OffsetDateTime.now().toString()
             ));
@@ -110,7 +110,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
             String clientBaseUrl = clientBaseUrl(exchange);
             String websocketUrl = websocketUrl(exchange, clientBaseUrl);
 
-            payload.put("product", "RamyaniGamesServer");
+            payload.put("product", "BroadcastingGamePlatformServer");
             payload.put("version", VERSION);
             payload.put("roomAdminUiVersion", ROOM_ADMIN_UI_VERSION);
             payload.put("instanceId", instanceId);
@@ -163,10 +163,10 @@ public final class BoardGameHttpServer implements AutoCloseable {
     public void start() {
         server.start();
         System.out.println(
-            "[board-http] listening on http://" +
+            "[platform-http] listening on http://" +
             server.getAddress().getHostString() + ":" + server.getAddress().getPort()
         );
-        System.out.println("[board-http] web root: " + webRoot);
+        System.out.println("[platform-http] web root: " + webRoot);
     }
 
     private void serverManagement(
@@ -368,7 +368,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
         String clientBaseUrl = clientBaseUrl(exchange);
         String websocketUrl = websocketUrl(exchange, clientBaseUrl);
 
-        payload.put("product", "RamyaniGamesServer");
+        payload.put("product", "BroadcastingGamePlatformServer");
         payload.put("version", VERSION);
         payload.put("roomAdminUiVersion", ROOM_ADMIN_UI_VERSION);
         payload.put("instanceId", instanceId);
