@@ -171,7 +171,8 @@
     $("operationStatus").textContent = "Round 시작 중...";
 
     try {
-      window.DrawingGuessCanvas?.clear();
+      window.DrawingGuessCanvas?.detachSyncSession();
+      window.DrawingGuessCanvas?.resetLocal();
 
       const promptId = $("promptId").value.trim()
         || (crypto.randomUUID?.() || `prompt-${Date.now()}`);
@@ -227,6 +228,7 @@
         { method: "POST", body: "{}" }
       );
       activeRound = null;
+      window.DrawingGuessCanvas?.detachSyncSession();
       $("privateAnswer").hidden = true;
       $("privateAnswerText").textContent = "-";
       $("operationStatus").textContent =
