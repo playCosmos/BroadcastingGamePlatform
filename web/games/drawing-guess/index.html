@@ -9,13 +9,48 @@
 </head>
 <body>
   <main class="overlay-shell">
-    <header class="overlay-status">
+    <header class="game-header" id="gameHeader">
+      <div>
+        <span class="game-title" id="roomName">Drawing Guess</span>
+        <strong class="round-label" id="roundLabel">WAITING</strong>
+      </div>
+      <div class="round-meta">
+        <span id="drawerLabel">-</span>
+        <strong class="timer" id="roundTimer">--</strong>
+      </div>
+    </header>
+
+    <section class="game-stage">
+      <div class="canvas-frame" id="canvasFrame">
+        <canvas id="overlayCanvas"></canvas>
+
+        <div class="answer-reveal" id="answerReveal" hidden>
+          <span>정답</span>
+          <strong id="answerRevealText">-</strong>
+        </div>
+
+        <div class="waiting-card" id="waitingCard">
+          <strong id="waitingTitle">게임을 기다리는 중</strong>
+          <span id="waitingDetail">Round가 시작되면 그림이 표시됩니다.</span>
+        </div>
+      </div>
+
+      <aside class="game-side">
+        <section class="side-card">
+          <span class="side-title">SCORE</span>
+          <div class="scoreboard" id="overlayScoreboard"></div>
+        </section>
+        <section class="side-card">
+          <span class="side-title">CORRECT</span>
+          <div class="correct-list" id="overlayCorrectList"></div>
+        </section>
+      </aside>
+    </section>
+
+    <footer class="connection-status" id="connectionStatus">
       <span id="overlayCode">------</span>
       <strong id="overlayStatus">CONNECTING</strong>
-    </header>
-    <div class="canvas-frame" id="canvasFrame">
-      <canvas id="overlayCanvas"></canvas>
-    </div>
+    </footer>
   </main>
   <script src="/games/drawing-guess/drawing-guess-overlay.js"></script>
 </body>
