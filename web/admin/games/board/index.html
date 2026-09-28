@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>방송 게임 플랫폼 · 보드게임 룸 생성</title>
+  <link rel="stylesheet" href="/admin/assets/base.css" />
+  <link rel="stylesheet" href="/admin/assets/board-room-admin.css" />
+  <style>
+    .board-admin-version-line {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 6px;
+      color: #7f8a98;
+      font-size: 10px;
+      font-weight: 800;
+    }
+    @media(max-width:760px){
+      .board-admin-version-line { justify-content: flex-start; }
+    }
+  </style>
+</head>
+<body>
+  <main class="admin-shell">
+    <header class="admin-header">
+      <div>
+        <p class="eyebrow">BROADCASTING GAME PLATFORM / BOARD</p>
+        <h1>보드게임 룸 생성</h1><p><a class="nav-link" href="/admin/">← 플랫폼 홈</a></p>
+        <p>게임 서버가 룸 상태와 방송용 클라이언트를 제공하고, 참가자는 공유받은 오버레이 URL을 OBS 브라우저 소스로 사용합니다.</p>
+      </div>
+      <div class="board-admin-version-line">
+        <span id="boardRoomAdminUiVersion">룸 관리 UI v-</span>
+        <span>·</span>
+        <span id="boardServerVersion">서버 v-</span>
+      </div>
+    </header>
+
+    <input id="overlayUrlInput" type="hidden" />
+
+    <section class="panel board-room-panel" id="boardRoomPanel">
+      <div class="panel-heading">
+        <div>
+          <h2>보드게임 룸 생성</h2>
+          <p>룸별 설정은 SQLite에 저장합니다. 생성 시 참가자별 SOOP 방송 상태를 확인하고, 서버가 만든 실제 보드 프리뷰를 확인한 뒤 배치를 확정합니다. DRAFT 룸은 여러 개 만들 수 있고, 동시에 활성화할 수 있는 룸 수는 서버 관리 콘솔의 활성 룸 상한을 따릅니다.</p>
+        </div>
+      </div>
+
+      <form class="board-room-form" id="boardRoomForm">
+        <fieldset class="board-room-preset-panel">
+          <legend>룸 설정 저장 / 불러오기</legend>
+          <div class="board-room-preset-grid">
+            <label>저장 이름
+              <input id="boardRoomPresetName" type="text" maxlength="80" autocomplete="off" placeholder="예: 기본 2인 보드" />
+            </label>
+            <label>저장된 설정
+              <select id="boardRoomPresetSelect">
+                <option value="">저장된 설정 선택</option>
+              </select>
+            </label>
+            <div class="board-room-preset-actions">
+              <button type="button" id="boardRoomPresetSave">현재 설정 저장</button>
+              <button type="button" id="boardRoomPresetLoad">불러오기</button>
+              <button type="button" id="boardRoomPresetDelete">삭제</button>
+            </div>
+          </div>
+          <p class="board-room-rule-note">이 브라우저에만 저장됩니다. 직접 저장한 프리셋은 localStorage에 유지되고, 마지막으로 실제 룸 생성에 사용한 참가자·보드·이동·지시문 설정은 이 페이지 쿠키에도 자동 저장됩니다. 생성된 룸 ID·말 위치·진행상태는 저장하지 않습니다.</p>
+        </fieldset>
+
+        <fieldset>
+          <legend>룸 기본</legend>
+          <div class="board-room-basic-grid">
+            <label>룸 이름
+              <input name="roomName" autocomplete="off" value="Board Room" maxlength="120" />
+            </label>
+            <label>룸 유지 시간(분)
+              <input name="retentionMinutes" type="number" min="1" max="480" step="1" value="240" />
+            </label>
+            <label>일시정지 중 후원
+              <select name="pauseDonationMode">
+                <option value="QUEUE" selected>유예시간 동안 큐에 저장 후 이후 무시</option>
+                <option value="IGNORE">일시정지 즉시 무시</option>
+              </select>
+            </label>
+            <label>일시정지 후원 유예(초)
+              <input name="pauseGraceSeconds" type="number" min="0" max="120" step="1" value="10" />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>참가자 / 후원 트리거</legend>
+          <p class="board-room-rule-note">각 참가자의 SOOP ID와 일치하는 후원 중, 설정한 ‘턴 실행 별풍선’ 개수와 정확히 같은 단일 후원만 해당 참가자의 턴을 실행합니다. P1의 ‘모두 동일’을 체크하면 P1의 별풍선 값이 모든 참가자에게 적용됩니다.</p>
+          <div class="board-room-player-list" id="boardRoomPlayers"></div>
+          <div class="board-room-player-add-row">
+            <button type="button" id="boardRoomAddPlayer">+ 참가자 추가</button>
+            <span id="boardRoomPlayerLimitState">최대 6명</span>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend>보드</legend>
+          <div class="board-room-board-grid">
+            <label>크기 입력 방식
+              <select id="boardRoomSizingMode">
+                <option value="dimensions">가로/세로</option>
+                <option value="cellCount">전체 칸 수</option>
+              </select>
+            </label>
+            <label>모서리 형상
+              <select name="layoutStyle">
+                <option value="rounded">라운드</option>
+                <option value="rect">직각</option>
+              </select>
+            </label>
+            <span class="board-room-field-cluster" id="boardRoomDimensionsFields">
+              <label>가로 칸
+                <input name="columns" type="number" min="8" max="64" step="1" value="16" />
+              </label>
+              <label>세로 칸
+                <input name="rows" type="number" min="6" max="48" step="1" value="12" />
+              </label>
+            </span>
+            <label id="boardRoomCellCountField" hidden>전체 외곽 칸 수
+              <input name="cellCount" type="number" min="24" step="2" value="52" />
+            </label>
+          </div>
+        </fieldset>
+
+                                <fieldset>
+          <legend>이동값 생성</legend>
+          <div class="board-room-generator-choice-grid">
+            <section class="board-room-generator-card">
+              <label class="board-room-generator-toggle">
+                <input id="boardRoomDiceEnabled" type="checkbox" checked />
+                <strong>주사위</strong>
+              </label>
+              <div class="board-room-generator-suboptions" id="boardRoomDiceFields">
+                <label class="board-room-generator-primary-option">주사위 개수
+                  <select name="diceCount">
+                    <option value="1">1개</option>
+                    <option value="2" selected>2개</option>
+                  </select>
+                </label>
+                <label class="check-label board-room-generator-bonus-option">
+                  <input name="extraThrowOnDouble" type="checkbox" checked />
+                  더블이 나오면 한번 더 던지기
+                </label>
+              </div>
+            </section>
+
+            <section class="board-room-generator-card">
+              <label class="board-room-generator-toggle">
+                <input id="boardRoomYutEnabled" type="checkbox" checked />
+                <strong>윷</strong>
+              </label>
+              <div class="board-room-generator-suboptions" id="boardRoomYutFields">
+                <span class="board-room-generator-option-spacer" aria-hidden="true"></span>
+                <label class="check-label board-room-generator-bonus-option">
+                  <input name="extraThrowOnYutMo" type="checkbox" checked />
+                  윷/모가 나오면 한번 더 던지기
+                </label>
+              </div>
+            </section>
+          </div>
+          <p class="board-room-rule-note">주사위만 체크하면 주사위, 윷만 체크하면 윷, 둘 다 체크하면 혼합입니다. 혼합은 턴 시작 시 둘 중 하나를 서버 RNG로 정하고, 추가 던지기가 이어져도 그 턴이 끝날 때까지 같은 종류를 유지합니다.</p>
+        </fieldset>
+
+                        <fieldset>
+          <legend>지시문 배치</legend>
+          <p class="board-room-rule-note">기본 지시문 5종은 처음부터 포함됩니다. 왼쪽 체크박스로 활성/비활성을 정하고, 지시문을 선택하면 오른쪽 Property View에서 배치 방식·값과 <code>{n}</code>, <code>{m}</code> 인자를 수정할 수 있습니다. 새 항목은 사용자 지시문만 추가할 수 있습니다.</p>
+          <div class="board-room-instruction-editor">
+            <aside class="board-room-instruction-sidebar">
+              <div class="board-room-instruction-toolbar">
+                <button type="button" class="board-room-small-button" data-add-board-instruction="custom">+ 사용자 지시문 추가</button>
+              </div>
+              <div class="board-room-instruction-master-list" id="boardRoomInstructionList"></div>
+            </aside>
+
+            <section class="board-room-instruction-property-view">
+              <div class="board-room-property-empty" id="boardRoomInstructionEmptyState">
+                왼쪽 목록에서 지시문을 선택하세요.
+              </div>
+              <div class="board-room-instruction-list" id="boardRoomInstructionRows"></div>
+            </section>
+          </div>
+
+          <div class="board-room-random-row">
+            <label>랜덤 변경 후보 설정
+              <select id="boardRoomRandomPoolMode">
+                <option value="inheritRatioInstructions">활성 비율 지시문 자동 포함 + 원 비율 상속</option>
+                <option value="custom">활성 지시문 중 후보/가중치 직접 설정</option>
+              </select>
+            </label>
+            <p class="board-room-rule-note">비활성 지시문은 보드에 배치되지 않고 랜덤 후보에서도 제외됩니다. 기본 preset은 앞으로/뒤로 10%, 다음 주사위 무효·{m}배·다음 칸 무효화는 각각 1개입니다.</p>
+          </div>
+        </fieldset>
+
+        <div class="board-room-create-actions">
+          <button type="submit" id="boardRoomCreateButton">룸 생성 및 방송 상태 확인</button>
+          <p class="operation-result" id="boardRoomResult">설정을 입력한 뒤 룸을 생성하세요.</p>
+        </div>
+      </form>
+
+      <div class="board-room-live-summary" id="boardRoomLiveSummary" aria-live="polite"></div>
+
+      <div class="board-room-preview-panel" id="boardRoomPreviewPanel" hidden>
+        <div class="board-room-preview-head">
+          <div>
+            <h2>보드 프리뷰</h2>
+            <p class="board-room-preview-meta" id="boardRoomPreviewMeta"></p>
+          </div>
+          <div class="board-room-preview-actions">
+            <button type="button" id="boardRoomRerollButton">다시 배치</button>
+            <button type="button" id="boardRoomCommitButton">이 배치로 확정</button>
+            <label class="board-room-inline-control" id="boardRoomExtendControl">연장(분, 최대 120)
+              <input id="boardRoomExtendMinutes" type="number" min="1" max="120" step="1" value="60" />
+            </label>
+            <button type="button" id="boardRoomExtendButton">시간 연장</button>
+            <button type="button" id="boardRoomPauseButton" hidden>일시정지</button>
+            <button type="button" id="boardRoomResumeButton" hidden>재개</button>
+            <button type="button" id="boardRoomTerminateButton" hidden>룸 종료</button>
+          </div>
+        </div>
+        <div class="board-room-preview-shell">
+          <iframe id="boardRoomPreviewFrame" title="보드게임 룸 프리뷰" loading="lazy"></iframe>
+        </div>
+        <div class="board-room-overlay-row" id="boardRoomOverlayRow" hidden>
+          <input id="boardRoomOverlayUrl" type="text" readonly aria-label="보드게임 OBS 오버레이 주소" />
+          <button type="button" id="boardRoomCopyOverlayButton">OBS 주소 복사</button>
+          <button type="button" id="boardRoomOpenOverlayButton">새 창에서 열기</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    (() => {
+      async function refreshRoomAdminMeta() {
+        try {
+          const response = await fetch("/api/state", { cache: "no-store" });
+          if (!response.ok) throw new Error(response.statusText);
+          const state = await response.json();
+
+          document.getElementById("boardRoomAdminUiVersion").textContent =
+            "룸 관리 UI v" + (state.roomAdminUiVersion || "-");
+          document.getElementById("boardServerVersion").textContent =
+            "서버 v" + (state.version || "-");
+
+          const carrier = document.getElementById("overlayUrlInput");
+          if (carrier) {
+            carrier.value =
+              (state.clientBaseUrl || location.origin)
+              + "/?ws="
+              + encodeURIComponent(state.websocketUrl || "");
+          }
+        } catch (_) {
+        }
+      }
+
+      refreshRoomAdminMeta();
+      setInterval(refreshRoomAdminMeta, 3000);
+    })();
+  </script>
+  <script src="/admin/assets/board-room-admin.js"></script>
+</body>
+</html>

@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>방송 게임 플랫폼 · 보드게임 룸 운영</title>
+  <link rel="stylesheet" href="/admin/assets/base.css" />
+  <link rel="stylesheet" href="/admin/assets/board-room-operation.css" />
+</head>
+<body>
+  <main class="admin-shell room-operation-shell">
+    <header class="admin-header room-operation-header">
+      <div>
+        <p class="eyebrow">BROADCASTING GAME PLATFORM / BOARD ROOM</p>
+        <h1 id="roomOperationTitle">룸 운영</h1>
+        <p id="roomOperationMeta">룸 상태를 불러오는 중입니다.</p>
+      </div>
+      <div class="room-operation-header-actions">
+        <span class="connection" id="roomOperationStatus">확인 중</span>
+        <a class="nav-link" href="/admin/games/board/">룸 생성 페이지</a>
+      </div>
+    </header>
+
+    <section class="panel room-share-panel">
+      <div class="panel-heading">
+        <div>
+          <h2>참가자 방송용 공용 오버레이</h2>
+          <p>이 룸의 모든 참가자에게 아래 주소 하나를 그대로 전달하세요. 각 참가자는 OBS 브라우저 소스에 동일한 주소를 사용합니다.</p>
+        </div>
+        <span class="room-share-badge">CLIENT</span>
+      </div>
+      <div class="room-share-url-row">
+        <input id="roomShareUrl" type="text" readonly aria-label="참가자 공용 오버레이 주소" />
+        <button type="button" id="roomShareCopyButton">주소 복사</button>
+        <button type="button" id="roomShareOpenButton">새 창 테스트</button>
+        <button type="button" id="roomShareSystemButton">공유</button>
+      </div>
+      <div class="room-share-hint" id="roomShareHint">클라이언트 주소를 확인하는 중입니다.</div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>운영 제어</h2>
+          <p>일시정지는 SOOP 자동 턴 처리를 멈춥니다. 수동 턴과 위치 보정은 일시정지 중에도 사용할 수 있습니다.</p>
+        </div>
+      </div>
+      <div class="room-operation-controls">
+        <button type="button" id="roomPauseButton">일시정지</button>
+        <button type="button" id="roomResumeButton" hidden>재개</button>
+        <label class="room-operation-extend">시간 연장
+          <input id="roomExtendMinutes" type="number" min="1" max="120" step="1" value="60" />
+          <span>분</span>
+        </label>
+        <button type="button" id="roomExtendButton">연장</button>
+        <button type="button" class="danger" id="roomTerminateButton">룸 종료</button>
+      </div>
+      <p class="operation-result" id="roomOperationResult">대기 중</p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>플레이어 운영</h2>
+          <p>이동값 생성은 실제 서버 턴과 동일한 규칙을 사용합니다. 특정 칸 이동은 위치만 보정하며 해당 칸 지시문은 발동하지 않습니다.</p>
+        </div>
+      </div>
+      <div class="room-player-operation-list" id="roomPlayerOperationList"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>현재 보드</h2>
+          <p>SOOP 자동 턴과 운영자 수동 조작이 동일한 서버 상태로 반영됩니다.</p>
+        </div>
+      </div>
+      <div class="room-operation-board-shell">
+        <iframe id="roomOperationBoard" title="현재 보드"></iframe>
+      </div>
+    </section>
+
+    <details class="panel room-fixed-settings" id="roomFixedSettings">
+      <summary>확정 설정 보기</summary>
+      <p class="room-fixed-settings-note">룸 생성 후에는 변경할 수 없는 값입니다.</p>
+      <div id="roomFixedSettingsContent"></div>
+    </details>
+  </main>
+
+  <script src="/admin/assets/board-room-operation.js"></script>
+</body>
+</html>
