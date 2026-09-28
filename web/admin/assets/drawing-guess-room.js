@@ -8,6 +8,8 @@
   let room = null;
   let activeMatch = null;
   let activeRound = null;
+  let attachedRoundId = null;
+  let drawerRecoveryInFlight = false;
 
   async function api(path, options = {}) {
     const response = await fetch(path, {
@@ -160,6 +162,46 @@
     exposeStableOverlayUrl();
   }
 
+  async function recoverDrawerIfNeeded() {
+    if (
+      !activeRound
+      || attachedRoundId === activeRound.roundId
+      || drawerRecoveryInFlight
+    ) {
+      return;
+    }
+
+    drawerRecoveryInFlight = true;
+    $("operationStatus").textContent =
+      "활성 Round Drawer 상태 복구 중...";
+
+    try {
+      const recovered = await api(
+        `/api/v1/games/drawing-guess/rounds/${activeRound.roundId}/drawer-recovery`,
+        { method: "POST", body: "{}" }
+      );
+
+      const privateRound = recovered.privateRound;
+      $("privateAnswerText").textContent =
+        privateRound?.prompt?.answer || "-";
+      $("privateAnswer").hidden = false;
+
+      await window.DrawingGuessCanvas.attachSyncSession(
+        recovered.drawingSession,
+        { recoverHistory: true }
+      );
+      attachedRoundId = activeRound.roundId;
+      exposeStableOverlayUrl();
+      $("operationStatus").textContent =
+        "Drawer 복구 완료 · 기존 Canvas history 복원됨";
+    } catch (error) {
+      $("operationStatus").textContent =
+        "Drawer 복구 오류: " + error.message;
+    } finally {
+      drawerRecoveryInFlight = false;
+    }
+  }
+
   async function refreshRoom() {
     if (!roomId || roomId.length !== 6) {
       throw new Error("유효한 roomId가 필요합니다.");
@@ -169,6 +211,13 @@
         + encodeURIComponent(roomId)
     );
     renderRoom();
+
+    if (activeRound) {
+      await recoverDrawerIfNeeded();
+    } else if (attachedRoundId) {
+      attachedRoundId = null;
+      window.DrawingGuessCanvas?.detachSyncSession();
+    }
   }
 
   async function startMatch() {
@@ -245,6 +294,7 @@
       await window.DrawingGuessCanvas.attachSyncSession(
         started.drawingSession
       );
+      attachedRoundId = started.publicRound.roundId;
       exposeStableOverlayUrl();
 
       $("operationStatus").textContent =
@@ -277,6 +327,7 @@
         { method: "POST", body: "{}" }
       );
       activeRound = null;
+      attachedRoundId = null;
       window.DrawingGuessCanvas?.detachSyncSession();
       $("privateAnswer").hidden = true;
       $("privateAnswerText").textContent = "-";
