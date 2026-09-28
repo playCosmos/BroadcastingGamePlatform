@@ -1,7 +1,7 @@
 package io.github.playcosmos.broadcastinggameplatform.room;
 
 import com.google.gson.JsonParser;
-import io.github.playcosmos.broadcastinggameplatform.db.BridgeDatabase;
+import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabase;
 import io.github.playcosmos.broadcastinggameplatform.soop.SoopDonation;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -21,7 +21,7 @@ public final class MixedMovementProbe {
         Path root = null;
         try {
             root = Files.createTempDirectory("mixed-movement-probe-");
-            var database = new BridgeDatabase(root.resolve("probe.db"));
+            var database = new BoardGameDatabase(root.resolve("probe.db"));
             database.initialize();
 
             var rooms = new RoomService(database, players -> players.stream()
