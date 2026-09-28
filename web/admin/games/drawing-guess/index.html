@@ -57,6 +57,28 @@
           </label>
         </div>
 
+        <section class="chat-option-panel">
+          <label class="toggle-row">
+            <input id="chatGuessEnabled" type="checkbox" checked>
+            <span>
+              <strong>채팅 정답 사용</strong>
+              <small>끄면 Canvas/룸 게임만 사용하고 채팅은 정답 판정에 사용하지 않습니다.</small>
+            </span>
+          </label>
+          <div class="inline-fields" id="chatBindingFields">
+            <label class="field">
+              <span>Chat Provider</span>
+              <select id="chatProvider">
+                <option value="SOOP">SOOP</option>
+              </select>
+            </label>
+            <label class="field">
+              <span>채널 ID · 선택</span>
+              <input id="chatChannelId" type="text" placeholder="비워두면 해당 Provider의 현재 채널">
+            </label>
+          </div>
+        </section>
+
         <details class="score-details">
           <summary>점수 세부 설정</summary>
           <div class="score-grid">
@@ -70,7 +92,7 @@
 
       <article class="draw-panel">
         <h2>참가자</h2>
-        <p class="helper">한 줄에 한 명. 기본은 표시명만 입력합니다. SOOP 계정까지 연결하려면 <code>표시명 | SOOP | 사용자ID</code> 형식을 사용할 수 있습니다.</p>
+        <p class="helper">순환 출제자는 한 줄에 한 명 입력합니다. <code>표시명 | SOOP | 사용자ID</code> 형식으로 계정을 연결할 수 있습니다. 방송인 전담 모드는 참가자 목록을 비워도 되며, 정답을 맞힌 채팅 시청자가 자동으로 점수판에 등록됩니다.</p>
         <label class="field">
           <span>참가자 목록</span>
           <textarea id="participants" rows="14" placeholder="철수&#10;영희&#10;민수 | SOOP | user123"></textarea>
