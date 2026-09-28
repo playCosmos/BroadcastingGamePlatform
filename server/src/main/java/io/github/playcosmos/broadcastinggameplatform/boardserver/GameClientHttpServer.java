@@ -1262,7 +1262,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 """ + error + """
                 <section class="section">
                   <h2>관리자 토큰 입력</h2>
-                  <form method="get" action=""" + escapeHtml(returnTo) + """>
+                  <form method="get" action="__RETURN_TO_ATTR__">
                     <input name="token" autocomplete="off" spellcheck="false" required placeholder="관리자 토큰" aria-label="관리자 토큰">
                     <button type="submit">토큰으로 인증</button>
                   </form>
@@ -1287,7 +1287,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 const code = document.getElementById("approvalCode");
                 const status = document.getElementById("approvalStatus");
                 const storageKey = "broadcastingGamePlatform.adminApproval.v1";
-                const returnTo = """ + returnToJs + """;
+                const returnTo = __RETURN_TO_JS__;
                 let timer = 0;
 
                 function clearSaved() {
@@ -1396,7 +1396,15 @@ public final class GameClientHttpServer implements AutoCloseable {
               </script>
             </body>
             </html>
-            """;
+            """
+            .replace(
+                "__RETURN_TO_ATTR__",
+                escapeHtml(returnTo)
+            )
+            .replace(
+                "__RETURN_TO_JS__",
+                returnToJs
+            );
 
         byte[] body = html.getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(
