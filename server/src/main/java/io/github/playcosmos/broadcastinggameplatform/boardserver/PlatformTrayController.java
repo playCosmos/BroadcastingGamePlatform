@@ -25,7 +25,7 @@ public final class PlatformTrayController implements AutoCloseable {
     private final Runnable reconnectAction;
     private final Runnable exitAction;
     private final AtomicBoolean exitRequested = new AtomicBoolean(false);
-    private final Timer refreshTimer = new Timer("board-tray-status", true);
+    private final Timer refreshTimer = new Timer("platform-tray-status", true);
     private final TrayIcon trayIcon;
     private final MenuItem statusItem;
 
@@ -69,7 +69,7 @@ public final class PlatformTrayController implements AutoCloseable {
         exit.addActionListener(event -> requestExit());
         popup.add(exit);
 
-        trayIcon = new TrayIcon(createIcon(), "RamyaniGamesServer", popup);
+        trayIcon = new TrayIcon(createIcon(), "BroadcastingGamePlatformServer", popup);
         trayIcon.setImageAutoSize(true);
         trayIcon.addActionListener(event -> {
             if (!exitRequested.get()) open(serverManagementUrl);
@@ -103,7 +103,7 @@ public final class PlatformTrayController implements AutoCloseable {
                 exitAction
             );
         } catch (Exception error) {
-            System.err.println("[board-tray] " + error.getMessage());
+            System.err.println("[platform-tray] " + error.getMessage());
             return null;
         }
     }
@@ -111,7 +111,7 @@ public final class PlatformTrayController implements AutoCloseable {
     private void requestExit() {
         if (!exitRequested.compareAndSet(false, true)) return;
         statusItem.setLabel("상태: 종료 중");
-        Thread.ofPlatform().name("games-server-tray-exit").start(exitAction);
+        Thread.ofPlatform().name("platform-server-tray-exit").start(exitAction);
     }
 
     private void updateStatus(String status) {
@@ -129,7 +129,7 @@ public final class PlatformTrayController implements AutoCloseable {
             default -> "대기 중";
         };
         statusItem.setLabel("상태: " + label);
-        trayIcon.setToolTip("RamyaniGamesServer · " + label);
+        trayIcon.setToolTip("BroadcastingGamePlatformServer · " + label);
     }
 
     private static Image createIcon() {
@@ -156,7 +156,7 @@ public final class PlatformTrayController implements AutoCloseable {
                 Desktop.getDesktop().browse(URI.create(url));
             }
         } catch (Exception error) {
-            System.err.println("[board-tray] browser open failed: " + error.getMessage());
+            System.err.println("[platform-tray] browser open failed: " + error.getMessage());
         }
     }
 
