@@ -45,3 +45,14 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - `GET /api/v1/platform` — 공개 플랫폼/게임/Provider capability
 - `GET /api/v1/providers` — 관리자 인증 필요, Provider 런타임 상태
 - `GET /api/v1/events/recent?limit=N` — 관리자 인증 필요, 최근 정규화 채팅/후원 이벤트
+
+
+## 구현 현황
+
+- Board: AVAILABLE
+- Viewer Draw: V0 Core + V1 Number Draw IMPLEMENTED
+- Drawing Guess: D0 Canvas + D1 Sync + D2 Classic Core Foundation IMPLEMENTED
+- Yacht: PLANNED
+- CHZZK Provider: PLANNED
+- Viewer Draw Chat Entry: PLANNED
+- Viewer Draw Marble Physics / Goldberg Machine: PLANNED
