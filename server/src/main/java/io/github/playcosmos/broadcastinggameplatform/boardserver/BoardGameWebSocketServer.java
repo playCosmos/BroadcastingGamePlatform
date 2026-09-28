@@ -1,5 +1,6 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
 import java.net.InetSocketAddress;
 import java.net.URLDecoder;
 import java.nio.charset.StandardCharsets;
@@ -14,16 +15,29 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 public final class BoardGameWebSocketServer extends WebSocketServer {
-    private static final Pattern ROOM_CODE_PATTERN =
+    private static final Pattern CODE_PATTERN =
         Pattern.compile("[A-HJ-NP-Z2-9]{6}");
 
+    private enum ChannelKind {
+        BOARD,
+        DRAWING
+    }
+
+    private record Channel(
+        ChannelKind kind,
+        String code,
+        String drawerToken,
+        boolean canWrite
+    ) {}
+
     private final AtomicInteger connectedClients = new AtomicInteger();
-    private final Map<WebSocket, String> roomByConnection =
+    private final Map<WebSocket, Channel> channelByConnection =
         new ConcurrentHashMap<>();
     private final Predicate<String> roomCodeValidator;
+    private final DrawingSyncService drawingSync;
 
     public BoardGameWebSocketServer(String host, int port) {
-        this(host, port, roomCode -> true);
+        this(host, port, roomCode -> true, null);
     }
 
     public BoardGameWebSocketServer(
@@ -31,31 +45,90 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         int port,
         Predicate<String> roomCodeValidator
     ) {
+        this(host, port, roomCodeValidator, null);
+    }
+
+    public BoardGameWebSocketServer(
+        String host,
+        int port,
+        Predicate<String> roomCodeValidator,
+        DrawingSyncService drawingSync
+    ) {
         super(new InetSocketAddress(host, port));
         this.roomCodeValidator = roomCodeValidator == null
             ? roomCode -> false
             : roomCodeValidator;
+        this.drawingSync = drawingSync;
         setReuseAddr(true);
     }
 
     @Override
     public void onOpen(WebSocket connection, ClientHandshake handshake) {
-        String roomCode = roomCode(handshake);
-        if (
-            roomCode == null
-            || !roomCodeValidator.test(roomCode)
-        ) {
-            connection.close(1008, "valid committed room code required");
+        Map<String, String> query = queryParameters(handshake);
+        String roomCode = normalizeCode(query.get("roomCode"));
+        if (roomCode != null) {
+            if (!roomCodeValidator.test(roomCode)) {
+                connection.close(1008, "valid committed room code required");
+                return;
+            }
+            register(
+                connection,
+                new Channel(ChannelKind.BOARD, roomCode, null, false)
+            );
+            System.out.println(
+                "[platform-ws] board connected room=" + roomCode
+                    + ": " + connection.getRemoteSocketAddress()
+            );
             return;
         }
 
-        roomByConnection.put(connection, roomCode);
-        int count = connectedClients.incrementAndGet();
-        System.out.println(
-            "[board-ws] connected room=" + roomCode + ": "
-                + connection.getRemoteSocketAddress()
-                + " (" + count + ")"
-        );
+        String drawingCode = normalizeCode(query.get("drawingCode"));
+        if (
+            drawingCode != null
+            && drawingSync != null
+            && drawingSync.isActive(drawingCode)
+        ) {
+            String drawerToken = query.get("drawerToken");
+            boolean canWrite = drawerToken != null
+                && drawingSync.isAuthorizedDrawer(
+                    drawingCode,
+                    drawerToken
+                );
+
+            if (drawerToken != null && !canWrite) {
+                connection.close(1008, "invalid drawer token");
+                return;
+            }
+
+            register(
+                connection,
+                new Channel(
+                    ChannelKind.DRAWING,
+                    drawingCode,
+                    drawerToken,
+                    canWrite
+                )
+            );
+
+            for (String event : drawingSync.history(drawingCode)) {
+                if (!connection.isOpen()) break;
+                connection.send(event);
+            }
+
+            System.out.println(
+                "[platform-ws] drawing connected code=" + drawingCode
+                    + " role=" + (canWrite ? "drawer" : "overlay")
+                    + ": " + connection.getRemoteSocketAddress()
+            );
+            return;
+        }
+
+        connection.close(1008, "valid board room or drawing code required");
+    }
+
+    private void register(WebSocket connection, Channel channel) {
+        channelByConnection.put(connection, channel);
+        connectedClients.incrementAndGet();
     }
 
     @Override
@@ -65,14 +138,17 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         String reason,
         boolean remote
     ) {
-        String roomCode = roomByConnection.remove(connection);
+        Channel channel = channelByConnection.remove(connection);
         int count = connectedClients.get();
-        if (roomCode != null) {
+        if (channel != null) {
             count = Math.max(0, connectedClients.decrementAndGet());
         }
         System.out.println(
-            "[board-ws] disconnected"
-                + (roomCode == null ? "" : " room=" + roomCode)
+            "[platform-ws] disconnected"
+                + (channel == null
+                    ? ""
+                    : " " + channel.kind().name().toLowerCase(Locale.ROOT)
+                        + "=" + channel.code())
                 + " (" + count + ")"
         );
     }
@@ -81,18 +157,51 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     public void onMessage(WebSocket connection, String message) {
         if ("ping".equalsIgnoreCase(message.trim())) {
             connection.send("pong");
+            return;
+        }
+
+        Channel channel = channelByConnection.get(connection);
+        if (channel == null) {
+            connection.close(1008, "unregistered connection");
+            return;
+        }
+
+        if (channel.kind() == ChannelKind.BOARD) {
+            return;
+        }
+
+        if (!channel.canWrite()) {
+            connection.close(1008, "drawing overlay is read-only");
+            return;
+        }
+
+        try {
+            String canonical = drawingSync.append(
+                channel.code(),
+                channel.drawerToken(),
+                message
+            );
+            broadcastDrawing(channel.code(), canonical);
+        } catch (SecurityException error) {
+            connection.close(1008, "drawing write authorization failed");
+        } catch (Exception error) {
+            connection.send(
+                "{\"type\":\"drawing.error\",\"message\":"
+                    + jsonString(error.getMessage())
+                    + "}"
+            );
         }
     }
 
     @Override
     public void onError(WebSocket connection, Exception error) {
-        System.err.println("[board-ws] " + error.getMessage());
+        System.err.println("[platform-ws] " + error.getMessage());
     }
 
     @Override
     public void onStart() {
         System.out.println(
-            "[board-ws] listening on ws://"
+            "[platform-ws] listening on ws://"
                 + getAddress().getHostString()
                 + ":" + getPort()
         );
@@ -103,12 +212,18 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     }
 
     public boolean broadcastEvent(String roomId, String json) {
-        String normalizedRoomId = normalizeRoomCode(roomId);
+        String normalizedRoomId = normalizeCode(roomId);
         if (normalizedRoomId == null) return false;
 
         boolean sent = false;
-        for (var entry : roomByConnection.entrySet()) {
-            if (!normalizedRoomId.equals(entry.getValue())) continue;
+        for (var entry : channelByConnection.entrySet()) {
+            Channel channel = entry.getValue();
+            if (
+                channel.kind() != ChannelKind.BOARD
+                || !normalizedRoomId.equals(channel.code())
+            ) {
+                continue;
+            }
             WebSocket connection = entry.getKey();
             if (!connection.isOpen()) continue;
             connection.send(json);
@@ -120,7 +235,9 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     @Deprecated
     public boolean broadcastEvent(String json) {
         boolean sent = false;
-        for (WebSocket connection : roomByConnection.keySet()) {
+        for (var entry : channelByConnection.entrySet()) {
+            if (entry.getValue().kind() != ChannelKind.BOARD) continue;
+            WebSocket connection = entry.getKey();
             if (!connection.isOpen()) continue;
             connection.send(json);
             sent = true;
@@ -128,17 +245,38 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         return sent;
     }
 
-    private static String roomCode(ClientHandshake handshake) {
-        if (handshake == null) return null;
+    private boolean broadcastDrawing(String drawingCode, String json) {
+        boolean sent = false;
+        for (var entry : channelByConnection.entrySet()) {
+            Channel channel = entry.getValue();
+            if (
+                channel.kind() != ChannelKind.DRAWING
+                || !drawingCode.equals(channel.code())
+            ) {
+                continue;
+            }
+            WebSocket connection = entry.getKey();
+            if (!connection.isOpen()) continue;
+            connection.send(json);
+            sent = true;
+        }
+        return sent;
+    }
+
+    private static Map<String, String> queryParameters(
+        ClientHandshake handshake
+    ) {
+        if (handshake == null) return Map.of();
 
         String resource = handshake.getResourceDescriptor();
-        if (resource == null) return null;
+        if (resource == null) return Map.of();
 
         int queryIndex = resource.indexOf('?');
         if (queryIndex < 0 || queryIndex >= resource.length() - 1) {
-            return null;
+            return Map.of();
         }
 
+        var result = new java.util.LinkedHashMap<String, String>();
         String query = resource.substring(queryIndex + 1);
         for (String pair : query.split("&")) {
             int equals = pair.indexOf('=');
@@ -148,23 +286,30 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 pair.substring(0, equals),
                 StandardCharsets.UTF_8
             );
-            if (!"roomCode".equals(name)) continue;
-
             String value = URLDecoder.decode(
                 pair.substring(equals + 1),
                 StandardCharsets.UTF_8
             );
-            return normalizeRoomCode(value);
+            result.put(name, value);
         }
-
-        return null;
+        return result;
     }
 
-    private static String normalizeRoomCode(String value) {
+    private static String normalizeCode(String value) {
         if (value == null) return null;
         String normalized = value.trim().toUpperCase(Locale.ROOT);
-        return ROOM_CODE_PATTERN.matcher(normalized).matches()
+        return CODE_PATTERN.matcher(normalized).matches()
             ? normalized
             : null;
+    }
+
+    private static String jsonString(String value) {
+        if (value == null) return "\"\"";
+        String escaped = value
+            .replace("\\", "\\\\")
+            .replace("\"", "\\\"")
+            .replace("\r", "\\r")
+            .replace("\n", "\\n");
+        return "\"" + escaped + "\"";
     }
 }
