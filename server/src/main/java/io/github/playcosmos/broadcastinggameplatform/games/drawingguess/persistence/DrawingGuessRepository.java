@@ -281,6 +281,207 @@ public final class DrawingGuessRepository {
         return findRoom(roomId);
     }
 
+    public Participant ensureChatParticipant(
+        String roomId,
+        String provider,
+        String userId,
+        String displayName
+    ) throws SQLException {
+        String normalizedRoom = normalizeRoomId(roomId);
+        String normalizedProvider = provider == null
+            ? ""
+            : provider.trim().toUpperCase(Locale.ROOT);
+        String normalizedUserId = userId == null
+            ? ""
+            : userId.trim();
+        String normalizedDisplayName = displayName == null
+            || displayName.isBlank()
+            ? normalizedUserId
+            : displayName.trim();
+
+        if (
+            normalizedProvider.isBlank()
+            || normalizedUserId.isBlank()
+        ) {
+            throw new IllegalArgumentException(
+                "provider and userId are required"
+            );
+        }
+
+        Participant existing = findParticipantByProviderUser(
+            normalizedRoom,
+            normalizedProvider,
+            normalizedUserId
+        );
+        if (existing != null) return existing;
+
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            try {
+                int nextOrder;
+                int count;
+                try (var statement = connection.prepareStatement("""
+                    SELECT COUNT(*) AS participant_count,
+                           COALESCE(MAX(participant_order), -1) + 1 AS next_order
+                    FROM drawing_guess_participant
+                    WHERE room_id = ?
+                    """)) {
+                    statement.setString(1, normalizedRoom);
+                    try (var rows = statement.executeQuery()) {
+                        rows.next();
+                        count = rows.getInt("participant_count");
+                        nextOrder = rows.getInt("next_order");
+                    }
+                }
+
+                if (count >= MAX_DYNAMIC_PARTICIPANTS) {
+                    throw new IllegalStateException(
+                        "too many drawing guess participants"
+                    );
+                }
+
+                String participantId =
+                    "chat-" + UUID.randomUUID();
+
+                try (var statement = connection.prepareStatement("""
+                    INSERT INTO drawing_guess_participant(
+                      room_id, participant_order, participant_id,
+                      provider_id, user_id, display_name, score, can_draw
+                    ) VALUES (?, ?, ?, ?, ?, ?, 0, 0)
+                    """)) {
+                    statement.setString(1, normalizedRoom);
+                    statement.setInt(2, nextOrder);
+                    statement.setString(3, participantId);
+                    statement.setString(4, normalizedProvider);
+                    statement.setString(5, normalizedUserId);
+                    statement.setString(6, normalizedDisplayName);
+                    statement.executeUpdate();
+                }
+
+                connection.commit();
+            } catch (SQLException error) {
+                connection.rollback();
+                Participant raced = findParticipantByProviderUser(
+                    normalizedRoom,
+                    normalizedProvider,
+                    normalizedUserId
+                );
+                if (raced != null) return raced;
+                throw error;
+            } catch (Exception error) {
+                connection.rollback();
+                throw new SQLException(
+                    "failed to register chat participant",
+                    error
+                );
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        }
+
+        Participant created = findParticipantByProviderUser(
+            normalizedRoom,
+            normalizedProvider,
+            normalizedUserId
+        );
+        if (created == null) {
+            throw new IllegalStateException(
+                "chat participant was not persisted"
+            );
+        }
+        return created;
+    }
+
+    public Participant findParticipantByProviderUser(
+        String roomId,
+        String provider,
+        String userId
+    ) throws SQLException {
+        if (
+            provider == null || provider.isBlank()
+            || userId == null || userId.isBlank()
+        ) {
+            return null;
+        }
+
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT participant_order, participant_id,
+                        provider_id, user_id, display_name,
+                        score, can_draw
+                 FROM drawing_guess_participant
+                 WHERE room_id = ?
+                   AND provider_id = ?
+                   AND user_id = ?
+                 LIMIT 1
+                 """)) {
+            statement.setString(1, normalizeRoomId(roomId));
+            statement.setString(
+                2,
+                provider.trim().toUpperCase(Locale.ROOT)
+            );
+            statement.setString(3, userId.trim());
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) return null;
+                return new Participant(
+                    rows.getInt("participant_order"),
+                    rows.getString("participant_id"),
+                    rows.getString("provider_id"),
+                    rows.getString("user_id"),
+                    rows.getString("display_name"),
+                    rows.getInt("score"),
+                    rows.getInt("can_draw") != 0
+                );
+            }
+        }
+    }
+
+    public List<Room> findRoomsForChatEvent(
+        String provider,
+        String channelId
+    ) throws SQLException {
+        String normalizedProvider = provider == null
+            ? ""
+            : provider.trim().toUpperCase(Locale.ROOT);
+        String normalizedChannel = channelId == null
+            ? ""
+            : channelId.trim();
+
+        var roomIds = new ArrayList<String>();
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT room_id
+                 FROM drawing_guess_room
+                 WHERE state = 'ACTIVE'
+                   AND chat_guess_enabled = 1
+                   AND (
+                     chat_provider IS NULL
+                     OR chat_provider = ''
+                     OR chat_provider = ?
+                   )
+                   AND (
+                     chat_channel_id IS NULL
+                     OR chat_channel_id = ''
+                     OR chat_channel_id = ?
+                   )
+                 ORDER BY updated_at DESC
+                 """)) {
+            statement.setString(1, normalizedProvider);
+            statement.setString(2, normalizedChannel);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    roomIds.add(rows.getString(1));
+                }
+            }
+        }
+
+        var result = new ArrayList<Room>();
+        for (String roomId : roomIds) {
+            result.add(findRoom(roomId));
+        }
+        return List.copyOf(result);
+    }
+
     public Room markReady(String roomId) throws SQLException {
         updateRoomState(roomId, "DRAFT", "READY");
         return findRoom(roomId);
