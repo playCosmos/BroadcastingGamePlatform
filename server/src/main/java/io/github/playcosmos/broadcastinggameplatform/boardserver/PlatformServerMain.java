@@ -1,6 +1,7 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import com.google.gson.Gson;
+import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
@@ -56,6 +57,8 @@ public final class PlatformServerMain {
         );
         roomService.terminateExpiredRooms();
 
+        var drawingSync = new DrawingSyncService();
+
         var websocket = new BoardGameWebSocketServer(
             config.server().clientHost(),
             config.server().websocketPort(),
@@ -71,7 +74,8 @@ public final class PlatformServerMain {
                 } catch (Exception error) {
                     return false;
                 }
-            }
+            },
+            drawingSync
         );
         websocket.start();
 
@@ -162,7 +166,8 @@ public final class PlatformServerMain {
             adminAuthStore,
             platformEvents,
             providers,
-            viewerDraw
+            viewerDraw,
+            drawingSync
         );
         var http = new BoardGameHttpServer(
             config,
