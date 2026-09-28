@@ -19,7 +19,7 @@ public record BoardServerConfig(
                 "",
                 ""
             ),
-            new Storage("./data/board-game.db", "./web", "./logs"),
+            new Storage("./data/platform.db", "./web", "./logs"),
             new Soop(true, 30)
         );
     }
@@ -86,7 +86,7 @@ public record BoardServerConfig(
     public record Storage(String databasePath, String webRoot, String logDirectory) {
         Storage normalized() {
             return new Storage(
-                valueOrDefault(databasePath, "./data/board-game.db"),
+                valueOrDefault(databasePath, "./data/platform.db"),
                 valueOrDefault(webRoot, "./web"),
                 valueOrDefault(logDirectory, "./logs")
             );
