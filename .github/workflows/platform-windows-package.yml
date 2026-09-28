@@ -1,0 +1,139 @@
+name: Broadcasting Game Platform Windows Package
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "web/**"
+      - "docs/**"
+      - ".github/workflows/platform-windows-package.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  package:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Check browser JavaScript
+        shell: pwsh
+        run: |
+          node --check web/admin/assets/board-room-admin.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/board-room-operation.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/games/board/js/throw-presentation.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/games/board/js/board.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/games/board/js/board-rect.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build platform server
+        working-directory: server
+        run: mvn --batch-mode --no-transfer-progress clean package
+
+      - name: Run platform regression probes
+        working-directory: server
+        shell: pwsh
+        run: |
+          $jar = "target/broadcasting-game-platform-server-0.1.0-SNAPSHOT.jar"
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.RoomProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.MixedMovementProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.room.RoomOperationProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.boardserver.PlatformServerMain --board-server-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.boardserver.ClientBoundaryProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.boardserver.ServerManagementProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.boardserver.AdminAuthPersistenceProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.boardserver.BoardServerConfigPersistenceProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build Windows app
+        working-directory: server
+        shell: pwsh
+        run: ./package-windows.ps1 -Version 0.1.0 -SkipBuild
+
+      - name: Verify package
+        working-directory: server
+        shell: pwsh
+        run: |
+          $root = Resolve-Path "dist/BroadcastingGamePlatformServer"
+          $exe = Join-Path $root "BroadcastingGamePlatformServer.exe"
+
+          if (-not (Test-Path $exe)) { throw "platform executable missing" }
+          if (Test-Path (Join-Path $root "config.json")) { throw "live config.json must not be shipped" }
+          if (-not (Test-Path (Join-Path $root "config.example.json"))) { throw "config.example.json missing" }
+          if (-not (Test-Path (Join-Path $root "runtime/bin/server/jvm.dll"))) { throw "bundled runtime missing" }
+
+          @(
+            "web/index.html",
+            "web/assets/platform.css",
+            "web/admin/index.html",
+            "web/admin/games/board/index.html",
+            "web/admin/games/board/room.html",
+            "web/admin/assets/board-room-admin.js",
+            "web/admin/assets/board-room-operation.js",
+            "web/server-management.html",
+            "web/games/board/index.html",
+            "web/games/board/rect.html",
+            "web/games/board/js/board.js",
+            "web/games/board/js/board-rect.js"
+          ) | ForEach-Object {
+            if (-not (Test-Path (Join-Path $root $_))) {
+              throw "required platform asset missing: $_"
+            }
+          }
+
+          Get-ChildItem (Join-Path $root "web") -Recurse -File | ForEach-Object {
+            $text = Get-Content $_.FullName -Raw -ErrorAction SilentlyContinue
+            if ($text -match "먀로또|roulette-ui|roulette-core|ticket-renderer") {
+              throw "roulette/lotto artifact must not exist: $($_.FullName)"
+            }
+          }
+
+          $landing = Get-Content (Join-Path $root "web/index.html") -Raw
+          if ($landing -notmatch "보드게임") { throw "board game missing from platform landing" }
+          if ($landing -match "먀로또|로또") { throw "lotto must not appear on platform landing" }
+
+          $probe = Start-Process -FilePath $exe -ArgumentList "--board-server-probe" -Wait -PassThru
+          if ($probe.ExitCode -ne 0) {
+            throw "packaged platform server probe failed: $($probe.ExitCode)"
+          }
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: BroadcastingGamePlatformServer-Windows-x64-v0.1.0
+          path: server/dist/BroadcastingGamePlatformServer/**
+          if-no-files-found: error
+          retention-days: 30
