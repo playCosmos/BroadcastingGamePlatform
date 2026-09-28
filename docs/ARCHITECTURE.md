@@ -4,7 +4,7 @@
 
 Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여러 게임 모듈에 전달하는 플랫폼이다.
 
-현재 구현 범위는 SOOP + Board이며, 두 번째 게임 모듈로 Yacht를 계획한다. CHZZK은 추후 Provider 추가 대상으로 둔다.
+현재 구현 범위는 SOOP + Board + Drawing Guess + Viewer Draw(Random/Number)이며, Yacht와 CHZZK Provider를 다음 확장 대상으로 둔다.
 
 ## 계층
 
@@ -23,11 +23,11 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 4. **Game Module**
    - Board: 현재 구현
    - Yacht: 계획, Yahtzee 계열 5주사위/13카테고리 규칙
-   - Drawing Guess: 계획, HTML5 Canvas 기반 그림 퀴즈
+   - Drawing Guess: Classic Guess D0~D5 구현, HTML5 Canvas 기반 그림 퀴즈
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Broadcast Tool**
-   - Viewer Draw: 계획
+   - Viewer Draw: Random/Number 구현, Marble Physics 계획
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
    - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 UI/연출을 재사용한다.
    - Marble Physics Draw는 Goldberg Machine / Marble Machine 컨셉의 물리 추첨으로 확장한다.
@@ -45,6 +45,11 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 - `/admin/games/board/`: 보드게임 룸 생성
 - `/admin/games/board/room.html?roomId=...`: Board 룸 운영
 - `/games/board/`: OBS/방송용 Board 클라이언트
+- `/admin/games/drawing-guess/`: Drawing Guess 룸 생성
+- `/admin/games/drawing-guess/room.html?roomId=...`: Drawing Guess 운영/Private Drawer View
+- `/games/drawing-guess/?roomId=XXXXXX`: Drawing Guess 고정 OBS Overlay
+- `/admin/tools/viewer-draw/`: Viewer Draw 운영
+- `/tools/viewer-draw/?drawCode=XXXXXX`: Viewer Draw 공개 Overlay
 - `/admin/games/yacht/`: Yacht 룸 생성 (계획)
 - `/admin/games/yacht/room.html?roomId=...`: Yacht 룸 운영 (계획)
 - `/games/yacht/`: OBS/방송용 Yacht 클라이언트 (계획)
@@ -80,18 +85,24 @@ Yacht는 플랫폼의 두 번째 게임 모듈로 계획한다.
 Yacht 구현을 이유로 Board 도메인을 성급하게 범용화하지 않는다. 실제 중복이 확인되는 룸 코드, 공개 read 인증, Provider identity, WebSocket room routing 등의 기능만 플랫폼 공용 계층으로 추출한다.
 
 
-## Drawing Guess 계획
+## Drawing Guess
 
-Drawing Guess는 플랫폼의 다음 게임 모듈 후보로 계획한다.
+Drawing Guess는 현재 Classic Guess D0~D5가 구현된 게임 모듈이다.
 
 - 게임 ID: `drawing_guess`
 - HTML5 Canvas API 기반 그림 입력
 - Pointer Events로 마우스/터치/펜 입력 통합
-- v1은 방송인 전담 출제 + 참가자 순환 출제의 Classic Guess
+- 방송인 전담 출제 + 참가자 순환 출제의 Classic Guess 구현
 - 이후 Telephone / Drawing Transformation / Collaborative / Animation Mode Pack으로 확장 가능
-- Public Overlay에는 정답 데이터를 전달하지 않음
+- 진행 중 Public Overlay에는 정답/허용답안/Drawer Token/Provider userId를 전달하지 않음
 - Canvas는 bitmap 스트리밍이 아니라 stroke command/WebSocket 동기화
-- 채팅은 정답 입력에 자연스럽게 연결하되 후원은 필수 규칙으로 두지 않음
+- SOOP ChatMessageEvent 정답 판정 구현, 채팅 정답 사용 여부는 룸 옵션
+- STREAMER_DRAWER는 사전 참가자 없이 정답 채팅 시청자를 동적 점수 참가자로 등록 가능
+- 동적 채팅 참가자는 출제 순환에서 제외
+- Round별 Drawer Token은 Round 종료 시 폐기
+- OBS는 roomId 고정 URL로 현재 drawingCode를 자동 추적
+- Round 종료 후에만 대표 정답을 공개 Reveal 데이터로 노출
+- 후원은 Drawing Guess 필수 규칙으로 사용하지 않음
 - 기준 문서: `docs/games/DRAWING_GUESS.md`
 
 
