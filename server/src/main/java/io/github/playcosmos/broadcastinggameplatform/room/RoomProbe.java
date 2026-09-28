@@ -15,6 +15,10 @@ import static io.github.playcosmos.broadcastinggameplatform.room.RoomModels.*;
 public final class RoomProbe {
     private RoomProbe() {}
 
+    public static void main(String[] args) {
+        System.exit(run());
+    }
+
     public static int run() {
         Path root = null;
         try {
