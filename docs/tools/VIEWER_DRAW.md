@@ -31,7 +31,9 @@ Overlay / History / Audit
 
 - 채팅이나 후원을 필수로 하지 않는다.
 - 수동 참가자 목록만으로도 완전하게 동작한다.
-- 채팅/후원은 선택 가능한 참가자 원천이다.
+- 참가자 등록 방식은 **Entry Source 옵션**으로 선택한다.
+- 채팅/후원/게임 룸/최근 활동 사용자 수집은 필요할 때만 활성화한다.
+- 채팅 연동이 꺼져 있어도 Viewer Draw의 모든 기본 추첨 기능은 동작해야 한다.
 - 추첨 시작 시 참가자 집합을 Freeze 한다.
 - 다수 당첨자를 지원한다.
 - 결과와 참가자 snapshot을 보존한다.
@@ -80,6 +82,24 @@ SOOP/CHZZK 시청자는 provider + userId를 식별 키로 사용한다.
 
 ## 4. 참가자 수집 방식
 
+Viewer Draw는 추첨 시작 전에 **참가자 입력 방식(Entry Source)** 을 선택한다.
+
+기본값은 `MANUAL_LIST`로 둔다.
+
+UI 예:
+
+~~~text
+참가자 추가 방식
+(●) 직접 입력
+( ) 채팅 키워드로 참가
+( ) 최근 채팅 사용자
+( ) 게임 룸 참가자
+( ) 파일/저장 목록 불러오기
+( ) 후원자 필터
+~~~
+
+여러 Source를 동시에 허용할지는 v1 구현 시 결정하되, 기본 동작은 **한 세션에 하나의 Primary Entry Source**를 권장한다.
+
 ### MANUAL_LIST
 
 운영자가 직접 목록을 입력한다.
@@ -91,7 +111,9 @@ SOOP/CHZZK 시청자는 provider + userId를 식별 키로 사용한다.
 - 클립보드 붙여넣기
 - 저장된 참가자 세트
 
-### CHAT_KEYWORD
+### CHAT_KEYWORD — 옵션
+
+운영자가 명시적으로 활성화했을 때만 사용한다.
 
 예:
 
@@ -108,11 +130,15 @@ SOOP/CHZZK 시청자는 provider + userId를 식별 키로 사용한다.
 - 접수 시작/종료 상태
 - 접수 종료 후 신규 사용자는 현재 추첨에 미포함
 
-### CHAT_ACTIVITY_WINDOW
+### CHAT_ACTIVITY_WINDOW — 옵션
 
-운영자가 명시적으로 선택할 경우 최근 N분 또는 최근 N명의 고유 채팅 사용자를 참가자로 구성한다.
+운영자가 명시적으로 선택할 경우에만 최근 N분 또는 최근 N명의 고유 채팅 사용자를 참가자로 구성한다.
 
-### GAME_ROOM_PARTICIPANTS
+기본값으로 자동 수집하지 않는다.
+
+### GAME_ROOM_PARTICIPANTS — 옵션
+
+운영자가 현재 게임 룸 참가자를 추첨 대상으로 쓰고 싶을 때만 활성화한다.
 
 Board, Yacht, Drawing Guess 등 현재 플랫폼 게임 룸 참가자를 불러온다.
 
@@ -120,11 +146,48 @@ Board, Yacht, Drawing Guess 등 현재 플랫폼 게임 룸 참가자를 불러�
 
 사전 신청자나 이벤트 응모자 파일을 불러온다.
 
-### DONATION_FILTER
+### DONATION_FILTER — 옵션
 
-후원자도 선택 가능한 Entry Source다.
+후원자 기반 참가자 수집도 선택 가능한 Entry Source다.
 후원 금액 비례 가중 추첨은 기본값으로 두지 않는다.
 추후 가중 추첨을 지원하면 일반 추첨과 UI/기록에서 명확하게 구분한다.
+
+### 4.7 Entry Source UI / 상태
+
+관리 UI에서는 현재 Source를 명확하게 표시한다.
+
+예:
+
+~~~text
+Entry Source: MANUAL_LIST
+참가자: 128명
+채팅 수집: OFF
+후원 수집: OFF
+~~~
+
+채팅 Source가 켜진 경우:
+
+~~~text
+Entry Source: CHAT_KEYWORD
+Provider: SOOP
+Keyword: !참가
+접수 상태: OPEN
+참가자: 341명
+~~~
+
+필수 제어:
+
+- Source 선택
+- 수집 시작
+- 수집 일시정지
+- 수집 종료
+- 참가자 수 확인
+- 중복 제거 상태
+- 개별 참가자 삭제
+- 전체 초기화
+- Freeze
+
+채팅/후원 Provider 연결 상태가 끊겨도 이미 수집된 참가자 목록은 유지한다.
 
 ---
 
@@ -1178,7 +1241,12 @@ lazygyu/roulette에서 특히 검토할 부분:
 - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 구현을 재활용
 - 기존 Lotto/Ticket 제품 전체를 새 플랫폼으로 이전하지 않음
 - 참가자 원천은 Manual/Chat/Game Room/Imported/Donation으로 분리
-- 채팅/후원은 선택 사항
+- 기본 Entry Source는 MANUAL_LIST
+- 채팅으로 참가자를 받는 기능은 옵션
+- 최근 채팅 사용자 자동 수집도 옵션
+- 후원자 수집도 옵션
+- 게임 룸 참가자 가져오기도 옵션
+- 채팅/후원 Provider가 없어도 Viewer Draw는 완전하게 동작해야 함
 - 추첨 시작 시 참가자 목록 Freeze
 - 결과/설정/참가자 snapshot을 Audit 기록
 - 다수 당첨자 지원
