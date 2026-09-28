@@ -425,7 +425,7 @@ public final class DrawingGuessRepository {
                     participantId,
                     scoreAwarded
                 );
-                addParticipantScore(
+                addParticipantScoreIfPresent(
                     connection,
                     matchRoomId(connection, round.matchId()),
                     round.drawerParticipantId(),
@@ -779,6 +779,25 @@ public final class DrawingGuessRepository {
                         + participantId
                 );
             }
+        }
+    }
+
+    private static void addParticipantScoreIfPresent(
+        Connection connection,
+        String roomId,
+        String participantId,
+        int delta
+    ) throws SQLException {
+        if (delta == 0) return;
+        try (var statement = connection.prepareStatement("""
+            UPDATE drawing_guess_participant
+            SET score = score + ?
+            WHERE room_id = ? AND participant_id = ?
+            """)) {
+            statement.setInt(1, delta);
+            statement.setString(2, roomId);
+            statement.setString(3, participantId);
+            statement.executeUpdate();
         }
     }
 
