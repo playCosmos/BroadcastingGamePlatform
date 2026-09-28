@@ -463,7 +463,8 @@ public final class GameClientHttpServer implements AutoCloseable {
         String participantId,
         String provider,
         String userId,
-        String displayName
+        String displayName,
+        Boolean canDraw
     ) {}
 
     private record DrawingRoomCreateRequest(
@@ -476,6 +477,9 @@ public final class GameClientHttpServer implements AutoCloseable {
         Integer rankPenaltyPoints,
         Integer drawerPointsPerCorrect,
         Integer roundDurationSeconds,
+        Boolean chatGuessEnabled,
+        String chatProvider,
+        String chatChannelId,
         List<DrawingParticipantRequest> participants
     ) {}
 
@@ -601,7 +605,9 @@ public final class GameClientHttpServer implements AutoCloseable {
                                     value.participantId(),
                                     value.provider(),
                                     value.userId(),
-                                    value.displayName()
+                                    value.displayName(),
+                                    value.canDraw() == null
+                                        || value.canDraw()
                                 )
                             )
                             .toList();
@@ -616,6 +622,10 @@ public final class GameClientHttpServer implements AutoCloseable {
                             request.roundDurationSeconds(),
                             80
                         ),
+                        request.chatGuessEnabled() == null
+                            || request.chatGuessEnabled(),
+                        request.chatProvider(),
+                        request.chatChannelId(),
                         participants
                     )
                 );
