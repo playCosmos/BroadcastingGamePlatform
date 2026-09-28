@@ -26,7 +26,13 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - Drawing Guess: 계획, HTML5 Canvas 기반 그림 퀴즈
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
-5. **Admin/Auth**
+5. **Broadcast Tool**
+   - Viewer Draw: 계획
+   - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
+   - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 UI/연출을 재사용한다.
+   - Marble Physics Draw는 Goldberg Machine / Marble Machine 컨셉의 물리 추첨으로 확장한다.
+   - lazygyu/roulette의 Box2D 충돌/골인/순위 구조를 기반 참고한다.
+6. **Admin/Auth**
    - bootstrap token 링크
    - 토큰 직접 입력
    - 10분 유효 6자리 승인 요청
@@ -87,3 +93,43 @@ Drawing Guess는 플랫폼의 다음 게임 모듈 후보로 계획한다.
 - Canvas는 bitmap 스트리밍이 아니라 stroke command/WebSocket 동기화
 - 채팅은 정답 입력에 자연스럽게 연결하되 후원은 필수 규칙으로 두지 않음
 - 기준 문서: `docs/games/DRAWING_GUESS.md`
+
+
+## Viewer Draw 계획
+
+Viewer Draw는 게임이 아니라 방송용 공용 도구다.
+
+- 내부 ID: `viewer_draw`
+- 참가자 원천: Manual / Chat / Game Room / Imported / Donation
+- 추첨 시작 시 참가자 집합 Freeze
+- Random Draw
+- Number Draw
+- Wheel Draw
+- Marble Physics Draw
+- 결과/참가자 snapshot/Audit 기록
+- 다수 당첨자 지원
+- 기준 문서: `docs/tools/VIEWER_DRAW.md`
+
+### Marble Physics Draw
+
+Marble 방식은 사전에 winner를 정한 뒤 연출하는 방식이 아니다.
+
+```text
+Frozen Entry Set
+→ Machine physics
+→ collision / branch / elimination / output
+→ finish/rank
+→ winner(s)
+```
+
+물리 구조는 Goldberg Machine / Marble Machine 컨셉으로 설계한다.
+
+Machine Designer에서 다음을 설계할 수 있는 방향을 목표로 한다.
+
+- Ramp / Rail / Peg / Bumper / Gate / Gear / Seesaw / Funnel
+- Finish / Slot / Elimination / Cascade output
+- Bell / Chime / Xylophone / Metal Plate 등의 악기 컴포넌트
+- 충돌 세기 기반 Web Audio sound
+- Machine별 drawRule
+
+Sound/Visual 설정은 물리 결과와 분리하며, 실제 물리 구조 변경만 추첨 공정성 경계에 영향을 주도록 설계한다.
