@@ -27,7 +27,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Broadcast Tool**
-   - Viewer Draw: Random/Number + Marble Map Maker + Browser Marble Physics/Draw V0 구현
+   - Viewer Draw: Random/Number + Marble Map Maker + Browser Box2D-WASM Marble Draw V0 구현
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
    - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 UI/연출을 재사용한다.
    - Marble Physics Draw는 Goldberg Machine / Marble Machine 컨셉의 물리 추첨으로 확장한다.
@@ -177,7 +177,7 @@ Map DB는 제작 편의 기능이며 실제 추첨 런타임의 필수 의존성
 /tools/viewer-draw/marble/
 ~~~
 
-현재 `BuiltinBrowserPhysicsAdapter`는 V0 Authority이고,
-후속 `Box2dWasmPhysicsAdapter`가 동일 인터페이스를 구현한다.
+현재 기본 Authority는 `Box2dWasmPhysicsAdapter`이며 `box2d-wasm@7.0.0`을 패키지 내부 정적 자산으로 사용한다.
+`BuiltinBrowserPhysicsAdapter`는 WASM 초기화 실패용 fallback이다.
 
 lazygyu/roulette의 `IPhysics`, `Box2dPhysics`, `Camera`, `RankRenderer`, `Minimap`, `FastForwader` 구조를 브라우저 런타임 계층에서 계승한다.
