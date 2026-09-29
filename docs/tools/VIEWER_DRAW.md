@@ -1144,6 +1144,17 @@ Bell/Xylophone/Metal Plate 등을 지나며 음악적 소리를 만드는 추첨
 
 장치를 통과하며 Marble 수가 줄어드는 생존형.
 
+현재 Browser Marble Draw 기본맵은 이 계열의 **Retro Cadet Survivor**를 사용한다.
+
+- Windows XP 시절 우주 테마 핀볼의 플레이 감각을 오마주하되 배치/그래픽은 직접 복제하지 않는다.
+- 우측 Launch Lane에서 Marble을 투입한다.
+- 상단 Orbit, 중앙 Bumper Cluster, 좌우 Slingshot, 하단 Flipper-like oscillator를 거친다.
+- 중앙 하단 Drain은 `ELIMINATION` 센서다.
+- Draw Rule은 `LAST_SURVIVOR`, `winnerCount=1`이다.
+- Drain에 진입한 Marble은 즉시 탈락한다.
+- 활성 Marble이 마지막 1개가 되는 순간 해당 Marble을 당첨자로 확정한다.
+- 별도의 Finish Gate를 통과해야 당첨되는 구조가 아니다.
+
 이 Profile은 모두 같은 Viewer Draw 참가자/Freeze/Audit 모델을 사용한다.
 
 ---
