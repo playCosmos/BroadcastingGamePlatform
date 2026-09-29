@@ -143,6 +143,27 @@
       if(!c?.id || ids.has(c.id)) errors.push("컴포넌트 ID는 고유해야 합니다.");
       ids.add(c?.id);
       if(!TYPES.has(c?.type)) errors.push("지원하지 않는 컴포넌트: "+c?.type);
+      const x=Number(c?.x),y=Number(c?.y),rotation=Number(c?.rotation);
+      if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(rotation)){
+        errors.push("컴포넌트 위치/회전 값은 유한 숫자여야 합니다.");
+      }else if(x<0||x>w||y<0||y>h){
+        errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
+      }
+      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER"].includes(c?.type)){
+        const cw=Number(c?.width),ch=Number(c?.height);
+        if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
+          errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
+        }
+      }
+      if(["PEG","BUMPER","SPAWN"].includes(c?.type)){
+        const radius=Number(c?.radius);
+        if(!Number.isFinite(radius)||radius<3||radius>120){
+          errors.push("원형 컴포넌트 radius는 3~120 범위여야 합니다.");
+        }
+      }
+      if(c?.type==="FINISH"&&(Number(c?.width)<10||Number(c?.height)<10)){
+        errors.push("FINISH 크기는 최소 10×10이어야 합니다.");
+      }
       if(c?.type==="SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
     }
