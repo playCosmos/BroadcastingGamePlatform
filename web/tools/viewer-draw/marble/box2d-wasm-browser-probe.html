@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Box2D WASM Browser Probe</title>
+</head>
+<body data-status="running">RUNNING
+<script src="/admin/assets/viewer-draw-map-engine.js"></script>
+<script src="/tools/viewer-draw/marble/browser-physics-adapter.js"></script>
+<script>
+(async () => {
+  const Engine = window.ViewerDrawMapEngine;
+  const Physics = window.ViewerDrawBrowserPhysics;
+
+  try {
+    const adapter = new Physics.Box2dWasmPhysicsAdapter();
+    await adapter.init();
+
+    const definition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Browser Box2D Probe",
+      world: {
+        width: 800,
+        height: 600,
+        gravityX: 0,
+        gravityY: 12
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 60),
+          radius: 16,
+          properties: { marbleRadius: 10 }
+        },
+        {
+          ...Engine.componentDefaults("FINISH", 400, 530),
+          width: 420,
+          height: 90
+        }
+      ]
+    };
+
+    const entries = Array.from({ length: 6 }, (_, index) => ({
+      entryId: "e" + (index + 1),
+      displayName: "Entry " + (index + 1)
+    }));
+
+    adapter.loadMap(definition);
+    let state = adapter.reset(entries, 42);
+
+    for (
+      let step = 0;
+      step < 3600 && state.finishedCount < entries.length;
+      step += 1
+    ) {
+      state = adapter.step(1 / 120);
+    }
+
+    if (adapter.engineId() !== "BOX2D_WASM_7_0_0") {
+      throw new Error("unexpected engine id: " + adapter.engineId());
+    }
+    if (state.finishedCount !== entries.length) {
+      throw new Error(
+        "not all marbles finished: "
+          + state.finishedCount + "/" + entries.length
+      );
+    }
+    if (state.rankedEntries.length !== entries.length) {
+      throw new Error("ranked entries mismatch");
+    }
+
+    document.body.dataset.status = "pass";
+    document.body.textContent = "PASS";
+  } catch (error) {
+    console.error(error);
+    document.body.dataset.status = "fail";
+    document.body.textContent =
+      "FAIL: " + (error?.stack || error?.message || String(error));
+  }
+})();
+</script>
+</body>
+</html>
