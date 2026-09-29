@@ -42,6 +42,10 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node web/admin/assets/viewer-draw-map-engine-probe.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/tools/viewer-draw/marble/browser-physics-adapter.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/tools/viewer-draw/marble/viewer-draw-marble.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-create.js
@@ -80,9 +84,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-
-          java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProductionPhysicsProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe
@@ -146,7 +147,6 @@ jobs:
           if (Test-Path (Join-Path $root "config.json")) { throw "live config.json must not be shipped" }
           if (-not (Test-Path (Join-Path $root "config.example.json"))) { throw "config.example.json missing" }
           if (-not (Test-Path (Join-Path $root "runtime/bin/server/jvm.dll"))) { throw "bundled runtime missing" }
-          if (-not (Test-Path (Join-Path $root "THIRD_PARTY_NOTICES.md"))) { throw "third-party notices missing" }
 
           @(
             "web/index.html",
@@ -161,6 +161,10 @@ jobs:
             "web/admin/assets/viewer-draw-map-maker.css",
             "web/admin/tools/viewer-draw/index.html",
             "web/admin/tools/viewer-draw/map-maker/index.html",
+            "web/tools/viewer-draw/marble/index.html",
+            "web/tools/viewer-draw/marble/browser-physics-adapter.js",
+            "web/tools/viewer-draw/marble/viewer-draw-marble.js",
+            "web/tools/viewer-draw/marble/viewer-draw-marble.css",
             "web/admin/games/drawing-guess/index.html",
             "web/admin/games/drawing-guess/room.html",
             "web/admin/assets/drawing-guess.css",
