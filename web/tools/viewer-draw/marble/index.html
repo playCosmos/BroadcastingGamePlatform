@@ -71,11 +71,21 @@ Hotel</textarea>
           <span id="drawState">READY</span>
           <strong id="progress">0 / 0</strong>
         </div>
-        <div id="elapsed">0.0s</div>
+        <div class="stage-tools">
+          <span id="stuckCount">NUDGE 0</span>
+          <button id="cameraAuto" type="button" class="stage-tool active">CAM AUTO</button>
+          <button id="fastForward" type="button" class="stage-tool">⏩ HOLD</button>
+          <strong id="elapsed">0.0s</strong>
+        </div>
       </div>
 
       <div class="stage-wrap" id="stageWrap">
         <canvas id="stageCanvas"></canvas>
+        <canvas
+          id="minimapCanvas"
+          class="minimap-canvas"
+          title="클릭: 카메라 고정 · 더블클릭: 자동 추적"
+        ></canvas>
       </div>
 
       <div class="winner-banner" id="winnerBanner" hidden>
@@ -86,6 +96,7 @@ Hotel</textarea>
 
     <aside class="rank-panel">
       <p class="panel-title">RANK</p>
+      <p class="rank-help">완주자는 확정 순위, 진행 중 구슬은 중력 진행축 기준 임시 순위입니다.</p>
       <div id="rankList" class="rank-list"></div>
     </aside>
   </section>
