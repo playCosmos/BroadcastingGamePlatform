@@ -396,20 +396,13 @@
     const items = [];
     const byKey = new Map();
 
-    for (const rawLine of $("entries").value.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line) continue;
-
-      const match = line.match(
-        /^(.*?)\s+(?:[x×*]\s*)?(\d+)\s*개?\s*$/u
+    for (const row of $("entryRows").querySelectorAll(".entry-row")) {
+      const displayName =
+        row.querySelector(".entry-name")?.value.trim() || "";
+      const count = Math.trunc(
+        Number(row.querySelector(".entry-count")?.value) || 0
       );
-      const displayName = (match ? match[1] : line).trim();
-      const count = match ? Number(match[2]) : 1;
-      if (
-        !displayName
-        || !Number.isSafeInteger(count)
-        || count < 1
-      ) {
+      if (!displayName || !Number.isSafeInteger(count) || count < 1) {
         continue;
       }
 
@@ -424,6 +417,50 @@
       }
     }
     return items;
+  }
+
+  function addEntryRow(displayName = "", count = 1) {
+    const row = document.createElement("div");
+    row.className = "entry-row";
+
+    const name = document.createElement("input");
+    name.className = "entry-name";
+    name.type = "text";
+    name.value = displayName;
+    name.placeholder = "참가 항목";
+    name.setAttribute("aria-label", "참가 항목 이름");
+
+    const amount = document.createElement("input");
+    amount.className = "entry-count";
+    amount.type = "number";
+    amount.min = "1";
+    amount.step = "1";
+    amount.value = String(Math.max(1, Math.trunc(Number(count) || 1)));
+    amount.setAttribute("aria-label", "Marble 수");
+
+    const unit = document.createElement("span");
+    unit.className = "entry-unit";
+    unit.textContent = "개";
+
+    const remove = document.createElement("button");
+    remove.className = "entry-remove";
+    remove.type = "button";
+    remove.setAttribute("aria-label", "참가 항목 삭제");
+    remove.textContent = "×";
+
+    row.append(name, amount, unit, remove);
+    $("entryRows").appendChild(row);
+    updateEntryCount();
+    refreshEntryRemoveButtons();
+    name.focus();
+  }
+
+  function refreshEntryRemoveButtons() {
+    const rows = [...$("entryRows").querySelectorAll(".entry-row")];
+    rows.forEach((row) => {
+      const remove = row.querySelector(".entry-remove");
+      if (remove) remove.disabled = rows.length <= 1 || running;
+    });
   }
 
   function parseEntries() {
@@ -457,8 +494,38 @@
     );
   }
 
+  function launchModeValue() {
+    return document.querySelector(
+      'input[name="launchMode"]:checked'
+    )?.value === "BUNCH"
+      ? "BUNCH"
+      : "SEQUENTIAL";
+  }
+
+  function launchIntervalValue() {
+    return Math.max(
+      40,
+      Math.trunc(Number($("launchInterval")?.value) || 240)
+    );
+  }
+
+  function updateLaunchControls() {
+    const sequential = launchModeValue() === "SEQUENTIAL";
+    $("launchInterval").disabled = running || !sequential;
+  }
+
   function setRunControlsLocked(locked) {
-    $("entries").disabled = locked;
+    for (const input of $("entryRows").querySelectorAll("input")) {
+      input.disabled = locked;
+    }
+    for (const input of document.querySelectorAll(
+      'input[name="launchMode"]'
+    )) {
+      input.disabled = locked;
+    }
+    $("addEntry").disabled = locked;
+    refreshEntryRemoveButtons();
+    updateLaunchControls();
     $("winnerCount").disabled =
       locked
       || Engine.resolvedDrawRule(definition).type !== "RACE_FINISH";
@@ -1177,7 +1244,12 @@
 
     const activeIds = new Set();
     for (const marble of state.marbles) {
-      if (marble.finished || marble.eliminated || marble.dnf) continue;
+      if (
+        marble.finished
+        || marble.eliminated
+        || marble.dnf
+        || marble.launched === false
+      ) continue;
       activeIds.add(marble.id);
 
       const previous = stuckState.get(marble.id);
@@ -1327,6 +1399,9 @@
       `${state.finishedCount} / ${state.targetCount || state.totalCount}`;
     $("elapsed").textContent =
       state.time.toFixed(1) + "s";
+    $("launchStatus").textContent =
+      "LAUNCH " + (state.launchedCount || 0)
+      + "/" + (state.totalCount || entries.length);
     const policy = Engine.resolvedRunPolicy(definition);
     const qualifyTarget =
       policy.qualificationMinWinners || winnerCountValue();
@@ -1374,7 +1449,11 @@
     state = adapter.reset(
       frozenEntries,
       seed,
-      { winnerCount }
+      {
+        winnerCount,
+        launchMode: launchModeValue(),
+        launchIntervalMs: launchIntervalValue()
+      }
     );
     entries = frozenEntries;
     definition = frozenDefinition;
@@ -1392,6 +1471,9 @@
     resetCamera(true);
     camera.targetZoom = 1.35;
 
+    $("launchStatus").textContent =
+      "LAUNCH " + (state.launchedCount || 0)
+      + "/" + (state.totalCount || entries.length);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "RUNNING";
     $("qualificationBadge").textContent =
@@ -1433,11 +1515,18 @@
       ? adapter.reset(
           entries,
           Number($("seed").value) || 1,
-          { winnerCount: winnerCountValue() }
+          {
+            winnerCount: winnerCountValue(),
+            launchMode: launchModeValue(),
+            launchIntervalMs: launchIntervalValue()
+          }
         )
       : null;
 
     resetCamera(true);
+    $("launchStatus").textContent =
+      "LAUNCH " + (state?.launchedCount || 0)
+      + "/" + (state?.totalCount || entries.length);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "READY";
     $("qualificationBadge").textContent = lastAudit
@@ -1485,13 +1574,48 @@
     }
   });
 
-  $("entries").addEventListener("input", () => {
+  $("entryRows").addEventListener("input", (event) => {
+    if (
+      !event.target.classList.contains("entry-name")
+      && !event.target.classList.contains("entry-count")
+    ) {
+      return;
+    }
     updateEntryCount();
     if (!running) {
       clearAudit();
       $("drawState").textContent = "READY · INPUT CHANGED";
       $("winnerBanner").hidden = true;
     }
+  });
+
+  $("entryRows").addEventListener("click", (event) => {
+    const remove = event.target.closest(".entry-remove");
+    if (!remove || running) return;
+    const rows = $("entryRows").querySelectorAll(".entry-row");
+    if (rows.length <= 1) return;
+    remove.closest(".entry-row")?.remove();
+    updateEntryCount();
+    refreshEntryRemoveButtons();
+    clearAudit();
+  });
+
+  $("addEntry").addEventListener("click", () => {
+    if (!running) addEntryRow("", 1);
+  });
+
+  document.querySelectorAll('input[name="launchMode"]').forEach(
+    (input) => input.addEventListener("change", () => {
+      updateLaunchControls();
+      if (!running) {
+        clearAudit();
+        $("drawState").textContent = "READY · START STYLE CHANGED";
+      }
+    })
+  );
+
+  $("launchInterval").addEventListener("change", () => {
+    $("launchInterval").value = String(launchIntervalValue());
   });
   $("winnerCount").addEventListener("change", renderRanks);
   $("seed").addEventListener("change", () => {
@@ -1550,6 +1674,8 @@
   async function boot() {
     updateMuteButton();
     updateEntryCount();
+    refreshEntryRemoveButtons();
+    updateLaunchControls();
     adapter = await createPhysicsAdapter();
 
     let initialDefinition = definition;
