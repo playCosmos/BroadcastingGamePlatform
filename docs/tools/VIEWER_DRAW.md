@@ -9,7 +9,7 @@
 - V2 Marble Map Maker V0: **IMPLEMENTED**
 - V2 Physics Preview Engine V0: **IMPLEMENTED**
 - V3 Browser Marble Draw Runtime V0: **IMPLEMENTED**
-- V4 Box2D-WASM Browser Adapter: PLANNED
+- V4 Box2D-WASM Browser Adapter: **IMPLEMENTED**
 - V5 Camera / Rank / Minimap / Stuck Recovery 계승: PLANNED
 - V6 Chat Entry Collection: PLANNED
 
@@ -461,8 +461,17 @@ Map Maker의 DB 저장 기능은 **맵 제작 편의 기능**이다.
 - finish order
 - winner(s)
 
-현재 V0는 브라우저 내장 Physics Adapter를 사용한다.
-후속으로 lazygyu/roulette와 같은 `box2d-wasm` 기반 Browser Adapter를 동일 인터페이스에 연결한다.
+현재 기본 Authority는 `Box2dWasmPhysicsAdapter`다.
+
+- box2d-wasm 7.0.0
+- 패키지 내부 로컬 JS/WASM 자산 사용
+- CDN 의존 없음
+- 서버 physics API 호출 없음
+- 고정 timestep 1/120s
+- MapDefinition을 직접 Box2D body/fixture로 변환
+- Finish rank와 winner를 브라우저에서 결정
+
+`BuiltinBrowserPhysicsAdapter`는 WASM 초기화 실패 시 fallback으로만 유지한다.
 
 Box2D floating-point 차이 때문에 다른 브라우저/CPU에서 완전한 cross-platform deterministic replay를 당연시하지 않는다.
 한 번의 추첨에서 **그 추첨을 실행한 브라우저 인스턴스의 simulation 결과**가 결과다.
@@ -909,16 +918,19 @@ Finish Rank / Winner
 - winner 확정
 - 페이지가 이미 로드된 뒤 플랫폼 서버가 중단되어도 현재 추첨 지속
 
-현재 Adapter:
+기본 Adapter:
+
+- `Box2dWasmPhysicsAdapter`
+- engine ID: `BOX2D_WASM_7_0_0`
+- lazygyu/roulette의 `IPhysics + Box2dPhysics + box2d-wasm` 구조를 계승
+- 현재 MapDefinition을 그대로 입력으로 사용
+- 로컬 `/vendor/box2d-wasm/` 자산 사용
+
+Fallback:
 
 - `BuiltinBrowserPhysicsAdapter`
 - engine ID: `BROWSER_PHYSICS_V0`
-
-후속 Adapter:
-
-- `Box2dWasmPhysicsAdapter`
-- lazygyu/roulette의 `IPhysics + box2d-wasm` 구조를 계승
-- 현재 MapDefinition을 그대로 입력으로 사용
+- WASM 로딩 실패 시에만 사용
 
 서버의 역할은 실제 Marble 추첨에서 제외한다.
 서버의 Map 저장 API는 Map Maker 편의 기능일 뿐 Marble Draw Runtime의 필수 의존성이 아니다.
@@ -1457,7 +1469,7 @@ Map Format
 → Physics Preview Engine V0
 → Map Validator / Simulation Tools
 → Browser Marble Draw Runtime V0 [IMPLEMENTED]
-→ Box2D-WASM Browser Adapter
+→ Box2D-WASM Browser Adapter [IMPLEMENTED]
 → Camera / Rank / Minimap / Stuck Recovery
 → Goldberg / Marble Machine Components
 ~~~
@@ -1509,3 +1521,37 @@ Marble
 Camera / RankRenderer / Minimap / FastForwarder
 → 후속 브라우저 런타임 계승
 ~~~
+
+
+## 23. Box2D-WASM Browser Authority V0
+
+실제 Marble 추첨의 기본 물리 엔진은 `box2d-wasm@7.0.0`이다.
+
+패키징 시:
+
+~~~text
+npm box2d-wasm 7.0.0
+→ dist/es/entry.js
+→ Box2D.js / Box2D.wasm
+→ Box2D.simd.js / Box2D.simd.wasm
+→ web/vendor/box2d-wasm/
+~~~
+
+실행 시:
+
+~~~text
+Browser
+→ local entry.js
+→ SIMD 지원 여부 판정
+→ local Box2D(.simd).js
+→ local Box2D(.simd).wasm
+→ Box2dWasmPhysicsAdapter
+→ finish rank
+→ winner
+~~~
+
+플랫폼 Backend에는 physics 요청을 보내지 않는다.
+
+CI는 Windows headless Chrome/Edge에서 실제 정적 HTTP 페이지를 열어 WASM을 로드한 뒤 6개의 probe Marble이 Finish까지 도달하는 것을 검증한다.
+
+이 구조는 lazygyu/roulette의 브라우저 Box2D 철학을 계승하면서, 우리 쪽에서는 Map Maker JSON과 독립 Browser Draw Runtime을 추가한 형태다.
