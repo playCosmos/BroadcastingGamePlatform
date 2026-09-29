@@ -1299,7 +1299,11 @@
       );
       const winnerCount = rule.winnerCount || 1;
 
+      let remaining = this.marbles.filter(
+        (marble) => !marble.finished && !marble.eliminated
+      ).length;
       for (const marble of this.marbles) {
+        if (remaining <= winnerCount) break;
         if (marble.finished || marble.eliminated) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
@@ -1316,6 +1320,7 @@
         marble.body.SetEnabled(false);
         this.eliminationOrder.push(marble.id);
         this.queueSound("elimination", 0.85, zone.id);
+        remaining -= 1;
       }
 
       if (this.winnerOrder.length) return;
