@@ -390,7 +390,8 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "modes", java.util.List.of("RANDOM", "NUMBER"),
                     "features", java.util.List.of(
                         "MARBLE_MAP_MAKER_V0",
-                        "BROWSER_PHYSICS_V0"
+                        "BOX2D_WASM_BROWSER_AUTHORITY_V0",
+                        "BUILTIN_BROWSER_PHYSICS_FALLBACK"
                     )
                 )
             ),
