@@ -37,10 +37,48 @@
   let audioMaster = null;
   let audioCompressor = null;
   let activeAudioVoices = 0;
+  let audioMuted = false;
+  const activeAudioSources = new Set();
   const MAX_AUDIO_VOICES = 12;
 
   function audioIsEnabled() {
-    return Boolean($("audioEnabled")?.checked);
+    return !audioMuted;
+  }
+
+  function updateMuteButton() {
+    const button = $("muteAudio");
+    if (!button) return;
+    button.setAttribute("aria-pressed", String(audioMuted));
+    button.classList.toggle("muted", audioMuted);
+    button.textContent = audioMuted
+      ? "🔇 음소거"
+      : "🔊 사운드";
+  }
+
+  function stopAllAudio() {
+    for (const source of [...activeAudioSources]) {
+      try { source.stop(); } catch {}
+      try { source.disconnect(); } catch {}
+    }
+    activeAudioSources.clear();
+    activeAudioVoices = 0;
+  }
+
+  async function setAudioMuted(muted) {
+    audioMuted = Boolean(muted);
+    updateMuteButton();
+
+    if (audioMuted) {
+      stopAllAudio();
+      if (audioContext?.state === "running") {
+        try { await audioContext.suspend(); } catch {}
+      }
+      return;
+    }
+
+    if (audioContext?.state === "suspended") {
+      try { await audioContext.resume(); } catch {}
+    }
   }
 
   async function ensureAudioReady() {
@@ -76,6 +114,7 @@
   }
 
   function connectVoice(source, gain, panner) {
+    if (!audioIsEnabled()) return false;
     source.connect(gain);
     if (panner) {
       gain.connect(panner);
@@ -83,16 +122,20 @@
     } else {
       gain.connect(audioMaster);
     }
+    activeAudioSources.add(source);
     activeAudioVoices += 1;
     source.onended = () => {
+      activeAudioSources.delete(source);
       activeAudioVoices = Math.max(0, activeAudioVoices - 1);
       try { source.disconnect(); } catch {}
       try { gain.disconnect(); } catch {}
       try { panner?.disconnect(); } catch {}
     };
+    return true;
   }
 
   function playSynthFallback(event, strength, panner) {
+    if (!audioIsEnabled() || !audioContext) return;
     const oscillator = audioContext.createOscillator();
     const gain = audioContext.createGain();
     const now = audioContext.currentTime;
@@ -110,7 +153,7 @@
       now
     );
     gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
-    connectVoice(oscillator, gain, panner);
+    if (!connectVoice(oscillator, gain, panner)) return;
     oscillator.start(now);
     oscillator.stop(now + 0.12);
   }
@@ -158,7 +201,7 @@
       const profileGain = clamp(Number(event.gain) || 1, 0, 2);
       gain.gain.value =
         (0.08 + strength * 0.22) * profileGain;
-      connectVoice(source, gain, panner);
+      if (!connectVoice(source, gain, panner)) continue;
       source.start(now);
     }
   }
@@ -349,28 +392,69 @@
     return Math.max(min, Math.min(max, value));
   }
 
+  function parseEntryItems() {
+    const items = [];
+    const byKey = new Map();
+
+    for (const rawLine of $("entries").value.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line) continue;
+
+      const match = line.match(
+        /^(.*?)\s+(?:[x×*]\s*)?(\d+)\s*개?\s*$/u
+      );
+      const displayName = (match ? match[1] : line).trim();
+      const count = match ? Number(match[2]) : 1;
+      if (
+        !displayName
+        || !Number.isSafeInteger(count)
+        || count < 1
+      ) {
+        continue;
+      }
+
+      const key = displayName.toLocaleLowerCase();
+      const existing = byKey.get(key);
+      if (existing) {
+        existing.count += count;
+      } else {
+        const item = { displayName, count };
+        byKey.set(key, item);
+        items.push(item);
+      }
+    }
+    return items;
+  }
+
   function parseEntries() {
-    const seen = new Set();
-    return $("entries").value
-      .split(/\r?\n/)
-      .map((value) => value.trim())
-      .filter(Boolean)
-      .filter((value) => {
-        const key = value.toLocaleLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-      })
-      .map((displayName, index) => ({
-        entryId: "entry-" + (index + 1),
-        displayName
-      }));
+    const entries = [];
+    parseEntryItems().forEach((item, itemIndex) => {
+      for (let copyIndex = 0; copyIndex < item.count; copyIndex += 1) {
+        entries.push({
+          entryId:
+            "item-" + (itemIndex + 1) + "-marble-" + (copyIndex + 1),
+          displayName: item.displayName,
+          itemIndex,
+          copyIndex,
+          copyCount: item.count
+        });
+      }
+    });
+    return entries;
   }
 
   function updateEntryCount() {
-    const count = parseEntries().length;
-    $("entryCount").textContent = count + " entries";
-    $("winnerCount").max = String(Math.max(1, count));
+    const items = parseEntryItems();
+    const marbleCount = items.reduce(
+      (sum, item) => sum + item.count,
+      0
+    );
+    $("entryCount").textContent =
+      items.length + " items · "
+      + marbleCount + " marbles";
+    $("winnerCount").max = String(
+      Math.max(1, marbleCount)
+    );
   }
 
   function setRunControlsLocked(locked) {
@@ -1403,11 +1487,19 @@
 
   $("entries").addEventListener("input", () => {
     updateEntryCount();
-    if (!running) resetDraw();
+    if (!running) {
+      clearAudit();
+      $("drawState").textContent = "READY · INPUT CHANGED";
+      $("winnerBanner").hidden = true;
+    }
   });
   $("winnerCount").addEventListener("change", renderRanks);
   $("seed").addEventListener("change", () => {
     if (!running) resetDraw();
+  });
+
+  $("muteAudio")?.addEventListener("click", () => {
+    void setAudioMuted(!audioMuted);
   });
 
   $("startDraw").addEventListener("click", startDraw);
@@ -1456,6 +1548,7 @@
   new ResizeObserver(render).observe(wrap);
 
   async function boot() {
+    updateMuteButton();
     updateEntryCount();
     adapter = await createPhysicsAdapter();
 

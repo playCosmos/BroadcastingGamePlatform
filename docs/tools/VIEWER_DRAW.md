@@ -454,9 +454,23 @@ Map Maker의 DB 저장 기능은 **맵 제작 편의 기능**이다.
 입력:
 
 - MachineMapDefinition JSON
-- 참가자 목록
+- 참가 항목 / Marble 수
 - winnerCount
 - seed
+
+Marble 입력은 한 줄에 항목명과 개수를 지정할 수 있다.
+
+~~~text
+1번 50개
+2번 30개
+3번 10개
+~~~
+
+- 위 예시는 실제 Marble 90개를 생성한다.
+- 개수를 생략하면 해당 항목은 Marble 1개로 처리한다.
+- 같은 항목명을 여러 줄에 입력하면 개수를 합산한다.
+- 참가 Marble 총수에 애플리케이션 고정 상한을 두지 않는다.
+- 실제 처리 가능한 규모는 실행 브라우저와 장치의 물리 연산 성능에 따른다.
 
 출력:
 
@@ -749,6 +763,14 @@ visualProfileHash
 ## 13.5 Sound 안정성
 
 Marble 수가 많으면 충돌음이 폭증할 수 있으므로 반드시 제한한다.
+
+Browser Marble Draw는 즉시 전환 가능한 음소거 버튼을 제공한다.
+
+- 음소거 ON: 현재 재생 중인 AudioBuffer/Oscillator source를 즉시 중지한다.
+- 음소거 ON: AudioContext를 suspend한다.
+- 음소거 중: sample 조회, AudioNode 생성, source.start를 수행하지 않는다.
+- 음소거 OFF: 기존 AudioContext가 있으면 resume하고 이후 새 충돌 이벤트부터 재생한다.
+- 물리 이벤트와 오디오 재생은 분리되어 있으므로 음소거가 Physics 결과에 영향을 주지 않는다.
 
 지원:
 
