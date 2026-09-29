@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>시청자 뽑기 · Marble Machine</title>
+  <link rel="stylesheet" href="./web/assets/platform.css">
+  <link rel="stylesheet" href="./web/tools/viewer-draw/marble/viewer-draw-marble.css">
+</head>
+<body>
+<main class="marble-shell">
+  <header class="marble-header">
+    <div>
+      <p class="eyebrow">VIEWER DRAW / MARBLE MACHINE / BROWSER ONLY</p>
+      <h1>시청자 뽑기</h1>
+      <p>참가자를 Marble로 생성하고 맵·물리·도착 판정·당첨자 결정까지 현재 브라우저에서 처리합니다.</p>
+      <div class="hero-actions">
+        <a class="secondary" href="./">← 플랫폼 홈</a>
+        <a class="secondary" href="./number.html">숫자 뽑기 →</a>
+      </div>
+    </div>
+    <strong id="engineBadge">BROWSER_PHYSICS_V0</strong>
+  </header>
+
+  <section class="marble-grid">
+    <aside class="control-panel">
+      <section>
+        <p class="panel-title">MAP</p>
+        <div class="file-row">
+          <button id="loadMapButton" type="button">JSON 맵 불러오기</button>
+          <input id="mapFile" type="file" accept=".json,application/json" hidden>
+        </div>
+        <div class="meta-row"><span>Name</span><strong id="mapName">Default Map</strong></div>
+        <div class="meta-row"><span>Schema</span><strong id="mapSchema">-</strong></div>
+      </section>
+
+      <section>
+        <p class="panel-title">ENTRIES</p>
+        <textarea id="entries" rows="14" placeholder="참가자 이름을 한 줄에 한 명씩 입력">Alice
+Bob
+Charlie
+Delta
+Echo
+Foxtrot
+Golf
+Hotel</textarea>
+        <small id="entryCount">8 entries</small>
+      </section>
+
+      <section class="two-col">
+        <label>
+          <span>Winner Count</span>
+          <input id="winnerCount" type="number" min="1" max="64" value="1">
+        </label>
+        <label>
+          <span>Seed</span>
+          <input id="seed" type="number" value="1">
+        </label>
+      </section>
+
+      <section>
+        <label class="check-row">
+          <input id="audioEnabled" type="checkbox" checked>
+          <span>Collision Web Audio</span>
+        </label>
+        <small>충돌/범퍼/런처/골인 이벤트를 로컬 Web Audio로 재생합니다.</small>
+      </section>
+
+      <section class="button-stack">
+        <button id="startDraw" class="primary-button" type="button">추첨 시작</button>
+        <button id="resetDraw" type="button">초기화</button>
+        <button id="exportAudit" type="button" disabled>Audit JSON 내보내기</button>
+
+      </section>
+
+      <p class="runtime-note">
+        이 추첨 경로는 서버 API를 호출하지 않습니다. 페이지 로드 이후 플랫폼 서버가 중단되어도 현재 추첨은 계속 진행됩니다.
+      </p>
+    </aside>
+
+    <section class="stage-panel">
+      <div class="stage-top">
+        <div>
+          <span id="drawState">READY</span>
+          <strong id="progress">0 / 0</strong>
+        </div>
+        <div class="stage-tools">
+          <span id="stuckCount">NUDGE 0</span>
+          <span id="qualificationBadge" class="stage-tool">QUALIFY -</span>
+          <span id="timeoutBadge" class="stage-tool" hidden>TIMEOUT</span>
+          <span id="slowMotionBadge" class="slow-motion-badge" hidden>SLOW 0.35×</span>
+          <button id="cameraAuto" type="button" class="stage-tool active">CAM AUTO</button>
+          <button id="fastForward" type="button" class="stage-tool">⏩ HOLD</button>
+          <strong id="elapsed">0.0s</strong>
+        </div>
+      </div>
+
+      <div class="stage-wrap" id="stageWrap">
+        <canvas id="stageCanvas"></canvas>
+        <canvas
+          id="minimapCanvas"
+          class="minimap-canvas"
+          title="클릭: 카메라 고정 · 더블클릭: 자동 추적"
+        ></canvas>
+      </div>
+
+      <div class="winner-banner result-podium" id="winnerBanner" hidden>
+        <span>RESULT</span>
+        <div id="podiumList" class="podium-list"></div>
+        <strong id="winnerText" class="winner-summary">-</strong>
+      </div>
+    </section>
+
+    <aside class="rank-panel">
+      <p class="panel-title">RANK</p>
+      <p class="rank-help">완주자는 확정 순위, 진행 중 구슬은 중력 진행축 기준 임시 순위입니다.</p>
+      <div id="rankList" class="rank-list"></div>
+    </aside>
+  </section>
+</main>
+
+<script src="./web/admin/assets/viewer-draw-map-engine.js"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
+<script src="./web/tools/viewer-draw/marble/browser-physics-adapter.js"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-marble.js"></script>
+</body>
+</html>

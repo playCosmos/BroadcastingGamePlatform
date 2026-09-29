@@ -4,6 +4,9 @@ on:
   push:
     branches: [main]
     paths:
+      - "index.html"
+      - "number.html"
+      - "marble.html"
       - "web/**"
       - ".github/workflows/github-pages.yml"
   workflow_dispatch:
@@ -49,43 +52,20 @@ jobs:
       - name: Build static Pages artifact
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          import shutil
+          rm -rf _site
+          mkdir -p _site/web
 
-          repository = "BroadcastingGamePlatform"
-          prefix = f"/{repository}"
-          source = Path("web")
-          target = Path("_site")
+          cp index.html _site/index.html
+          cp number.html _site/number.html
+          cp marble.html _site/marble.html
 
-          if target.exists():
-              shutil.rmtree(target)
-          shutil.copytree(source, target)
+          cp -R web/assets _site/web/assets
+          mkdir -p _site/web/admin
+          cp -R web/admin/assets _site/web/admin/assets
+          cp -R web/tools _site/web/tools
+          cp -R web/vendor _site/web/vendor
 
-          for path in target.rglob("*.html"):
-              text = path.read_text(encoding="utf-8")
-              replacements = (
-                  ('href="/', f'href="{prefix}/'),
-                  ("href='/", f"href='{prefix}/"),
-                  ('src="/', f'src="{prefix}/'),
-                  ("src='/", f"src='{prefix}/"),
-                  ('action="/', f'action="{prefix}/'),
-                  ("action='/", f"action='{prefix}/"),
-                  ('url=/', f'url={prefix}/'),
-                  ('location.replace("/', f'location.replace("{prefix}/'),
-                  ("location.replace('/", f"location.replace('{prefix}/"),
-                  ('location.assign("/', f'location.assign("{prefix}/'),
-                  ("location.assign('/", f"location.assign('{prefix}/"),
-              )
-              for old, new in replacements:
-                  text = text.replace(old, new)
-              path.write_text(text, encoding="utf-8")
-
-          # Project Pages should resolve unknown root navigation back to the
-          # platform landing instead of the account-level 404 page.
-          shutil.copy2(target / "index.html", target / "404.html")
-          (target / ".nojekyll").write_text("", encoding="utf-8")
-          PY
+          touch _site/.nojekyll
 
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v3
