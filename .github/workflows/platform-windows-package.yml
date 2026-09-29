@@ -54,8 +54,6 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node web/tools/viewer-draw/marble/browser-physics-adapter-probe.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node web/tools/viewer-draw/marble/box2d-wasm-adapter-probe.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-create.js
@@ -76,6 +74,53 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/games/board/js/board-rect.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Smoke box2d-wasm in browser
+        shell: pwsh
+        run: |
+          $server = Start-Process -FilePath "python" -ArgumentList @(
+            "-m", "http.server", "8123",
+            "--bind", "127.0.0.1",
+            "--directory", "web"
+          ) -PassThru -WindowStyle Hidden
+          try {
+            Start-Sleep -Seconds 2
+
+            $candidates = @(
+              "$env:ProgramFiles\Google\Chrome\Application\chrome.exe",
+              "${env:ProgramFiles(x86)}\Microsoft\Edge\Application\msedge.exe",
+              "$env:ProgramFiles\Microsoft\Edge\Application\msedge.exe"
+            )
+            $browser = $candidates |
+              Where-Object { Test-Path $_ } |
+              Select-Object -First 1
+
+            if (-not $browser) {
+              throw "Chrome/Edge headless browser not found"
+            }
+
+            $arguments = @(
+              "--headless",
+              "--disable-gpu",
+              "--no-sandbox",
+              "--virtual-time-budget=10000",
+              "--dump-dom",
+              "http://127.0.0.1:8123/tools/viewer-draw/marble/box2d-wasm-browser-probe.html"
+            )
+            $dom = & $browser @arguments 2>&1 | Out-String
+
+            if ($LASTEXITCODE -ne 0) {
+              throw "headless browser probe failed: $dom"
+            }
+            if ($dom -notmatch 'data-status="pass"') {
+              throw "box2d-wasm browser probe did not pass: $dom"
+            }
+          }
+          finally {
+            if ($server -and -not $server.HasExited) {
+              Stop-Process -Id $server.Id -Force
+            }
+          }
 
       - name: Build platform server
         working-directory: server
