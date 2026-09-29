@@ -149,6 +149,279 @@ public final class ViewerDrawService {
         MachineMapDefinition definition
     ) {}
 
+    public record MarbleAuditSummary(
+        String auditId,
+        String publicCode,
+        String resultStatus,
+        String qualificationStatus,
+        String mapName,
+        String definitionHash,
+        String engineId,
+        long seed,
+        String completedAt,
+        String createdAt
+    ) {}
+
+    public record MarbleAudit(
+        String auditId,
+        String publicCode,
+        String schemaVersion,
+        String resultStatus,
+        String qualificationStatus,
+        String mapName,
+        String definitionHash,
+        String entrySnapshotHash,
+        String engineId,
+        long seed,
+        String startedAt,
+        String completedAt,
+        String createdAt,
+        Map<String, Object> audit
+    ) {}
+
+    public MarbleAudit saveMarbleAudit(
+        Map<String, Object> rawAudit
+    ) throws SQLException {
+        Map<String, Object> audit = normalizeMarbleAudit(rawAudit);
+        Map<String, Object> qualification = objectMap(
+            audit.get("qualification"),
+            "qualification"
+        );
+        Map<String, Object> engine = objectMap(
+            audit.get("engine"),
+            "engine"
+        );
+        Map<String, Object> map = objectMap(
+            audit.get("map"),
+            "map"
+        );
+        Map<String, Object> run = objectMap(
+            audit.get("run"),
+            "run"
+        );
+        Map<String, Object> entries = objectMap(
+            audit.get("entries"),
+            "entries"
+        );
+
+        String auditId = UUID.randomUUID().toString();
+        String createdAt = Instant.now().toString();
+        String publicCode;
+
+        try (var connection = database.open()) {
+            publicCode = createUnusedAuditCode(connection);
+            try (var statement = connection.prepareStatement("""
+                INSERT INTO viewer_draw_marble_audit(
+                  audit_id, public_code, schema_version,
+                  result_status, qualification_status,
+                  map_name, definition_hash, entry_snapshot_hash,
+                  engine_id, seed, started_at, completed_at,
+                  audit_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                statement.setString(1, auditId);
+                statement.setString(
+                    2,
+                    publicCode
+                );
+                statement.setString(
+                    3,
+                    requiredString(
+                        audit,
+                        "schemaVersion",
+                        64
+                    )
+                );
+                statement.setString(
+                    4,
+                    requiredString(
+                        audit,
+                        "resultStatus",
+                        32
+                    )
+                );
+                statement.setString(
+                    5,
+                    requiredString(
+                        qualification,
+                        "status",
+                        32
+                    )
+                );
+                statement.setString(
+                    6,
+                    requiredString(
+                        map,
+                        "name",
+                        80
+                    )
+                );
+                statement.setString(
+                    7,
+                    requiredHash(
+                        map,
+                        "definitionHash"
+                    )
+                );
+                statement.setString(
+                    8,
+                    requiredHash(
+                        entries,
+                        "snapshotHash"
+                    )
+                );
+                statement.setString(
+                    9,
+                    requiredString(
+                        engine,
+                        "id",
+                        80
+                    )
+                );
+                statement.setLong(
+                    10,
+                    longValue(run, "seed", 0)
+                );
+                statement.setString(
+                    11,
+                    optionalString(
+                        run.get("startedAt"),
+                        64
+                    )
+                );
+                statement.setString(
+                    12,
+                    optionalString(
+                        run.get("completedAt"),
+                        64
+                    )
+                );
+                statement.setString(
+                    13,
+                    GSON.toJson(audit)
+                );
+                statement.setString(14, createdAt);
+                statement.executeUpdate();
+            }
+        }
+
+        return findMarbleAudit(auditId);
+    }
+
+    public List<MarbleAuditSummary> recentMarbleAudits(
+        int limit
+    ) throws SQLException {
+        int normalizedLimit = Math.max(1, Math.min(100, limit));
+        var result = new ArrayList<MarbleAuditSummary>();
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT audit_id, public_code, result_status,
+                        qualification_status, map_name,
+                        definition_hash, engine_id, seed,
+                        completed_at, created_at
+                 FROM viewer_draw_marble_audit
+                 ORDER BY created_at DESC
+                 LIMIT ?
+                 """)) {
+            statement.setInt(1, normalizedLimit);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    result.add(
+                        new MarbleAuditSummary(
+                            rows.getString("audit_id"),
+                            rows.getString("public_code"),
+                            rows.getString("result_status"),
+                            rows.getString("qualification_status"),
+                            rows.getString("map_name"),
+                            rows.getString("definition_hash"),
+                            rows.getString("engine_id"),
+                            rows.getLong("seed"),
+                            rows.getString("completed_at"),
+                            rows.getString("created_at")
+                        )
+                    );
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    public MarbleAudit findMarbleAudit(String auditId)
+        throws SQLException {
+        return findMarbleAuditByColumn("audit_id", auditId);
+    }
+
+    public MarbleAudit findMarbleAuditByPublicCode(
+        String publicCode
+    ) throws SQLException {
+        String normalized = normalizePublicCode(publicCode);
+        if (normalized.length() != 6) {
+            throw new NoSuchElementException(
+                "viewer draw marble audit not found"
+            );
+        }
+        return findMarbleAuditByColumn(
+            "public_code",
+            normalized
+        );
+    }
+
+    private MarbleAudit findMarbleAuditByColumn(
+        String column,
+        String value
+    ) throws SQLException {
+        if (
+            !"audit_id".equals(column)
+            && !"public_code".equals(column)
+        ) {
+            throw new IllegalArgumentException(
+                "unsupported audit lookup"
+            );
+        }
+        try (var connection = database.open();
+             var statement = connection.prepareStatement(
+                 """
+                 SELECT audit_id, public_code, schema_version,
+                        result_status, qualification_status,
+                        map_name, definition_hash, entry_snapshot_hash,
+                        engine_id, seed, started_at, completed_at,
+                        created_at, audit_json
+                 FROM viewer_draw_marble_audit
+                 WHERE %s = ?
+                 """.formatted(column)
+             )) {
+            statement.setString(1, value);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new NoSuchElementException(
+                        "viewer draw marble audit not found"
+                    );
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> audit = GSON.fromJson(
+                    rows.getString("audit_json"),
+                    new TypeToken<Map<String, Object>>() {}.getType()
+                );
+                return new MarbleAudit(
+                    rows.getString("audit_id"),
+                    rows.getString("public_code"),
+                    rows.getString("schema_version"),
+                    rows.getString("result_status"),
+                    rows.getString("qualification_status"),
+                    rows.getString("map_name"),
+                    rows.getString("definition_hash"),
+                    rows.getString("entry_snapshot_hash"),
+                    rows.getString("engine_id"),
+                    rows.getLong("seed"),
+                    rows.getString("started_at"),
+                    rows.getString("completed_at"),
+                    rows.getString("created_at"),
+                    Map.copyOf(audit)
+                );
+            }
+        }
+    }
+
     public MachineMap saveMachineMap(
         String mapId,
         MachineMapDefinition definition
@@ -1300,6 +1573,207 @@ public final class ViewerDrawService {
         visiting.remove(key);
         visited.add(key);
         return false;
+    }
+
+    private Map<String, Object> normalizeMarbleAudit(
+        Map<String, Object> rawAudit
+    ) {
+        if (rawAudit == null) {
+            throw new IllegalArgumentException(
+                "marble audit is required"
+            );
+        }
+
+        String json = GSON.toJson(rawAudit);
+        if (json.length() > 2_000_000) {
+            throw new IllegalArgumentException(
+                "marble audit is too large"
+            );
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> audit = GSON.fromJson(
+            json,
+            new TypeToken<Map<String, Object>>() {}.getType()
+        );
+
+        String schemaVersion = requiredString(
+            audit,
+            "schemaVersion",
+            64
+        );
+        if (!"viewer-draw-run-audit/v0".equals(schemaVersion)) {
+            throw new IllegalArgumentException(
+                "unsupported marble audit schemaVersion"
+            );
+        }
+
+        String resultStatus = requiredString(
+            audit,
+            "resultStatus",
+            32
+        ).toUpperCase(Locale.ROOT);
+        if (
+            !"COMPLETED".equals(resultStatus)
+            && !"TIMEOUT".equals(resultStatus)
+        ) {
+            throw new IllegalArgumentException(
+                "invalid marble audit resultStatus"
+            );
+        }
+
+        Map<String, Object> qualification = objectMap(
+            audit.get("qualification"),
+            "qualification"
+        );
+        String qualificationStatus = requiredString(
+            qualification,
+            "status",
+            32
+        ).toUpperCase(Locale.ROOT);
+        if (
+            !"QUALIFIED".equals(qualificationStatus)
+            && !"NOT_QUALIFIED".equals(qualificationStatus)
+        ) {
+            throw new IllegalArgumentException(
+                "invalid marble audit qualification status"
+            );
+        }
+
+        Map<String, Object> map = objectMap(
+            audit.get("map"),
+            "map"
+        );
+        requiredString(map, "name", 80);
+        requiredHash(map, "definitionHash");
+
+        Map<String, Object> entries = objectMap(
+            audit.get("entries"),
+            "entries"
+        );
+        requiredHash(entries, "snapshotHash");
+
+        Map<String, Object> engine = objectMap(
+            audit.get("engine"),
+            "engine"
+        );
+        requiredString(engine, "id", 80);
+
+        Map<String, Object> run = objectMap(
+            audit.get("run"),
+            "run"
+        );
+        longValue(run, "seed", 0);
+        optionalString(run.get("startedAt"), 64);
+        optionalString(run.get("completedAt"), 64);
+
+        objectMap(audit.get("result"), "result");
+        return Map.copyOf(audit);
+    }
+
+    private String createUnusedAuditCode(
+        java.sql.Connection connection
+    ) throws SQLException {
+        for (int attempt = 0; attempt < 32; attempt += 1) {
+            String code = createPublicCode();
+            try (var statement = connection.prepareStatement("""
+                SELECT 1
+                FROM viewer_draw_marble_audit
+                WHERE public_code = ?
+                """)) {
+                statement.setString(1, code);
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next()) return code;
+                }
+            }
+        }
+        throw new SQLException(
+            "failed to allocate marble audit public code"
+        );
+    }
+
+    private static Map<String, Object> objectMap(
+        Object value,
+        String name
+    ) {
+        if (!(value instanceof Map<?, ?> raw)) {
+            throw new IllegalArgumentException(
+                name + " must be an object"
+            );
+        }
+        var result = new LinkedHashMap<String, Object>();
+        for (var entry : raw.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IllegalArgumentException(
+                    name + " contains a non-string key"
+                );
+            }
+            result.put(key, entry.getValue());
+        }
+        return result;
+    }
+
+    private static String requiredString(
+        Map<String, Object> source,
+        String key,
+        int maxLength
+    ) {
+        String value = optionalString(
+            source.get(key),
+            maxLength
+        );
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                key + " is required"
+            );
+        }
+        return value;
+    }
+
+    private static String requiredHash(
+        Map<String, Object> source,
+        String key
+    ) {
+        String value = requiredString(source, key, 64);
+        if (!value.matches("[0-9a-fA-F]{64}")) {
+            throw new IllegalArgumentException(
+                key + " must be a SHA-256 hex value"
+            );
+        }
+        return value.toLowerCase(Locale.ROOT);
+    }
+
+    private static String optionalString(
+        Object value,
+        int maxLength
+    ) {
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        if (text.length() > maxLength) {
+            throw new IllegalArgumentException(
+                "string value is too long"
+            );
+        }
+        return text;
+    }
+
+    private static long longValue(
+        Map<String, Object> source,
+        String key,
+        long fallback
+    ) {
+        Object value = source.get(key);
+        if (value == null) return fallback;
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException(
+                key + " must be an integer"
+            );
+        }
     }
 
     private static String stringProperty(
