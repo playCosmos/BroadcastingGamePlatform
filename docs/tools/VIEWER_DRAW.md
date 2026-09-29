@@ -810,6 +810,21 @@ viewer_draw_machine_map
 
 물리 구조가 바뀌고 다시 저장되면 revision과 definition hash가 변경된다.
 
+각 저장 revision은 `viewer_draw_machine_map_revision`에 immutable snapshot으로 별도 보존한다.
+
+~~~text
+map r1 저장
+→ r1 definition/hash snapshot 유지
+
+map 수정 후 r2 저장
+→ current map = r2
+→ r1 snapshot 유지
+→ r2 snapshot 추가
+~~~
+
+Production Physics는 최신 맵뿐 아니라 특정 과거 revision을 직접 실행할 수 있다.
+실제 Marble Draw Session은 Freeze 시 이 revision/hash를 고정해 사용한다.
+
 ### 13.6.2 Physics Preview Engine V0
 
 Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니라 실제 간이 물리 시뮬레이션이다.
