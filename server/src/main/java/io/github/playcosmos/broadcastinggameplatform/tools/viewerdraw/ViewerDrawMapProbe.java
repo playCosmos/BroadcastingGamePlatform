@@ -133,6 +133,33 @@ public final class ViewerDrawMapProbe {
                 ),
                 "physics map change must change hash"
             );
+
+            var revision1 = service.findMachineMapRevision(
+                saved.mapId(),
+                1
+            );
+            var revision2 = service.findMachineMapRevision(
+                saved.mapId(),
+                2
+            );
+            require(
+                revision1.definitionHash().equals(
+                    saved.definitionHash()
+                ),
+                "revision 1 hash must remain immutable"
+            );
+            require(
+                "Probe Machine".equals(
+                    revision1.definition().name()
+                ),
+                "revision 1 definition must remain immutable"
+            );
+            require(
+                revision2.definitionHash().equals(
+                    updated.definitionHash()
+                ),
+                "revision 2 hash must match updated map"
+            );
             require(
                 "Probe Machine Updated".equals(
                     service.findMachineMap(saved.mapId()).name()
