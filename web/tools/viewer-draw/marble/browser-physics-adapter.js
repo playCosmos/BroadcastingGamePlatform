@@ -1261,8 +1261,14 @@
           );
           const angleJitter =
             (this.random() * 2 - 1) * spreadDegrees;
+          const configuredDirection = Number(
+            launcher.properties?.launchDirectionDegrees
+          );
+          const directionDegrees = Number.isFinite(configuredDirection)
+            ? configuredDirection
+            : ((launcher.rotation || 0) - 90);
           const angle =
-            ((launcher.rotation || 0) - 90 + angleJitter)
+            (directionDegrees + angleJitter)
             * Math.PI / 180;
           const randomizedPower =
             power * (
