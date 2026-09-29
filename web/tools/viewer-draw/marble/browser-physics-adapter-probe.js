@@ -1,5 +1,8 @@
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
+
 require("../../../admin/assets/viewer-draw-map-engine.js");
 require("./browser-physics-adapter.js");
 
@@ -62,5 +65,22 @@ requireCondition(
   first.rankedEntries[0].displayName.startsWith("Entry "),
   "browser authority winner must be a local entry"
 );
+
+const controllerSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw-marble.js"),
+  "utf8"
+);
+for (const forbidden of [
+  /\bfetch\s*\(/,
+  /\bWebSocket\b/,
+  /\bXMLHttpRequest\b/,
+  /\bEventSource\b/
+]) {
+  requireCondition(
+    !forbidden.test(controllerSource),
+    "actual Marble Draw controller must not depend on backend transport: "
+      + forbidden
+  );
+}
 
 console.log("Viewer Draw browser physics authority probe passed.");
