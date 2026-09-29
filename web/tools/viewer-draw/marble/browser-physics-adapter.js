@@ -155,6 +155,8 @@
       this.outputClaims = new Map();
       this.slotClaims = new Map();
       this.eliminationOrder = [];
+      this.dnfOrder = [];
+      this.timedOut = false;
       this.selectedOutputKey = null;
       this.bumpers = [];
       this.launchers = [];
@@ -213,6 +215,8 @@
       this.outputClaims = new Map();
       this.slotClaims = new Map();
       this.eliminationOrder = [];
+      this.dnfOrder = [];
+      this.timedOut = false;
       this.selectedOutputKey = null;
       this.bumpers = [];
       this.launchers = [];
@@ -814,7 +818,7 @@
 
     detectImpactSounds(before) {
       for (const marble of this.marbles) {
-        if (marble.finished || marble.eliminated) continue;
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
         const previous = before.get(marble.id);
         if (!previous) continue;
         const velocity = marble.body.GetLinearVelocity();
@@ -982,6 +986,7 @@
           radius,
           finished: false,
           eliminated: false,
+          dnf: false,
           rank: 0,
           finishTime: null,
           bumperContacts: new Set(),
@@ -1011,6 +1016,7 @@
         this.applyBumperBoosts();
         this.applyLauncherBoosts();
         this.detectResults();
+        this.applyTimeout();
         this.accumulator -= FIXED_DT;
         guard += 1;
       }
@@ -1020,7 +1026,7 @@
     applyBumperBoosts() {
       const B = this.Box2D;
       for (const marble of this.marbles) {
-        if (marble.finished || marble.eliminated) continue;
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1073,7 +1079,7 @@
       if (!this.launchers.length) return;
 
       for (const marble of this.marbles) {
-        if (marble.finished || marble.eliminated) continue;
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1150,6 +1156,9 @@
         case "CASCADE_SELECTION":
           this.detectCascadeOutputs();
           break;
+        case "CONDITIONAL_OUTPUT":
+          this.detectConditionalOutputs();
+          break;
         case "RANDOM_OUTPUT_BUCKET":
           this.detectRandomOutputBucket();
           break;
@@ -1165,7 +1174,7 @@
       );
 
       for (const marble of this.marbles) {
-        if (marble.finished || marble.eliminated) continue;
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1194,7 +1203,7 @@
       );
 
       for (const marble of this.marbles) {
-        if (marble.finished || marble.eliminated) continue;
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1304,7 +1313,7 @@
       ).length;
       for (const marble of this.marbles) {
         if (remaining <= winnerCount) break;
-        if (marble.finished || marble.eliminated) continue;
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1417,6 +1426,121 @@
       }
     }
 
+    detectConditionalOutputs() {
+      const outputs = this.definition.components.filter(
+        (component) => component.type === "OUTPUT"
+      );
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      const target = rule.winnerCount || outputs.reduce(
+        (sum, output) =>
+          sum + Math.trunc(
+            property(output.properties, "outputCapacity", 1)
+          ),
+        0
+      );
+
+      for (const marble of this.marbles) {
+        if (
+          marble.finished
+          || marble.eliminated
+          || marble.dnf
+          || this.winnerOrder.length >= target
+        ) {
+          continue;
+        }
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+
+        const candidates = outputs
+          .filter((candidate) => {
+            const key = String(
+              candidate.properties?.outputKey || candidate.id
+            );
+            const claims = this.outputClaims.get(key) || [];
+            return Array.isArray(claims)
+              && claims.length < Math.trunc(
+                property(candidate.properties, "outputCapacity", 1)
+              )
+              && root.ViewerDrawMapEngine.conditionalOutputActive(
+                candidate,
+                outputs,
+                this.outputClaims
+              )
+              && this.pointInRect(x, y, candidate);
+          })
+          .sort((left, right) => {
+            const priorityDelta =
+              Math.trunc(
+                property(right.properties, "outputPriority", 0)
+              )
+              - Math.trunc(
+                property(left.properties, "outputPriority", 0)
+              );
+            if (priorityDelta) return priorityDelta;
+            return Math.trunc(
+              property(left.properties, "outputRank", 1)
+            ) - Math.trunc(
+              property(right.properties, "outputRank", 1)
+            );
+          });
+
+        const output = candidates[0];
+        if (!output) continue;
+        const key = String(
+          output.properties?.outputKey || output.id
+        );
+        const claims = this.outputClaims.get(key) || [];
+        claims.push(marble.id);
+        this.outputClaims.set(key, claims);
+        this.winnerOrder.push(marble.id);
+        this.finishOrder.push(marble.id);
+        this.captureMarble(
+          marble,
+          this.winnerOrder.length,
+          "output",
+          output
+        );
+      }
+    }
+
+    applyTimeout() {
+      if (this.timedOut) return;
+      const policy = root.ViewerDrawMapEngine.resolvedRunPolicy(
+        this.definition
+      );
+      if (
+        policy.timeoutSeconds <= 0
+        || this.time < policy.timeoutSeconds
+      ) {
+        return;
+      }
+      const target =
+        root.ViewerDrawMapEngine.targetCountForDefinition(
+          this.definition
+        );
+      if (this.winnerOrder.length >= target) return;
+
+      this.timedOut = true;
+      for (const marble of this.marbles) {
+        if (
+          marble.finished
+          || marble.eliminated
+          || marble.dnf
+        ) {
+          continue;
+        }
+        marble.dnf = true;
+        marble.body.SetLinearVelocity(
+          new this.Box2D.b2Vec2(0, 0)
+        );
+        marble.body.SetEnabled(false);
+        this.dnfOrder.push(marble.id);
+      }
+    }
+
     detectRandomOutputBucket() {
       const output = this.definition.components.find(
         (component) =>
@@ -1474,7 +1598,7 @@
       const marble = this.marbles.find(
         (candidate) => candidate.id === id
       );
-      if (!marble || marble.finished || marble.eliminated) return false;
+      if (!marble || marble.finished || marble.eliminated || marble.dnf) return false;
 
       const angle = this.random() * Math.PI * 2;
       const magnitude = 0.12 + this.random() * 0.12;
@@ -1502,6 +1626,16 @@
           ([key, ids]) => ({ key, ids: ids.slice() })
         ),
         eliminationOrder: this.eliminationOrder.slice(),
+        dnfOrder: this.dnfOrder.slice(),
+        timedOut: this.timedOut,
+        runStatus: this.timedOut
+          ? "TIMEOUT"
+          : this.winnerOrder.length >=
+              root.ViewerDrawMapEngine.targetCountForDefinition(
+                this.definition
+              )
+            ? "COMPLETED"
+            : "RUNNING",
         selectedOutputKey: this.selectedOutputKey,
         audioEvents: this.soundEvents.slice(),
         finishedCount: this.winnerOrder.length
@@ -1535,7 +1669,10 @@
           if (rule.type === "LAST_SURVIVOR") {
             return rule.winnerCount || 1;
           }
-          if (rule.type === "CASCADE_SELECTION") {
+          if (
+            rule.type === "CASCADE_SELECTION"
+            || rule.type === "CONDITIONAL_OUTPUT"
+          ) {
             return rule.winnerCount
               || this.definition.components
                 .filter((component) => component.type === "OUTPUT")
@@ -1577,6 +1714,7 @@
             radius: marble.radius,
             finished: marble.finished,
             eliminated: marble.eliminated,
+            dnf: marble.dnf,
             rank: marble.rank,
             finishTime: marble.finishTime
           };
