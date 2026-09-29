@@ -56,7 +56,7 @@ public final class BoardGameRuntimeEngine {
         String fingerprint = fingerprint(donation);
         var matches = findMatchingRooms(
             donation.provider(),
-            donation.userId(),
+            donation.channelId(),
             donation.amount()
         );
 
@@ -552,7 +552,7 @@ public final class BoardGameRuntimeEngine {
                 var player = players.stream()
                     .filter(value ->
                         value.providerId.equalsIgnoreCase(donation.provider())
-                            && value.soopId.equals(donation.userId())
+                            && value.soopId.equals(donation.channelId())
                     )
                     .findFirst()
                     .orElseThrow(() -> new SQLException("matched room player state is missing"));
@@ -725,7 +725,7 @@ public final class BoardGameRuntimeEngine {
 
     private List<RoomMatch> findMatchingRooms(
         String provider,
-        String userId,
+        String channelId,
         int amount
     ) throws SQLException {
         var rooms = new ArrayList<RoomMatch>();
@@ -745,7 +745,7 @@ public final class BoardGameRuntimeEngine {
                  ORDER BY br.updated_at DESC, br.created_at DESC
                  """)) {
             statement.setString(1, provider);
-            statement.setString(2, userId);
+            statement.setString(2, channelId);
             statement.setInt(3, amount);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
