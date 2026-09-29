@@ -524,8 +524,7 @@ public final class JBox2dMarblePhysicsAdapter
                         (float) (nx * impulse),
                         (float) (ny * impulse)
                     ),
-                    marble.body().getWorldCenter(),
-                    true
+                    marble.body().getWorldCenter()
                 );
             }
         }
