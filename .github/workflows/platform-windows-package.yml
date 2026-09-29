@@ -82,6 +82,9 @@ jobs:
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProductionPhysicsProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -143,6 +146,7 @@ jobs:
           if (Test-Path (Join-Path $root "config.json")) { throw "live config.json must not be shipped" }
           if (-not (Test-Path (Join-Path $root "config.example.json"))) { throw "config.example.json missing" }
           if (-not (Test-Path (Join-Path $root "runtime/bin/server/jvm.dll"))) { throw "bundled runtime missing" }
+          if (-not (Test-Path (Join-Path $root "THIRD_PARTY_NOTICES.md"))) { throw "third-party notices missing" }
 
           @(
             "web/index.html",
