@@ -49,6 +49,10 @@
       <button class="palette-item" data-tool="SEESAW">Seesaw</button>
       <button class="palette-item" data-tool="FUNNEL">Funnel</button>
       <button class="palette-item" data-tool="SPLITTER">Splitter</button>
+      <button class="palette-item" data-tool="HINGE">Hinge / Pivot</button>
+      <button class="palette-item" data-tool="GEAR">Gear Rotor</button>
+      <button class="palette-item" data-tool="PADDLE">Paddle</button>
+      <button class="palette-item" data-tool="LAUNCHER">Launcher</button>
       <button class="palette-item" data-tool="SPAWN">Spawn</button>
       <button class="palette-item" data-tool="FINISH">Finish</button>
 
@@ -113,6 +117,13 @@
         <label class="mini-field gate-field"><span>Open Angle °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
         <label class="mini-field funnel-field"><span>Funnel Gap</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
         <label class="mini-field thickness-field"><span>Rail Thickness</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
+        <label class="mini-field pivot-field"><span>Pivot Ratio</span><input id="propPivotRatio" type="number" min="-.5" max=".5" step=".01"></label>
+        <label class="mini-field hinge-field"><span>Lower Angle °</span><input id="propLowerAngle" type="number" min="-180" max="180" step="1"></label>
+        <label class="mini-field hinge-field"><span>Upper Angle °</span><input id="propUpperAngle" type="number" min="-180" max="180" step="1"></label>
+        <label class="mini-field hinge-field"><span>Joint Friction</span><input id="propJointFriction" type="number" min="0" max="50" step=".1"></label>
+        <label class="mini-field motor-field"><span>Motor °/s</span><input id="propMotorSpeed" type="number" min="-720" max="720" step="5"></label>
+        <label class="mini-field motor-field"><span>Motor Torque</span><input id="propMotorTorque" type="number" min="0" max="200" step="1"></label>
+        <label class="mini-field launcher-field"><span>Launch Power</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
         <label class="mini-field bumper-field"><span>Bumper Boost</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
         <label class="mini-field spawn-field"><span>Marble Radius</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
       </div>

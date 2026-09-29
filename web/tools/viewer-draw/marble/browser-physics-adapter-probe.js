@@ -85,14 +85,22 @@ goldbergDefinition.components.splice(
     "PENDULUM",
     "SEESAW",
     "FUNNEL",
-    "SPLITTER"
+    "SPLITTER",
+    "HINGE",
+    "GEAR",
+    "PADDLE",
+    "LAUNCHER"
   ].map((type, index) =>
-    Engine.componentDefaults(type, 80 + index * 110, 300)
+    Engine.componentDefaults(type, 70 + index * 65, 300)
   )
 );
 requireCondition(
   Engine.validateDefinition(goldbergDefinition).length === 0,
   "browser authority contract must accept Goldberg map components"
+);
+requireCondition(
+  Engine.componentDefaults("HINGE", 300, 300).properties.lowerAngle < 0,
+  "reactive hinge must carry joint limits in the map contract"
 );
 
 const controllerSource = fs.readFileSync(

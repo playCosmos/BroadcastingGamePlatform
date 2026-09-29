@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "viewer-draw-machine-map/v0";
-  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER"]);
+  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER"]);
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
@@ -34,10 +34,13 @@
 
   function motionRotation(c,time=0){
     const p=c.properties||{};
+    const runtimeRotation=Number(c.runtimeRotation);
+    if(Number.isFinite(runtimeRotation)) return runtimeRotation;
     const base=finiteOr(c.rotation,0);
     const t=Math.max(0,finiteOr(time,0));
-    if(c.type==="ROTATOR"){
-      return base+clamp(finiteOr(p.angularSpeed,90),-720,720)*t;
+    if(["ROTATOR","GEAR","PADDLE"].includes(c.type)){
+      const fallback=c.type==="GEAR" ? 120 : c.type==="PADDLE" ? 180 : 90;
+      return base+clamp(finiteOr(p.motorSpeed ?? p.angularSpeed,fallback),-720,720)*t;
     }
     const period=clamp(
       finiteOr(p.period,c.type==="GATE"?3.6:3.2),
@@ -59,8 +62,18 @@
   }
 
   function componentShapes(c,time=0){
-    if(["GATE","ROTATOR","PENDULUM","SEESAW"].includes(c.type)){
+    if(["GATE","ROTATOR","PENDULUM","SEESAW","PADDLE"].includes(c.type)){
       return [{...c,rotation:motionRotation(c,time)}];
+    }
+    if(c.type==="HINGE"){
+      return [{...c,rotation:motionRotation(c,time)}];
+    }
+    if(c.type==="GEAR"){
+      const rotation=motionRotation(c,time);
+      return [
+        {...c,rotation},
+        {...c,rotation:rotation+90}
+      ];
     }
 
     const p=c.properties||{};
@@ -102,6 +115,10 @@
       case "SEESAW": return {...base,width:230,height:16,properties:{restitution:0.34,friction:0.08,amplitude:14,period:4,phase:0}};
       case "FUNNEL": return {...base,width:280,height:190,properties:{restitution:0.3,friction:0.06,gap:52,thickness:14}};
       case "SPLITTER": return {...base,width:220,height:170,properties:{restitution:0.34,friction:0.05,thickness:14}};
+      case "HINGE": return {...base,width:220,height:16,properties:{restitution:0.34,friction:0.08,pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2}};
+      case "GEAR": return {...base,width:170,height:18,properties:{restitution:0.4,friction:0.06,motorSpeed:120,motorTorque:35}};
+      case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
+      case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
       default: throw new Error("Unsupported component type: "+type);
     }
   }
@@ -149,7 +166,7 @@
       }else if(x<0||x>w||y<0||y>h){
         errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
-      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER"].includes(c?.type)){
+      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
           errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
@@ -164,6 +181,28 @@
       if(c?.type==="FINISH"&&(Number(c?.width)<10||Number(c?.height)<10)){
         errors.push("FINISH 크기는 최소 10×10이어야 합니다.");
       }
+      const p=c?.properties||{};
+      if(["HINGE","PADDLE"].includes(c?.type)){
+        const pivot=finiteOr(p.pivotRatio,c?.type==="PADDLE"?-.48:0);
+        if(pivot<-.5||pivot>.5) errors.push("pivotRatio는 -0.5~0.5 범위여야 합니다.");
+      }
+      if(c?.type==="HINGE"){
+        const lower=finiteOr(p.lowerAngle,-70),upper=finiteOr(p.upperAngle,70);
+        const damping=finiteOr(p.jointFriction,1.2);
+        if(lower<-180||upper>180||lower>upper) errors.push("Hinge angle limit이 유효하지 않습니다.");
+        if(damping<0||damping>50) errors.push("Hinge jointFriction은 0~50 범위여야 합니다.");
+      }
+      if(["GEAR","PADDLE"].includes(c?.type)){
+        const speed=finiteOr(p.motorSpeed,c?.type==="GEAR"?120:180);
+        const torque=finiteOr(p.motorTorque,c?.type==="GEAR"?35:30);
+        if(speed<-720||speed>720) errors.push("motorSpeed는 -720~720 범위여야 합니다.");
+        if(torque<0||torque>200) errors.push("motorTorque는 0~200 범위여야 합니다.");
+      }
+      if(c?.type==="LAUNCHER"){
+        const power=finiteOr(p.launchPower,1.2);
+        if(power<0||power>5) errors.push("Launcher launchPower는 0~5 범위여야 합니다.");
+      }
+
       if(c?.type==="SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
     }
@@ -228,7 +267,8 @@
           radius:r,
           finished:false,
           rank:0,
-          finishTime:null
+          finishTime:null,
+          launcherContacts:new Set()
         });
       }
       return this.snapshot();
@@ -262,7 +302,7 @@
         this.resolveWorldBounds(m,world);
         for(const c of this.definition.components){
           for(const shape of componentShapes(c,this.time)){
-            if(["WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER"].includes(c.type)){
+            if(["WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER"].includes(c.type)){
               this.resolveRect(m,shape);
             }else if(c.type==="PEG"||c.type==="BUMPER"){
               this.resolveCircle(m,shape);
@@ -272,6 +312,7 @@
       }
 
       this.resolveMarblePairs();
+      this.applyLauncherBoosts();
 
       const finishes=this.definition.components.filter(c=>c.type==="FINISH");
       for(const m of this.marbles){
@@ -359,6 +400,32 @@
       }
     }
 
+    applyLauncherBoosts(){
+      const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
+      if(!launchers.length) return;
+      for(const m of this.marbles){
+        if(m.finished) continue;
+        const next=new Set();
+        for(const launcher of launchers){
+          if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
+          next.add(launcher.id);
+          if(m.launcherContacts.has(launcher.id)) continue;
+          const power=clamp(finiteOr(launcher.properties?.launchPower,1.2),0,5);
+          const angle=degToRad((launcher.rotation||0)-90);
+          m.vx+=Math.cos(angle)*power*145;
+          m.vy+=Math.sin(angle)*power*145;
+        }
+        m.launcherContacts=next;
+      }
+    }
+
+    pointInRectExpanded(x,y,c,pad=0){
+      const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
+      const dx=x-c.x,dy=y-c.y;
+      const lx=dx*co+dy*si,ly=-dx*si+dy*co;
+      return Math.abs(lx)<=c.width/2+pad && Math.abs(ly)<=c.height/2+pad;
+    }
+
     resolveMarblePairs(){
       const ms=this.marbles;
       for(let i=0;i<ms.length;i++){
@@ -402,7 +469,10 @@
     snapshot(){
       return {
         time:this.time,
-        marbles:this.marbles.map(m=>({...m})),
+        marbles:this.marbles.map(m=>({
+          id:m.id,x:m.x,y:m.y,vx:m.vx,vy:m.vy,radius:m.radius,
+          finished:m.finished,rank:m.rank,finishTime:m.finishTime
+        })),
         finishOrder:[...this.finishOrder],
         finishedCount:this.finishOrder.length,
         totalCount:this.marbles.length

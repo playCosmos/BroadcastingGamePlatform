@@ -152,7 +152,9 @@
       this.marbles = [];
       this.finishOrder = [];
       this.bumpers = [];
+      this.launchers = [];
       this.movingComponents = [];
+      this.reactiveComponents = [];
       this.accumulator = 0;
       this.time = 0;
       this.seed = 1;
@@ -199,7 +201,9 @@
       this.marbles = [];
       this.finishOrder = [];
       this.bumpers = [];
+      this.launchers = [];
       this.movingComponents = [];
+      this.reactiveComponents = [];
       this.accumulator = 0;
       this.time = 0;
 
@@ -232,6 +236,15 @@
             )) {
               this.createStaticBox(shape);
             }
+            break;
+          case "HINGE":
+          case "GEAR":
+          case "PADDLE":
+            this.createRevoluteComponent(component);
+            break;
+          case "LAUNCHER":
+            this.createStaticBox(component);
+            this.launchers.push(component);
             break;
         }
       }
@@ -381,6 +394,134 @@
       }
     }
 
+    createRevoluteComponent(component) {
+      const B = this.Box2D;
+      const p = component.properties || {};
+      const pivotFallback =
+        component.type === "PADDLE" ? -0.48 : 0;
+      const pivotRatio = clamp(
+        property(p, "pivotRatio", pivotFallback),
+        -0.5,
+        0.5
+      );
+      const angle = (component.rotation || 0) * Math.PI / 180;
+      const localPivotX = component.width * pivotRatio;
+      const anchorX =
+        component.x + Math.cos(angle) * localPivotX;
+      const anchorY =
+        component.y + Math.sin(angle) * localPivotX;
+
+      const anchorDef = new B.b2BodyDef();
+      anchorDef.set_type(B.b2_staticBody);
+      anchorDef.set_position(
+        new B.b2Vec2(
+          anchorX / PIXELS_PER_METER,
+          anchorY / PIXELS_PER_METER
+        )
+      );
+      const anchorBody = this.world.CreateBody(anchorDef);
+
+      const bodyDef = new B.b2BodyDef();
+      bodyDef.set_type(B.b2_dynamicBody);
+      bodyDef.set_position(
+        new B.b2Vec2(
+          component.x / PIXELS_PER_METER,
+          component.y / PIXELS_PER_METER
+        )
+      );
+      const body = this.world.CreateBody(bodyDef);
+      body.SetTransform(body.GetPosition(), angle);
+
+      const fixtureDef = new B.b2FixtureDef();
+      fixtureDef.set_density(1);
+      fixtureDef.set_restitution(
+        clamp(property(p, "restitution", 0.38), 0, 1.4)
+      );
+      fixtureDef.set_friction(
+        clamp(property(p, "friction", 0.06), 0, 0.5)
+      );
+
+      const primary = new B.b2PolygonShape();
+      primary.SetAsBox(
+        Math.max(0.01, component.width / PIXELS_PER_METER / 2),
+        Math.max(0.01, component.height / PIXELS_PER_METER / 2)
+      );
+      fixtureDef.set_shape(primary);
+      body.CreateFixture(fixtureDef);
+
+      if (component.type === "GEAR") {
+        const cross = new B.b2PolygonShape();
+        cross.SetAsBox(
+          Math.max(0.01, component.width / PIXELS_PER_METER / 2),
+          Math.max(0.01, component.height / PIXELS_PER_METER / 2),
+          new B.b2Vec2(0, 0),
+          Math.PI / 2
+        );
+        fixtureDef.set_shape(cross);
+        body.CreateFixture(fixtureDef);
+      }
+
+      const jointDef = new B.b2RevoluteJointDef();
+      const worldAnchor = new B.b2Vec2(
+        anchorX / PIXELS_PER_METER,
+        anchorY / PIXELS_PER_METER
+      );
+      jointDef.Initialize(anchorBody, body, worldAnchor);
+
+      if (component.type === "HINGE") {
+        const lower = clamp(
+          property(p, "lowerAngle", -70),
+          -180,
+          180
+        ) * Math.PI / 180;
+        const upper = clamp(
+          property(p, "upperAngle", 70),
+          -180,
+          180
+        ) * Math.PI / 180;
+        jointDef.set_enableLimit(true);
+        jointDef.set_lowerAngle(Math.min(lower, upper));
+        jointDef.set_upperAngle(Math.max(lower, upper));
+
+        const frictionTorque = clamp(
+          property(p, "jointFriction", 1.2),
+          0,
+          50
+        );
+        jointDef.set_enableMotor(frictionTorque > 0);
+        jointDef.set_motorSpeed(0);
+        jointDef.set_maxMotorTorque(frictionTorque);
+      } else {
+        const fallbackSpeed =
+          component.type === "GEAR" ? 120 : 180;
+        const fallbackTorque =
+          component.type === "GEAR" ? 35 : 30;
+        jointDef.set_enableMotor(true);
+        jointDef.set_motorSpeed(
+          clamp(
+            property(p, "motorSpeed", fallbackSpeed),
+            -720,
+            720
+          ) * Math.PI / 180
+        );
+        jointDef.set_maxMotorTorque(
+          clamp(
+            property(p, "motorTorque", fallbackTorque),
+            0,
+            200
+          )
+        );
+      }
+
+      const joint = this.world.CreateJoint(jointDef);
+      this.reactiveComponents.push({
+        component,
+        body,
+        anchorBody,
+        joint
+      });
+    }
+
     createStaticCircle(component) {
       const B = this.Box2D;
       const bodyDef = new B.b2BodyDef();
@@ -483,7 +624,8 @@
           finished: false,
           rank: 0,
           finishTime: null,
-          bumperContacts: new Set()
+          bumperContacts: new Set(),
+          launcherContacts: new Set()
         };
       });
 
@@ -502,6 +644,7 @@
         this.world.Step(FIXED_DT, 6, 2);
         this.time += FIXED_DT;
         this.applyBumperBoosts();
+        this.applyLauncherBoosts();
         this.detectFinishes();
         this.accumulator -= FIXED_DT;
         guard += 1;
@@ -552,6 +695,65 @@
         }
         marble.bumperContacts = nextContacts;
       }
+    }
+
+    applyLauncherBoosts() {
+      const B = this.Box2D;
+      if (!this.launchers.length) return;
+
+      for (const marble of this.marbles) {
+        if (marble.finished) continue;
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        const nextContacts = new Set();
+
+        for (const launcher of this.launchers) {
+          if (!this.pointInRectExpanded(
+            x,
+            y,
+            launcher,
+            marble.radius + 2
+          )) {
+            continue;
+          }
+
+          nextContacts.add(launcher.id);
+          if (marble.launcherContacts.has(launcher.id)) continue;
+
+          const power = clamp(
+            property(launcher.properties, "launchPower", 1.2),
+            0,
+            5
+          );
+          if (power <= 0) continue;
+
+          const angle =
+            ((launcher.rotation || 0) - 90) * Math.PI / 180;
+          const impulse = power * 0.18;
+          marble.body.ApplyLinearImpulseToCenter(
+            new B.b2Vec2(
+              Math.cos(angle) * impulse,
+              Math.sin(angle) * impulse
+            ),
+            true
+          );
+        }
+
+        marble.launcherContacts = nextContacts;
+      }
+    }
+
+    pointInRectExpanded(x, y, component, pad = 0) {
+      const angle = (component.rotation || 0) * Math.PI / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const dx = x - component.x;
+      const dy = y - component.y;
+      const localX = dx * cos + dy * sin;
+      const localY = -dx * sin + dy * cos;
+      return Math.abs(localX) <= component.width / 2 + pad
+        && Math.abs(localY) <= component.height / 2 + pad;
     }
 
     detectFinishes() {
@@ -618,6 +820,17 @@
         finishOrder: this.finishOrder.slice(),
         finishedCount: this.finishOrder.length,
         totalCount: this.marbles.length,
+        components: this.reactiveComponents.map((item) => {
+          const position = item.body.GetPosition();
+          return {
+            id: item.component.id,
+            type: item.component.type,
+            x: position.x * PIXELS_PER_METER,
+            y: position.y * PIXELS_PER_METER,
+            runtimeRotation:
+              item.body.GetAngle() * 180 / Math.PI
+          };
+        }),
         marbles: this.marbles.map((marble) => {
           const position = marble.body.GetPosition();
           return {
