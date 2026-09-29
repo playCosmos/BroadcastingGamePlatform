@@ -392,7 +392,9 @@
   }
 
   function drawComponent(c, view) {
-    const [fill, stroke] = componentStyle(c.type);
+    const [defaultFill, defaultStroke] = componentStyle(c.type);
+    const fill = String(c.properties?.visualFill || defaultFill);
+    const stroke = String(c.properties?.visualStroke || defaultStroke);
     const p = toScreen(c.x, c.y, view);
     const selected = c.id === selectedId && !previewRunning;
 
