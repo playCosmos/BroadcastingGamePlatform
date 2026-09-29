@@ -33,6 +33,19 @@ jobs:
         with:
           enablement: true
 
+      - name: Prepare Box2D browser assets
+        shell: bash
+        working-directory: web
+        run: |
+          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          mkdir -p vendor/box2d-wasm
+          cp node_modules/box2d-wasm/dist/es/entry.js vendor/box2d-wasm/
+          cp node_modules/box2d-wasm/dist/es/Box2D.js vendor/box2d-wasm/
+          cp node_modules/box2d-wasm/dist/es/Box2D.wasm vendor/box2d-wasm/
+          cp node_modules/box2d-wasm/dist/es/Box2D.simd.js vendor/box2d-wasm/
+          cp node_modules/box2d-wasm/dist/es/Box2D.simd.wasm vendor/box2d-wasm/
+          rm -rf node_modules
+
       - name: Build static Pages artifact
         shell: bash
         run: |
