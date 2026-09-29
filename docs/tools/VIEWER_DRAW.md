@@ -6,8 +6,10 @@
 
 - V0 Viewer Draw Core: **IMPLEMENTED**
 - V1 Number Draw Migration: **IMPLEMENTED**
-- V2 Chat Entry Collection: PLANNED
-- V3+ Marble Physics / Machine: PLANNED
+- V2 Marble Map Maker V0: **IMPLEMENTED**
+- V2 Physics Preview Engine V0: **IMPLEMENTED**
+- V3 Chat Entry Collection: PLANNED
+- V4 Production Marble Physics / Draw Authority: PLANNED
 
 플랫폼 분류: **Broadcast Tool / Interaction Module**
 
@@ -742,6 +744,114 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 
 ## 13.6 Machine Designer
 
+### 13.6.1 현재 구현된 Map Maker V0
+
+관리 경로:
+
+~~~text
+/admin/tools/viewer-draw/map-maker/
+~~~
+
+현재 구현:
+
+- Wall
+- Ramp
+- Peg
+- Bumper
+- Spawn
+- Finish
+- Canvas 배치/선택/드래그
+- Grid / Snap
+- Inspector 기반 위치/회전/크기/반발/마찰/Boost 수정
+- Undo / Redo
+- Duplicate / Delete
+- World 크기/중력 설정
+- DB 저장/불러오기
+- revision 자동 증가
+- SHA-256 definition hash
+- JSON import/export
+- Archive
+- 즉시 Physics Preview
+
+맵 포맷:
+
+~~~text
+viewer-draw-machine-map/v0
+MachineMapDefinition
+├─ name
+├─ world
+│  ├─ width / height
+│  └─ gravityX / gravityY
+└─ components[]
+   ├─ id
+   ├─ type
+   ├─ x / y / rotation
+   ├─ width / height / radius
+   └─ properties
+~~~
+
+서버와 브라우저 모두 동일 포맷을 검증한다.
+
+DB:
+
+~~~text
+viewer_draw_machine_map
+- map_id
+- name
+- revision
+- status
+- schema_version
+- definition_json
+- definition_hash
+- created_at
+- updated_at
+~~~
+
+물리 구조가 바뀌고 다시 저장되면 revision과 definition hash가 변경된다.
+
+### 13.6.2 Physics Preview Engine V0
+
+Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니라 실제 간이 물리 시뮬레이션이다.
+
+지원:
+
+- fixed timestep 1/120s
+- gravity
+- world boundary
+- marble ↔ rotated Wall/Ramp collision
+- marble ↔ Peg/Bumper circle collision
+- marble ↔ marble collision
+- restitution
+- friction
+- Bumper boost
+- Spawn
+- Finish sensor
+- Finish rank
+- seeded initial placement
+
+중요:
+
+~~~text
+MapDefinition
+      ↓
+Preview Physics Engine
+~~~
+
+으로 실행하므로 에디터에서 보이는 정의와 Preview 실행 정의가 동일하다.
+
+단, V0 Preview Engine을 아직 실제 방송 추첨의 **Production Draw Authority**로 사용하지 않는다.
+
+현재 목적:
+
+- 맵 제작
+- 배치 검증
+- 충돌/경로 확인
+- Spawn/Finish 확인
+- Production Box2D 계열 엔진 어댑터 설계 기준 확정
+
+다음 물리 단계에서는 같은 MapDefinition을 읽는 Production Physics Adapter를 구현하고 Preview와 결과 편차를 비교한다.
+
+
 장기적으로 Admin에 시각적 편집기를 제공한다.
 
 예상 경로:
@@ -1263,3 +1373,21 @@ lazygyu/roulette에서 특히 검토할 부분:
 - 충돌 이벤트를 Web Audio API 기반 사운드로 변환한다
 - Sound/Visual 변경은 Physics 결과와 분리하며 physicsMachineHash로 공정성 경계를 관리한다
 - Race뿐 아니라 Slot/Elimination/Cascade/Multi-output 방식도 Machine draw rule로 지원한다
+
+
+## 21. Map Maker 우선 개발 순서 반영
+
+기존 Marble Physics 선행 계획을 다음처럼 변경한다.
+
+~~~text
+Map Format
+→ Map Maker V0
+→ Physics Preview Engine V0
+→ Map Validator / Simulation Tools
+→ Production Physics Adapter
+→ Marble Draw Session
+→ Goldberg / Marble Machine Components
+~~~
+
+고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.
+Runtime이 MapDefinition을 소비하도록 하여 사용자 제작 맵이 기본 구조가 되도록 한다.
