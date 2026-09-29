@@ -3,6 +3,7 @@
 
   const Engine = window.ViewerDrawMapEngine;
   const Physics = window.ViewerDrawBrowserPhysics;
+  const SoundBank = window.ViewerDrawSoundBank;
   const $ = (id) => document.getElementById(id);
   const canvas = $("stageCanvas");
   const wrap = $("stageWrap");
@@ -25,6 +26,10 @@
   let fastForwardActive = false;
   let finishSlowMotion = false;
   let stuckNudges = 0;
+  let lastAudit = null;
+  let activeRunGeneration = 0;
+  let runStartedAt = null;
+  let runStartedPerformance = 0;
 
   const FINISH_SLOW_RATE = 0.35;
   let stuckState = new Map();
@@ -70,6 +75,46 @@
     );
   }
 
+  function connectVoice(source, gain, panner) {
+    source.connect(gain);
+    if (panner) {
+      gain.connect(panner);
+      panner.connect(audioMaster);
+    } else {
+      gain.connect(audioMaster);
+    }
+    activeAudioVoices += 1;
+    source.onended = () => {
+      activeAudioVoices = Math.max(0, activeAudioVoices - 1);
+      try { source.disconnect(); } catch {}
+      try { gain.disconnect(); } catch {}
+      try { panner?.disconnect(); } catch {}
+    };
+  }
+
+  function playSynthFallback(event, strength, panner) {
+    const oscillator = audioContext.createOscillator();
+    const gain = audioContext.createGain();
+    const now = audioContext.currentTime;
+    const noteFrequency = midiFrequency(event.note);
+    const kind = String(event.kind || "impact");
+    oscillator.type =
+      kind === "launcher" ? "sawtooth"
+        : kind === "bumper" ? "triangle"
+          : "sine";
+    oscillator.frequency.value =
+      noteFrequency * (0.9 + strength * 0.2);
+    const profileGain = clamp(Number(event.gain) || 1, 0, 2);
+    gain.gain.setValueAtTime(
+      Math.max(0.0002, (0.018 + strength * 0.052) * profileGain),
+      now
+    );
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.1);
+    connectVoice(oscillator, gain, panner);
+    oscillator.start(now);
+    oscillator.stop(now + 0.12);
+  }
+
   function playAudioEvents(events) {
     if (
       !audioIsEnabled()
@@ -80,112 +125,172 @@
       return;
     }
 
-    const materialProfiles = {
-      metal: { wave: "sine", pitch: 1, duration: 0.12 },
-      wood: { wave: "triangle", pitch: 0.78, duration: 0.09 },
-      glass: { wave: "sine", pitch: 1.55, duration: 0.2 },
-      rubber: { wave: "sine", pitch: 0.55, duration: 0.07 },
-      plastic: { wave: "square", pitch: 0.9, duration: 0.06 },
-      stone: { wave: "triangle", pitch: 0.65, duration: 0.11 }
-    };
-
-    const kindFrequencies = {
-      impact: 220,
-      bumper: 520,
-      launcher: 150,
-      finish: 760,
-      output: 640,
-      slot: 560,
-      elimination: 130,
-      survivor: 820,
-      cascade: 610,
-      bucket: 690
-    };
-
     for (const event of events) {
       const strength = clamp(Number(event.strength) || 0, 0, 1);
       if (strength < 0.08 || activeAudioVoices >= MAX_AUDIO_VOICES) {
         continue;
       }
 
-      const kind = String(event.kind || "impact");
-      const material =
-        materialProfiles[String(event.material || "metal")]
-        || materialProfiles.metal;
-      const instrument = String(event.instrument || "none");
-      const noteFrequency = midiFrequency(event.note);
-      let frequency =
-        (kindFrequencies[kind] || kindFrequencies.impact)
-        * material.pitch
-        * (0.88 + strength * 0.24);
-      let wave = material.wave;
-      let duration = material.duration;
-
-      if (instrument === "bell") {
-        frequency = noteFrequency * 1.5;
-        wave = "sine";
-        duration = 0.28;
-      } else if (instrument === "chime") {
-        frequency = noteFrequency * 2;
-        wave = "sine";
-        duration = 0.34;
-      } else if (instrument === "xylophone") {
-        frequency = noteFrequency;
-        wave = "triangle";
-        duration = 0.18;
-      } else if (instrument === "drum") {
-        frequency = 70 + (noteFrequency / 20);
-        wave = "sawtooth";
-        duration = 0.12;
-      } else if (instrument === "click") {
-        frequency = 900 + (noteFrequency / 4);
-        wave = "square";
-        duration = 0.045;
-      }
-
-      const oscillator = audioContext.createOscillator();
-      const gain = audioContext.createGain();
       const panner = audioContext.createStereoPanner
         ? audioContext.createStereoPanner()
         : null;
-      const now = audioContext.currentTime;
-
-      oscillator.type = wave;
-      oscillator.frequency.setValueAtTime(frequency, now);
-      const profileGain = clamp(Number(event.gain) || 1, 0, 2);
-      const peak = Math.max(
-        0.0002,
-        (0.018 + strength * 0.052) * profileGain
-      );
-      gain.gain.setValueAtTime(0.0001, now);
-      gain.gain.exponentialRampToValueAtTime(
-        peak,
-        now + 0.006
-      );
-      gain.gain.exponentialRampToValueAtTime(
-        0.0001,
-        now + duration
-      );
-
-      oscillator.connect(gain);
       if (panner) {
         panner.pan.value = clamp(Number(event.pan) || 0, -1, 1);
-        gain.connect(panner);
-        panner.connect(audioMaster);
-      } else {
-        gain.connect(audioMaster);
       }
 
-      activeAudioVoices += 1;
-      oscillator.onended = () => {
-        activeAudioVoices = Math.max(0, activeAudioVoices - 1);
-        try { oscillator.disconnect(); } catch {}
-        try { gain.disconnect(); } catch {}
-        try { panner?.disconnect(); } catch {}
-      };
-      oscillator.start(now);
-      oscillator.stop(now + duration + 0.02);
+      const sample = SoundBank?.getSample?.(audioContext, event);
+      if (!sample?.buffer) {
+        playSynthFallback(event, strength, panner);
+        continue;
+      }
+
+      const source = audioContext.createBufferSource();
+      const gain = audioContext.createGain();
+      const now = audioContext.currentTime;
+      source.buffer = sample.buffer;
+      source.playbackRate.value =
+        Math.pow(
+          2,
+          (clamp(Number(event.note) || 60, 24, 108)
+            - sample.baseNote) / 12
+        )
+        * (0.97 + strength * 0.06);
+      const profileGain = clamp(Number(event.gain) || 1, 0, 2);
+      gain.gain.value =
+        (0.08 + strength * 0.22) * profileGain;
+      connectVoice(source, gain, panner);
+      source.start(now);
     }
+  }
+
+  async function sha256Hex(value) {
+    const bytes = new TextEncoder().encode(value);
+    const digest = await crypto.subtle.digest("SHA-256", bytes);
+    return [...new Uint8Array(digest)]
+      .map((byte) => byte.toString(16).padStart(2, "0"))
+      .join("");
+  }
+
+  function clearAudit() {
+    lastAudit = null;
+    $("exportAudit").disabled = true;
+    $("qualificationBadge").textContent = "QUALIFY -";
+    $("qualificationBadge").classList.remove("active");
+  }
+
+  async function buildRunAudit(generation) {
+    const policy = Engine.resolvedRunPolicy(definition);
+    const requiredWinners =
+      policy.qualificationMinWinners || winnerCountValue();
+    const reasons = [];
+    if ((state?.rankedEntries?.length || 0) < requiredWinners) {
+      reasons.push("INSUFFICIENT_WINNERS");
+    }
+    if (
+      policy.qualificationMaxNudges > 0
+      && stuckNudges > policy.qualificationMaxNudges
+    ) {
+      reasons.push("NUDGE_LIMIT_EXCEEDED");
+    }
+
+    const [mapHash, entryHash] = await Promise.all([
+      sha256Hex(JSON.stringify(definition)),
+      sha256Hex(JSON.stringify(entries))
+    ]);
+    if (generation !== activeRunGeneration) return;
+
+    const dnfIds = new Set(state?.dnfOrder || []);
+    const eliminatedIds = new Set(state?.eliminationOrder || []);
+    const entryByMarble = new Map(
+      (state?.marbles || []).map((marble) => [
+        marble.id,
+        marble.entry
+      ])
+    );
+
+    lastAudit = {
+      schemaVersion: "viewer-draw-run-audit/v0",
+      resultStatus: state?.timedOut ? "TIMEOUT" : "COMPLETED",
+      qualification: {
+        status: reasons.length ? "NOT_QUALIFIED" : "QUALIFIED",
+        requiredWinners,
+        maxNudges: policy.qualificationMaxNudges,
+        reasons
+      },
+      engine: {
+        id: adapter.engineId(),
+        fixedTimestepSeconds: 1 / 120
+      },
+      map: {
+        schemaVersion: definition.schemaVersion,
+        name: definition.name,
+        definitionHash: mapHash,
+        drawRule: structuredClone(Engine.resolvedDrawRule(definition)),
+        runPolicy: structuredClone(policy)
+      },
+      run: {
+        seed: Math.trunc(Number($("seed").value) || 1),
+        startedAt: runStartedAt,
+        completedAt: new Date().toISOString(),
+        wallElapsedMs: Math.max(
+          0,
+          Math.round(performance.now() - runStartedPerformance)
+        ),
+        simulationSeconds: state?.time || 0,
+        stuckNudges,
+        timedOut: Boolean(state?.timedOut)
+      },
+      entries: {
+        count: entries.length,
+        snapshotHash: entryHash,
+        values: entries.map((entry) => ({
+          entryId: entry.entryId,
+          displayName: entry.displayName
+        }))
+      },
+      result: {
+        winners: (state?.rankedEntries || []).map((entry, index) => ({
+          rank: index + 1,
+          entryId: entry.entryId,
+          displayName: entry.displayName
+        })),
+        dnf: [...dnfIds].map((id) => ({
+          marbleId: id,
+          entry: entryByMarble.get(id) || null
+        })),
+        eliminated: [...eliminatedIds].map((id) => ({
+          marbleId: id,
+          entry: entryByMarble.get(id) || null
+        })),
+        outputClaims: structuredClone(state?.outputClaims || []),
+        slotClaims: structuredClone(state?.slotClaims || []),
+        selectedOutputKey: state?.selectedOutputKey || null
+      }
+    };
+
+    const qualified =
+      lastAudit.qualification.status === "QUALIFIED";
+    $("qualificationBadge").textContent =
+      qualified ? "QUALIFIED" : "NOT QUALIFIED";
+    $("qualificationBadge").classList.toggle("active", qualified);
+    $("exportAudit").disabled = false;
+  }
+
+  function exportAudit() {
+    if (!lastAudit) return;
+    const blob = new Blob(
+      [JSON.stringify(lastAudit, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download =
+      "viewer-draw-audit-"
+      + new Date().toISOString().replaceAll(":", "-")
+      + ".json";
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   const camera = {
@@ -268,6 +373,7 @@
     }
     definition = structuredClone(next);
     adapter.loadMap(definition);
+    clearAudit();
     const rule = Engine.resolvedDrawRule(definition);
     if (rule.type !== "RACE_FINISH") {
       let target = rule.winnerCount;
@@ -285,16 +391,11 @@
               ),
             0
           );
-      } else if (!target && rule.type === "CASCADE_SELECTION") {
-        target = definition.components
-          .filter((component) => component.type === "OUTPUT")
-          .reduce(
-            (sum, component) =>
-              sum + Math.trunc(
-                Number(component.properties?.outputCapacity) || 1
-              ),
-            0
-          );
+      } else if (
+        !target
+        && ["CASCADE_SELECTION","CONDITIONAL_OUTPUT"].includes(rule.type)
+      ) {
+        target = Engine.targetCountForDefinition(definition);
       } else if (!target) {
         target = 1;
       }
@@ -652,7 +753,10 @@
       .filter((marble) => marble.finished)
       .sort((left, right) => left.rank - right.rank);
     const active = state.marbles
-      .filter((marble) => !marble.finished && !marble.eliminated)
+      .filter(
+        (marble) =>
+          !marble.finished && !marble.eliminated && !marble.dnf
+      )
       .sort(
         (left, right) =>
           progressValue(right) - progressValue(left)
@@ -660,7 +764,10 @@
     const eliminated = state.marbles.filter(
       (marble) => marble.eliminated
     );
-    return [...finished, ...active, ...eliminated];
+    const dnf = state.marbles.filter(
+      (marble) => marble.dnf
+    );
+    return [...finished, ...active, ...eliminated, ...dnf];
   }
 
   function renderRanks() {
@@ -676,6 +783,8 @@
         row.classList.add("winner");
       } else if (marble.eliminated) {
         row.classList.add("eliminated");
+      } else if (marble.dnf) {
+        row.classList.add("dnf");
       } else if (!marble.finished) {
         const firstActive = orderedMarbles().find(
           (candidate) =>
@@ -687,9 +796,11 @@
       const rank = document.createElement("span");
       rank.textContent = marble.eliminated
         ? "×"
-        : marble.finished
-          ? "#" + marble.rank
-          : "~#" + (index + 1);
+        : marble.dnf
+          ? "DNF"
+          : marble.finished
+            ? "#" + marble.rank
+            : "~#" + (index + 1);
 
       const name = document.createElement("strong");
       name.textContent =
@@ -699,8 +810,10 @@
       const ruleType = Engine.resolvedDrawRule(definition).type;
       status.textContent = marble.eliminated
         ? "ELIMINATED"
-        : marble.finished
-          ? (
+        : marble.dnf
+          ? "DNF"
+          : marble.finished
+            ? (
               ruleType === "RACE_FINISH"
                 ? "FINISH"
                 : ruleType === "LAST_SURVIVOR"
@@ -708,8 +821,8 @@
                   : ruleType === "SLOT_COLLECTION"
                     ? "SLOT"
                     : "OUTPUT"
-            )
-          : "RACING";
+              )
+            : "RACING";
 
       row.append(rank, name, status);
       root.appendChild(row);
@@ -722,8 +835,12 @@
     const targetType =
       rule.type === "SLOT_COLLECTION"
         ? "SLOT"
-        : ["ORDERED_OUTPUT","CASCADE_SELECTION","RANDOM_OUTPUT_BUCKET"]
-            .includes(rule.type)
+        : [
+            "ORDERED_OUTPUT",
+            "CASCADE_SELECTION",
+            "RANDOM_OUTPUT_BUCKET",
+            "CONDITIONAL_OUTPUT"
+          ].includes(rule.type)
           ? "OUTPUT"
           : "FINISH";
     let targets = definition.components.filter(
@@ -767,16 +884,11 @@
             ),
           0
         );
-    } else if (!configured && rule.type === "CASCADE_SELECTION") {
-      configured = definition.components
-        .filter((component) => component.type === "OUTPUT")
-        .reduce(
-          (sum, component) =>
-            sum + Math.trunc(
-              Number(component.properties?.outputCapacity) || 1
-            ),
-          0
-        );
+    } else if (
+      !configured
+      && ["CASCADE_SELECTION","CONDITIONAL_OUTPUT"].includes(rule.type)
+    ) {
+      configured = Engine.targetCountForDefinition(definition);
     } else if (
       !configured
       && ["LAST_SURVIVOR","RANDOM_OUTPUT_BUCKET"].includes(rule.type)
@@ -826,7 +938,10 @@
     }
 
     const active = state.marbles
-      .filter((marble) => !marble.finished && !marble.eliminated)
+      .filter(
+        (marble) =>
+          !marble.finished && !marble.eliminated && !marble.dnf
+      )
       .sort(
         (left, right) =>
           progressValue(right) - progressValue(left)
@@ -847,7 +962,8 @@
     if (!camera.locked && state?.marbles?.length) {
       const active = state.marbles
         .filter(
-          (marble) => !marble.finished && !marble.eliminated
+          (marble) =>
+            !marble.finished && !marble.eliminated && !marble.dnf
         )
         .sort(
           (left, right) =>
@@ -888,7 +1004,7 @@
 
     const activeIds = new Set();
     for (const marble of state.marbles) {
-      if (marble.finished || marble.eliminated) continue;
+      if (marble.finished || marble.eliminated || marble.dnf) continue;
       activeIds.add(marble.id);
 
       const previous = stuckState.get(marble.id);
@@ -992,7 +1108,12 @@
   function finalizeIfReady() {
     if (!running || completed || !state) return;
     const winnerCount = winnerCountValue();
-    if (state.rankedEntries.length < winnerCount) return;
+    if (
+      state.rankedEntries.length < winnerCount
+      && !state.timedOut
+    ) {
+      return;
+    }
 
     completed = true;
     running = false;
@@ -1000,10 +1121,16 @@
     setFastForward(false);
     updatePlaybackRate();
     const winners = state.rankedEntries.slice(0, winnerCount);
-    $("drawState").textContent = "COMPLETED";
+    $("drawState").textContent =
+      state.timedOut ? "TIMEOUT" : "COMPLETED";
+    $("timeoutBadge").hidden = !state.timedOut;
     renderPodium(winners);
+    if (!winners.length && state.timedOut) {
+      $("winnerText").textContent = "TIMEOUT · NO WINNER";
+    }
     $("winnerBanner").hidden = false;
     cancelAnimationFrame(frameId);
+    void buildRunAudit(activeRunGeneration);
   }
 
   function tick(now) {
@@ -1027,6 +1154,15 @@
       `${state.finishedCount} / ${state.targetCount || state.totalCount}`;
     $("elapsed").textContent =
       state.time.toFixed(1) + "s";
+    const policy = Engine.resolvedRunPolicy(definition);
+    const qualifyTarget =
+      policy.qualificationMinWinners || winnerCountValue();
+    $("qualificationBadge").textContent =
+      "QUALIFY "
+      + state.rankedEntries.length
+      + "/"
+      + qualifyTarget;
+    $("timeoutBadge").hidden = !state.timedOut;
     renderRanks();
     render();
     finalizeIfReady();
@@ -1050,6 +1186,10 @@
 
     const winnerCount = winnerCountValue();
     $("winnerCount").value = String(winnerCount);
+    clearAudit();
+    activeRunGeneration += 1;
+    runStartedAt = new Date().toISOString();
+    runStartedPerformance = performance.now();
     await ensureAudioReady();
 
     // Freeze everything needed for result determination in browser memory.
@@ -1077,6 +1217,12 @@
 
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "RUNNING";
+    $("qualificationBadge").textContent =
+      "QUALIFY 0/" + (
+        Engine.resolvedRunPolicy(definition).qualificationMinWinners
+        || winnerCount
+      );
+    $("timeoutBadge").hidden = true;
     $("slowMotionBadge").hidden = true;
     $("podiumList").replaceChildren();
     $("winnerBanner").hidden = true;
@@ -1116,6 +1262,10 @@
     resetCamera(true);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "READY";
+    $("qualificationBadge").textContent = lastAudit
+      ? $("qualificationBadge").textContent
+      : "QUALIFY -";
+    $("timeoutBadge").hidden = true;
     $("progress").textContent = `0 / ${entries.length}`;
     $("elapsed").textContent = "0.0s";
     $("slowMotionBadge").hidden = true;
@@ -1168,6 +1318,7 @@
 
   $("startDraw").addEventListener("click", startDraw);
   $("resetDraw").addEventListener("click", resetDraw);
+  $("exportAudit").addEventListener("click", exportAudit);
   $("cameraAuto").addEventListener("click", () => {
     camera.locked = false;
     updateCameraLabel();
