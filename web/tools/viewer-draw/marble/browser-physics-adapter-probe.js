@@ -49,6 +49,14 @@ function run(seed) {
 const first = run(42);
 const second = run(42);
 
+const nudgeAdapter = new Physics.BuiltinBrowserPhysicsAdapter();
+nudgeAdapter.loadMap(definition);
+nudgeAdapter.reset(entries, 7);
+requireCondition(
+  nudgeAdapter.shakeMarble("m1") === true,
+  "browser physics abstraction must support local stuck recovery"
+);
+
 requireCondition(
   first.finishedCount === entries.length,
   "browser authority must finish all marbles in probe"
@@ -70,6 +78,11 @@ const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
   "utf8"
 );
+requireCondition(
+  !controllerSource.includes("BuiltinBrowserPhysicsAdapter"),
+  "actual Marble Draw must not silently substitute the preview physics engine"
+);
+
 for (const forbidden of [
   /\bfetch\s*\(/,
   /\bWebSocket\b/,
