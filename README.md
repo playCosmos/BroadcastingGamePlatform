@@ -53,9 +53,9 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 ## 구현 현황
 
 - Board: AVAILABLE
-- Viewer Draw: Core + Number Draw + Marble Map Maker V0 + Browser Box2D-WASM Marble Draw V0 IMPLEMENTED
+- Viewer Draw: Core + Number Draw + Marble Map Maker + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
 - Yacht: PLANNED
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: PLANNED
-- Viewer Draw Camera/Rank/Minimap/Stuck Recovery + Goldberg Machine: PLANNED
+- Viewer Draw Finish Slow Motion/Podium + Goldberg Machine: PLANNED
