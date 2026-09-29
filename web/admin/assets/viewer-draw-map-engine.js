@@ -296,10 +296,25 @@
         qualificationMaxNudges:0
       },
       components:[
-        // Right-side launch lane: a pinball-table homage, not a direct copy.
-        {...componentDefaults("SPAWN",1100,710),radius:20,properties:{marbleRadius:11}},
-        {...componentDefaults("LAUNCHER",1100,800),width:150,height:24,rotation:0,properties:{
-          restitution:0.42,friction:0.04,launchPower:2.35,
+        // Two start styles: top-field bunch drop or right-side hopper burst.
+        {...componentDefaults("SPAWN",640,155),radius:26,properties:{
+          marbleRadius:11,
+          spawnRole:"BUNCH"
+        }},
+        {...componentDefaults("SPAWN",1085,705),radius:22,properties:{
+          marbleRadius:11,
+          spawnRole:"LAUNCHER"
+        }},
+        {...componentDefaults("FUNNEL",1085,660),width:132,height:150,rotation:0,properties:{
+          restitution:.28,friction:.045,gap:48,thickness:12,
+          soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.72
+        }},
+        {...componentDefaults("LAUNCHER",1085,805),width:132,height:24,rotation:0,properties:{
+          restitution:0.46,
+          friction:0.035,
+          launchPower:2.55,
+          launchSpreadDegrees:24,
+          launchPowerVariance:.26,
           soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.72
         }},
         {...componentDefaults("WALL",1160,450),width:760,height:18,rotation:90},
