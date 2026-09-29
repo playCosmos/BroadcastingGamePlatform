@@ -5,6 +5,9 @@
   let currentAudit = null;
   let currentOverlayUrl = "";
 
+  const staticPagesMode =
+    location.hostname.toLowerCase().endsWith(".github.io");
+
   function setStatus(message) {
     $("auditSyncStatus").textContent = message;
   }
@@ -121,9 +124,13 @@
     "viewer-draw-audit-ready",
     (event) => {
       currentAudit = structuredClone(event.detail);
-      $("uploadAudit").disabled = false;
+      $("uploadAudit").disabled = staticPagesMode;
       setOverlayCode("");
-      setStatus("LOCAL AUDIT READY");
+      setStatus(
+        staticPagesMode
+          ? "GITHUB PAGES · LOCAL AUDIT READY"
+          : "LOCAL AUDIT READY"
+      );
     }
   );
 
@@ -162,5 +169,14 @@
     }
   );
 
-  void refreshHistory();
+  if (staticPagesMode) {
+    $("uploadAudit").disabled = true;
+    $("refreshAuditHistory").disabled = true;
+    $("auditHistory").disabled = true;
+    $("auditOverlayLink").hidden = true;
+    $("copyAuditOverlay").disabled = true;
+    setStatus("GITHUB PAGES · LOCAL ONLY");
+  } else {
+    void refreshHistory();
+  }
 })();
