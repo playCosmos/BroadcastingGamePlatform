@@ -479,6 +479,88 @@ public final class ViewerDrawService {
                 );
             }
 
+            Map<String, Object> properties =
+                rawComponent.properties() == null
+                    ? Map.of()
+                    : rawComponent.properties();
+
+            if ("HINGE".equals(type) || "PADDLE".equals(type)) {
+                double pivotRatio = numberProperty(
+                    properties,
+                    "pivotRatio",
+                    "PADDLE".equals(type) ? -0.48 : 0
+                );
+                if (pivotRatio < -0.5 || pivotRatio > 0.5) {
+                    throw new IllegalArgumentException(
+                        id + " pivotRatio must be within -0.5..0.5"
+                    );
+                }
+            }
+            if ("HINGE".equals(type)) {
+                double lowerAngle = numberProperty(
+                    properties,
+                    "lowerAngle",
+                    -70
+                );
+                double upperAngle = numberProperty(
+                    properties,
+                    "upperAngle",
+                    70
+                );
+                double jointFriction = numberProperty(
+                    properties,
+                    "jointFriction",
+                    1.2
+                );
+                if (
+                    lowerAngle < -180 || upperAngle > 180
+                    || lowerAngle > upperAngle
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " hinge angle limits are invalid"
+                    );
+                }
+                if (jointFriction < 0 || jointFriction > 50) {
+                    throw new IllegalArgumentException(
+                        id + " jointFriction must be within 0..50"
+                    );
+                }
+            }
+            if ("GEAR".equals(type) || "PADDLE".equals(type)) {
+                double motorSpeed = numberProperty(
+                    properties,
+                    "motorSpeed",
+                    "GEAR".equals(type) ? 120 : 180
+                );
+                double motorTorque = numberProperty(
+                    properties,
+                    "motorTorque",
+                    "GEAR".equals(type) ? 35 : 30
+                );
+                if (motorSpeed < -720 || motorSpeed > 720) {
+                    throw new IllegalArgumentException(
+                        id + " motorSpeed must be within -720..720"
+                    );
+                }
+                if (motorTorque < 0 || motorTorque > 200) {
+                    throw new IllegalArgumentException(
+                        id + " motorTorque must be within 0..200"
+                    );
+                }
+            }
+            if ("LAUNCHER".equals(type)) {
+                double launchPower = numberProperty(
+                    properties,
+                    "launchPower",
+                    1.2
+                );
+                if (launchPower < 0 || launchPower > 5) {
+                    throw new IllegalArgumentException(
+                        id + " launchPower must be within 0..5"
+                    );
+                }
+            }
+
             if ("SPAWN".equals(type)) spawnCount += 1;
             if ("FINISH".equals(type)) finishCount += 1;
 
@@ -521,6 +603,32 @@ public final class ViewerDrawService {
             ),
             List.copyOf(normalizedComponents)
         );
+    }
+
+    private static double numberProperty(
+        Map<String, Object> properties,
+        String key,
+        double fallback
+    ) {
+        Object value = properties.get(key);
+        if (value == null) return fallback;
+        if (value instanceof Number number) {
+            double result = number.doubleValue();
+            requireFinite(result, key);
+            return result;
+        }
+        if (value instanceof String text) {
+            try {
+                double result = Double.parseDouble(text.trim());
+                requireFinite(result, key);
+                return result;
+            } catch (NumberFormatException error) {
+                throw new IllegalArgumentException(
+                    key + " must be numeric"
+                );
+            }
+        }
+        throw new IllegalArgumentException(key + " must be numeric");
     }
 
     private static void requireFinite(double value, String name) {
