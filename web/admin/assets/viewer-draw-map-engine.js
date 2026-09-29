@@ -244,7 +244,7 @@
         m.vy-=(1+restitution)*vn*ny;
       }
       if(c.type==="BUMPER"){
-        const boost=clamp(Number(c.properties?.boost)||1.15,0,3);
+        const boost=clamp(finiteOr(c.properties?.boost,1.15),0,3);
         m.vx+=nx*boost*70;
         m.vy+=ny*boost*70;
       }
