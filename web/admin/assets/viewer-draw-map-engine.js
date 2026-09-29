@@ -268,7 +268,14 @@
       case "HINGE": return {...base,width:220,height:16,properties:{restitution:0.34,friction:0.08,pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2}};
       case "GEAR": return {...base,width:170,height:18,properties:{restitution:0.4,friction:0.06,motorSpeed:120,motorTorque:35,linkedComponentId:"",gearRatio:-1}};
       case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
-      case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
+      case "LAUNCHER": return {...base,width:140,height:22,properties:{
+        restitution:0.4,
+        friction:0.05,
+        launchPower:1.2,
+        launchDirectionDegrees:-90,
+        launchSpreadDegrees:18,
+        launchPowerVariance:.22
+      }};
       case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
       case "OUTPUT": return {...base,width:180,height:60,properties:{
         outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1,
@@ -313,6 +320,7 @@
           restitution:0.46,
           friction:0.035,
           launchPower:2.55,
+          launchDirectionDegrees:-90,
           launchSpreadDegrees:24,
           launchPowerVariance:.26,
           soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.72
