@@ -724,7 +724,7 @@
 
     detectResultSensors(){
       const rule=resolvedDrawRule(this.definition);
-      const active=this.marbles.filter(m=>!m.finished&&!m.eliminated);
+      const active=this.marbles.filter(m=>!m.finished&&!m.eliminated&&!m.dnf);
 
       if(rule.type==="ORDERED_OUTPUT"){
         const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
@@ -778,7 +778,7 @@
           this.eliminationOrder.push(m.id);
           remaining--;
         }
-        const survivors=this.marbles.filter(m=>!m.finished&&!m.eliminated);
+        const survivors=this.marbles.filter(m=>!m.finished&&!m.eliminated&&!m.dnf);
         if(survivors.length>0&&survivors.length<=winners&&!this.finishOrder.length){
           survivors.sort((a,b)=>{
             const gx=finiteOr(this.definition.world.gravityX,0);
@@ -952,7 +952,7 @@
       const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
       if(!launchers.length) return;
       for(const m of this.marbles){
-        if(m.finished||m.eliminated) continue;
+        if(m.finished||m.eliminated||m.dnf) continue;
         const next=new Set();
         for(const launcher of launchers){
           if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
