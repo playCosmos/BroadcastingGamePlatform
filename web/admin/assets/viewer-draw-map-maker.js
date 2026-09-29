@@ -392,7 +392,9 @@
   }
 
   function drawComponent(c, view) {
-    const [fill, stroke] = componentStyle(c.type);
+    const [defaultFill, defaultStroke] = componentStyle(c.type);
+    const fill = String(c.properties?.visualFill || defaultFill);
+    const stroke = String(c.properties?.visualStroke || defaultStroke);
     const p = toScreen(c.x, c.y, view);
     const selected = c.id === selectedId && !previewRunning;
 
@@ -511,7 +513,9 @@
     ctx.fillRect(0, 0, view.width, view.height);
 
     const worldTopLeft = toScreen(0, 0, view);
-    ctx.fillStyle = "#0a1117";
+    ctx.fillStyle = String(
+      definition.world?.visualBackground || "#0a1117"
+    );
     ctx.fillRect(
       worldTopLeft.x,
       worldTopLeft.y,

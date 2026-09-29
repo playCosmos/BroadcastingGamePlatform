@@ -693,7 +693,13 @@
   }
 
   function drawComponent(target, component, view, simplified = false) {
-    const [fill, stroke] = componentStyle(component.type);
+    const [defaultFill, defaultStroke] = componentStyle(component.type);
+    const fill = String(
+      component.properties?.visualFill || defaultFill
+    );
+    const stroke = String(
+      component.properties?.visualStroke || defaultStroke
+    );
     const p = {
       x: view.ox + component.x * view.scale,
       y: view.oy + component.y * view.scale
@@ -724,8 +730,8 @@
         simplified ? 2 : 8,
         component.height * view.scale
       );
-      target.fillStyle = "#07090c";
-      target.strokeStyle = "#c65d76";
+      target.fillStyle = fill;
+      target.strokeStyle = stroke;
       target.lineWidth = simplified ? 1 : 2;
       target.beginPath();
       target.ellipse(
@@ -740,7 +746,9 @@
       target.fill();
       target.stroke();
       if (!simplified) {
-        target.strokeStyle = "rgba(255,158,180,.38)";
+        target.strokeStyle =
+          component.properties?.visualGlow
+          || "rgba(255,158,180,.38)";
         target.lineWidth = 5;
         target.beginPath();
         target.ellipse(
@@ -846,7 +854,9 @@
     ctx.fillRect(0, 0, view.width, view.height);
 
     const origin = point(0, 0, view);
-    ctx.fillStyle = "#0a1117";
+    ctx.fillStyle = String(
+      definition.world?.visualBackground || "#0a1117"
+    );
     ctx.fillRect(
       origin.x,
       origin.y,
@@ -927,7 +937,9 @@
   function renderMinimap(mainView) {
     const view = fitMinimap();
     minimapCtx.clearRect(0, 0, view.width, view.height);
-    minimapCtx.fillStyle = "rgba(5,9,13,.92)";
+    minimapCtx.fillStyle = String(
+      definition.world?.visualBackground || "rgba(5,9,13,.92)"
+    );
     minimapCtx.fillRect(0, 0, view.width, view.height);
 
     definition.components.forEach((component) => {

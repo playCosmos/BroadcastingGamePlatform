@@ -1189,16 +1189,22 @@ Bell/Xylophone/Metal Plate 등을 지나며 음악적 소리를 만드는 추첨
 
 장치를 통과하며 Marble 수가 줄어드는 생존형.
 
-현재 Browser Marble Draw 기본맵은 이 계열의 **Retro Cadet Survivor**를 사용한다.
+현재 Browser Marble Draw 기본맵은 이 계열의 **Retro Cadet Survivor V2**를 사용한다.
 
-- Windows XP 시절 우주 테마 핀볼의 플레이 감각을 오마주하되 배치/그래픽은 직접 복제하지 않는다.
-- 우측 Launch Lane에서 Marble을 투입한다.
-- 상단 Orbit, 중앙 Bumper Cluster, 좌우 Slingshot, 하단 Flipper-like oscillator를 거친다.
+- Windows XP 시절 우주 테마 핀볼의 전체 실루엣과 플레이 감각을 강하게 오마주하되 원본 자산/정확한 데칼을 직접 복제하지 않는다.
+- 플레이필드 왼쪽 약 80%, 우측 독립 Shooter Lane 약 20% 비율로 구성한다.
+- 우측 Hopper/Funnel → Launcher → Shooter Lane → 상단 Orbit 순으로 BURST Marble을 투입한다.
+- 기본 Launcher는 `launchDirectionDegrees=-90`으로 위쪽을 향한다.
+- 상단에는 3개 Bumper Cluster와 아치형 Orbit을 배치한다.
+- 좌측에는 보라색 곡선 Ramp 계열 통로를 둔다.
+- 중앙에는 16개 PEG ring + 이중 Bumper로 원형 Reactor 구역을 만든다.
+- 하단에는 좌우 Slingshot, Inlane/Outlane, Flipper-like oscillator를 배치한다.
 - 중앙 하단 Drain은 `ELIMINATION` 센서다.
 - Draw Rule은 `LAST_SURVIVOR`, `winnerCount=1`이다.
 - Drain에 진입한 Marble은 즉시 탈락한다.
 - 활성 Marble이 마지막 1개가 되는 순간 해당 Marble을 당첨자로 확정한다.
 - 별도의 Finish Gate를 통과해야 당첨되는 구조가 아니다.
+- 기본맵은 component `visualFill` / `visualStroke`를 사용해 보라/청록/금색 계열 핀볼 팔레트를 표현한다.
 
 이 Profile은 모두 같은 Viewer Draw 참가자/Freeze/Audit 모델을 사용한다.
 
