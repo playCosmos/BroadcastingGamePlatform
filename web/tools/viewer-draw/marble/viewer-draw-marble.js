@@ -499,19 +499,19 @@
       'input[name="launchMode"]:checked'
     )?.value === "BUNCH"
       ? "BUNCH"
-      : "SEQUENTIAL";
+      : "BURST";
   }
 
   function launchIntervalValue() {
     return Math.max(
       40,
-      Math.trunc(Number($("launchInterval")?.value) || 240)
+      Math.trunc(Number($("launchInterval")?.value) || 90)
     );
   }
 
   function updateLaunchControls() {
-    const sequential = launchModeValue() === "SEQUENTIAL";
-    $("launchInterval").disabled = running || !sequential;
+    const burst = launchModeValue() === "BURST";
+    $("launchInterval").disabled = running || !burst;
   }
 
   function setRunControlsLocked(locked) {
