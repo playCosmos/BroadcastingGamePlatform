@@ -36,6 +36,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/viewer-draw.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/viewer-draw-map-engine.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/admin/assets/viewer-draw-map-maker.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node web/admin/assets/viewer-draw-map-engine-probe.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-create.js
@@ -71,6 +77,9 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe
@@ -143,7 +152,11 @@ jobs:
             "web/admin/assets/viewer-draw.css",
             "web/admin/assets/viewer-draw-number.js",
             "web/admin/assets/viewer-draw.js",
+            "web/admin/assets/viewer-draw-map-engine.js",
+            "web/admin/assets/viewer-draw-map-maker.js",
+            "web/admin/assets/viewer-draw-map-maker.css",
             "web/admin/tools/viewer-draw/index.html",
+            "web/admin/tools/viewer-draw/map-maker/index.html",
             "web/admin/games/drawing-guess/index.html",
             "web/admin/games/drawing-guess/room.html",
             "web/admin/assets/drawing-guess.css",
