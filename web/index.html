@@ -12,8 +12,11 @@
   <main class="shell">
     <header class="hero">
       <p class="eyebrow">BROADCASTING GAME PLATFORM</p>
-      <h1>방송과 게임을<br>하나의 플랫폼으로</h1>
-      <p class="lead">SOOP 채팅·후원 이벤트를 게임에 연결하고, 방송용 게임을 룸 단위로 생성·운영합니다.</p>
+      <h1>방송에서 바로 쓰는<br>게임과 도구</h1>
+      <p class="lead">
+        보드게임, Drawing Guess, 숫자 뽑기, 시청자 뽑기와
+        방송 연동 도구를 한 플랫폼에서 실행합니다.
+      </p>
       <div class="hero-actions">
         <a class="primary" href="/admin/">운영자 페이지</a>
         <a class="secondary" href="/api/v1/platform">API 상태</a>
@@ -25,7 +28,7 @@
         <p class="eyebrow">GAME MODULES</p>
         <h2>게임</h2>
       </div>
-      <span class="count">1 AVAILABLE</span>
+      <span class="count">2 AVAILABLE</span>
     </section>
 
     <section class="game-grid">
@@ -36,40 +39,138 @@
         </div>
         <div class="game-body">
           <h3>보드게임</h3>
-          <p>참가자별 후원 조건으로 턴을 실행하고 주사위·윷·칸 지시문을 처리하는 방송 연동 보드게임입니다.</p>
-          <a href="/admin/games/board/">룸 생성하기 →</a>
+          <p>
+            참가자별 후원 조건으로 턴을 실행하고 주사위·윷·칸 지시문을 처리하는
+            방송 연동 보드게임입니다.
+          </p>
+          <a href="/admin/games/board/">보드게임 열기 →</a>
         </div>
       </article>
-      <article class="game-card planned">
+
+      <article class="game-card available">
         <div class="game-top">
-          <span class="badge">PLATFORM</span>
-          <span class="game-no">PROVIDERS</span>
+          <span class="badge">AVAILABLE</span>
+          <span class="game-no">GAME 03</span>
         </div>
         <div class="game-body">
-          <h3>SOOP 우선 연동</h3>
-          <p>채팅과 후원 이벤트는 플랫폼 공용 Provider/Event 계층에서 처리합니다. CHZZK Provider는 같은 인터페이스로 추후 추가합니다.</p>
+          <h3>Drawing Guess</h3>
+          <p>
+            방송인 전담/순환 출제, Canvas 드로잉, 채팅 정답 판정과
+            방송용 Overlay를 제공하는 그림 맞히기 게임입니다.
+          </p>
+          <a href="/admin/games/drawing-guess/">Drawing Guess 열기 →</a>
         </div>
       </article>
     </section>
 
     <section class="section-head">
       <div>
-        <p class="eyebrow">BROADCAST TOOL</p>
-        <h2>추첨 도구</h2>
+        <p class="eyebrow">BROADCAST TOOLS</p>
+        <h2>방송 도구</h2>
       </div>
       <span class="count">AVAILABLE</span>
     </section>
-    <section class="game-grid single">
+
+    <section class="game-grid">
       <article class="game-card available">
-        <div class="game-top"><span class="badge">AVAILABLE</span><span class="game-no">TOOL 01</span></div>
+        <div class="game-top">
+          <span class="badge">NUMBER DRAW</span>
+          <span class="game-no">TOOL 01</span>
+        </div>
         <div class="game-body">
-          <h3>숫자 뽑기 · 시청자 뽑기</h3>
-          <p>번호만 빠르게 뽑는 숫자 추첨과 참가자 목록에서 당첨자를 선택하는 시청자 추첨을 한 랜딩에서 선택합니다.</p>
-          <a href="/admin/tools/viewer-draw/">추첨 랜딩 열기 →</a>
+          <h3>숫자 뽑기</h3>
+          <p>
+            1~999 범위에서 최대 7개 번호를 중복 없이 추첨합니다.
+            릴 애니메이션과 OBS 결과 Overlay를 함께 제공합니다.
+          </p>
+          <a href="/admin/tools/viewer-draw/number/">숫자 뽑기 열기 →</a>
+        </div>
+      </article>
+
+      <article class="game-card available">
+        <div class="game-top">
+          <span class="badge">VIEWER DRAW</span>
+          <span class="game-no">TOOL 02</span>
+        </div>
+        <div class="game-body">
+          <h3>시청자 뽑기</h3>
+          <p>
+            참가자 목록에서 원하는 인원만큼 당첨자를 뽑고 결과 이력과
+            OBS Overlay를 생성합니다.
+          </p>
+          <a href="/admin/tools/viewer-draw/viewer/">시청자 뽑기 열기 →</a>
+        </div>
+      </article>
+
+      <article class="game-card available">
+        <div class="game-top">
+          <span class="badge">MARBLE</span>
+          <span class="game-no">TOOL 03</span>
+        </div>
+        <div class="game-body">
+          <h3>Marble Draw</h3>
+          <p>
+            Browser Box2D 기반 Marble Machine으로 물리 추첨을 실행하고
+            Map Maker에서 기계 구조와 조건을 설계합니다.
+          </p>
+          <a href="/tools/viewer-draw/marble/">Marble Draw 열기 →</a>
+        </div>
+      </article>
+
+      <article class="game-card available">
+        <div class="game-top">
+          <span class="badge">EDITOR</span>
+          <span class="game-no">TOOL 04</span>
+        </div>
+        <div class="game-body">
+          <h3>Marble Map Maker</h3>
+          <p>
+            Wall, Gear, Elevator, Output, Slot과 조건 관계를 배치해
+            Marble Machine 맵을 제작합니다.
+          </p>
+          <a href="/admin/tools/viewer-draw/map-maker/">Map Maker 열기 →</a>
         </div>
       </article>
     </section>
-    <footer>현재 게임 모듈은 보드게임, 방송 도구는 숫자 뽑기·시청자 뽑기와 Viewer Draw 확장 도구를 제공합니다. 기존 Lotto/Ticket 제품은 포함하지 않습니다.</footer>
+
+    <section class="section-head">
+      <div>
+        <p class="eyebrow">BROADCAST PROVIDERS</p>
+        <h2>연동</h2>
+      </div>
+    </section>
+
+    <section class="game-grid">
+      <article class="game-card planned">
+        <div class="game-top">
+          <span class="badge">AVAILABLE</span>
+          <span class="game-no">SOOP</span>
+        </div>
+        <div class="game-body">
+          <h3>SOOP</h3>
+          <p>
+            플랫폼 공용 Provider/Event 계층에서 채팅과 후원 이벤트를 처리합니다.
+          </p>
+        </div>
+      </article>
+
+      <article class="game-card planned">
+        <div class="game-top">
+          <span class="badge">PLANNED</span>
+          <span class="game-no">CHZZK</span>
+        </div>
+        <div class="game-body">
+          <h3>CHZZK</h3>
+          <p>
+            동일한 Provider 인터페이스를 통해 추후 채팅/후원 이벤트를 연결합니다.
+          </p>
+        </div>
+      </article>
+    </section>
+
+    <footer>
+      BroadcastingGamePlatform · 게임과 방송 도구를 하나의 진입점에서 제공합니다.
+    </footer>
   </main>
 </body>
 </html>
