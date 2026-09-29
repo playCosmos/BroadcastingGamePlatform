@@ -46,9 +46,7 @@ public final class DrawingGuessOverlayStateProbe {
             service.markReady(room.roomId());
             var match = service.startMatch(room.roomId(), 2);
 
-            Instant start = Instant.parse(
-                "2026-09-28T14:00:00Z"
-            );
+            Instant start = Instant.now();
             var first = service.startRound(
                 match.matchId(),
                 new DrawingGuessGameService.StartRoundCommand(
