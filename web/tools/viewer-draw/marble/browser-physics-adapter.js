@@ -930,6 +930,14 @@
       this.createWorld();
       this.entries = Array.isArray(entries) ? entries.slice() : [];
       this.seed = Math.trunc(Number(seed) || 1);
+      const rng = mulberry32(this.seed);
+      for (let i = this.entries.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(rng() * (i + 1));
+        [this.entries[i], this.entries[j]] = [
+          this.entries[j],
+          this.entries[i]
+        ];
+      }
       this.runtimeWinnerCount = Math.max(
         0,
         Math.min(
@@ -949,7 +957,6 @@
       this.nextLaunchIndex = 0;
       this.nextLaunchAt = 0;
       this.launchedCount = 0;
-      const rng = mulberry32(this.seed);
       this.random = rng;
       this.selectedOutputKey = null;
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
