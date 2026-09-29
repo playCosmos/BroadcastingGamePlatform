@@ -1731,6 +1731,22 @@ public final class ViewerDrawService {
                 "conditionSensorTag",
                 ""
             ).trim();
+            boolean external = components.stream().anyMatch(
+                sensor ->
+                    !"OUTPUT".equals(sensor.type())
+                    && java.util.Set.of(
+                        "FINISH", "SLOT", "ELIMINATION"
+                    ).contains(sensor.type())
+                    && tag.equals(
+                        stringProperty(
+                            sensor.properties(),
+                            "sensorTag",
+                            ""
+                        ).trim()
+                    )
+            );
+            if (external) return List.of();
+
             for (MachineComponent candidate : outputsByKey.values()) {
                 if (
                     tag.equals(
@@ -1750,7 +1766,9 @@ public final class ViewerDrawService {
                     );
                 }
             }
-            return List.copyOf(result);
+            return result.size() == 1
+                ? List.copyOf(result)
+                : List.of();
         }
 
         if ("AFTER_BRANCH_STATE".equals(mode)) {
@@ -1790,6 +1808,9 @@ public final class ViewerDrawService {
                     );
                 }
             }
+            return result.size() == 1
+                ? List.copyOf(result)
+                : List.of();
         }
 
         return List.copyOf(result);
