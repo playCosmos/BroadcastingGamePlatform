@@ -371,11 +371,11 @@
         }},
 
         // Lower playfield slopes toward the center drain.
-        {...componentDefaults("RAMP",365,785),width:500,height:20,rotation:16,properties:{
+        {...componentDefaults("RAMP",450,785),width:360,height:20,rotation:16,properties:{
           restitution:.34,friction:.055,
           soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:-.4
         }},
-        {...componentDefaults("RAMP",915,785),width:500,height:20,rotation:-16,properties:{
+        {...componentDefaults("RAMP",830,785),width:360,height:20,rotation:-16,properties:{
           restitution:.34,friction:.055,
           soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:.4
         }},
