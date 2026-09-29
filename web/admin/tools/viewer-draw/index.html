@@ -4,69 +4,119 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>방송 게임 플랫폼 · 추첨 도구</title>
+  <title>방송 게임 플랫폼 · 추첨 실행</title>
   <link rel="stylesheet" href="/assets/platform.css">
   <link rel="stylesheet" href="/admin/assets/viewer-draw.css">
 </head>
 <body>
-  <main class="shell draw-admin draw-landing">
+  <main class="shell draw-admin">
     <header class="hero compact">
-      <p class="eyebrow">BROADCASTING GAME PLATFORM / DRAW TOOLS</p>
-      <h1>추첨 도구</h1>
-      <p class="lead">
-        방송에서 바로 사용할 추첨 방식을 선택하세요.
-        번호만 뽑는 숫자 추첨과 참가자 목록에서 당첨자를 뽑는 시청자 추첨을 분리해서 제공합니다.
-      </p>
+      <p class="eyebrow">BROADCASTING GAME PLATFORM / DRAW RUNNER</p>
+      <h1 id="drawPageTitle">추첨 실행</h1>
+      <p class="lead" id="drawPageLead">선택한 추첨 방식을 실행합니다.</p>
       <div class="hero-actions">
-        <a class="secondary" href="/admin/">← 운영자 홈</a>
+        <a class="secondary" href="/">← 플랫폼 홈</a>
+        <a class="secondary" href="/admin/">운영자 홈</a>
+        <a class="secondary" href="/admin/tools/viewer-draw/map-maker/">Map Maker</a>
+        <a class="secondary" href="/tools/viewer-draw/marble/">Marble Draw</a>
       </div>
     </header>
 
-    <section class="draw-launch-grid" aria-label="추첨 방식 선택">
-      <a class="draw-launch-card number" href="/admin/tools/viewer-draw/run/?mode=NUMBER">
-        <div class="draw-launch-card-top">
-          <span class="badge">NUMBER DRAW</span>
-          <span class="draw-launch-no">01</span>
+    <section class="draw-layout">
+      <article class="draw-panel">
+        <div class="mode-tabs" role="tablist">
+          <button class="mode-tab active" data-mode="RANDOM" type="button">시청자 뽑기</button>
+          <button class="mode-tab" data-mode="NUMBER" type="button">숫자 뽑기</button>
         </div>
-        <div class="draw-launch-symbol" aria-hidden="true">123</div>
-        <div class="draw-launch-copy">
-          <h2>숫자 뽑기</h2>
-          <p>
-            1~999 범위에서 최대 7개의 번호를 중복 없이 추첨합니다.
-            기존 릴 애니메이션과 OBS 결과 오버레이를 그대로 사용합니다.
-          </p>
-          <span class="draw-launch-action">숫자 뽑기 열기 →</span>
-        </div>
-      </a>
 
-      <a class="draw-launch-card viewer" href="/admin/tools/viewer-draw/run/?mode=RANDOM">
-        <div class="draw-launch-card-top">
-          <span class="badge">VIEWER DRAW</span>
-          <span class="draw-launch-no">02</span>
+        <label class="field">
+          <span>추첨 이름</span>
+          <input id="drawName" type="text" maxlength="80" placeholder="예: 1부 경품 추첨">
+        </label>
+
+        <section id="randomSettings">
+          <label class="field">
+            <span>참가자 · 한 줄에 한 명</span>
+            <textarea id="manualEntries" rows="12" placeholder="viewer01&#10;viewer02&#10;viewer03"></textarea>
+          </label>
+          <div class="inline-fields">
+            <label class="field">
+              <span>당첨자 수</span>
+              <input id="winnerCount" type="number" min="1" max="100" value="1">
+            </label>
+            <div class="source-card">
+              <span>Entry Source</span>
+              <strong>MANUAL_LIST</strong>
+              <small>채팅/후원 참가 접수는 옵션 기능으로 후속 추가</small>
+            </div>
+          </div>
+        </section>
+
+        <section id="numberSettings" hidden>
+          <div class="inline-fields">
+            <label class="field">
+              <span>최대 번호</span>
+              <input id="maxNumber" type="number" min="1" max="999" value="45">
+            </label>
+            <label class="field">
+              <span>추첨 개수</span>
+              <input id="drawCount" type="number" min="1" max="7" value="7">
+            </label>
+          </div>
+          <p class="helper">기존 Roulette 번호 추첨의 1~999 / 최대 7개 / 중복 없는 추첨 정책을 재사용합니다. 결과 결정은 서버에서 수행합니다.</p>
+        </section>
+
+        <div class="draw-actions">
+          <button class="primary-button" id="startDraw" type="button">추첨 시작</button>
+          <button class="small-button" id="resetDraw" type="button">새 추첨</button>
         </div>
-        <div class="draw-launch-symbol people" aria-hidden="true">●●●</div>
-        <div class="draw-launch-copy">
-          <h2>시청자 뽑기</h2>
-          <p>
-            참가자 이름을 한 줄에 한 명씩 입력하고 원하는 인원만큼 당첨자를 뽑습니다.
-            결과는 DB에 저장되며 OBS 오버레이 링크를 바로 사용할 수 있습니다.
-          </p>
-          <span class="draw-launch-action">시청자 뽑기 열기 →</span>
+        <p class="status-line" id="drawStatus">준비됨</p>
+      </article>
+
+      <article class="draw-stage-panel">
+        <div class="stage-head">
+          <div>
+            <p class="eyebrow">RESULT</p>
+            <h2 id="stageTitle">시청자 뽑기</h2>
+          </div>
+          <span class="draw-code" id="drawCode">------</span>
         </div>
-      </a>
+
+        <div class="random-stage" id="randomStage">
+          <div class="random-spinner" id="randomSpinner">참가자를 입력하세요</div>
+          <div class="winner-list" id="winnerList"></div>
+        </div>
+
+        <div class="number-stage" id="numberStage" hidden>
+          <canvas id="numberCanvas" aria-label="번호 추첨 릴"></canvas>
+          <div class="number-result" id="numberResult"></div>
+        </div>
+
+        <div class="overlay-box">
+          <label class="field">
+            <span>OBS Overlay</span>
+            <div class="copy-row">
+              <input id="overlayUrl" type="text" readonly value="">
+              <button class="small-button" id="copyOverlay" type="button">복사</button>
+            </div>
+          </label>
+        </div>
+      </article>
     </section>
 
-    <section class="draw-landing-secondary">
-      <div>
-        <p class="eyebrow">MARBLE MACHINE</p>
-        <h2>물리 추첨 도구</h2>
-        <p>시청자 뽑기를 Marble Machine 물리 추첨으로 연출하려면 아래 도구를 사용합니다.</p>
+    <section class="history-section">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">HISTORY</p>
+          <h2>최근 추첨</h2>
+        </div>
+        <button class="small-button" id="refreshHistory" type="button">새로고침</button>
       </div>
-      <div class="hero-actions">
-        <a class="secondary" href="/tools/viewer-draw/marble/">Browser Marble Draw →</a>
-        <a class="secondary" href="/admin/tools/viewer-draw/map-maker/">Map Maker →</a>
-      </div>
+      <div id="drawHistory" class="draw-history"></div>
     </section>
   </main>
+
+  <script src="/admin/assets/viewer-draw-number.js"></script>
+  <script src="/admin/assets/viewer-draw.js"></script>
 </body>
 </html>
