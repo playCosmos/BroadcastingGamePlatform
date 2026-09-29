@@ -16,6 +16,9 @@
     canvas{width:min(92vw,1200px);height:min(36vw,430px);border-radius:20px;background:#12080a}
     .numbers{display:flex;justify-content:center;gap:12px;flex-wrap:wrap;margin-top:18px}
     .number{min-width:76px;padding:14px 16px;border-radius:14px;background:#f6e7d5;color:#63271c;text-align:center;font:950 clamp(24px,4vw,54px) ui-monospace,monospace;box-shadow:0 14px 40px rgba(0,0,0,.35)}
+    .audit-meta{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin:-8px 0 18px}
+    .audit-badge{padding:8px 13px;border-radius:999px;background:rgba(8,20,31,.9);border:1px solid rgba(143,176,199,.55);font:800 14px ui-monospace,monospace}
+    .audit-badge.good{border-color:#65c886;color:#a9e8b9}.audit-badge.bad{border-color:#d46d67;color:#ffb3ad}.audit-badge.warn{border-color:#dca65d;color:#ffd49a}
   </style>
 </head>
 <body>
@@ -23,6 +26,7 @@
     <div id="waiting" class="waiting">추첨을 기다리는 중...</div>
     <section id="result" hidden>
       <div class="title" id="title"></div>
+      <div class="audit-meta" id="auditMeta" hidden></div>
       <div class="winners" id="winners"></div>
       <canvas id="numberCanvas" hidden></canvas>
       <div class="numbers" id="numbers"></div>
