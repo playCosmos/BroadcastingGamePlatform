@@ -87,6 +87,44 @@
       throw new Error("ranked entries mismatch");
     }
 
+    const goldbergDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Goldberg Box2D Probe",
+      world: {
+        width: 1280,
+        height: 720,
+        gravityX: 0,
+        gravityY: 12
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 640, 60),
+          radius: 16,
+          properties: { marbleRadius: 10 }
+        },
+        Engine.componentDefaults("GATE", 120, 220),
+        Engine.componentDefaults("ROTATOR", 330, 220),
+        Engine.componentDefaults("PENDULUM", 540, 220),
+        Engine.componentDefaults("SEESAW", 750, 220),
+        Engine.componentDefaults("FUNNEL", 960, 270),
+        Engine.componentDefaults("SPLITTER", 1120, 270),
+        {
+          ...Engine.componentDefaults("FINISH", 640, 660),
+          width: 420,
+          height: 70
+        }
+      ]
+    };
+
+    adapter.loadMap(goldbergDefinition);
+    state = adapter.reset(entries.slice(0, 2), 77);
+    for (let step = 0; step < 240; step += 1) {
+      state = adapter.step(1 / 120);
+    }
+    if (!state || state.totalCount !== 2) {
+      throw new Error("Goldberg Box2D map failed to step");
+    }
+
     document.body.dataset.status = "pass";
     document.body.textContent = "PASS";
   } catch (error) {
