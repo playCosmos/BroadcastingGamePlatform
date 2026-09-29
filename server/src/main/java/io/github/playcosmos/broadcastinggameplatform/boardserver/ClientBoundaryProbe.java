@@ -403,6 +403,20 @@ public final class ClientBoundaryProbe {
                 "viewer draw creation must require admin session"
             );
 
+            var unauthenticatedMachineMap = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/tools/viewer-draw/maps")
+                )
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                unauthenticatedMachineMap.statusCode() == 401,
+                "machine map mutation must require admin session"
+            );
+
             var unauthenticatedDrawingSession = client.send(
                 HttpRequest.newBuilder(
                     base.resolve(
@@ -627,6 +641,94 @@ public final class ClientBoundaryProbe {
                         "\"result\""
                     ),
                 "viewer draw public code must expose read-only result"
+            );
+
+            var machineMapSave = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/tools/viewer-draw/maps")
+                )
+                .header("Cookie", sessionCookie)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    """
+                    {
+                      "definition":{
+                        "schemaVersion":"viewer-draw-machine-map/v0",
+                        "name":"Boundary Machine",
+                        "world":{
+                          "width":1280,
+                          "height":720,
+                          "gravityX":0,
+                          "gravityY":12
+                        },
+                        "components":[
+                          {
+                            "id":"spawn-1",
+                            "type":"SPAWN",
+                            "x":640,
+                            "y":70,
+                            "rotation":0,
+                            "width":0,
+                            "height":0,
+                            "radius":18,
+                            "properties":{"marbleRadius":11}
+                          },
+                          {
+                            "id":"finish-1",
+                            "type":"FINISH",
+                            "x":640,
+                            "y":660,
+                            "rotation":0,
+                            "width":300,
+                            "height":60,
+                            "radius":0,
+                            "properties":{}
+                          }
+                        ]
+                      }
+                    }
+                    """
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                machineMapSave.statusCode() == 200
+                    && machineMapSave.body().contains(
+                        "\"schemaVersion\":\"viewer-draw-machine-map/v0\""
+                    )
+                    && machineMapSave.body().contains(
+                        "\"revision\":1"
+                    ),
+                "authenticated machine map must save"
+            );
+            String machineMapId = JsonParser.parseString(
+                machineMapSave.body()
+            ).getAsJsonObject()
+                .get("mapId")
+                .getAsString();
+
+            var machineMapRead = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/maps/"
+                            + machineMapId
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .GET()
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                machineMapRead.statusCode() == 200
+                    && machineMapRead.body().contains(
+                        "\"mapId\":\"" + machineMapId + "\""
+                    )
+                    && machineMapRead.body().contains(
+                        "\"definitionHash\""
+                    ),
+                "authenticated machine map must reload"
             );
 
             var drawingSessionCreate = client.send(
