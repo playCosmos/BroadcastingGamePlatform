@@ -5,6 +5,18 @@
   const FIXED_DT = 1 / 120;
   const GRAVITY_SCALE = 80 / PIXELS_PER_METER;
 
+  const ADAPTER_SCRIPT_URL =
+    typeof document !== "undefined"
+    && document.currentScript?.src
+      ? document.currentScript.src
+      : "";
+  const DEFAULT_BOX2D_ASSET_BASE_URL = ADAPTER_SCRIPT_URL
+    ? new URL(
+        "../../../vendor/box2d-wasm/",
+        ADAPTER_SCRIPT_URL
+      ).href
+    : "/vendor/box2d-wasm/";
+
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
@@ -139,8 +151,8 @@
 
   class Box2dWasmPhysicsAdapter extends BrowserPhysicsAdapter {
     constructor({
-      moduleUrl = "/vendor/box2d-wasm/entry.js",
-      assetBaseUrl = "/vendor/box2d-wasm/"
+      moduleUrl = DEFAULT_BOX2D_ASSET_BASE_URL + "entry.js",
+      assetBaseUrl = DEFAULT_BOX2D_ASSET_BASE_URL
     } = {}) {
       super();
       this.moduleUrl = moduleUrl;
