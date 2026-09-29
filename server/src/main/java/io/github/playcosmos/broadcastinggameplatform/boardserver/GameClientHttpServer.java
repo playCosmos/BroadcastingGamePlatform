@@ -390,7 +390,8 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "modes", java.util.List.of("RANDOM", "NUMBER"),
                     "features", java.util.List.of(
                         "MARBLE_MAP_MAKER_V0",
-                        "PHYSICS_PREVIEW_ENGINE_V0"
+                        "PHYSICS_PREVIEW_ENGINE_V0",
+                        "JBOX2D_PRODUCTION_PHYSICS_V0"
                     )
                 )
             ),
@@ -946,6 +947,12 @@ public final class GameClientHttpServer implements AutoCloseable {
         ViewerDrawService.MachineMapDefinition definition
     ) {}
 
+    private record ViewerDrawMapSimulationRequest(
+        Long seed,
+        Integer marbleCount,
+        Double timeoutSeconds
+    ) {}
+
     private void viewerDrawApi(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
         if (viewerDraw == null) {
@@ -1042,8 +1049,22 @@ public final class GameClientHttpServer implements AutoCloseable {
         }
 
         if (path != null && path.startsWith(mapsBase + "/")) {
-            String mapId = path.substring((mapsBase + "/").length());
-            if (mapId.isBlank() || mapId.contains("/")) {
+            String route = path.substring((mapsBase + "/").length());
+            String mapId = route;
+            String action = "";
+            int routeSlash = route.indexOf('/');
+            if (routeSlash >= 0) {
+                mapId = route.substring(0, routeSlash);
+                action = route.substring(routeSlash + 1);
+            }
+
+            if (
+                mapId.isBlank()
+                || (
+                    !action.isBlank()
+                    && !"simulate".equals(action)
+                )
+            ) {
                 sendJson(exchange, 404, Map.of(
                     "error", "machine map not found"
                 ));
@@ -1051,7 +1072,12 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
 
             try {
-                if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                if (
+                    action.isBlank()
+                    && "GET".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
                     sendJson(
                         exchange,
                         200,
@@ -1060,10 +1086,50 @@ public final class GameClientHttpServer implements AutoCloseable {
                     return;
                 }
 
-                if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod())) {
+                if (
+                    action.isBlank()
+                    && "DELETE".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
                     viewerDraw.archiveMachineMap(mapId);
                     exchange.sendResponseHeaders(204, -1);
                     exchange.close();
+                    return;
+                }
+
+                if (
+                    "simulate".equals(action)
+                    && "POST".equalsIgnoreCase(
+                        exchange.getRequestMethod()
+                    )
+                ) {
+                    var request = readJson(
+                        exchange,
+                        ViewerDrawMapSimulationRequest.class
+                    );
+                    long seed = request.seed() == null
+                        ? 1L
+                        : request.seed();
+                    int marbleCount =
+                        request.marbleCount() == null
+                            ? 16
+                            : request.marbleCount();
+                    double timeoutSeconds =
+                        request.timeoutSeconds() == null
+                            ? 60.0
+                            : request.timeoutSeconds();
+
+                    sendJson(
+                        exchange,
+                        200,
+                        viewerDraw.simulateMachineMap(
+                            mapId,
+                            seed,
+                            marbleCount,
+                            timeoutSeconds
+                        )
+                    );
                     return;
                 }
 
