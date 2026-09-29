@@ -503,7 +503,16 @@
       }
       if(c?.type==="LAUNCHER"){
         const power=finiteOr(p.launchPower,1.2);
+        const direction=finiteOr(
+          p.launchDirectionDegrees,
+          finiteOr(c.rotation,0)-90
+        );
+        const spread=finiteOr(p.launchSpreadDegrees,18);
+        const variance=finiteOr(p.launchPowerVariance,.22);
         if(power<0||power>5) errors.push("Launcher launchPower는 0~5 범위여야 합니다.");
+        if(direction<-360||direction>360) errors.push("Launcher direction은 -360~360° 범위여야 합니다.");
+        if(spread<0||spread>55) errors.push("Launcher spread는 0~55° 범위여야 합니다.");
+        if(variance<0||variance>.75) errors.push("Launcher power variance는 0~0.75 범위여야 합니다.");
       }
       if(c?.type==="GEAR"){
         const linked=String(p.linkedComponentId||"").trim();
@@ -1215,9 +1224,27 @@
           next.add(launcher.id);
           if(m.launcherContacts.has(launcher.id)) continue;
           const power=clamp(finiteOr(launcher.properties?.launchPower,1.2),0,5);
-          const angle=degToRad((launcher.rotation||0)-90);
-          m.vx+=Math.cos(angle)*power*145;
-          m.vy+=Math.sin(angle)*power*145;
+          const direction=finiteOr(
+            launcher.properties?.launchDirectionDegrees,
+            (launcher.rotation||0)-90
+          );
+          const spread=clamp(
+            finiteOr(launcher.properties?.launchSpreadDegrees,18),
+            0,
+            55
+          );
+          const variance=clamp(
+            finiteOr(launcher.properties?.launchPowerVariance,.22),
+            0,
+            .75
+          );
+          const angle=degToRad(
+            direction+(this.random()*2-1)*spread
+          );
+          const randomizedPower=
+            power*(1+(this.random()*2-1)*variance);
+          m.vx+=Math.cos(angle)*randomizedPower*145;
+          m.vy+=Math.sin(angle)*randomizedPower*145;
         }
         m.launcherContacts=next;
       }
