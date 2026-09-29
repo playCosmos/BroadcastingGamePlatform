@@ -171,6 +171,201 @@
     ctx.restore();
   }
 
+  function drawDependencyLine(
+    from,
+    to,
+    view,
+    { color, dash = [], label = "" }
+  ) {
+    const a = toScreen(from.x, from.y, view);
+    const b = toScreen(to.x, to.y, view);
+    const dx = b.x - a.x;
+    const dy = b.y - a.y;
+    const length = Math.hypot(dx, dy);
+    if (length < 1) return;
+    const ux = dx / length;
+    const uy = dy / length;
+
+    ctx.save();
+    ctx.strokeStyle = color;
+    ctx.fillStyle = color;
+    ctx.lineWidth = 1.8;
+    ctx.setLineDash(dash);
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+
+    const tipX = b.x - ux * 10;
+    const tipY = b.y - uy * 10;
+    ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(
+      tipX - uy * 5,
+      tipY + ux * 5
+    );
+    ctx.lineTo(
+      tipX + uy * 5,
+      tipY - ux * 5
+    );
+    ctx.closePath();
+    ctx.fill();
+
+    if (label) {
+      const mx = (a.x + b.x) / 2;
+      const my = (a.y + b.y) / 2;
+      ctx.font = "700 10px ui-monospace,monospace";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      const width = ctx.measureText(label).width + 10;
+      ctx.fillStyle = "rgba(5,9,13,.88)";
+      ctx.fillRect(mx - width / 2, my - 9, width, 18);
+      ctx.fillStyle = color;
+      ctx.fillText(label, mx, my);
+    }
+    ctx.restore();
+  }
+
+  function drawDependencyBadge(component, view, text, color) {
+    const p = toScreen(component.x, component.y, view);
+    ctx.save();
+    ctx.font = "700 10px ui-monospace,monospace";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "bottom";
+    const width = ctx.measureText(text).width + 10;
+    ctx.fillStyle = "rgba(5,9,13,.9)";
+    ctx.fillRect(p.x - width / 2, p.y - 34, width, 16);
+    ctx.fillStyle = color;
+    ctx.fillText(text, p.x, p.y - 20);
+    ctx.restore();
+  }
+
+  function drawDependencies(view) {
+    const byId = new Map(
+      definition.components.map((component) => [
+        component.id,
+        component
+      ])
+    );
+    const outputs = definition.components.filter(
+      (component) => component.type === "OUTPUT"
+    );
+    const byOutputKey = new Map(
+      outputs.map((output) => [
+        String(output.properties?.outputKey || ""),
+        output
+      ])
+    );
+
+    for (const component of definition.components) {
+      if (component.type === "GEAR") {
+        const target = byId.get(
+          String(component.properties?.linkedComponentId || "")
+        );
+        if (target) {
+          drawDependencyLine(
+            component,
+            target,
+            view,
+            {
+              color: "#dfbc6b",
+              dash: [],
+              label:
+                "gear ×"
+                + num(component.properties?.gearRatio, -1)
+            }
+          );
+        }
+      }
+
+      if (component.type !== "OUTPUT") continue;
+      const p = component.properties || {};
+      const mode = String(
+        p.conditionType || "ALWAYS"
+      ).toUpperCase();
+
+      if (
+        ["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"]
+          .includes(mode)
+      ) {
+        const source = byOutputKey.get(
+          String(p.conditionOutputKey || "")
+        );
+        if (source) {
+          drawDependencyLine(
+            source,
+            component,
+            view,
+            {
+              color: "#63c8ef",
+              dash: [7, 5],
+              label: mode === "AFTER_OUTPUT_FULL"
+                ? "full"
+                : "claims " + Math.trunc(
+                    num(p.conditionClaims, 1)
+                  )
+            }
+          );
+        }
+      } else if (mode === "AFTER_SENSOR_CLAIMS") {
+        const tag = String(p.conditionSensorTag || "").trim();
+        for (const source of definition.components) {
+          if (
+            source.id === component.id
+            || String(source.properties?.sensorTag || "").trim()
+              !== tag
+          ) continue;
+          drawDependencyLine(
+            source,
+            component,
+            view,
+            {
+              color: "#75d69b",
+              dash: [3, 5],
+              label:
+                "sensor "
+                + tag
+                + " ×"
+                + Math.trunc(num(p.conditionClaims, 1))
+            }
+          );
+        }
+      } else if (mode === "AFTER_BRANCH_STATE") {
+        const key = String(p.conditionBranchKey || "").trim();
+        const value = String(
+          p.conditionBranchValue || "ON"
+        ).trim();
+        for (const source of outputs) {
+          if (
+            String(source.properties?.branchSetKey || "").trim()
+              !== key
+            || String(
+              source.properties?.branchSetValue || "ON"
+            ).trim() !== value
+          ) continue;
+          drawDependencyLine(
+            source,
+            component,
+            view,
+            {
+              color: "#c49cf4",
+              dash: [10, 4, 2, 4],
+              label: key + "=" + value
+            }
+          );
+        }
+      } else if (mode === "AFTER_SECONDS") {
+        drawDependencyBadge(
+          component,
+          view,
+          "T+" + num(p.conditionSeconds, 1) + "s",
+          "#efb76c"
+        );
+      }
+    }
+  }
+
   function componentStyle(type) {
     return {
       WALL: ["#6f7c87", "#a6b0b8"],
@@ -325,6 +520,7 @@
     );
 
     drawGrid(view);
+    drawDependencies(view);
     for (const c of definition.components) {
       const shapes = Engine.componentShapes
         ? Engine.componentShapes(c, previewSnapshot?.time || 0)
@@ -561,6 +757,30 @@
     }
     conditionSelect.value = String(c.properties?.conditionOutputKey || "");
     $("propConditionClaims").value = Math.trunc(num(c.properties?.conditionClaims, 1));
+    $("propConditionSeconds").value = num(c.properties?.conditionSeconds, 1);
+    $("propSensorTag").value = String(c.properties?.sensorTag || "");
+    const sensorSelect = $("propConditionSensorTag");
+    sensorSelect.replaceChildren();
+    const noSensor = document.createElement("option");
+    noSensor.value = "";
+    noSensor.textContent = "None";
+    sensorSelect.appendChild(noSensor);
+    const tags = [...new Set(
+      definition.components
+        .map((item) => String(item.properties?.sensorTag || "").trim())
+        .filter(Boolean)
+    )].sort();
+    for (const tag of tags) {
+      const option = document.createElement("option");
+      option.value = tag;
+      option.textContent = tag;
+      sensorSelect.appendChild(option);
+    }
+    sensorSelect.value = String(c.properties?.conditionSensorTag || "");
+    $("propConditionBranchKey").value = String(c.properties?.conditionBranchKey || "");
+    $("propConditionBranchValue").value = String(c.properties?.conditionBranchValue || "ON");
+    $("propBranchSetKey").value = String(c.properties?.branchSetKey || "");
+    $("propBranchSetValue").value = String(c.properties?.branchSetValue || "ON");
     $("propSlotKey").value = String(c.properties?.slotKey || "SLOT1");
     $("propSlotCapacity").value = Math.trunc(num(c.properties?.slotCapacity, 1));
     $("propEliminationKey").value = String(c.properties?.eliminationKey || "OUT");
@@ -620,6 +840,42 @@
     document.querySelectorAll(".output-field").forEach((el) => {
       el.hidden = c.type !== "OUTPUT";
     });
+    document.querySelectorAll(".sensor-tag-field").forEach((el) => {
+      el.hidden = !["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type);
+    });
+    const conditionMode = String(
+      c.properties?.conditionType || "ALWAYS"
+    ).toUpperCase();
+    document.querySelectorAll(".condition-output-ref-field").forEach((el) => {
+      el.hidden =
+        c.type !== "OUTPUT"
+        || !["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"]
+          .includes(conditionMode);
+    });
+    document.querySelectorAll(".condition-claims-field").forEach((el) => {
+      el.hidden =
+        c.type !== "OUTPUT"
+        || ![
+          "AFTER_ANY_CLAIM",
+          "AFTER_OUTPUT_CLAIMS",
+          "AFTER_SENSOR_CLAIMS"
+        ].includes(conditionMode);
+    });
+    document.querySelectorAll(".condition-time-field").forEach((el) => {
+      el.hidden =
+        c.type !== "OUTPUT"
+        || conditionMode !== "AFTER_SECONDS";
+    });
+    document.querySelectorAll(".condition-sensor-field").forEach((el) => {
+      el.hidden =
+        c.type !== "OUTPUT"
+        || conditionMode !== "AFTER_SENSOR_CLAIMS";
+    });
+    document.querySelectorAll(".condition-branch-field").forEach((el) => {
+      el.hidden =
+        c.type !== "OUTPUT"
+        || conditionMode !== "AFTER_BRANCH_STATE";
+    });
     document.querySelectorAll(".slot-field").forEach((el) => {
       el.hidden = c.type !== "SLOT";
     });
@@ -654,6 +910,9 @@
     }
 
     c.properties = c.properties || {};
+    const oldOutputKey = c.type === "OUTPUT"
+      ? String(c.properties.outputKey || "")
+      : "";
     if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR"].includes(c.type)) {
       c.properties.restitution = clamp(num($("propRestitution").value, .35), 0, 1.4);
       c.properties.friction = clamp(num($("propFriction").value, .05), 0, .5);
@@ -695,6 +954,9 @@
       c.properties.motorForce = clamp(num($("propMotorForce").value, 45), 0, 500);
       c.properties.startDirection = Number($("propStartDirection").value) < 0 ? -1 : 1;
     }
+    if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)) {
+      c.properties.sensorTag = $("propSensorTag").value.trim().slice(0, 32);
+    }
     if (c.type === "OUTPUT") {
       c.properties.outputKey = $("propOutputKey").value.trim() || "OUT1";
       c.properties.outputRank = clamp(Math.trunc(num($("propOutputRank").value, 1)), 1, 64);
@@ -704,8 +966,31 @@
       c.properties.conditionType = $("propConditionType").value;
       c.properties.conditionOutputKey = $("propConditionOutputKey").value || "";
       c.properties.conditionClaims = clamp(Math.trunc(num($("propConditionClaims").value, 1)), 1, 64);
+      c.properties.conditionSeconds = clamp(num($("propConditionSeconds").value, 1), .01, 1800);
+      c.properties.conditionSensorTag = $("propConditionSensorTag").value || "";
+      c.properties.conditionBranchKey = $("propConditionBranchKey").value.trim().slice(0, 32);
+      c.properties.conditionBranchValue = ($("propConditionBranchValue").value.trim() || "ON").slice(0, 32);
+      c.properties.branchSetKey = $("propBranchSetKey").value.trim().slice(0, 32);
+      c.properties.branchSetValue = ($("propBranchSetValue").value.trim() || "ON").slice(0, 32);
       if (!["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(c.properties.conditionType)) {
         c.properties.conditionOutputKey = "";
+      }
+      if (c.properties.conditionType !== "AFTER_SENSOR_CLAIMS") {
+        c.properties.conditionSensorTag = "";
+      }
+      if (c.properties.conditionType !== "AFTER_BRANCH_STATE") {
+        c.properties.conditionBranchKey = "";
+      }
+      if (oldOutputKey && oldOutputKey !== c.properties.outputKey) {
+        for (const output of definition.components) {
+          if (
+            output.id !== c.id
+            && output.type === "OUTPUT"
+            && output.properties?.conditionOutputKey === oldOutputKey
+          ) {
+            output.properties.conditionOutputKey = c.properties.outputKey;
+          }
+        }
       }
     }
     if (c.type === "SLOT") {
@@ -732,6 +1017,32 @@
     render();
     updateEditButtons();
     validateClient(false);
+  }
+
+  function setGearLink(targetId) {
+    const c = currentComponent();
+    if (!c || c.type !== "GEAR" || previewRunning) return;
+    pushUndo();
+    c.properties = c.properties || {};
+    c.properties.linkedComponentId = targetId || "";
+    syncInspector();
+    render();
+    validateClient(false);
+  }
+
+  function linkGearToNearestJoint() {
+    const c = currentComponent();
+    if (!c || c.type !== "GEAR" || previewRunning) return;
+    const candidates = definition.components
+      .filter((target) =>
+        target.id !== c.id
+        && ["GEAR","HINGE","PADDLE","ELEVATOR"].includes(target.type)
+      )
+      .sort((a, b) =>
+        Math.hypot(a.x - c.x, a.y - c.y)
+        - Math.hypot(b.x - c.x, b.y - c.y)
+      );
+    setGearLink(candidates[0]?.id || "");
   }
 
   function updateDrawRule() {
@@ -1119,7 +1430,10 @@
    "propLaunchPower","propAxisAngle","propTravelMin","propTravelMax",
    "propElevatorSpeed","propMotorForce","propStartDirection",
    "propOutputKey","propOutputRank","propOutputCapacity","propOutputWeight",
-   "propOutputPriority","propConditionType","propConditionOutputKey","propConditionClaims",
+   "propOutputPriority","propSensorTag","propConditionType","propConditionOutputKey",
+   "propConditionClaims","propConditionSeconds","propConditionSensorTag",
+   "propConditionBranchKey","propConditionBranchValue",
+   "propBranchSetKey","propBranchSetValue",
    "propSlotKey","propSlotCapacity","propEliminationKey",
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
    "propBoost","propMarbleRadius"]
@@ -1145,6 +1459,8 @@
   $("redo").addEventListener("click", redo);
   $("duplicate").addEventListener("click", duplicateSelected);
   $("deleteSelected").addEventListener("click", deleteSelected);
+  $("gearLinkNearest").addEventListener("click", linkGearToNearestJoint);
+  $("gearLinkClear").addEventListener("click", () => setGearLink(""));
   $("newMap").addEventListener("click", newMap);
   $("saveMap").addEventListener("click", saveMap);
   $("archiveMap").addEventListener("click", archiveMap);
