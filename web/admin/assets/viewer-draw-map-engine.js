@@ -492,7 +492,7 @@
       this.time+=dt;
 
       for(const m of this.marbles){
-        if(m.finished) continue;
+        if(m.finished||m.eliminated) continue;
         m.vx+=world.gravityX*gravityScale*dt;
         m.vy+=world.gravityY*gravityScale*dt;
         m.vx*=0.9995;
@@ -722,7 +722,7 @@
       const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
       if(!launchers.length) return;
       for(const m of this.marbles){
-        if(m.finished) continue;
+        if(m.finished||m.eliminated) continue;
         const next=new Set();
         for(const launcher of launchers){
           if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
@@ -747,9 +747,9 @@
     resolveMarblePairs(){
       const ms=this.marbles;
       for(let i=0;i<ms.length;i++){
-        const a=ms[i]; if(a.finished) continue;
+        const a=ms[i]; if(a.finished||a.eliminated) continue;
         for(let j=i+1;j<ms.length;j++){
-          const b=ms[j]; if(b.finished) continue;
+          const b=ms[j]; if(b.finished||b.eliminated) continue;
           let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);
           const target=a.radius+b.radius;
           if(dist>=target) continue;
@@ -776,7 +776,7 @@
 
     shakeMarble(id){
       const marble=this.marbles.find(m=>m.id===id);
-      if(!marble||marble.finished) return false;
+      if(!marble||marble.finished||marble.eliminated) return false;
       const angle=this.random()*Math.PI*2;
       const power=70+this.random()*50;
       marble.vx+=Math.cos(angle)*power;
