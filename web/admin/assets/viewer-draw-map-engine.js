@@ -87,6 +87,7 @@
       this.accumulator=0;
       this.time=0;
       this.seed=seed;
+      this.random=seeded(seed);
       this.setDefinition(definition);
     }
 
@@ -102,6 +103,7 @@
 
     reset(count=12,seed=this.seed){
       const rng=seeded(seed);
+      this.random=rng;
       const spawns=this.definition.components.filter(c=>c.type==="SPAWN");
       const n=clamp(Math.floor(Number(count)||1),1,64);
       this.marbles=[];
@@ -278,6 +280,16 @@
       const dx=x-c.x,dy=y-c.y;
       const lx=dx*co+dy*si,ly=-dx*si+dy*co;
       return Math.abs(lx)<=c.width/2 && Math.abs(ly)<=c.height/2;
+    }
+
+    shakeMarble(id){
+      const marble=this.marbles.find(m=>m.id===id);
+      if(!marble||marble.finished) return false;
+      const angle=this.random()*Math.PI*2;
+      const power=70+this.random()*50;
+      marble.vx+=Math.cos(angle)*power;
+      marble.vy+=Math.sin(angle)*power;
+      return true;
     }
 
     snapshot(){
