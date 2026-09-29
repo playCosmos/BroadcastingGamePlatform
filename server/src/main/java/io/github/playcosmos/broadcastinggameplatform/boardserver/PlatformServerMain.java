@@ -13,6 +13,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroad
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
 import io.github.playcosmos.broadcastinggameplatform.operations.WindowsConsoleEncoding;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
+import io.github.playcosmos.broadcastinggameplatform.soop.BoardParticipantSoopManager;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomHttpHandler;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
 import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawService;
@@ -148,8 +149,6 @@ public final class PlatformServerMain {
             }
         }, 1, 1, TimeUnit.SECONDS);
 
-        var roomHttp = new RoomHttpHandler(roomService, runtime);
-
         var platformEvents = new PlatformEventBus();
         var providers = new ProviderRegistry();
         var soop = new SoopBroadcastProvider(
@@ -195,6 +194,18 @@ public final class PlatformServerMain {
                     error.printStackTrace(System.err);
                 }
             }
+        );
+
+        var participantSoop = new BoardParticipantSoopManager(
+            roomService,
+            platformEvents,
+            config.soop().enabled(),
+            config.soop().offlinePollSeconds()
+        );
+        var roomHttp = new RoomHttpHandler(
+            roomService,
+            runtime,
+            participantSoop
         );
 
         var viewerDraw = new ViewerDrawService(database);
@@ -263,6 +274,7 @@ public final class PlatformServerMain {
         http.start();
         clientHttp.start();
         providers.startAll();
+        participantSoop.start();
 
         String adminUrl = clientHttp.localAdminBootstrapUrl();
         String serverManagementUrl = "http://127.0.0.1:"
@@ -300,6 +312,7 @@ public final class PlatformServerMain {
             catch (Exception ignored) {}
             try { boardDonationSubscription.close(); } catch (Exception ignored) {}
             try { drawingChatSubscription.close(); } catch (Exception ignored) {}
+            try { participantSoop.close(); } catch (Exception ignored) {}
             try { providers.close(); } catch (Exception ignored) {}
             try { fileLog.close(); } catch (Exception ignored) {}
             shutdown.countDown();

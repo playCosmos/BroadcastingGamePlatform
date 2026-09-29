@@ -173,8 +173,8 @@ public final class BoardGameRuntimeProbe {
             );
 
             var donation = new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 100,
                 1,
@@ -212,8 +212,8 @@ public final class BoardGameRuntimeProbe {
             require(dispatched.size() == 1, "duplicate donation must not redispatch");
 
             var wrongAmount = runtime.process(new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 200,
                 1,
@@ -222,14 +222,28 @@ public final class BoardGameRuntimeProbe {
             ));
             require(wrongAmount.matchedRooms() == 0, "200 balloons must not match exact trigger 100");
 
+            var wrongChannel = runtime.process(new DonationEvent(
+                "other-channel",
+                "soop-a",
+                "A",
+                100,
+                1,
+                "runtime-probe-wrong-channel",
+                2_500L
+            ));
+            require(
+                wrongChannel.matchedRooms() == 0,
+                "donor id must not route a turn when the participant channel does not match"
+            );
+
             var snapshot = runtime.snapshot(created.roomId());
             require(snapshot.players().get(0).position() == 8, "chained runtime position must persist");
             require(snapshot.sequence() == 1, "duplicate/wrong donation must not advance sequence");
 
             runtime.pauseRoom(created.roomId(), "QUEUE", 10);
             var queuedOne = runtime.process(new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 100,
                 2,
@@ -237,8 +251,8 @@ public final class BoardGameRuntimeProbe {
                 3_000L
             ));
             var queuedTwo = runtime.process(new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 100,
                 3,
@@ -251,8 +265,8 @@ public final class BoardGameRuntimeProbe {
 
             expirePauseGrace(database, created.roomId());
             var afterGrace = runtime.process(new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 100,
                 4,
@@ -275,8 +289,8 @@ public final class BoardGameRuntimeProbe {
 
             runtime.pauseRoom(created.roomId(), "IGNORE", 10);
             var ignoredDonation = new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 100,
                 4,
@@ -365,7 +379,7 @@ public final class BoardGameRuntimeProbe {
             );
 
             var multiplierSetup = runtime.process(new DonationEvent(
-                "streamer", "soop-a", "A", 100, 5,
+                "soop-a", "viewer-a", "A", 100, 5,
                 "runtime-probe-multiplier-setup", 6_000L
             ));
             require(multiplierSetup.events().get(0).endPosition() == 1, "raw 3 from cell 22 must land on cell 1");
@@ -373,7 +387,7 @@ public final class BoardGameRuntimeProbe {
             require(multiplierState.nextThrowMultiplier() == 2, "multiplier cell must arm x2 for next actual throw");
 
             var multiplied = runtime.process(new DonationEvent(
-                "streamer", "soop-a", "A", 100, 6,
+                "soop-a", "viewer-a", "A", 100, 6,
                 "runtime-probe-multiplied", 7_000L
             ));
             var multipliedThrow = multiplied.events().get(0).throwResolutions().get(0);
@@ -387,7 +401,7 @@ public final class BoardGameRuntimeProbe {
             );
 
             var ignoredLanding = runtime.process(new DonationEvent(
-                "streamer", "soop-a", "A", 100, 7,
+                "soop-a", "viewer-a", "A", 100, 7,
                 "runtime-probe-ignore-landing", 8_000L
             ));
             var ignoredResolution = ignoredLanding.events().get(0).throwResolutions().get(0);
@@ -398,7 +412,7 @@ public final class BoardGameRuntimeProbe {
             );
 
             var moveToStart = runtime.process(new DonationEvent(
-                "streamer", "soop-a", "A", 100, 8,
+                "soop-a", "viewer-a", "A", 100, 8,
                 "runtime-probe-start", 9_000L
             ));
             var startResolution = moveToStart.events().get(0).throwResolutions().get(0);
@@ -420,8 +434,8 @@ public final class BoardGameRuntimeProbe {
             );
 
             var multiRoomDonation = runtime.process(new DonationEvent(
-                "streamer",
                 "soop-a",
+                "viewer-a",
                 "A",
                 100,
                 9,
