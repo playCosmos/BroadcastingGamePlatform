@@ -991,10 +991,151 @@ public final class GameClientHttpServer implements AutoCloseable {
             return;
         }
 
+        String publicAuditPrefix =
+            "/api/v1/tools/viewer-draw/public-audit/";
+        if (path != null && path.startsWith(publicAuditPrefix)) {
+            corsPublic(exchange);
+            if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            if (!requireGetOrHead(exchange)) return;
+            String code = path.substring(publicAuditPrefix.length())
+                .trim()
+                .toUpperCase(Locale.ROOT);
+            if (code.length() != 6 || code.contains("/")) {
+                sendJson(
+                    exchange,
+                    404,
+                    Map.of("error", "marble audit not found")
+                );
+                return;
+            }
+            try {
+                sendJson(
+                    exchange,
+                    200,
+                    viewerDraw.findMarbleAuditByPublicCode(code)
+                );
+            } catch (java.util.NoSuchElementException error) {
+                sendJson(
+                    exchange,
+                    404,
+                    Map.of("error", "marble audit not found")
+                );
+            } catch (Exception error) {
+                sendJson(
+                    exchange,
+                    400,
+                    Map.of("error", safeMessage(error))
+                );
+            }
+            return;
+        }
+
         if (!isAdminSession(exchange)) {
             sendJson(exchange, 401, Map.of(
                 "error", "administrator authentication required"
             ));
+            return;
+        }
+
+        String auditsBase = "/api/v1/tools/viewer-draw/audits";
+        if (
+            auditsBase.equals(path)
+            || (auditsBase + "/").equals(path)
+        ) {
+            if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    sendJson(exchange, 200, Map.of(
+                        "audits",
+                        viewerDraw.recentMarbleAudits(50)
+                    ));
+                } catch (Exception error) {
+                    sendJson(
+                        exchange,
+                        400,
+                        Map.of("error", safeMessage(error))
+                    );
+                }
+                return;
+            }
+
+            if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    byte[] body = exchange.getRequestBody().readNBytes(
+                        MAX_PROXY_BODY_BYTES + 1
+                    );
+                    if (body.length > MAX_PROXY_BODY_BYTES) {
+                        sendJson(
+                            exchange,
+                            413,
+                            Map.of("error", "request body too large")
+                        );
+                        return;
+                    }
+                    @SuppressWarnings("unchecked")
+                    Map<String, Object> audit = GSON.fromJson(
+                        new String(body, StandardCharsets.UTF_8),
+                        Map.class
+                    );
+                    sendJson(
+                        exchange,
+                        201,
+                        viewerDraw.saveMarbleAudit(audit)
+                    );
+                } catch (Exception error) {
+                    sendJson(
+                        exchange,
+                        400,
+                        Map.of("error", safeMessage(error))
+                    );
+                }
+                return;
+            }
+
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (path != null && path.startsWith(auditsBase + "/")) {
+            String auditId = path.substring(
+                (auditsBase + "/").length()
+            );
+            if (auditId.isBlank() || auditId.contains("/")) {
+                sendJson(
+                    exchange,
+                    404,
+                    Map.of("error", "marble audit not found")
+                );
+                return;
+            }
+            try {
+                if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    sendJson(
+                        exchange,
+                        200,
+                        viewerDraw.findMarbleAudit(auditId)
+                    );
+                    return;
+                }
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+            } catch (java.util.NoSuchElementException error) {
+                sendJson(
+                    exchange,
+                    404,
+                    Map.of("error", "marble audit not found")
+                );
+            } catch (Exception error) {
+                sendJson(
+                    exchange,
+                    400,
+                    Map.of("error", safeMessage(error))
+                );
+            }
             return;
         }
 
