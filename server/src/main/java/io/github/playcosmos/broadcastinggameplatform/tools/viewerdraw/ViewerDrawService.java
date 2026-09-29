@@ -781,6 +781,8 @@ public final class ViewerDrawService {
         var outputRanks = new java.util.LinkedHashSet<Integer>();
         var slotKeys = new java.util.LinkedHashSet<String>();
         var eliminationKeys = new java.util.LinkedHashSet<String>();
+        var sensorTags = new java.util.LinkedHashSet<String>();
+        var branchProducerKeys = new java.util.LinkedHashSet<String>();
         var outputCapacities = new ArrayList<Integer>();
         var normalizedComponents = new ArrayList<MachineComponent>();
         int spawnCount = 0;
@@ -878,6 +880,26 @@ public final class ViewerDrawService {
                 rawComponent.properties() == null
                     ? Map.of()
                     : rawComponent.properties();
+
+            if (
+                java.util.Set.of(
+                    "FINISH", "OUTPUT", "SLOT", "ELIMINATION"
+                ).contains(type)
+            ) {
+                String sensorTag = stringProperty(
+                    properties,
+                    "sensorTag",
+                    ""
+                ).trim();
+                if (sensorTag.length() > 32) {
+                    throw new IllegalArgumentException(
+                        id + " sensorTag must be at most 32 characters"
+                    );
+                }
+                if (!sensorTag.isBlank()) {
+                    sensorTags.add(sensorTag);
+                }
+            }
 
             if ("HINGE".equals(type) || "PADDLE".equals(type)) {
                 double pivotRatio = numberProperty(
@@ -1073,6 +1095,21 @@ public final class ViewerDrawService {
                     "conditionClaims",
                     1
                 );
+                double conditionSeconds = numberProperty(
+                    properties,
+                    "conditionSeconds",
+                    1
+                );
+                String branchSetKey = stringProperty(
+                    properties,
+                    "branchSetKey",
+                    ""
+                ).trim();
+                String branchSetValue = stringProperty(
+                    properties,
+                    "branchSetValue",
+                    "ON"
+                ).trim();
                 if (outputKey.isBlank() || outputKey.length() > 32) {
                     throw new IllegalArgumentException(
                         id + " outputKey must be 1..32 characters"
@@ -1117,7 +1154,10 @@ public final class ViewerDrawService {
                         "ALWAYS",
                         "AFTER_ANY_CLAIM",
                         "AFTER_OUTPUT_CLAIMS",
-                        "AFTER_OUTPUT_FULL"
+                        "AFTER_OUTPUT_FULL",
+                        "AFTER_SECONDS",
+                        "AFTER_SENSOR_CLAIMS",
+                        "AFTER_BRANCH_STATE"
                     ).contains(conditionType)
                 ) {
                     throw new IllegalArgumentException(
@@ -1127,6 +1167,27 @@ public final class ViewerDrawService {
                 if (conditionClaims < 1 || conditionClaims > 64) {
                     throw new IllegalArgumentException(
                         id + " conditionClaims must be within 1..64"
+                    );
+                }
+                if (
+                    "AFTER_SECONDS".equals(conditionType)
+                    && (conditionSeconds <= 0 || conditionSeconds > 1800)
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " conditionSeconds must be > 0 and <= 1800"
+                    );
+                }
+                if (
+                    branchSetKey.length() > 32
+                    || branchSetValue.length() > 32
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " branch state key/value must be <= 32 characters"
+                    );
+                }
+                if (!branchSetKey.isBlank()) {
+                    branchProducerKeys.add(
+                        branchSetKey + "\u0000" + branchSetValue
                     );
                 }
                 outputCapacities.add(outputCapacity);
@@ -1309,52 +1370,90 @@ public final class ViewerDrawService {
                 "conditionType",
                 "ALWAYS"
             ).trim().toUpperCase(Locale.ROOT);
+
             if (
-                !"AFTER_OUTPUT_CLAIMS".equals(mode)
-                && !"AFTER_OUTPUT_FULL".equals(mode)
+                "AFTER_OUTPUT_CLAIMS".equals(mode)
+                || "AFTER_OUTPUT_FULL".equals(mode)
             ) {
-                continue;
-            }
-            String targetKey = stringProperty(
-                component.properties(),
-                "conditionOutputKey",
-                ""
-            ).trim();
-            String ownKey = stringProperty(
-                component.properties(),
-                "outputKey",
-                ""
-            ).trim();
-            if (
-                targetKey.isBlank()
-                || !outputsByKey.containsKey(targetKey)
-            ) {
-                throw new IllegalArgumentException(
-                    component.id()
-                        + " conditional output target does not exist"
-                );
-            }
-            if (ownKey.equals(targetKey)) {
-                throw new IllegalArgumentException(
-                    component.id()
-                        + " conditional output cannot reference itself"
-                );
-            }
-            if ("AFTER_OUTPUT_CLAIMS".equals(mode)) {
-                int threshold = (int) numberProperty(
+                String targetKey = stringProperty(
                     component.properties(),
-                    "conditionClaims",
-                    1
-                );
-                int capacity = (int) numberProperty(
-                    outputsByKey.get(targetKey).properties(),
-                    "outputCapacity",
-                    1
-                );
-                if (threshold > capacity) {
+                    "conditionOutputKey",
+                    ""
+                ).trim();
+                String ownKey = stringProperty(
+                    component.properties(),
+                    "outputKey",
+                    ""
+                ).trim();
+                if (
+                    targetKey.isBlank()
+                    || !outputsByKey.containsKey(targetKey)
+                ) {
                     throw new IllegalArgumentException(
                         component.id()
-                            + " conditionClaims exceeds target capacity"
+                            + " conditional output target does not exist"
+                    );
+                }
+                if (ownKey.equals(targetKey)) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " conditional output cannot reference itself"
+                    );
+                }
+                if ("AFTER_OUTPUT_CLAIMS".equals(mode)) {
+                    int threshold = (int) numberProperty(
+                        component.properties(),
+                        "conditionClaims",
+                        1
+                    );
+                    int capacity = (int) numberProperty(
+                        outputsByKey.get(targetKey).properties(),
+                        "outputCapacity",
+                        1
+                    );
+                    if (threshold > capacity) {
+                        throw new IllegalArgumentException(
+                            component.id()
+                                + " conditionClaims exceeds target capacity"
+                        );
+                    }
+                }
+            }
+
+            if ("AFTER_SENSOR_CLAIMS".equals(mode)) {
+                String tag = stringProperty(
+                    component.properties(),
+                    "conditionSensorTag",
+                    ""
+                ).trim();
+                if (tag.isBlank() || !sensorTags.contains(tag)) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " conditional sensor tag does not exist"
+                    );
+                }
+            }
+
+            if ("AFTER_BRANCH_STATE".equals(mode)) {
+                String key = stringProperty(
+                    component.properties(),
+                    "conditionBranchKey",
+                    ""
+                ).trim();
+                String value = stringProperty(
+                    component.properties(),
+                    "conditionBranchValue",
+                    "ON"
+                ).trim();
+                if (
+                    key.isBlank()
+                    || !branchProducerKeys.contains(
+                        key + "\u0000" + value
+                    )
+                ) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " branch state producer does not exist"
                     );
                 }
             }
@@ -1366,18 +1465,49 @@ public final class ViewerDrawService {
                     "CONDITIONAL_OUTPUT requires at least one OUTPUT"
                 );
             }
-            boolean hasAlways = outputsByKey.values().stream().anyMatch(
-                component -> "ALWAYS".equals(
-                    stringProperty(
+            boolean hasStarter = false;
+            for (MachineComponent component : outputsByKey.values()) {
+                String mode = stringProperty(
+                    component.properties(),
+                    "conditionType",
+                    "ALWAYS"
+                ).trim().toUpperCase(Locale.ROOT);
+                if (
+                    "ALWAYS".equals(mode)
+                    || "AFTER_SECONDS".equals(mode)
+                ) {
+                    hasStarter = true;
+                    break;
+                }
+                if ("AFTER_SENSOR_CLAIMS".equals(mode)) {
+                    String tag = stringProperty(
                         component.properties(),
-                        "conditionType",
-                        "ALWAYS"
-                    ).trim().toUpperCase(Locale.ROOT)
-                )
-            );
-            if (!hasAlways) {
+                        "conditionSensorTag",
+                        ""
+                    ).trim();
+                    boolean externalSensor = normalizedComponents.stream()
+                        .anyMatch(sensor ->
+                            !"OUTPUT".equals(sensor.type())
+                            && java.util.Set.of(
+                                "FINISH", "SLOT", "ELIMINATION"
+                            ).contains(sensor.type())
+                            && tag.equals(
+                                stringProperty(
+                                    sensor.properties(),
+                                    "sensorTag",
+                                    ""
+                                ).trim()
+                            )
+                        );
+                    if (externalSensor) {
+                        hasStarter = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasStarter) {
                 throw new IllegalArgumentException(
-                    "CONDITIONAL_OUTPUT requires at least one ALWAYS output"
+                    "CONDITIONAL_OUTPUT requires an independently activatable root condition"
                 );
             }
             var visiting = new java.util.LinkedHashSet<String>();
@@ -1387,6 +1517,7 @@ public final class ViewerDrawService {
                     hasConditionalOutputCycle(
                         key,
                         outputsByKey,
+                        normalizedComponents,
                         visiting,
                         visited
                     )
@@ -1533,6 +1664,7 @@ public final class ViewerDrawService {
     private static boolean hasConditionalOutputCycle(
         String key,
         Map<String, MachineComponent> outputsByKey,
+        List<MachineComponent> components,
         java.util.Set<String> visiting,
         java.util.Set<String> visited
     ) {
@@ -1542,26 +1674,19 @@ public final class ViewerDrawService {
         visiting.add(key);
         MachineComponent component = outputsByKey.get(key);
         if (component != null) {
-            String mode = stringProperty(
-                component.properties(),
-                "conditionType",
-                "ALWAYS"
-            ).trim().toUpperCase(Locale.ROOT);
-            if (
-                "AFTER_OUTPUT_CLAIMS".equals(mode)
-                || "AFTER_OUTPUT_FULL".equals(mode)
+            for (
+                String next : conditionalOutputDependencies(
+                    component,
+                    outputsByKey,
+                    components
+                )
             ) {
-                String next = stringProperty(
-                    component.properties(),
-                    "conditionOutputKey",
-                    ""
-                ).trim();
                 if (
-                    !next.isBlank()
-                    && outputsByKey.containsKey(next)
+                    outputsByKey.containsKey(next)
                     && hasConditionalOutputCycle(
                         next,
                         outputsByKey,
+                        components,
                         visiting,
                         visited
                     )
@@ -1573,6 +1698,101 @@ public final class ViewerDrawService {
         visiting.remove(key);
         visited.add(key);
         return false;
+    }
+
+    private static List<String> conditionalOutputDependencies(
+        MachineComponent component,
+        Map<String, MachineComponent> outputsByKey,
+        List<MachineComponent> components
+    ) {
+        String mode = stringProperty(
+            component.properties(),
+            "conditionType",
+            "ALWAYS"
+        ).trim().toUpperCase(Locale.ROOT);
+        var result = new ArrayList<String>();
+
+        if (
+            "AFTER_OUTPUT_CLAIMS".equals(mode)
+            || "AFTER_OUTPUT_FULL".equals(mode)
+        ) {
+            String key = stringProperty(
+                component.properties(),
+                "conditionOutputKey",
+                ""
+            ).trim();
+            if (!key.isBlank()) result.add(key);
+            return List.copyOf(result);
+        }
+
+        if ("AFTER_SENSOR_CLAIMS".equals(mode)) {
+            String tag = stringProperty(
+                component.properties(),
+                "conditionSensorTag",
+                ""
+            ).trim();
+            for (MachineComponent candidate : outputsByKey.values()) {
+                if (
+                    tag.equals(
+                        stringProperty(
+                            candidate.properties(),
+                            "sensorTag",
+                            ""
+                        ).trim()
+                    )
+                ) {
+                    result.add(
+                        stringProperty(
+                            candidate.properties(),
+                            "outputKey",
+                            ""
+                        ).trim()
+                    );
+                }
+            }
+            return List.copyOf(result);
+        }
+
+        if ("AFTER_BRANCH_STATE".equals(mode)) {
+            String branchKey = stringProperty(
+                component.properties(),
+                "conditionBranchKey",
+                ""
+            ).trim();
+            String branchValue = stringProperty(
+                component.properties(),
+                "conditionBranchValue",
+                "ON"
+            ).trim();
+            for (MachineComponent candidate : outputsByKey.values()) {
+                if (
+                    branchKey.equals(
+                        stringProperty(
+                            candidate.properties(),
+                            "branchSetKey",
+                            ""
+                        ).trim()
+                    )
+                    && branchValue.equals(
+                        stringProperty(
+                            candidate.properties(),
+                            "branchSetValue",
+                            "ON"
+                        ).trim()
+                    )
+                ) {
+                    result.add(
+                        stringProperty(
+                            candidate.properties(),
+                            "outputKey",
+                            ""
+                        ).trim()
+                    );
+                }
+            }
+        }
+
+        return List.copyOf(result);
     }
 
     private Map<String, Object> normalizeMarbleAudit(
