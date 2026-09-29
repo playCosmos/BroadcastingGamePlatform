@@ -380,6 +380,109 @@
       throw new Error("random output bucket was not seed-selected");
     }
 
+    const conditionalA = Engine.componentDefaults(
+      "OUTPUT",
+      400,
+      530
+    );
+    conditionalA.width = 460;
+    conditionalA.height = 100;
+    conditionalA.properties = {
+      ...conditionalA.properties,
+      outputKey: "A",
+      outputRank: 1,
+      outputCapacity: 1,
+      outputPriority: 10,
+      conditionType: "ALWAYS"
+    };
+    const conditionalB = Engine.componentDefaults(
+      "OUTPUT",
+      400,
+      530
+    );
+    conditionalB.width = 460;
+    conditionalB.height = 100;
+    conditionalB.properties = {
+      ...conditionalB.properties,
+      outputKey: "B",
+      outputRank: 2,
+      outputCapacity: 1,
+      outputPriority: 20,
+      conditionType: "AFTER_OUTPUT_FULL",
+      conditionOutputKey: "A",
+      conditionClaims: 1
+    };
+    state = runSensorRule(
+      "Conditional Output Box2D Probe",
+      { type: "CONDITIONAL_OUTPUT", winnerCount: 2 },
+      [conditionalA, conditionalB],
+      3,
+      2,
+      141
+    );
+    const conditionalClaims = new Map(
+      state.outputClaims.map((item) => [
+        item.key,
+        item.value
+      ])
+    );
+    if (
+      conditionalClaims.get("A")?.length !== 1
+      || conditionalClaims.get("B")?.length !== 1
+    ) {
+      throw new Error(
+        "conditional output did not unlock chained output"
+      );
+    }
+
+    const timeoutDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Timeout Box2D Probe",
+      world: {
+        width: 800,
+        height: 600,
+        gravityX: 0,
+        gravityY: 0
+      },
+      drawRule: {
+        type: "RACE_FINISH",
+        winnerCount: 1
+      },
+      runPolicy: {
+        timeoutSeconds: 0.1,
+        qualificationMinWinners: 1,
+        qualificationMaxNudges: 0
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 100, 100),
+          properties: { marbleRadius: 10 }
+        },
+        {
+          ...Engine.componentDefaults("FINISH", 700, 530),
+          width: 60,
+          height: 40
+        }
+      ]
+    };
+    adapter.loadMap(timeoutDefinition);
+    state = adapter.reset(entries.slice(0, 3), 151);
+    for (
+      let step = 0;
+      step < 240 && !state.timedOut;
+      step += 1
+    ) {
+      state = adapter.step(1 / 120);
+    }
+    if (
+      !state.timedOut
+      || state.runStatus !== "TIMEOUT"
+      || state.dnfOrder.length !== 3
+      || state.rankedEntries.length !== 0
+    ) {
+      throw new Error("Box2D timeout/DNF contract failed");
+    }
+
     document.body.dataset.status = "pass";
     document.body.textContent = "PASS";
   } catch (error) {
