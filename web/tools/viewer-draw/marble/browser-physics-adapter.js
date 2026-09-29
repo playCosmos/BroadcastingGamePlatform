@@ -169,6 +169,7 @@
       this.accumulator = 0;
       this.time = 0;
       this.seed = 1;
+      this.runtimeWinnerCount = 0;
       this.random = mulberry32(1);
     }
 
@@ -887,7 +888,7 @@
       body.CreateFixture(fixtureDef);
     }
 
-    reset(entries, seed = 1) {
+    reset(entries, seed = 1, options = {}) {
       this.ensureReady();
       if (!this.definition) {
         throw new Error("map must be loaded first");
@@ -896,6 +897,11 @@
       this.createWorld();
       this.entries = Array.isArray(entries) ? entries.slice() : [];
       this.seed = Math.trunc(Number(seed) || 1);
+      this.runtimeWinnerCount = clamp(
+        Math.trunc(Number(options?.winnerCount) || 0),
+        0,
+        64
+      );
       const rng = mulberry32(this.seed);
       this.random = rng;
       this.selectedOutputKey = null;
@@ -1506,6 +1512,20 @@
       }
     }
 
+    targetCount() {
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      if (rule.type === "RACE_FINISH") {
+        return this.runtimeWinnerCount
+          || rule.winnerCount
+          || this.entries.length;
+      }
+      return root.ViewerDrawMapEngine.targetCountForDefinition(
+        this.definition
+      );
+    }
+
     applyTimeout() {
       if (this.timedOut) return;
       const policy = root.ViewerDrawMapEngine.resolvedRunPolicy(
@@ -1517,10 +1537,7 @@
       ) {
         return;
       }
-      const target =
-        root.ViewerDrawMapEngine.targetCountForDefinition(
-          this.definition
-        );
+      const target = this.targetCount();
       if (this.winnerOrder.length >= target) return;
 
       this.timedOut = true;
@@ -1630,10 +1647,7 @@
         timedOut: this.timedOut,
         runStatus: this.timedOut
           ? "TIMEOUT"
-          : this.winnerOrder.length >=
-              root.ViewerDrawMapEngine.targetCountForDefinition(
-                this.definition
-              )
+          : this.winnerOrder.length >= this.targetCount()
             ? "COMPLETED"
             : "RUNNING",
         selectedOutputKey: this.selectedOutputKey,
@@ -1641,58 +1655,7 @@
         finishedCount: this.winnerOrder.length
           ? this.winnerOrder.length
           : this.finishOrder.length,
-        targetCount: (() => {
-          const rule =
-            root.ViewerDrawMapEngine.resolvedDrawRule(this.definition);
-          if (rule.type === "ORDERED_OUTPUT") {
-            return rule.winnerCount
-              || this.definition.components.filter(
-                (component) => component.type === "OUTPUT"
-              ).length;
-          }
-          if (rule.type === "SLOT_COLLECTION") {
-            return rule.winnerCount
-              || this.definition.components
-                .filter((component) => component.type === "SLOT")
-                .reduce(
-                  (sum, component) =>
-                    sum + Math.trunc(
-                      property(
-                        component.properties,
-                        "slotCapacity",
-                        1
-                      )
-                    ),
-                  0
-                );
-          }
-          if (rule.type === "LAST_SURVIVOR") {
-            return rule.winnerCount || 1;
-          }
-          if (
-            rule.type === "CASCADE_SELECTION"
-            || rule.type === "CONDITIONAL_OUTPUT"
-          ) {
-            return rule.winnerCount
-              || this.definition.components
-                .filter((component) => component.type === "OUTPUT")
-                .reduce(
-                  (sum, component) =>
-                    sum + Math.trunc(
-                      property(
-                        component.properties,
-                        "outputCapacity",
-                        1
-                      )
-                    ),
-                  0
-                );
-          }
-          if (rule.type === "RANDOM_OUTPUT_BUCKET") {
-            return rule.winnerCount || 1;
-          }
-          return this.marbles.length;
-        })(),
+        targetCount: this.targetCount(),
         totalCount: this.marbles.length,
         components: this.reactiveComponents.map((item) => {
           const position = item.body.GetPosition();
