@@ -154,6 +154,8 @@
       this.winnerOrder = [];
       this.outputClaims = new Map();
       this.slotClaims = new Map();
+      this.sensorClaims = new Map();
+      this.branchStates = new Map();
       this.eliminationOrder = [];
       this.dnfOrder = [];
       this.timedOut = false;
@@ -215,6 +217,8 @@
       this.winnerOrder = [];
       this.outputClaims = new Map();
       this.slotClaims = new Map();
+      this.sensorClaims = new Map();
+      this.branchStates = new Map();
       this.eliminationOrder = [];
       this.dnfOrder = [];
       this.timedOut = false;
@@ -1021,6 +1025,7 @@
         this.detectImpactSounds(beforeVelocities);
         this.applyBumperBoosts();
         this.applyLauncherBoosts();
+        this.detectTaggedSensors();
         this.detectResults();
         this.applyTimeout();
         this.accumulator -= FIXED_DT;
@@ -1143,6 +1148,43 @@
       const localY = -dx * sin + dy * cos;
       return Math.abs(localX) <= component.width / 2 + pad
         && Math.abs(localY) <= component.height / 2 + pad;
+    }
+
+    detectTaggedSensors() {
+      const sensors = this.definition.components.filter(
+        (component) =>
+          ["FINISH","OUTPUT","SLOT","ELIMINATION"]
+            .includes(component.type)
+          && String(component.properties?.sensorTag || "").trim()
+      );
+      if (!sensors.length) return;
+
+      for (const marble of this.marbles) {
+        if (marble.finished || marble.eliminated || marble.dnf) continue;
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        for (const sensor of sensors) {
+          if (!this.pointInRect(x, y, sensor)) continue;
+          const tag = String(
+            sensor.properties?.sensorTag || ""
+          ).trim();
+          const claims = this.sensorClaims.get(tag) || new Set();
+          claims.add(marble.id);
+          this.sensorClaims.set(tag, claims);
+        }
+      }
+    }
+
+    applyOutputBranch(output) {
+      const key = String(
+        output?.properties?.branchSetKey || ""
+      ).trim();
+      if (!key) return;
+      this.branchStates.set(
+        key,
+        String(output.properties?.branchSetValue || "ON").trim()
+      );
     }
 
     detectResults() {
@@ -1474,8 +1516,13 @@
               )
               && root.ViewerDrawMapEngine.conditionalOutputActive(
                 candidate,
-                outputs,
-                this.outputClaims
+                this.definition,
+                {
+                  outputClaims: this.outputClaims,
+                  sensorClaims: this.sensorClaims,
+                  branchStates: this.branchStates,
+                  time: this.time
+                }
               )
               && this.pointInRect(x, y, candidate);
           })
@@ -1503,6 +1550,7 @@
         const claims = this.outputClaims.get(key) || [];
         claims.push(marble.id);
         this.outputClaims.set(key, claims);
+        this.applyOutputBranch(output);
         this.winnerOrder.push(marble.id);
         this.finishOrder.push(marble.id);
         this.captureMarble(
@@ -1644,6 +1692,12 @@
         ),
         slotClaims: [...this.slotClaims.entries()].map(
           ([key, ids]) => ({ key, ids: ids.slice() })
+        ),
+        sensorClaims: [...this.sensorClaims.entries()].map(
+          ([tag, ids]) => ({ tag, ids: [...ids] })
+        ),
+        branchStates: [...this.branchStates.entries()].map(
+          ([key, value]) => ({ key, value })
         ),
         eliminationOrder: this.eliminationOrder.slice(),
         dnfOrder: this.dnfOrder.slice(),
