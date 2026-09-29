@@ -17,6 +17,7 @@
   let definition = Engine.defaultDefinition();
   let adapter = null;
   let entries = [];
+  let entryItemCount = 1;
   let state = null;
   let running = false;
   let completed = false;
@@ -297,6 +298,8 @@
       },
       run: {
         seed: auditSeed,
+        launchMode: launchModeValue(),
+        launchIntervalMs: launchIntervalValue(),
         startedAt: auditStartedAt,
         completedAt: auditCompletedAt,
         wallElapsedMs: auditWallElapsedMs,
@@ -482,6 +485,7 @@
 
   function updateEntryCount() {
     const items = parseEntryItems();
+    entryItemCount = Math.max(1, items.length);
     const marbleCount = items.reduce(
       (sum, item) => sum + item.count,
       0
@@ -779,7 +783,7 @@
       0,
       Number(marble.entry?.itemIndex) || 0
     );
-    const totalItems = Math.max(1, parseEntryItems().length || 1);
+    const totalItems = Math.max(1, entryItemCount);
     return `hsl(${(index * 360 / totalItems) % 360} 78% 68%)`;
   }
 
@@ -1277,7 +1281,10 @@
     const active = state.marbles
       .filter(
         (marble) =>
-          !marble.finished && !marble.eliminated && !marble.dnf
+          !marble.finished
+          && !marble.eliminated
+          && !marble.dnf
+          && marble.launched !== false
       )
       .sort(
         (left, right) =>
@@ -1701,7 +1708,11 @@
   });
 
   $("addEntry").addEventListener("click", () => {
-    if (!running) addEntryRow("", 1);
+    if (running) return;
+    addEntryRow("", 1);
+    clearAudit();
+    $("drawState").textContent = "READY · INPUT CHANGED";
+    $("winnerBanner").hidden = true;
   });
 
   document.querySelectorAll('input[name="launchMode"]').forEach(
