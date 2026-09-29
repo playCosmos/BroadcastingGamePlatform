@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "viewer-draw-machine-map/v0";
-  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER"]);
+  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT"]);
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
@@ -10,6 +10,35 @@
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
   };
+
+  function resolvedDrawRule(def){
+    const raw=def?.drawRule||{};
+    const type=String(raw.type||"RACE_FINISH").toUpperCase();
+    const winnerCount=Math.max(0,Math.trunc(finiteOr(raw.winnerCount,0)));
+    return {type,winnerCount};
+  }
+
+  function elevatorPosition(c,time=0){
+    const p=c.properties||{};
+    const min=clamp(finiteOr(p.travelMin,-120),-1200,1200);
+    const max=clamp(finiteOr(p.travelMax,120),-1200,1200);
+    const lower=Math.min(min,max),upper=Math.max(min,max);
+    const span=Math.max(1,upper-lower);
+    const speed=clamp(Math.abs(finiteOr(p.motorSpeed,90)),1,600);
+    const t=Math.max(0,finiteOr(time,0));
+    const start=clamp(0,lower,upper);
+    const direction=finiteOr(p.startDirection,1)<0?-1:1;
+    const origin=direction>0 ? start-lower : upper-start;
+    const distance=(origin+t*speed)%(span*2);
+    const offset=distance<=span
+      ? lower+distance
+      : upper-(distance-span);
+    const axis=degToRad(finiteOr(p.axisAngle,-90));
+    return {
+      x:c.x+Math.cos(axis)*offset,
+      y:c.y+Math.sin(axis)*offset
+    };
+  }
 
   function rotateLocal(c,x,y){
     const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
@@ -75,6 +104,10 @@
         {...c,rotation:rotation+90}
       ];
     }
+    if(c.type==="ELEVATOR"){
+      const position=elevatorPosition(c,time);
+      return [{...c,...position}];
+    }
 
     const p=c.properties||{};
     const w=Math.max(20,finiteOr(c.width,220));
@@ -116,9 +149,11 @@
       case "FUNNEL": return {...base,width:280,height:190,properties:{restitution:0.3,friction:0.06,gap:52,thickness:14}};
       case "SPLITTER": return {...base,width:220,height:170,properties:{restitution:0.34,friction:0.05,thickness:14}};
       case "HINGE": return {...base,width:220,height:16,properties:{restitution:0.34,friction:0.08,pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2}};
-      case "GEAR": return {...base,width:170,height:18,properties:{restitution:0.4,friction:0.06,motorSpeed:120,motorTorque:35}};
+      case "GEAR": return {...base,width:170,height:18,properties:{restitution:0.4,friction:0.06,motorSpeed:120,motorTorque:35,linkedComponentId:"",gearRatio:-1}};
       case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
       case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
+      case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
+      case "OUTPUT": return {...base,width:180,height:60,properties:{outputKey:"OUT1",outputRank:1}};
       default: throw new Error("Unsupported component type: "+type);
     }
   }
@@ -128,6 +163,7 @@
       schemaVersion:SCHEMA_VERSION,
       name:"New Marble Machine",
       world:{width:1280,height:720,gravityX:0,gravityY:12},
+      drawRule:{type:"RACE_FINISH",winnerCount:0},
       components:[
         componentDefaults("SPAWN",640,70),
         {...componentDefaults("RAMP",430,215),rotation:12,width:470},
@@ -154,11 +190,22 @@
     }
     const comps=Array.isArray(def?.components)?def.components:[];
     if(comps.length>500) errors.push("컴포넌트는 최대 500개입니다.");
+    const rule=resolvedDrawRule(def);
+    if(!["RACE_FINISH","ORDERED_OUTPUT"].includes(rule.type)){
+      errors.push("지원하지 않는 drawRule type입니다.");
+    }
+    if(rule.winnerCount<0||rule.winnerCount>64){
+      errors.push("drawRule winnerCount는 0~64 범위여야 합니다.");
+    }
     const ids=new Set();
-    let spawn=0,finish=0;
+    const typeById=new Map();
+    const outputKeys=new Set();
+    const outputRanks=new Set();
+    let spawn=0,finish=0,output=0;
     for(const c of comps){
       if(!c?.id || ids.has(c.id)) errors.push("컴포넌트 ID는 고유해야 합니다.");
       ids.add(c?.id);
+      if(c?.id) typeById.set(c.id,c?.type);
       if(!TYPES.has(c?.type)) errors.push("지원하지 않는 컴포넌트: "+c?.type);
       const x=Number(c?.x),y=Number(c?.y),rotation=Number(c?.rotation);
       if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(rotation)){
@@ -166,7 +213,7 @@
       }else if(x<0||x>w||y<0||y>h){
         errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
-      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER"].includes(c?.type)){
+      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
           errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
@@ -202,12 +249,63 @@
         const power=finiteOr(p.launchPower,1.2);
         if(power<0||power>5) errors.push("Launcher launchPower는 0~5 범위여야 합니다.");
       }
+      if(c?.type==="GEAR"){
+        const linked=String(p.linkedComponentId||"").trim();
+        const ratio=finiteOr(p.gearRatio,-1);
+        if(linked===c.id) errors.push("Gear는 자기 자신과 연결할 수 없습니다.");
+        if(Math.abs(ratio)<.01||Math.abs(ratio)>20) errors.push("gearRatio 절대값은 0.01~20 범위여야 합니다.");
+      }
+      if(c?.type==="ELEVATOR"){
+        const axis=finiteOr(p.axisAngle,-90);
+        const min=finiteOr(p.travelMin,-120),max=finiteOr(p.travelMax,120);
+        const speed=finiteOr(p.motorSpeed,90),force=finiteOr(p.motorForce,45);
+        const direction=finiteOr(p.startDirection,1);
+        if(axis<-360||axis>360) errors.push("Elevator axisAngle은 -360~360 범위여야 합니다.");
+        if(min<-1200||max>1200||min>=max) errors.push("Elevator travel 범위가 유효하지 않습니다.");
+        if(speed<1||speed>600) errors.push("Elevator motorSpeed는 1~600 px/s 범위여야 합니다.");
+        if(force<0||force>500) errors.push("Elevator motorForce는 0~500 범위여야 합니다.");
+        if(direction!==1&&direction!==-1) errors.push("Elevator startDirection은 -1 또는 1이어야 합니다.");
+      }
+      if(c?.type==="OUTPUT"){
+        const key=String(p.outputKey||"").trim();
+        const rank=Math.trunc(finiteOr(p.outputRank,0));
+        if(!key||key.length>32) errors.push("Output outputKey는 1~32자여야 합니다.");
+        if(outputKeys.has(key)) errors.push("Output outputKey는 고유해야 합니다.");
+        outputKeys.add(key);
+        if(rank<1||rank>64) errors.push("Output outputRank는 1~64 범위여야 합니다.");
+        if(outputRanks.has(rank)) errors.push("Output outputRank는 고유해야 합니다.");
+        outputRanks.add(rank);
+        output++;
+      }
 
       if(c?.type==="SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
     }
+
+    for(const c of comps){
+      if(c?.type!=="GEAR") continue;
+      const linked=String(c?.properties?.linkedComponentId||"").trim();
+      if(!linked) continue;
+      const targetType=typeById.get(linked);
+      if(!targetType){
+        errors.push("Gear linkedComponentId 대상이 존재하지 않습니다.");
+      }else if(!["GEAR","HINGE","PADDLE","ELEVATOR"].includes(targetType)){
+        errors.push("Gear는 joint 기반 컴포넌트에만 연결할 수 있습니다.");
+      }
+    }
+
     if(!spawn) errors.push("SPAWN이 최소 1개 필요합니다.");
-    if(!finish) errors.push("FINISH가 최소 1개 필요합니다.");
+    if(rule.type==="RACE_FINISH"&&!finish){
+      errors.push("RACE_FINISH에는 FINISH가 최소 1개 필요합니다.");
+    }
+    if(rule.type==="ORDERED_OUTPUT"){
+      const winners=rule.winnerCount||output;
+      if(!output) errors.push("ORDERED_OUTPUT에는 OUTPUT이 최소 1개 필요합니다.");
+      if(winners<1||winners>output) errors.push("ORDERED_OUTPUT winnerCount가 OUTPUT 수보다 클 수 없습니다.");
+      for(let rank=1;rank<=winners;rank++){
+        if(!outputRanks.has(rank)) errors.push("ORDERED_OUTPUT은 1부터 winnerCount까지 연속 outputRank가 필요합니다.");
+      }
+    }
     return [...new Set(errors)];
   }
 
@@ -238,6 +336,7 @@
       this.definition=structuredClone(definition);
       this.marbles=[];
       this.finishOrder=[];
+      this.outputClaims=new Map();
       this.accumulator=0;
       this.time=0;
     }
@@ -249,6 +348,7 @@
       const n=clamp(Math.floor(Number(count)||1),1,64);
       this.marbles=[];
       this.finishOrder=[];
+      this.outputClaims=new Map();
       this.accumulator=0;
       this.time=0;
 
@@ -302,7 +402,7 @@
         this.resolveWorldBounds(m,world);
         for(const c of this.definition.components){
           for(const shape of componentShapes(c,this.time)){
-            if(["WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER"].includes(c.type)){
+            if(["WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR"].includes(c.type)){
               this.resolveRect(m,shape);
             }else if(c.type==="PEG"||c.type==="BUMPER"){
               this.resolveCircle(m,shape);
@@ -314,15 +414,37 @@
       this.resolveMarblePairs();
       this.applyLauncherBoosts();
 
-      const finishes=this.definition.components.filter(c=>c.type==="FINISH");
-      for(const m of this.marbles){
-        if(m.finished) continue;
-        if(finishes.some(f=>this.pointInRect(m.x,m.y,f))){
+      const rule=resolvedDrawRule(this.definition);
+      if(rule.type==="ORDERED_OUTPUT"){
+        const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
+        for(const m of this.marbles){
+          if(m.finished) continue;
+          const output=outputs.find(o=>
+            !this.outputClaims.has(Math.trunc(finiteOr(o.properties?.outputRank,0)))
+            && this.pointInRect(m.x,m.y,o)
+          );
+          if(!output) continue;
+          const rank=Math.trunc(finiteOr(output.properties?.outputRank,1));
+          this.outputClaims.set(rank,m.id);
           m.finished=true;
-          m.rank=this.finishOrder.length+1;
+          m.rank=rank;
           m.finishTime=this.time;
           m.vx=0;m.vy=0;
-          this.finishOrder.push(m.id);
+          this.finishOrder=[...this.outputClaims.entries()]
+            .sort((a,b)=>a[0]-b[0])
+            .map(([,id])=>id);
+        }
+      }else{
+        const finishes=this.definition.components.filter(c=>c.type==="FINISH");
+        for(const m of this.marbles){
+          if(m.finished) continue;
+          if(finishes.some(f=>this.pointInRect(m.x,m.y,f))){
+            m.finished=true;
+            m.rank=this.finishOrder.length+1;
+            m.finishTime=this.time;
+            m.vx=0;m.vy=0;
+            this.finishOrder.push(m.id);
+          }
         }
       }
     }
@@ -474,7 +596,12 @@
           finished:m.finished,rank:m.rank,finishTime:m.finishTime
         })),
         finishOrder:[...this.finishOrder],
+        winnerOrder:[...this.finishOrder],
+        outputClaims:[...this.outputClaims.entries()].map(([rank,id])=>({rank,id})),
         finishedCount:this.finishOrder.length,
+        targetCount:resolvedDrawRule(this.definition).type==="ORDERED_OUTPUT"
+          ? (resolvedDrawRule(this.definition).winnerCount||this.definition.components.filter(c=>c.type==="OUTPUT").length)
+          : this.marbles.length,
         totalCount:this.marbles.length
       };
     }
@@ -487,6 +614,8 @@
     validateDefinition,
     componentShapes,
     motionRotation,
+    resolvedDrawRule,
+    elevatorPosition,
     PreviewEngine
   };
 })(globalThis);
