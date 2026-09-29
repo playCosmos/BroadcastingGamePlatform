@@ -193,6 +193,11 @@
       this.time = 0;
       this.seed = 1;
       this.runtimeWinnerCount = 0;
+      this.launchMode = "SEQUENTIAL";
+      this.launchIntervalSeconds = 0.24;
+      this.nextLaunchIndex = 0;
+      this.nextLaunchAt = 0;
+      this.launchedCount = 0;
       this.random = mulberry32(1);
     }
 
@@ -253,6 +258,9 @@
       this.soundEvents = [];
       this.accumulator = 0;
       this.time = 0;
+      this.nextLaunchIndex = 0;
+      this.nextLaunchAt = 0;
+      this.launchedCount = 0;
 
       this.createWorldBounds();
 
@@ -929,6 +937,18 @@
           Math.trunc(Number(options?.winnerCount) || 0)
         )
       );
+      this.launchMode =
+        String(options?.launchMode || "SEQUENTIAL").toUpperCase()
+          === "BUNCH"
+          ? "BUNCH"
+          : "SEQUENTIAL";
+      this.launchIntervalSeconds = Math.max(
+        0.04,
+        Number(options?.launchIntervalMs || 240) / 1000
+      );
+      this.nextLaunchIndex = 0;
+      this.nextLaunchAt = 0;
+      this.launchedCount = 0;
       const rng = mulberry32(this.seed);
       this.random = rng;
       this.selectedOutputKey = null;
@@ -966,9 +986,17 @@
           );
         }
       }
-      const spawns = this.definition.components.filter(
+      const allSpawns = this.definition.components.filter(
         (component) => component.type === "SPAWN"
       );
+      const desiredRole =
+        this.launchMode === "BUNCH" ? "BUNCH" : "LAUNCHER";
+      const roleSpawns = allSpawns.filter(
+        (component) =>
+          String(component.properties?.spawnRole || "")
+            .toUpperCase() === desiredRole
+      );
+      const spawns = roleSpawns.length ? roleSpawns : allSpawns;
 
       this.marbles = this.entries.map((entry, index) => {
         const spawn = spawns[index % spawns.length];
@@ -981,9 +1009,10 @@
         const angle =
           localIndex * 2.399963229728653
           + (rng() - 0.5) * 0.2;
-        const spread =
-          Math.sqrt(localIndex + 1)
-          * Math.min(radius * 1.35, 16);
+        const spread = this.launchMode === "BUNCH"
+          ? Math.sqrt(localIndex + 1)
+            * Math.min(radius * 1.35, 16)
+          : 0;
 
         const x = spawn.x + Math.cos(angle) * spread;
         const y = spawn.y + Math.sin(angle) * spread;
@@ -1006,12 +1035,18 @@
         fixtureDef.set_restitution(0.62);
         fixtureDef.set_friction(0.03);
         body.CreateFixture(fixtureDef);
-        body.SetLinearVelocity(
-          new B.b2Vec2(
-            ((rng() - 0.5) * 35) / PIXELS_PER_METER,
-            ((rng() - 0.5) * 8) / PIXELS_PER_METER
-          )
-        );
+        const launched = this.launchMode === "BUNCH";
+        if (launched) {
+          body.SetLinearVelocity(
+            new B.b2Vec2(
+              ((rng() - 0.5) * 35) / PIXELS_PER_METER,
+              ((rng() - 0.5) * 8) / PIXELS_PER_METER
+            )
+          );
+        } else {
+          body.SetLinearVelocity(new B.b2Vec2(0, 0));
+          body.SetEnabled(false);
+        }
 
         return {
           id: "m" + (index + 1),
@@ -1025,11 +1060,47 @@
           finishTime: null,
           bumperContacts: new Set(),
           launcherContacts: new Set(),
-          lastSoundTime: -Infinity
+          lastSoundTime: -Infinity,
+          launched,
+          launchIndex: index,
+          spawnX: x,
+          spawnY: y
         };
       });
 
+      if (this.launchMode === "BUNCH") {
+        this.launchedCount = this.marbles.length;
+        this.nextLaunchIndex = this.marbles.length;
+      } else {
+        this.releaseQueuedMarbles();
+      }
+
       return this.snapshot();
+    }
+
+    releaseQueuedMarbles() {
+      if (
+        this.launchMode !== "SEQUENTIAL"
+        || this.nextLaunchIndex >= this.marbles.length
+        || this.time + 1e-9 < this.nextLaunchAt
+      ) {
+        return;
+      }
+
+      const marble = this.marbles[this.nextLaunchIndex];
+      marble.body.SetEnabled(true);
+      marble.body.SetAwake(true);
+      marble.body.SetLinearVelocity(
+        new this.Box2D.b2Vec2(
+          ((this.random() - 0.5) * 4) / PIXELS_PER_METER,
+          0
+        )
+      );
+      marble.launched = true;
+      marble.launchedAt = this.time;
+      this.nextLaunchIndex += 1;
+      this.launchedCount += 1;
+      this.nextLaunchAt = this.time + this.launchIntervalSeconds;
     }
 
     step(deltaSeconds) {
@@ -1041,6 +1112,7 @@
       this.accumulator += clamp(Number(deltaSeconds) || 0, 0, 0.05);
       let guard = 0;
       while (this.accumulator >= FIXED_DT && guard < 12) {
+        this.releaseQueuedMarbles();
         const beforeVelocities = this.captureVelocities();
         this.updateMovingComponents(this.time);
         this.updateElevators();
@@ -1690,7 +1762,13 @@
       const marble = this.marbles.find(
         (candidate) => candidate.id === id
       );
-      if (!marble || marble.finished || marble.eliminated || marble.dnf) return false;
+      if (
+        !marble
+        || marble.finished
+        || marble.eliminated
+        || marble.dnf
+        || marble.launched === false
+      ) return false;
 
       const angle = this.random() * Math.PI * 2;
       const magnitude = 0.12 + this.random() * 0.12;
@@ -1738,6 +1816,12 @@
           : this.finishOrder.length,
         targetCount: this.targetCount(),
         totalCount: this.marbles.length,
+        launchMode: this.launchMode,
+        launchedCount: this.launchedCount,
+        pendingCount: Math.max(
+          0,
+          this.marbles.length - this.launchedCount
+        ),
         components: this.reactiveComponents.map((item) => {
           const position = item.body.GetPosition();
           return {
@@ -1760,7 +1844,9 @@
             eliminated: marble.eliminated,
             dnf: marble.dnf,
             rank: marble.rank,
-            finishTime: marble.finishTime
+            finishTime: marble.finishTime,
+            launched: marble.launched !== false,
+            launchedAt: marble.launchedAt ?? null
           };
         })
       };
