@@ -3,7 +3,7 @@ name: Broadcasting Game Platform Windows Package
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, "fix/participant-soop-channels"]
     paths:
       - "server/**"
       - "web/**"
