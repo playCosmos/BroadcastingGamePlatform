@@ -67,6 +67,20 @@ Hotel</textarea>
         <button id="startDraw" class="primary-button" type="button">추첨 시작</button>
         <button id="resetDraw" type="button">초기화</button>
         <button id="exportAudit" type="button" disabled>Audit JSON 내보내기</button>
+        <button id="uploadAudit" type="button" disabled>Audit 서버 저장</button>
+        <button id="refreshAuditHistory" type="button">Audit History 새로고침</button>
+      </section>
+
+      <section>
+        <p class="panel-title">AUDIT / OBS</p>
+        <select id="auditHistory">
+          <option value="">저장된 Audit 없음</option>
+        </select>
+        <div class="button-stack">
+          <a id="auditOverlayLink" class="stage-tool" href="#" target="_blank" rel="noopener" hidden>OBS Result Overlay 열기</a>
+          <button id="copyAuditOverlay" type="button" disabled>OBS URL 복사</button>
+        </div>
+        <small id="auditSyncStatus">LOCAL ONLY</small>
       </section>
 
       <p class="runtime-note">
@@ -119,5 +133,6 @@ Hotel</textarea>
 <script src="/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
 <script src="/tools/viewer-draw/marble/browser-physics-adapter.js"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-marble.js"></script>
+<script src="/tools/viewer-draw/marble/viewer-draw-audit-sync.js"></script>
 </body>
 </html>
