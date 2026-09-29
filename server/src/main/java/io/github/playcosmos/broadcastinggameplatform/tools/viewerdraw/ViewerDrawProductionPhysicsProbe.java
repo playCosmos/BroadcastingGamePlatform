@@ -171,6 +171,43 @@ public final class ViewerDrawProductionPhysicsProbe {
                     == second.result().stepCount(),
                 "same seed/map must preserve step count"
             );
+
+            var changedDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    definition.schemaVersion(),
+                    "Production Physics Probe r2",
+                    definition.world(),
+                    definition.components()
+                );
+            var revision2 = service.saveMachineMap(
+                saved.mapId(),
+                changedDefinition
+            );
+            require(
+                revision2.revision() == 2,
+                "second save must create revision 2"
+            );
+
+            var historical = service.simulateMachineMapRevision(
+                saved.mapId(),
+                1,
+                42L,
+                8,
+                10.0
+            );
+            require(
+                historical.mapRevision() == 1
+                    && historical.mapHash().equals(
+                        saved.definitionHash()
+                    ),
+                "production simulation must execute immutable historical revision"
+            );
+            require(
+                historical.result().finishOrder().equals(
+                    first.result().finishOrder()
+                ),
+                "historical revision simulation must preserve original result"
+            );
             require(
                 first.result().marbles().stream().allMatch(
                     marble ->
