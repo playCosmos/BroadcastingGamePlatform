@@ -61,6 +61,7 @@ if (-not (Test-Path $Exe)) {
 
 # Never ship a live config.json. First launch creates it only when missing.
 Copy-Item (Join-Path $ServerRoot "config.example.json") (Join-Path $AppRoot "config.example.json") -Force
+Copy-Item (Join-Path $RepoRoot "THIRD_PARTY_NOTICES.md") (Join-Path $AppRoot "THIRD_PARTY_NOTICES.md") -Force
 
 $WebSource = Join-Path $RepoRoot "web"
 $WebRoot = Join-Path $AppRoot "web"
