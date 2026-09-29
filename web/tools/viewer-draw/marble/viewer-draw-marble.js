@@ -854,7 +854,9 @@
     ctx.fillRect(0, 0, view.width, view.height);
 
     const origin = point(0, 0, view);
-    ctx.fillStyle = "#0a1117";
+    ctx.fillStyle = String(
+      definition.world?.visualBackground || "#0a1117"
+    );
     ctx.fillRect(
       origin.x,
       origin.y,
@@ -935,7 +937,9 @@
   function renderMinimap(mainView) {
     const view = fitMinimap();
     minimapCtx.clearRect(0, 0, view.width, view.height);
-    minimapCtx.fillStyle = "rgba(5,9,13,.92)";
+    minimapCtx.fillStyle = String(
+      definition.world?.visualBackground || "rgba(5,9,13,.92)"
+    );
     minimapCtx.fillRect(0, 0, view.width, view.height);
 
     definition.components.forEach((component) => {
