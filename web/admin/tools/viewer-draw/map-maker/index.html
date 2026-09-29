@@ -73,6 +73,7 @@
         <div class="preview-controls">
           <button id="previewToggle" class="primary-button">▶ Preview</button>
           <button id="previewReset" class="small-button">Reset</button>
+          <button id="productionTest" class="small-button">JBox2D Production Test</button>
           <label>Marbles <input id="marbleCount" type="number" min="1" max="64" value="16"></label>
           <label>Seed <input id="previewSeed" type="number" value="1"></label>
         </div>
@@ -85,6 +86,7 @@
         <canvas id="mapCanvas"></canvas>
       </div>
       <div class="map-validation" id="mapValidation">맵을 편집한 뒤 Preview로 즉시 테스트할 수 있습니다.</div>
+      <div class="production-result" id="productionResult" hidden></div>
     </section>
 
     <aside class="maker-panel inspector-panel">
