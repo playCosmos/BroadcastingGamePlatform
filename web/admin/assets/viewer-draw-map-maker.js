@@ -187,6 +187,8 @@
       GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
       LAUNCHER: ["#3e6675", "#78bdd5"],
+      ELEVATOR: ["#3f586d", "#84a8c6"],
+      OUTPUT: ["#3f744c", "#8bd3a1"],
       SPAWN: ["#216e8f", "#62c3e7"],
       FINISH: ["#367c4d", "#74d191"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -225,7 +227,7 @@
       ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
 
-      if (c.type === "FINISH") {
+      if (c.type === "FINISH" || c.type === "OUTPUT") {
         ctx.setLineDash([7, 5]);
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
@@ -391,6 +393,13 @@
   function addComponent(type, x, y) {
     pushUndo();
     const c = Engine.componentDefaults(type, snap(x), snap(y));
+    if (type === "OUTPUT") {
+      const count = definition.components.filter(
+        (component) => component.type === "OUTPUT"
+      ).length + 1;
+      c.properties.outputKey = "OUT" + count;
+      c.properties.outputRank = count;
+    }
     definition.components.push(c);
     select(c.id);
     setTool("SELECT");
@@ -402,7 +411,16 @@
     const index = definition.components.findIndex((c) => c.id === selectedId);
     if (index < 0) return;
     pushUndo();
+    const removedId = definition.components[index].id;
     definition.components.splice(index, 1);
+    for (const component of definition.components) {
+      if (
+        component.type === "GEAR"
+        && component.properties?.linkedComponentId === removedId
+      ) {
+        component.properties.linkedComponentId = "";
+      }
+    }
     selectedId = null;
     syncInspector();
     render();
@@ -428,6 +446,9 @@
     $("worldHeight").value = definition.world.height;
     $("gravityX").value = definition.world.gravityX;
     $("gravityY").value = definition.world.gravityY;
+    const rule = Engine.resolvedDrawRule(definition);
+    $("drawRuleType").value = rule.type;
+    $("drawRuleWinnerCount").value = rule.winnerCount;
     $("mapIdLabel").textContent = mapId || "NEW";
     $("mapRevision").textContent = mapRevision ?? "-";
     $("mapHash").textContent = mapHash ? mapHash.slice(0, 16) + "…" : "-";
@@ -460,18 +481,44 @@
     $("propJointFriction").value = num(c.properties?.jointFriction, 1.2);
     $("propMotorSpeed").value = num(c.properties?.motorSpeed, c.type === "GEAR" ? 120 : 180);
     $("propMotorTorque").value = num(c.properties?.motorTorque, c.type === "GEAR" ? 35 : 30);
+    const linkedSelect = $("propLinkedComponentId");
+    linkedSelect.replaceChildren();
+    const none = document.createElement("option");
+    none.value = "";
+    none.textContent = "None";
+    linkedSelect.appendChild(none);
+    for (const target of definition.components) {
+      if (
+        target.id === c.id
+        || !["GEAR","HINGE","PADDLE","ELEVATOR"].includes(target.type)
+      ) continue;
+      const option = document.createElement("option");
+      option.value = target.id;
+      option.textContent = target.type + " · " + target.id.slice(0, 8);
+      linkedSelect.appendChild(option);
+    }
+    linkedSelect.value = String(c.properties?.linkedComponentId || "");
+    $("propGearRatio").value = num(c.properties?.gearRatio, -1);
     $("propLaunchPower").value = num(c.properties?.launchPower, 1.2);
+    $("propAxisAngle").value = num(c.properties?.axisAngle, -90);
+    $("propTravelMin").value = num(c.properties?.travelMin, -120);
+    $("propTravelMax").value = num(c.properties?.travelMax, 120);
+    $("propElevatorSpeed").value = num(c.properties?.motorSpeed, 90);
+    $("propMotorForce").value = num(c.properties?.motorForce, 45);
+    $("propStartDirection").value = String(num(c.properties?.startDirection, 1) < 0 ? -1 : 1);
+    $("propOutputKey").value = String(c.properties?.outputKey || "OUT1");
+    $("propOutputRank").value = Math.trunc(num(c.properties?.outputRank, 1));
     $("propBoost").value = num(c.properties?.boost, 1.15);
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     document.querySelectorAll(".dimension-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT"].includes(c.type);
     });
     document.querySelectorAll(".radius-field").forEach((el) => {
       el.hidden = !["PEG", "BUMPER", "SPAWN"].includes(c.type);
     });
     document.querySelectorAll(".physics-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR"].includes(c.type);
     });
     document.querySelectorAll(".rotator-field").forEach((el) => {
       el.hidden = c.type !== "ROTATOR";
@@ -500,8 +547,17 @@
     document.querySelectorAll(".motor-field").forEach((el) => {
       el.hidden = !["GEAR", "PADDLE"].includes(c.type);
     });
+    document.querySelectorAll(".gear-link-field").forEach((el) => {
+      el.hidden = c.type !== "GEAR";
+    });
     document.querySelectorAll(".launcher-field").forEach((el) => {
       el.hidden = c.type !== "LAUNCHER";
+    });
+    document.querySelectorAll(".elevator-field").forEach((el) => {
+      el.hidden = c.type !== "ELEVATOR";
+    });
+    document.querySelectorAll(".output-field").forEach((el) => {
+      el.hidden = c.type !== "OUTPUT";
     });
     document.querySelectorAll(".bumper-field").forEach((el) => {
       el.hidden = c.type !== "BUMPER";
@@ -519,7 +575,7 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type)) {
+    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT"].includes(c.type)) {
       c.width = Math.max(1, num($("propWidth").value, c.width));
       c.height = Math.max(1, num($("propHeight").value, c.height));
     }
@@ -528,7 +584,7 @@
     }
 
     c.properties = c.properties || {};
-    if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type)) {
+    if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR"].includes(c.type)) {
       c.properties.restitution = clamp(num($("propRestitution").value, .35), 0, 1.4);
       c.properties.friction = clamp(num($("propFriction").value, .05), 0, .5);
     }
@@ -551,7 +607,28 @@
       c.properties.motorSpeed = clamp(num($("propMotorSpeed").value, c.type === "GEAR" ? 120 : 180), -720, 720);
       c.properties.motorTorque = clamp(num($("propMotorTorque").value, c.type === "GEAR" ? 35 : 30), 0, 200);
     }
+    if (c.type === "GEAR") {
+      c.properties.linkedComponentId = $("propLinkedComponentId").value || "";
+      let ratio = clamp(num($("propGearRatio").value, -1), -20, 20);
+      if (Math.abs(ratio) < .01) ratio = -1;
+      c.properties.gearRatio = ratio;
+    }
     if (c.type === "LAUNCHER") c.properties.launchPower = clamp(num($("propLaunchPower").value, 1.2), 0, 5);
+    if (c.type === "ELEVATOR") {
+      c.properties.axisAngle = clamp(num($("propAxisAngle").value, -90), -360, 360);
+      c.properties.travelMin = clamp(num($("propTravelMin").value, -120), -1200, 1200);
+      c.properties.travelMax = clamp(num($("propTravelMax").value, 120), -1200, 1200);
+      if (c.properties.travelMin >= c.properties.travelMax) {
+        c.properties.travelMax = Math.min(1200, c.properties.travelMin + 1);
+      }
+      c.properties.motorSpeed = clamp(num($("propElevatorSpeed").value, 90), 1, 600);
+      c.properties.motorForce = clamp(num($("propMotorForce").value, 45), 0, 500);
+      c.properties.startDirection = Number($("propStartDirection").value) < 0 ? -1 : 1;
+    }
+    if (c.type === "OUTPUT") {
+      c.properties.outputKey = $("propOutputKey").value.trim() || "OUT1";
+      c.properties.outputRank = clamp(Math.trunc(num($("propOutputRank").value, 1)), 1, 64);
+    }
     if (c.type === "BUMPER") c.properties.boost = clamp(num($("propBoost").value, 1.15), 0, 3);
     if (c.type === "SPAWN") c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
 
@@ -561,6 +638,23 @@
     syncInspector();
     render();
     updateEditButtons();
+    validateClient(false);
+  }
+
+  function updateDrawRule() {
+    if (previewRunning) return;
+    pushUndo();
+    definition.drawRule = {
+      type: $("drawRuleType").value === "ORDERED_OUTPUT"
+        ? "ORDERED_OUTPUT"
+        : "RACE_FINISH",
+      winnerCount: clamp(
+        Math.trunc(num($("drawRuleWinnerCount").value, 0)),
+        0,
+        64
+      )
+    };
+    syncMapControls();
     validateClient(false);
   }
 
@@ -894,12 +988,16 @@
    "propRestitution","propFriction","propAngularSpeed","propPeriod",
    "propAmplitude","propOpenAngle","propGap","propThickness",
    "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
-   "propMotorSpeed","propMotorTorque","propLaunchPower",
-   "propBoost","propMarbleRadius"]
+   "propMotorSpeed","propMotorTorque","propLinkedComponentId","propGearRatio",
+   "propLaunchPower","propAxisAngle","propTravelMin","propTravelMax",
+   "propElevatorSpeed","propMotorForce","propStartDirection",
+   "propOutputKey","propOutputRank","propBoost","propMarbleRadius"]
     .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
     .forEach((id) => $(id).addEventListener("change", updateWorld));
+  ["drawRuleType","drawRuleWinnerCount"]
+    .forEach((id) => $(id).addEventListener("change", updateDrawRule));
 
   $("mapName").addEventListener("change", () => {
     if (previewRunning) return;
