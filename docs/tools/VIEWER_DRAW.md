@@ -795,6 +795,10 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 - Seesaw
 - Funnel
 - Splitter
+- Hinge / Pivot
+- Gear Rotor
+- Paddle
+- Launcher
 - Spawn
 - Finish
 - Canvas 배치/선택/드래그
@@ -864,6 +868,9 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - marble ↔ Peg/Bumper circle collision
 - Gate / Rotator / Pendulum / Seesaw time-driven collision
 - Funnel / Splitter composite rail collision
+- Hinge / Pivot preview collision
+- Gear / Paddle motor preview collision
+- Launcher one-shot contact impulse preview
 - marble ↔ marble collision
 - restitution
 - friction
@@ -1458,12 +1465,39 @@ V1의 Gate/Pendulum/Seesaw는 joint solver 기반 자유 회전체가 아니라 
 - 추첨 시작 전 브라우저로 참가자 snapshot 전달
 - CHZZK 대응 인터페이스
 
-### V8 — Goldberg / Machine Expansion
+### V8 — Goldberg / Machine Expansion — PARTIAL IMPLEMENTED
 
-V1 기본 장치 이후 확장:
+V2 구현 완료:
 
-- reactive joint / hinge component
-- Gear / Paddle / Elevator / Launcher
+- `HINGE`: 실제 Box2D revolute joint 기반 반응형 Pivot
+  - Marble 충돌 힘에 따라 자유 회전
+  - lower/upper angle limit
+  - zero-speed motor torque를 이용한 joint friction
+  - pivotRatio 설정
+- `GEAR`: 중심 revolute joint + motor 기반 교차 Rotor
+  - motorSpeed
+  - motorTorque
+  - 두 개의 직교 bar fixture
+- `PADDLE`: 한쪽 끝 pivot + motor 기반 회전 Paddle
+  - pivotRatio 기본 -0.48
+  - motorSpeed / motorTorque
+- `LAUNCHER`: 회전 방향 기준 접촉 impulse 장치
+  - 동일 Marble이 접촉을 유지하는 동안 1회만 발사
+  - launchPower 설정
+- 실제 Box2D snapshot의 runtimeRotation을 Canvas/Minimap 렌더링에 반영
+- Browser/Server 양쪽에서 V2 component property 범위 검증
+
+중요:
+
+- V1 `Gate/Pendulum/Seesaw`의 time-driven kinematic motion은 그대로 유지한다.
+- V2 `HINGE/GEAR/PADDLE`은 `b2RevoluteJoint` 기반 dynamic body다.
+- Map Maker 내장 Preview Engine은 V2 장치의 경로/충돌 확인용 근사 Preview이고, 실제 추첨 결과의 권위는 `Box2dWasmPhysicsAdapter`다.
+- 현재 `GEAR`는 독립 motor rotor다. 두 Gear를 맞물려 강제 coupling하는 Gear Joint/constraint는 아직 구현하지 않는다.
+
+잔여 확장:
+
+- Gear coupling / linked joint
+- Elevator / Linear actuator
 - Sound / Web Audio
 - Machine draw rule
 - Slot / Elimination / Cascade / Multi-output
@@ -1525,7 +1559,8 @@ Map Format
 → Camera / Rank / Minimap / Fast Forward / Stuck Recovery [IMPLEMENTED]
 → Finish Slow Motion / Podium [IMPLEMENTED]
 → Goldberg Components V1: Gate / Rotator / Pendulum / Seesaw / Funnel / Splitter [IMPLEMENTED]
-→ Sound / Reactive Joint / Advanced Machine Components
+→ Reactive Goldberg V2: Hinge / Gear Rotor / Paddle / Launcher [IMPLEMENTED]
+→ Gear Coupling / Elevator / Sound / Advanced Machine Components
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.
