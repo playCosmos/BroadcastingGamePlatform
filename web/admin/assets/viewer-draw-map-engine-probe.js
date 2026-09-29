@@ -56,6 +56,58 @@ requireCondition(
   "finish rank must contain unique marble ids"
 );
 
+const goldbergTypes = [
+  "GATE",
+  "ROTATOR",
+  "PENDULUM",
+  "SEESAW",
+  "FUNNEL",
+  "SPLITTER"
+];
+
+for (const [index, type] of goldbergTypes.entries()) {
+  const component = Engine.componentDefaults(
+    type,
+    80 + index * 100,
+    300
+  );
+  const candidate = structuredClone(definition);
+  candidate.components.splice(1, 0, component);
+  requireCondition(
+    Engine.validateDefinition(candidate).length === 0,
+    type + " component must validate"
+  );
+}
+
+const rotator = Engine.componentDefaults("ROTATOR", 300, 300);
+requireCondition(
+  Engine.motionRotation(rotator, 1)
+    !== Engine.motionRotation(rotator, 0),
+  "rotator motion must advance with simulation time"
+);
+
+const pendulum = Engine.componentDefaults("PENDULUM", 300, 300);
+requireCondition(
+  Engine.motionRotation(pendulum, 0.8)
+    !== Engine.motionRotation(pendulum, 0),
+  "pendulum motion must oscillate with simulation time"
+);
+
+requireCondition(
+  Engine.componentShapes(
+    Engine.componentDefaults("FUNNEL", 300, 300),
+    0
+  ).length === 2,
+  "funnel must expand to two collision rails"
+);
+requireCondition(
+  Engine.componentShapes(
+    Engine.componentDefaults("SPLITTER", 300, 300),
+    0
+  ).length === 2,
+  "splitter must expand to two collision rails"
+);
+
 const invalid = structuredClone(definition);
 invalid.components = invalid.components.filter(
   (component) => component.type !== "FINISH"
