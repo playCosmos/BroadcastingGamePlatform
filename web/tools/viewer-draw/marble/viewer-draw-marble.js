@@ -9,7 +9,7 @@
   const ctx = canvas.getContext("2d");
 
   let definition = Engine.defaultDefinition();
-  let adapter = new Physics.BuiltinBrowserPhysicsAdapter();
+  let adapter = null;
   let entries = [];
   let state = null;
   let running = false;
@@ -46,12 +46,34 @@
     if (errors.length) {
       throw new Error(errors.join(" · "));
     }
+    if (!adapter) {
+      throw new Error("physics adapter is not initialized");
+    }
     definition = structuredClone(next);
-    adapter = new Physics.BuiltinBrowserPhysicsAdapter();
     adapter.loadMap(definition);
     $("mapName").textContent = definition.name;
     $("mapSchema").textContent = definition.schemaVersion;
     resetDraw();
+  }
+
+  async function createPhysicsAdapter() {
+    const preferred = new Physics.Box2dWasmPhysicsAdapter();
+    try {
+      $("engineBadge").textContent = "BOX2D-WASM LOADING";
+      await preferred.init();
+      $("engineBadge").textContent = preferred.engineId();
+      return preferred;
+    } catch (error) {
+      console.warn(
+        "[viewer-draw] box2d-wasm unavailable; using builtin fallback",
+        error
+      );
+      const fallback = new Physics.BuiltinBrowserPhysicsAdapter();
+      await fallback.init();
+      $("engineBadge").textContent =
+        fallback.engineId() + " · FALLBACK";
+      return fallback;
+    }
   }
 
   function fit() {
@@ -232,7 +254,11 @@
     if (running) frameId = requestAnimationFrame(tick);
   }
 
-  function startDraw() {
+  async function startDraw() {
+    if (!adapter) {
+      alert("물리 엔진 초기화가 아직 완료되지 않았습니다.");
+      return;
+    }
     entries = parseEntries();
     if (!entries.length) {
       alert("참가자를 1명 이상 입력하세요.");
@@ -266,6 +292,7 @@
 
   function resetDraw() {
     cancelAnimationFrame(frameId);
+    if (!adapter) return;
     frameId = 0;
     running = false;
     completed = false;
@@ -310,7 +337,16 @@
 
   new ResizeObserver(render).observe(wrap);
 
-  updateEntryCount();
-  loadDefinition(definition);
-  $("engineBadge").textContent = adapter.engineId();
+  async function boot() {
+    updateEntryCount();
+    adapter = await createPhysicsAdapter();
+    loadDefinition(definition);
+  }
+
+  boot().catch((error) => {
+    console.error("[viewer-draw] marble runtime boot failed", error);
+    $("engineBadge").textContent = "PHYSICS ERROR";
+    $("drawState").textContent = "ERROR";
+    alert("Marble 물리 엔진 초기화 실패: " + error.message);
+  });
 })();
