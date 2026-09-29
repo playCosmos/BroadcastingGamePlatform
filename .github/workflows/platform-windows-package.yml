@@ -27,6 +27,10 @@ jobs:
           java-version: "25"
           cache: maven
 
+      - name: Prepare browser physics assets
+        shell: pwsh
+        run: ./server/prepare-browser-physics.ps1
+
       - name: Check browser JavaScript
         shell: pwsh
         run: |
@@ -44,6 +48,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/tools/viewer-draw/marble/browser-physics-adapter.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          if (-not (Test-Path "web/vendor/box2d-wasm/entry.js")) { throw "box2d-wasm entry missing" }
+          if (-not (Test-Path "web/vendor/box2d-wasm/Box2D.simd.wasm")) { throw "box2d-wasm SIMD wasm missing" }
           node --check web/tools/viewer-draw/marble/viewer-draw-marble.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node web/tools/viewer-draw/marble/browser-physics-adapter-probe.js
@@ -149,6 +155,9 @@ jobs:
           if (Test-Path (Join-Path $root "config.json")) { throw "live config.json must not be shipped" }
           if (-not (Test-Path (Join-Path $root "config.example.json"))) { throw "config.example.json missing" }
           if (-not (Test-Path (Join-Path $root "runtime/bin/server/jvm.dll"))) { throw "bundled runtime missing" }
+          if (-not (Test-Path (Join-Path $root "THIRD_PARTY_NOTICES.md"))) { throw "third-party notices missing" }
+          if (-not (Test-Path (Join-Path $root "web/vendor/box2d-wasm/entry.js"))) { throw "packaged box2d-wasm entry missing" }
+          if (-not (Test-Path (Join-Path $root "web/vendor/box2d-wasm/Box2D.simd.wasm"))) { throw "packaged box2d-wasm SIMD wasm missing" }
 
           @(
             "web/index.html",
