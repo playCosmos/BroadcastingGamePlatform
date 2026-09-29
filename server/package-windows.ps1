@@ -61,7 +61,6 @@ if (-not (Test-Path $Exe)) {
 
 # Never ship a live config.json. First launch creates it only when missing.
 Copy-Item (Join-Path $ServerRoot "config.example.json") (Join-Path $AppRoot "config.example.json") -Force
-Copy-Item (Join-Path $RepoRoot "THIRD_PARTY_NOTICES.md") (Join-Path $AppRoot "THIRD_PARTY_NOTICES.md") -Force
 
 $WebSource = Join-Path $RepoRoot "web"
 $WebRoot = Join-Path $AppRoot "web"
@@ -80,7 +79,7 @@ Broadcasting Game Platform Server
 - Viewer Draw Random / Number
 - Viewer Draw Marble Map Maker V0
 - Viewer Draw Physics Preview Engine V0
-- Viewer Draw JBox2D Production Physics V0
+- Viewer Draw Browser Marble Physics V0
 
 플랫폼 역할
 -----------
@@ -92,7 +91,7 @@ Broadcasting Game Platform Server
 - SOOP 채팅/후원 Provider
 - 공용 Event Bus
 - Marble Machine Map 저장/리비전/hash
-- 서버 권위 JBox2D 물리 시뮬레이션
+- 브라우저 독립 Marble 물리 추첨
 - 추후 CHZZK Provider 확장
 
 접속 주소
