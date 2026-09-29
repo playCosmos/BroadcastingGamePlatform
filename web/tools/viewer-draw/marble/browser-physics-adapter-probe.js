@@ -91,7 +91,7 @@ goldbergDefinition.components.splice(
     "PADDLE",
     "LAUNCHER"
   ].map((type, index) =>
-    Engine.componentDefaults(type, 80 + index * 110, 300)
+    Engine.componentDefaults(type, 70 + index * 65, 300)
   )
 );
 requireCondition(
