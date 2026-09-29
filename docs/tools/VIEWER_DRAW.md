@@ -1189,11 +1189,15 @@ Bell/Xylophone/Metal Plate 등을 지나며 음악적 소리를 만드는 추첨
 
 장치를 통과하며 Marble 수가 줄어드는 생존형.
 
-현재 Browser Marble Draw 기본맵은 이 계열의 **Retro Cadet Survivor V2**를 사용한다.
+현재 Browser Marble Draw 기본맵은 이 계열의 **Retro Cadet Survivor V3**를 사용한다.
 
 - Windows XP 시절 우주 테마 핀볼의 전체 실루엣과 플레이 감각을 강하게 오마주하되 원본 자산/정확한 데칼을 직접 복제하지 않는다.
+- 플레이필드는 외곽 rail이 끊기지 않는 **닫힌 핀볼 게임판**으로 구성한다.
+- 외곽 rail은 끝점을 공유하도록 생성해 Marble이 보드 밖으로 빠질 틈을 만들지 않는다.
 - 플레이필드 왼쪽 약 80%, 우측 독립 Shooter Lane 약 20% 비율로 구성한다.
-- 우측 Hopper/Funnel → Launcher → Shooter Lane → 상단 Orbit 순으로 BURST Marble을 투입한다.
+- 우측 Hopper/Funnel → Launcher → 직선 Shooter Lane → 상단 곡선 채널 → 플레이필드 순으로 BURST Marble을 투입한다.
+- Shooter Lane 안쪽 벽은 상단에서 종료되고, 별도의 곡선 rail들이 왼쪽으로 휘어 Marble을 게임판 안쪽으로 밀어 넣는다.
+- Shooter 곡선 출구는 수직 wall로 봉쇄하지 않는다.
 - 기본 Launcher는 `launchDirectionDegrees=-90`으로 위쪽을 향한다.
 - 상단에는 3개 Bumper Cluster와 아치형 Orbit을 배치한다.
 - 좌측에는 보라색 곡선 Ramp 계열 통로를 둔다.

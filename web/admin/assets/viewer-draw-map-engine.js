@@ -300,6 +300,28 @@
         visualStroke
       }
     });
+    const rail = (
+      x1, y1, x2, y2,
+      visualFill, visualStroke,
+      thickness = 20
+    ) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      return styled(
+        {
+          ...componentDefaults(
+            "WALL",
+            (x1 + x2) / 2,
+            (y1 + y2) / 2
+          ),
+          width:Math.hypot(dx,dy),
+          height:thickness,
+          rotation:Math.atan2(dy,dx)*180/Math.PI
+        },
+        visualFill,
+        visualStroke
+      );
+    };
     const reactorPeg = (index) => {
       const angle = index / 16 * Math.PI * 2;
       return styled(
@@ -327,7 +349,7 @@
 
     return {
       schemaVersion:SCHEMA_VERSION,
-      name:"Retro Cadet Survivor V2",
+      name:"Retro Cadet Survivor V3",
       world:{width:1280,height:900,gravityX:0,gravityY:12,visualBackground:"#102758"},
       drawRule:{type:"LAST_SURVIVOR",winnerCount:1},
       runPolicy:{
@@ -346,50 +368,52 @@
           spawnRole:"LAUNCHER"
         }},
         styled(
-          {...componentDefaults("FUNNEL",1090,690),width:132,height:150,rotation:0,properties:{
-            restitution:.3,friction:.045,gap:46,thickness:12,
+          {...componentDefaults("FUNNEL",1090,690),width:144,height:150,rotation:0,properties:{
+            restitution:.3,friction:.045,gap:58,thickness:12,
             soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.75
           }},
           "#1c4059","#65bfe9"
         ),
         styled(
           {...componentDefaults("LAUNCHER",1090,838),width:132,height:24,rotation:0,properties:{
-            restitution:.48,
-            friction:.03,
-            launchPower:2.7,
+            restitution:.5,
+            friction:.025,
+            launchPower:4.0,
             launchDirectionDegrees:-90,
-            launchSpreadDegrees:22,
-            launchPowerVariance:.25,
+            launchSpreadDegrees:8,
+            launchPowerVariance:.16,
             soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.75
           }},
           "#335f72","#8bd8f5"
         ),
 
-        // Shooter lane rails.
-        styled(
-          {...componentDefaults("WALL",1180,470),width:800,height:18,rotation:90},
-          "#7d5636","#d4a063"
-        ),
-        styled(
-          {...componentDefaults("WALL",1008,540),width:570,height:18,rotation:90},
-          "#6a472e","#c48750"
-        ),
-        styled(
-          {...componentDefaults("RAMP",1060,205),width:190,height:18,rotation:-31},
-          "#6f4c31","#d19a5d"
-        ),
-        styled(
-          {...componentDefaults("RAMP",973,142),width:165,height:18,rotation:-10},
-          "#6f4c31","#d19a5d"
-        ),
+        // Closed pinball cabinet perimeter.
+        // Every segment shares an exact endpoint with the next segment.
+        rail(60,886,60,235,"#513821","#bd8149"),
+        rail(60,235,125,123,"#5d4028","#ca9158"),
+        rail(125,123,230,72,"#65452b","#d19a61"),
+        rail(230,72,400,54,"#6c4a2e","#d5a066"),
+        rail(400,54,595,52,"#704d30","#d8a46a"),
+        rail(595,52,797,55,"#704d30","#d8a46a"),
+        rail(797,55,945,65,"#704d30","#d8a46a"),
 
-        // Top arch / orbit.
-        styled({...componentDefaults("RAMP",845,105),width:220,height:18,rotation:10},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",680,82),width:170,height:18,rotation:3},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",505,82),width:180,height:18,rotation:-3},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",335,108),width:200,height:18,rotation:-12},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",205,165),width:150,height:18,rotation:-31},"#765234","#d6a16a"),
-        styled({...componentDefaults("WALL",128,330),width:330,height:18,rotation:78},"#604229","#c58a52"),
+        // Shooter outer curve and right cabinet wall.
+        rail(945,65,1082,75,"#704d30","#d8a46a"),
+        rail(1082,75,1157,118,"#704d30","#d8a46a"),
+        rail(1157,118,1188,170,"#6f4c31","#d19a5d"),
+        rail(1188,170,1190,886,"#5d4028","#ca9158"),
+
+        // Bottom cabinet closes the table completely.
+        rail(1190,886,60,886,"#513821","#bd8149"),
+
+        // Shooter inner rail: straight vertical rise, then a true open curve
+        // into the upper-right playfield. It ends at x=805 instead of sealing
+        // the lane across the board.
+        rail(1005,835,1005,325,"#4f3724","#b77b48"),
+        rail(1005,325,990,280,"#4f3724","#b77b48"),
+        rail(990,280,958,238,"#513824","#bb7e4a"),
+        rail(958,238,910,204,"#573c26","#c4864f"),
+        rail(910,204,850,182,"#5d4028","#ca9158"),
 
         // Top bumper cluster.
         styled({...componentDefaults("BUMPER",425,225),radius:35,properties:{
