@@ -177,7 +177,7 @@ Map DB는 제작 편의 기능이며 실제 추첨 런타임의 필수 의존성
 /tools/viewer-draw/marble/
 ~~~
 
-현재 기본 Authority는 `Box2dWasmPhysicsAdapter`이며 `box2d-wasm@7.0.0`을 패키지 내부 정적 자산으로 사용한다.
-`BuiltinBrowserPhysicsAdapter`는 WASM 초기화 실패용 fallback이다.
+실제 Marble Draw Authority는 `Box2dWasmPhysicsAdapter` 단일 경로이며 `box2d-wasm@7.0.0`을 패키지 내부 정적 자산으로 사용한다.
+`BuiltinBrowserPhysicsAdapter`는 Map Maker/회귀 검증용 보조 엔진이며 실제 Marble Draw Authority로 사용하지 않는다.
 
 lazygyu/roulette의 `IPhysics`, `Box2dPhysics`, `Camera`, `RankRenderer`, `Minimap`, `FastForwader` 구조를 브라우저 런타임 계층에서 계승한다.
