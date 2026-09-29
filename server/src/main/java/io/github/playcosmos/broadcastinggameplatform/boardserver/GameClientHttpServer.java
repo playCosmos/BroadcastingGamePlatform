@@ -387,7 +387,11 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "name", "시청자 추첨",
                     "status", "AVAILABLE",
                     "adminPath", "/admin/tools/viewer-draw/",
-                    "modes", java.util.List.of("RANDOM", "NUMBER")
+                    "modes", java.util.List.of("RANDOM", "NUMBER"),
+                    "features", java.util.List.of(
+                        "MARBLE_MAP_MAKER_V0",
+                        "PHYSICS_PREVIEW_ENGINE_V0"
+                    )
                 )
             ),
             "providers", java.util.List.of(
