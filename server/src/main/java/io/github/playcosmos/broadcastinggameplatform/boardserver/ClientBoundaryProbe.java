@@ -731,6 +731,35 @@ public final class ClientBoundaryProbe {
                 "authenticated machine map must reload"
             );
 
+            var machineMapSimulation = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/maps/"
+                            + machineMapId + "/simulate"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"seed\":42,\"marbleCount\":4,\"timeoutSeconds\":10}"
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                machineMapSimulation.statusCode() == 200
+                    && machineMapSimulation.body().contains(
+                        "\"engineId\":\"JBOX2D\""
+                    )
+                    && machineMapSimulation.body().contains(
+                        "\"finishOrder\""
+                    )
+                    && machineMapSimulation.body().contains(
+                        "\"mapHash\""
+                    ),
+                "authenticated machine map must run through production physics"
+            );
+
             var drawingSessionCreate = client.send(
                 HttpRequest.newBuilder(
                     base.resolve(
