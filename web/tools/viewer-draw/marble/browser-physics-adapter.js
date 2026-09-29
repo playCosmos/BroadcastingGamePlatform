@@ -193,8 +193,8 @@
       this.time = 0;
       this.seed = 1;
       this.runtimeWinnerCount = 0;
-      this.launchMode = "SEQUENTIAL";
-      this.launchIntervalSeconds = 0.24;
+      this.launchMode = "BURST";
+      this.launchIntervalSeconds = 0.09;
       this.nextLaunchIndex = 0;
       this.nextLaunchAt = 0;
       this.launchedCount = 0;
@@ -938,13 +938,13 @@
         )
       );
       this.launchMode =
-        String(options?.launchMode || "SEQUENTIAL").toUpperCase()
+        String(options?.launchMode || "BURST").toUpperCase()
           === "BUNCH"
           ? "BUNCH"
-          : "SEQUENTIAL";
+          : "BURST";
       this.launchIntervalSeconds = Math.max(
         0.04,
-        Number(options?.launchIntervalMs || 240) / 1000
+        Number(options?.launchIntervalMs || 90) / 1000
       );
       this.nextLaunchIndex = 0;
       this.nextLaunchAt = 0;
@@ -1012,10 +1012,13 @@
         const spread = this.launchMode === "BUNCH"
           ? Math.sqrt(localIndex + 1)
             * Math.min(radius * 1.35, 16)
-          : 0;
+          : Math.min(
+              22,
+              Math.sqrt((localIndex % 9) + 1) * radius * 0.55
+            );
 
         const x = spawn.x + Math.cos(angle) * spread;
-        const y = spawn.y + Math.sin(angle) * spread;
+        const y = spawn.y + Math.sin(angle) * spread * 0.45;
         const B = this.Box2D;
         const bodyDef = new B.b2BodyDef();
         bodyDef.set_type(B.b2_dynamicBody);
@@ -1080,27 +1083,38 @@
 
     releaseQueuedMarbles() {
       if (
-        this.launchMode !== "SEQUENTIAL"
+        this.launchMode !== "BURST"
         || this.nextLaunchIndex >= this.marbles.length
         || this.time + 1e-9 < this.nextLaunchAt
       ) {
         return;
       }
 
-      const marble = this.marbles[this.nextLaunchIndex];
-      marble.body.SetEnabled(true);
-      marble.body.SetAwake(true);
-      marble.body.SetLinearVelocity(
-        new this.Box2D.b2Vec2(
-          ((this.random() - 0.5) * 4) / PIXELS_PER_METER,
-          0
-        )
+      const remaining = this.marbles.length - this.nextLaunchIndex;
+      const burstSize = Math.min(
+        remaining,
+        3 + Math.floor(this.random() * 5)
       );
-      marble.launched = true;
-      marble.launchedAt = this.time;
-      this.nextLaunchIndex += 1;
-      this.launchedCount += 1;
-      this.nextLaunchAt = this.time + this.launchIntervalSeconds;
+
+      for (let i = 0; i < burstSize; i += 1) {
+        const marble = this.marbles[this.nextLaunchIndex];
+        marble.body.SetEnabled(true);
+        marble.body.SetAwake(true);
+        marble.body.SetLinearVelocity(
+          new this.Box2D.b2Vec2(
+            ((this.random() - 0.5) * 14) / PIXELS_PER_METER,
+            ((this.random() - 0.5) * 5) / PIXELS_PER_METER
+          )
+        );
+        marble.launched = true;
+        marble.launchedAt = this.time;
+        this.nextLaunchIndex += 1;
+        this.launchedCount += 1;
+      }
+
+      this.nextLaunchAt =
+        this.time
+        + this.launchIntervalSeconds * (0.65 + this.random() * 0.7);
     }
 
     step(deltaSeconds) {
@@ -1218,9 +1232,35 @@
             launcher.id
           );
 
+          const spreadDegrees = clamp(
+            property(
+              launcher.properties,
+              "launchSpreadDegrees",
+              18
+            ),
+            0,
+            55
+          );
+          const powerVariance = clamp(
+            property(
+              launcher.properties,
+              "launchPowerVariance",
+              0.22
+            ),
+            0,
+            0.75
+          );
+          const angleJitter =
+            (this.random() * 2 - 1) * spreadDegrees;
           const angle =
-            ((launcher.rotation || 0) - 90) * Math.PI / 180;
-          const impulse = power * 0.18;
+            ((launcher.rotation || 0) - 90 + angleJitter)
+            * Math.PI / 180;
+          const randomizedPower =
+            power * (
+              1
+              + (this.random() * 2 - 1) * powerVariance
+            );
+          const impulse = randomizedPower * 0.18;
           marble.body.ApplyLinearImpulseToCenter(
             new B.b2Vec2(
               Math.cos(angle) * impulse,
