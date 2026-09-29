@@ -56,6 +56,413 @@ public final class ViewerDrawService {
         Object result
     ) {}
 
+    public record MachineWorld(
+        double width,
+        double height,
+        double gravityX,
+        double gravityY
+    ) {}
+
+    public record MachineComponent(
+        String id,
+        String type,
+        double x,
+        double y,
+        double rotation,
+        double width,
+        double height,
+        double radius,
+        Map<String, Object> properties
+    ) {}
+
+    public record MachineMapDefinition(
+        String schemaVersion,
+        String name,
+        MachineWorld world,
+        List<MachineComponent> components
+    ) {}
+
+    public record MachineMap(
+        String mapId,
+        String name,
+        int revision,
+        String status,
+        String schemaVersion,
+        String definitionHash,
+        String createdAt,
+        String updatedAt,
+        MachineMapDefinition definition
+    ) {}
+
+    public MachineMap saveMachineMap(
+        String mapId,
+        MachineMapDefinition definition
+    ) throws SQLException {
+        MachineMapDefinition normalized = normalizeMachineMap(definition);
+        String id = mapId == null || mapId.isBlank()
+            ? UUID.randomUUID().toString()
+            : mapId.trim();
+        String now = Instant.now().toString();
+        String json = GSON.toJson(normalized);
+        String hash = sha256(json);
+
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            try {
+                int currentRevision = 0;
+                String createdAt = now;
+                try (var statement = connection.prepareStatement("""
+                    SELECT revision, created_at
+                    FROM viewer_draw_machine_map
+                    WHERE map_id = ?
+                    """)) {
+                    statement.setString(1, id);
+                    try (var rows = statement.executeQuery()) {
+                        if (rows.next()) {
+                            currentRevision = rows.getInt("revision");
+                            createdAt = rows.getString("created_at");
+                        }
+                    }
+                }
+
+                if (currentRevision == 0) {
+                    try (var statement = connection.prepareStatement("""
+                        INSERT INTO viewer_draw_machine_map(
+                          map_id, name, revision, status, schema_version,
+                          definition_json, definition_hash,
+                          created_at, updated_at
+                        ) VALUES (?, ?, 1, 'DRAFT', ?, ?, ?, ?, ?)
+                        """)) {
+                        statement.setString(1, id);
+                        statement.setString(2, normalized.name());
+                        statement.setString(3, normalized.schemaVersion());
+                        statement.setString(4, json);
+                        statement.setString(5, hash);
+                        statement.setString(6, createdAt);
+                        statement.setString(7, now);
+                        statement.executeUpdate();
+                    }
+                } else {
+                    try (var statement = connection.prepareStatement("""
+                        UPDATE viewer_draw_machine_map
+                        SET name = ?,
+                            revision = revision + 1,
+                            schema_version = ?,
+                            definition_json = ?,
+                            definition_hash = ?,
+                            updated_at = ?
+                        WHERE map_id = ?
+                        """)) {
+                        statement.setString(1, normalized.name());
+                        statement.setString(2, normalized.schemaVersion());
+                        statement.setString(3, json);
+                        statement.setString(4, hash);
+                        statement.setString(5, now);
+                        statement.setString(6, id);
+                        if (statement.executeUpdate() != 1) {
+                            throw new IllegalStateException(
+                                "machine map changed before save"
+                            );
+                        }
+                    }
+                }
+                connection.commit();
+            } catch (Exception error) {
+                connection.rollback();
+                if (error instanceof SQLException sql) throw sql;
+                throw new SQLException("failed to save machine map", error);
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        }
+        return findMachineMap(id);
+    }
+
+    public List<MachineMap> recentMachineMaps(int limit)
+        throws SQLException {
+        int normalizedLimit = Math.max(1, Math.min(100, limit));
+        var ids = new ArrayList<String>();
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT map_id
+                 FROM viewer_draw_machine_map
+                 WHERE status <> 'ARCHIVED'
+                 ORDER BY updated_at DESC
+                 LIMIT ?
+                 """)) {
+            statement.setInt(1, normalizedLimit);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) ids.add(rows.getString(1));
+            }
+        }
+
+        var result = new ArrayList<MachineMap>();
+        for (String id : ids) result.add(findMachineMap(id));
+        return List.copyOf(result);
+    }
+
+    public MachineMap findMachineMap(String mapId)
+        throws SQLException {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT name, revision, status, schema_version,
+                        definition_json, definition_hash,
+                        created_at, updated_at
+                 FROM viewer_draw_machine_map
+                 WHERE map_id = ?
+                 """)) {
+            statement.setString(1, mapId);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new NoSuchElementException(
+                        "viewer draw machine map not found"
+                    );
+                }
+                String json = rows.getString("definition_json");
+                return new MachineMap(
+                    mapId,
+                    rows.getString("name"),
+                    rows.getInt("revision"),
+                    rows.getString("status"),
+                    rows.getString("schema_version"),
+                    rows.getString("definition_hash"),
+                    rows.getString("created_at"),
+                    rows.getString("updated_at"),
+                    GSON.fromJson(json, MachineMapDefinition.class)
+                );
+            }
+        }
+    }
+
+    public void archiveMachineMap(String mapId) throws SQLException {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 UPDATE viewer_draw_machine_map
+                 SET status = 'ARCHIVED', updated_at = ?
+                 WHERE map_id = ? AND status <> 'ARCHIVED'
+                 """)) {
+            statement.setString(1, Instant.now().toString());
+            statement.setString(2, mapId);
+            if (statement.executeUpdate() != 1) {
+                throw new NoSuchElementException(
+                    "viewer draw machine map not found"
+                );
+            }
+        }
+    }
+
+    public List<String> validateMachineMap(
+        MachineMapDefinition definition
+    ) {
+        try {
+            normalizeMachineMap(definition);
+            return List.of();
+        } catch (IllegalArgumentException error) {
+            return List.of(error.getMessage());
+        }
+    }
+
+    private static MachineMapDefinition normalizeMachineMap(
+        MachineMapDefinition raw
+    ) {
+        if (raw == null) {
+            throw new IllegalArgumentException(
+                "machine map definition is required"
+            );
+        }
+
+        String schemaVersion = raw.schemaVersion() == null
+            ? ""
+            : raw.schemaVersion().trim();
+        if (!"viewer-draw-machine-map/v0".equals(schemaVersion)) {
+            throw new IllegalArgumentException(
+                "schemaVersion must be viewer-draw-machine-map/v0"
+            );
+        }
+
+        String name = raw.name() == null ? "" : raw.name().trim();
+        if (name.isBlank() || name.length() > 80) {
+            throw new IllegalArgumentException(
+                "map name must be 1..80 characters"
+            );
+        }
+
+        MachineWorld world = raw.world();
+        if (world == null) {
+            throw new IllegalArgumentException("world is required");
+        }
+        requireFinite(world.width(), "world.width");
+        requireFinite(world.height(), "world.height");
+        requireFinite(world.gravityX(), "world.gravityX");
+        requireFinite(world.gravityY(), "world.gravityY");
+        if (
+            world.width() < 320 || world.width() > 3840
+            || world.height() < 240 || world.height() > 2160
+        ) {
+            throw new IllegalArgumentException(
+                "world size is outside supported range"
+            );
+        }
+        if (
+            Math.abs(world.gravityX()) > 50
+            || Math.abs(world.gravityY()) > 50
+        ) {
+            throw new IllegalArgumentException(
+                "gravity must remain within -50..50"
+            );
+        }
+
+        List<MachineComponent> rawComponents =
+            raw.components() == null ? List.of() : raw.components();
+        if (rawComponents.size() > 500) {
+            throw new IllegalArgumentException(
+                "machine map supports at most 500 components"
+            );
+        }
+
+        var allowedTypes = java.util.Set.of(
+            "WALL", "RAMP", "PEG", "BUMPER", "SPAWN", "FINISH"
+        );
+        var ids = new java.util.LinkedHashSet<String>();
+        var normalizedComponents = new ArrayList<MachineComponent>();
+        int spawnCount = 0;
+        int finishCount = 0;
+
+        for (MachineComponent rawComponent : rawComponents) {
+            if (rawComponent == null) continue;
+            String id = rawComponent.id() == null
+                ? ""
+                : rawComponent.id().trim();
+            String type = rawComponent.type() == null
+                ? ""
+                : rawComponent.type().trim().toUpperCase(Locale.ROOT);
+
+            if (id.isBlank() || !ids.add(id)) {
+                throw new IllegalArgumentException(
+                    "component ids must be non-empty and unique"
+                );
+            }
+            if (!allowedTypes.contains(type)) {
+                throw new IllegalArgumentException(
+                    "unsupported component type: " + type
+                );
+            }
+
+            requireFinite(rawComponent.x(), id + ".x");
+            requireFinite(rawComponent.y(), id + ".y");
+            requireFinite(rawComponent.rotation(), id + ".rotation");
+            requireFinite(rawComponent.width(), id + ".width");
+            requireFinite(rawComponent.height(), id + ".height");
+            requireFinite(rawComponent.radius(), id + ".radius");
+
+            if (
+                rawComponent.x() < 0 || rawComponent.x() > world.width()
+                || rawComponent.y() < 0 || rawComponent.y() > world.height()
+            ) {
+                throw new IllegalArgumentException(
+                    id + " origin must remain inside world"
+                );
+            }
+
+            if (
+                ("WALL".equals(type) || "RAMP".equals(type))
+                && (
+                    rawComponent.width() < 8
+                    || rawComponent.height() < 2
+                )
+            ) {
+                throw new IllegalArgumentException(
+                    id + " requires positive wall/ramp dimensions"
+                );
+            }
+
+            if (
+                ("PEG".equals(type) || "BUMPER".equals(type)
+                    || "SPAWN".equals(type))
+                && (
+                    rawComponent.radius() < 3
+                    || rawComponent.radius() > 120
+                )
+            ) {
+                throw new IllegalArgumentException(
+                    id + " radius must be 3..120"
+                );
+            }
+
+            if (
+                "FINISH".equals(type)
+                && (
+                    rawComponent.width() < 10
+                    || rawComponent.height() < 10
+                )
+            ) {
+                throw new IllegalArgumentException(
+                    id + " finish size must be at least 10x10"
+                );
+            }
+
+            if ("SPAWN".equals(type)) spawnCount += 1;
+            if ("FINISH".equals(type)) finishCount += 1;
+
+            normalizedComponents.add(
+                new MachineComponent(
+                    id,
+                    type,
+                    rawComponent.x(),
+                    rawComponent.y(),
+                    rawComponent.rotation(),
+                    rawComponent.width(),
+                    rawComponent.height(),
+                    rawComponent.radius(),
+                    rawComponent.properties() == null
+                        ? Map.of()
+                        : Map.copyOf(rawComponent.properties())
+                )
+            );
+        }
+
+        if (spawnCount < 1) {
+            throw new IllegalArgumentException(
+                "machine map requires at least one SPAWN"
+            );
+        }
+        if (finishCount < 1) {
+            throw new IllegalArgumentException(
+                "machine map requires at least one FINISH"
+            );
+        }
+
+        return new MachineMapDefinition(
+            schemaVersion,
+            name,
+            new MachineWorld(
+                world.width(),
+                world.height(),
+                world.gravityX(),
+                world.gravityY()
+            ),
+            List.copyOf(normalizedComponents)
+        );
+    }
+
+    private static void requireFinite(double value, String name) {
+        if (!Double.isFinite(value)) {
+            throw new IllegalArgumentException(name + " must be finite");
+        }
+    }
+
+    private static String sha256(String value) {
+        try {
+            return java.util.HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(
+                    value.getBytes(StandardCharsets.UTF_8)
+                )
+            );
+        } catch (Exception error) {
+            throw new IllegalStateException("failed to hash machine map", error);
+        }
+    }
+
     public Session create(
         String name,
         String mode,
