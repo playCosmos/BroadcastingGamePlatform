@@ -177,6 +177,12 @@
       RAMP: ["#a36e36", "#e0a45c"],
       PEG: ["#d0d6db", "#f5f7f8"],
       BUMPER: ["#8f3d46", "#e17a84"],
+      GATE: ["#6d4e9a", "#b995ee"],
+      ROTATOR: ["#875b2f", "#f0b36a"],
+      PENDULUM: ["#496b8f", "#82b6e9"],
+      SEESAW: ["#6b6650", "#c5bb86"],
+      FUNNEL: ["#356f71", "#73c9cb"],
+      SPLITTER: ["#5e527d", "#a99bd3"],
       SPAWN: ["#216e8f", "#62c3e7"],
       FINISH: ["#367c4d", "#74d191"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -294,7 +300,14 @@
     );
 
     drawGrid(view);
-    for (const c of definition.components) drawComponent(c, view);
+    for (const c of definition.components) {
+      const shapes = Engine.componentShapes
+        ? Engine.componentShapes(c, previewSnapshot?.time || 0)
+        : [c];
+      for (const shape of shapes) {
+        drawComponent({ ...shape, id: c.id, type: c.type }, view);
+      }
+    }
     drawMarbles(view);
 
     ctx.save();
@@ -411,17 +424,41 @@
     $("propRadius").value = c.radius || 0;
     $("propRestitution").value = num(c.properties?.restitution, c.type === "BUMPER" ? .95 : .35);
     $("propFriction").value = num(c.properties?.friction, .05);
+    $("propAngularSpeed").value = num(c.properties?.angularSpeed, 90);
+    $("propPeriod").value = num(c.properties?.period, c.type === "GATE" ? 3.6 : 3.2);
+    $("propAmplitude").value = num(c.properties?.amplitude, c.type === "SEESAW" ? 14 : 42);
+    $("propOpenAngle").value = num(c.properties?.openAngle, 78);
+    $("propGap").value = num(c.properties?.gap, 52);
+    $("propThickness").value = num(c.properties?.thickness, 14);
     $("propBoost").value = num(c.properties?.boost, 1.15);
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     document.querySelectorAll(".dimension-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "FINISH"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type);
     });
     document.querySelectorAll(".radius-field").forEach((el) => {
       el.hidden = !["PEG", "BUMPER", "SPAWN"].includes(c.type);
     });
     document.querySelectorAll(".physics-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type);
+    });
+    document.querySelectorAll(".rotator-field").forEach((el) => {
+      el.hidden = c.type !== "ROTATOR";
+    });
+    document.querySelectorAll(".motion-period-field").forEach((el) => {
+      el.hidden = !["GATE", "PENDULUM", "SEESAW"].includes(c.type);
+    });
+    document.querySelectorAll(".swing-field").forEach((el) => {
+      el.hidden = !["PENDULUM", "SEESAW"].includes(c.type);
+    });
+    document.querySelectorAll(".gate-field").forEach((el) => {
+      el.hidden = c.type !== "GATE";
+    });
+    document.querySelectorAll(".funnel-field").forEach((el) => {
+      el.hidden = c.type !== "FUNNEL";
+    });
+    document.querySelectorAll(".thickness-field").forEach((el) => {
+      el.hidden = !["FUNNEL", "SPLITTER"].includes(c.type);
     });
     document.querySelectorAll(".bumper-field").forEach((el) => {
       el.hidden = c.type !== "BUMPER";
@@ -439,7 +476,7 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "RAMP", "FINISH"].includes(c.type)) {
+    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type)) {
       c.width = Math.max(1, num($("propWidth").value, c.width));
       c.height = Math.max(1, num($("propHeight").value, c.height));
     }
@@ -448,10 +485,16 @@
     }
 
     c.properties = c.properties || {};
-    if (["WALL", "RAMP", "PEG", "BUMPER"].includes(c.type)) {
+    if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type)) {
       c.properties.restitution = clamp(num($("propRestitution").value, .35), 0, 1.4);
       c.properties.friction = clamp(num($("propFriction").value, .05), 0, .5);
     }
+    if (c.type === "ROTATOR") c.properties.angularSpeed = clamp(num($("propAngularSpeed").value, 90), -720, 720);
+    if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) c.properties.period = clamp(num($("propPeriod").value, 3.2), .25, 30);
+    if (["PENDULUM", "SEESAW"].includes(c.type)) c.properties.amplitude = clamp(num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42), 0, 120);
+    if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
+    if (c.type === "FUNNEL") c.properties.gap = clamp(num($("propGap").value, 52), 8, Math.max(8, c.width * .8));
+    if (["FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, 14), 4, 80);
     if (c.type === "BUMPER") c.properties.boost = clamp(num($("propBoost").value, 1.15), 0, 3);
     if (c.type === "SPAWN") c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
 
@@ -791,7 +834,9 @@
   });
 
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
-   "propRestitution","propFriction","propBoost","propMarbleRadius"]
+   "propRestitution","propFriction","propAngularSpeed","propPeriod",
+   "propAmplitude","propOpenAngle","propGap","propThickness",
+   "propBoost","propMarbleRadius"]
     .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
