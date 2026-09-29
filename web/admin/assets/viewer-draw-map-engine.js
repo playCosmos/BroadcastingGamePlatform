@@ -287,22 +287,91 @@
   function defaultDefinition(){
     return {
       schemaVersion:SCHEMA_VERSION,
-      name:"New Marble Machine",
-      world:{width:1280,height:720,gravityX:0,gravityY:12},
-      drawRule:{type:"RACE_FINISH",winnerCount:0},
+      name:"Retro Cadet Survivor",
+      world:{width:1280,height:900,gravityX:0,gravityY:12},
+      drawRule:{type:"LAST_SURVIVOR",winnerCount:1},
       runPolicy:{
         timeoutSeconds:0,
-        qualificationMinWinners:0,
+        qualificationMinWinners:1,
         qualificationMaxNudges:0
       },
       components:[
-        componentDefaults("SPAWN",640,70),
-        {...componentDefaults("RAMP",430,215),rotation:12,width:470},
-        {...componentDefaults("RAMP",850,360),rotation:-12,width:470},
-        componentDefaults("PEG",520,470),
-        componentDefaults("BUMPER",690,480),
-        componentDefaults("PEG",840,500),
-        {...componentDefaults("FINISH",640,660),width:300,height:62}
+        // Right-side launch lane: a pinball-table homage, not a direct copy.
+        {...componentDefaults("SPAWN",1100,710),radius:20,properties:{marbleRadius:11}},
+        {...componentDefaults("LAUNCHER",1100,800),width:150,height:24,rotation:0,properties:{
+          restitution:0.42,friction:0.04,launchPower:2.35,
+          soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.72
+        }},
+        {...componentDefaults("WALL",1160,450),width:760,height:18,rotation:90},
+        {...componentDefaults("WALL",1010,505),width:590,height:18,rotation:90},
+
+        // Upper orbit / return lanes.
+        {...componentDefaults("RAMP",1040,125),width:250,height:18,rotation:-24},
+        {...componentDefaults("RAMP",845,105),width:300,height:18,rotation:5},
+        {...componentDefaults("RAMP",570,105),width:320,height:18,rotation:-5},
+        {...componentDefaults("RAMP",305,145),width:260,height:18,rotation:-18},
+        {...componentDefaults("WALL",165,385),width:470,height:18,rotation:76},
+        {...componentDefaults("WALL",930,350),width:300,height:18,rotation:-72},
+
+        // Classic central bumper cluster.
+        {...componentDefaults("BUMPER",505,300),radius:34,properties:{
+          restitution:1.02,friction:.02,boost:1.32,
+          soundMaterial:"metal",instrument:"bell",audioNote:67,audioGain:1.08,audioPan:-.28
+        }},
+        {...componentDefaults("BUMPER",640,255),radius:36,properties:{
+          restitution:1.04,friction:.02,boost:1.38,
+          soundMaterial:"metal",instrument:"bell",audioNote:72,audioGain:1.12,audioPan:0
+        }},
+        {...componentDefaults("BUMPER",775,305),radius:34,properties:{
+          restitution:1.02,friction:.02,boost:1.32,
+          soundMaterial:"metal",instrument:"bell",audioNote:76,audioGain:1.08,audioPan:.28
+        }},
+        {...componentDefaults("BUMPER",640,425),radius:27,properties:{
+          restitution:.98,friction:.02,boost:1.2,
+          soundMaterial:"metal",instrument:"chime",audioNote:64,audioGain:.92,audioPan:0
+        }},
+
+        // Peg / slingshot field to keep marbles circulating.
+        componentDefaults("PEG",405,405),
+        componentDefaults("PEG",535,465),
+        componentDefaults("PEG",745,465),
+        componentDefaults("PEG",875,405),
+        {...componentDefaults("RAMP",345,555),width:250,height:20,rotation:24,properties:{
+          restitution:.72,friction:.035,
+          soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.9,audioPan:-.55
+        }},
+        {...componentDefaults("RAMP",935,555),width:250,height:20,rotation:-24,properties:{
+          restitution:.72,friction:.035,
+          soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.9,audioPan:.55
+        }},
+
+        // Lower flipper-like oscillators. They rescue some marbles, but not forever.
+        {...componentDefaults("SEESAW",475,675),width:205,height:18,rotation:-10,properties:{
+          restitution:.55,friction:.05,amplitude:18,period:2.7,phase:0,
+          soundMaterial:"metal",instrument:"click",audioNote:57,audioGain:.8,audioPan:-.35
+        }},
+        {...componentDefaults("SEESAW",805,675),width:205,height:18,rotation:10,properties:{
+          restitution:.55,friction:.05,amplitude:18,period:2.7,phase:.5,
+          soundMaterial:"metal",instrument:"click",audioNote:57,audioGain:.8,audioPan:.35
+        }},
+
+        // Lower playfield slopes toward the center drain.
+        {...componentDefaults("RAMP",365,785),width:500,height:20,rotation:16,properties:{
+          restitution:.34,friction:.055,
+          soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:-.4
+        }},
+        {...componentDefaults("RAMP",915,785),width:500,height:20,rotation:-16,properties:{
+          restitution:.34,friction:.055,
+          soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:.4
+        }},
+
+        // Center-lower pinball drain. Every marble entering here is eliminated.
+        // LAST_SURVIVOR stops eliminating at one active marble and declares it winner.
+        {...componentDefaults("ELIMINATION",640,830),width:124,height:92,properties:{
+          eliminationKey:"CENTER_DRAIN",
+          sensorTag:"CENTER_DRAIN",
+          soundMaterial:"metal",instrument:"drum",audioNote:43,audioGain:1.12,audioPan:0
+        }}
       ]
     };
   }

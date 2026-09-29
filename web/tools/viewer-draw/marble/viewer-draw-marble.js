@@ -560,6 +560,45 @@
       target.arc(0, 0, radius, 0, Math.PI * 2);
       target.fill();
       target.stroke();
+    } else if (component.type === "ELIMINATION") {
+      const width = Math.max(
+        simplified ? 2 : 8,
+        component.width * view.scale
+      );
+      const height = Math.max(
+        simplified ? 2 : 8,
+        component.height * view.scale
+      );
+      target.fillStyle = "#07090c";
+      target.strokeStyle = "#c65d76";
+      target.lineWidth = simplified ? 1 : 2;
+      target.beginPath();
+      target.ellipse(
+        0,
+        0,
+        width / 2,
+        height / 2,
+        0,
+        0,
+        Math.PI * 2
+      );
+      target.fill();
+      target.stroke();
+      if (!simplified) {
+        target.strokeStyle = "rgba(255,158,180,.38)";
+        target.lineWidth = 5;
+        target.beginPath();
+        target.ellipse(
+          0,
+          0,
+          Math.max(2, width / 2 - 8),
+          Math.max(2, height / 2 - 8),
+          0,
+          0,
+          Math.PI * 2
+        );
+        target.stroke();
+      }
     } else {
       const width = Math.max(
         simplified ? 1 : 2,
@@ -571,7 +610,7 @@
       );
       target.fillRect(-width / 2, -height / 2, width, height);
       target.strokeRect(-width / 2, -height / 2, width, height);
-      if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(component.type)) {
+      if (["FINISH","OUTPUT","SLOT"].includes(component.type)) {
         target.setLineDash([6, 4]);
         target.strokeRect(
           -width / 2 + 3,
