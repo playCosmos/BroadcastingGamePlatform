@@ -38,6 +38,9 @@
   function targetCountForDefinition(def){
     const rule=resolvedDrawRule(def);
     const comps=Array.isArray(def?.components)?def.components:[];
+    if(rule.type==="RACE_FINISH"&&rule.winnerCount>0){
+      return rule.winnerCount;
+    }
     if(rule.type==="ORDERED_OUTPUT"){
       return rule.winnerCount||comps.filter(c=>c.type==="OUTPUT").length;
     }
