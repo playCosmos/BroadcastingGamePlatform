@@ -375,8 +375,12 @@
       if(!output) errors.push("RANDOM_OUTPUT_BUCKET에는 OUTPUT이 최소 1개 필요합니다.");
       if(winners<1||winners>64) errors.push("RANDOM_OUTPUT_BUCKET winnerCount는 1~64여야 합니다.");
       if(output>0){
-        const maxCapacity=Math.max(...comps.filter(c=>c?.type==="OUTPUT").map(c=>Math.trunc(finiteOr(c?.properties?.outputCapacity,1))));
-        if(winners>maxCapacity) errors.push("RANDOM_OUTPUT_BUCKET winnerCount는 선택 가능한 단일 Output capacity를 초과할 수 없습니다.");
+        const capacities=comps
+          .filter(c=>c?.type==="OUTPUT")
+          .map(c=>Math.trunc(finiteOr(c?.properties?.outputCapacity,1)));
+        if(capacities.some(capacity=>capacity<winners)){
+          errors.push("RANDOM_OUTPUT_BUCKET의 모든 Output capacity는 winnerCount 이상이어야 합니다.");
+        }
       }
     }
     return [...new Set(errors)];
