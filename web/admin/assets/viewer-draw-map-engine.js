@@ -268,7 +268,14 @@
       case "HINGE": return {...base,width:220,height:16,properties:{restitution:0.34,friction:0.08,pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2}};
       case "GEAR": return {...base,width:170,height:18,properties:{restitution:0.4,friction:0.06,motorSpeed:120,motorTorque:35,linkedComponentId:"",gearRatio:-1}};
       case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
-      case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
+      case "LAUNCHER": return {...base,width:140,height:22,properties:{
+        restitution:0.4,
+        friction:0.05,
+        launchPower:1.2,
+        launchDirectionDegrees:-90,
+        launchSpreadDegrees:18,
+        launchPowerVariance:.22
+      }};
       case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
       case "OUTPUT": return {...base,width:180,height:60,properties:{
         outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1,
@@ -296,10 +303,26 @@
         qualificationMaxNudges:0
       },
       components:[
-        // Right-side launch lane: a pinball-table homage, not a direct copy.
-        {...componentDefaults("SPAWN",1100,710),radius:20,properties:{marbleRadius:11}},
-        {...componentDefaults("LAUNCHER",1100,800),width:150,height:24,rotation:0,properties:{
-          restitution:0.42,friction:0.04,launchPower:2.35,
+        // Two start styles: top-field bunch drop or right-side hopper burst.
+        {...componentDefaults("SPAWN",640,155),radius:26,properties:{
+          marbleRadius:11,
+          spawnRole:"BUNCH"
+        }},
+        {...componentDefaults("SPAWN",1085,705),radius:22,properties:{
+          marbleRadius:11,
+          spawnRole:"LAUNCHER"
+        }},
+        {...componentDefaults("FUNNEL",1085,660),width:132,height:150,rotation:0,properties:{
+          restitution:.28,friction:.045,gap:48,thickness:12,
+          soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.72
+        }},
+        {...componentDefaults("LAUNCHER",1085,805),width:132,height:24,rotation:0,properties:{
+          restitution:0.46,
+          friction:0.035,
+          launchPower:2.55,
+          launchDirectionDegrees:-90,
+          launchSpreadDegrees:24,
+          launchPowerVariance:.26,
           soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.72
         }},
         {...componentDefaults("WALL",1160,450),width:760,height:18,rotation:90},
@@ -356,11 +379,11 @@
         }},
 
         // Lower playfield slopes toward the center drain.
-        {...componentDefaults("RAMP",365,785),width:500,height:20,rotation:16,properties:{
+        {...componentDefaults("RAMP",450,785),width:360,height:20,rotation:16,properties:{
           restitution:.34,friction:.055,
           soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:-.4
         }},
-        {...componentDefaults("RAMP",915,785),width:500,height:20,rotation:-16,properties:{
+        {...componentDefaults("RAMP",830,785),width:360,height:20,rotation:-16,properties:{
           restitution:.34,friction:.055,
           soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:.4
         }},
@@ -480,7 +503,16 @@
       }
       if(c?.type==="LAUNCHER"){
         const power=finiteOr(p.launchPower,1.2);
+        const direction=finiteOr(
+          p.launchDirectionDegrees,
+          finiteOr(c.rotation,0)-90
+        );
+        const spread=finiteOr(p.launchSpreadDegrees,18);
+        const variance=finiteOr(p.launchPowerVariance,.22);
         if(power<0||power>5) errors.push("Launcher launchPower는 0~5 범위여야 합니다.");
+        if(direction<-360||direction>360) errors.push("Launcher direction은 -360~360° 범위여야 합니다.");
+        if(spread<0||spread>55) errors.push("Launcher spread는 0~55° 범위여야 합니다.");
+        if(variance<0||variance>.75) errors.push("Launcher power variance는 0~0.75 범위여야 합니다.");
       }
       if(c?.type==="GEAR"){
         const linked=String(p.linkedComponentId||"").trim();
@@ -1192,9 +1224,27 @@
           next.add(launcher.id);
           if(m.launcherContacts.has(launcher.id)) continue;
           const power=clamp(finiteOr(launcher.properties?.launchPower,1.2),0,5);
-          const angle=degToRad((launcher.rotation||0)-90);
-          m.vx+=Math.cos(angle)*power*145;
-          m.vy+=Math.sin(angle)*power*145;
+          const direction=finiteOr(
+            launcher.properties?.launchDirectionDegrees,
+            (launcher.rotation||0)-90
+          );
+          const spread=clamp(
+            finiteOr(launcher.properties?.launchSpreadDegrees,18),
+            0,
+            55
+          );
+          const variance=clamp(
+            finiteOr(launcher.properties?.launchPowerVariance,.22),
+            0,
+            .75
+          );
+          const angle=degToRad(
+            direction+(this.random()*2-1)*spread
+          );
+          const randomizedPower=
+            power*(1+(this.random()*2-1)*variance);
+          m.vx+=Math.cos(angle)*randomizedPower*145;
+          m.vy+=Math.sin(angle)*randomizedPower*145;
         }
         m.launcherContacts=next;
       }

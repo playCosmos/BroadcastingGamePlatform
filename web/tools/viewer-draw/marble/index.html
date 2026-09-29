@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 뽑기 · Marble Machine</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/tools/viewer-draw/marble/viewer-draw-marble.css?v=20260929-1">
+  <link rel="stylesheet" href="/tools/viewer-draw/marble/viewer-draw-marble.css?v=20260929-2">
 </head>
 <body>
 <main class="marble-shell">
@@ -36,11 +36,44 @@
       </section>
 
       <section>
-        <p class="panel-title">ENTRIES / MARBLE COUNT</p>
-        <textarea id="entries" rows="14" placeholder="항목명 개수&#10;예: 1번 50개&#10;예: 2번 30개">1번 50개
-2번 30개</textarea>
-        <small id="entryCount">2 items · 80 marbles</small>
-        <small>한 줄에 항목명과 Marble 수를 입력합니다. 개수를 생략하면 1개로 처리합니다.</small>
+        <div class="panel-title-row">
+          <p class="panel-title">참가 항목 / MARBLE COUNT</p>
+          <button id="addEntry" class="compact-button" type="button">+ 참가자 추가</button>
+        </div>
+        <div id="entryRows" class="entry-list">
+          <div class="entry-row">
+            <input class="entry-name" type="text" value="1번" aria-label="참가 항목 이름">
+            <input class="entry-count" type="number" min="1" step="1" value="10" aria-label="Marble 수">
+            <span class="entry-unit">개</span>
+            <button class="entry-remove" type="button" aria-label="참가 항목 삭제">×</button>
+          </div>
+          <div class="entry-row">
+            <input class="entry-name" type="text" value="2번" aria-label="참가 항목 이름">
+            <input class="entry-count" type="number" min="1" step="1" value="10" aria-label="Marble 수">
+            <span class="entry-unit">개</span>
+            <button class="entry-remove" type="button" aria-label="참가 항목 삭제">×</button>
+          </div>
+        </div>
+        <small id="entryCount">2 items · 20 marbles</small>
+      </section>
+
+      <section>
+        <p class="panel-title">START STYLE</p>
+        <div class="launch-mode-grid" role="radiogroup" aria-label="Marble 출발 방식">
+          <label class="launch-mode-option">
+            <input type="radio" name="launchMode" value="BUNCH">
+            <span><strong>동시 투입</strong><small>상단에서 한 번에 뭉쳐서 출발</small></span>
+          </label>
+          <label class="launch-mode-option">
+            <input type="radio" name="launchMode" value="BURST" checked>
+            <span><strong>버스트 발사</strong><small>좁은 입구에서 여러 Marble이 우르르 분출</small></span>
+          </label>
+        </div>
+        <label class="launch-interval-row">
+          <span>분출 간격</span>
+          <input id="launchInterval" type="number" min="40" step="10" value="90">
+          <small>ms</small>
+        </label>
       </section>
 
       <section class="two-col">
@@ -86,6 +119,7 @@
           <strong id="progress">0 / 0</strong>
         </div>
         <div class="stage-tools">
+          <span id="launchStatus" class="stage-tool">LAUNCH 0/0</span>
           <span id="stuckCount">NUDGE 0</span>
           <span id="qualificationBadge" class="stage-tool">QUALIFY -</span>
           <span id="timeoutBadge" class="stage-tool" hidden>TIMEOUT</span>
@@ -121,10 +155,10 @@
   </section>
 </main>
 
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20260929-4"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20260929-5"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
-<script src="/tools/viewer-draw/marble/browser-physics-adapter.js?v=20260929-2"></script>
-<script src="/tools/viewer-draw/marble/viewer-draw-marble.js?v=20260929-4"></script>
+<script src="/tools/viewer-draw/marble/browser-physics-adapter.js?v=20260929-3"></script>
+<script src="/tools/viewer-draw/marble/viewer-draw-marble.js?v=20260929-5"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-audit-sync.js"></script>
 </body>
 </html>

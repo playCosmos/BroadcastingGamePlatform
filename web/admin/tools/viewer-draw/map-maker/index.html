@@ -111,7 +111,7 @@
         <div class="preview-controls">
           <button id="previewToggle" class="primary-button">▶ Preview</button>
           <button id="previewReset" class="small-button">Reset</button>
-          <label>Marbles <input id="marbleCount" type="number" min="1" max="64" value="16"></label>
+          <label>Marbles <input id="marbleCount" type="number" min="1" value="16"></label>
           <label>Seed <input id="previewSeed" type="number" value="1"></label>
         </div>
         <div class="stage-status">
@@ -157,6 +157,9 @@
           <button id="gearLinkClear" class="small-button" type="button">Clear Link</button>
         </div>
         <label class="mini-field launcher-field"><span>Launch Power</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
+        <label class="mini-field launcher-field"><span>Direction °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field launcher-field"><span>Spread ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
+        <label class="mini-field launcher-field"><span>Power Variance</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
         <label class="mini-field elevator-field"><span>Axis Angle °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field elevator-field"><span>Travel Min px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
         <label class="mini-field elevator-field"><span>Travel Max px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
@@ -227,7 +230,7 @@
     </aside>
   </section>
 </main>
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20260929-3"></script>
-<script src="/admin/assets/viewer-draw-map-maker.js"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20260929-5"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js?v=20260929-2"></script>
 </body>
 </html>

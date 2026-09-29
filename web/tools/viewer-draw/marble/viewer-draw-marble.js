@@ -17,6 +17,7 @@
   let definition = Engine.defaultDefinition();
   let adapter = null;
   let entries = [];
+  let entryItemCount = 1;
   let state = null;
   let running = false;
   let completed = false;
@@ -297,6 +298,8 @@
       },
       run: {
         seed: auditSeed,
+        launchMode: launchModeValue(),
+        launchIntervalMs: launchIntervalValue(),
         startedAt: auditStartedAt,
         completedAt: auditCompletedAt,
         wallElapsedMs: auditWallElapsedMs,
@@ -396,20 +399,13 @@
     const items = [];
     const byKey = new Map();
 
-    for (const rawLine of $("entries").value.split(/\r?\n/)) {
-      const line = rawLine.trim();
-      if (!line) continue;
-
-      const match = line.match(
-        /^(.*?)\s+(?:[x×*]\s*)?(\d+)\s*개?\s*$/u
+    for (const row of $("entryRows").querySelectorAll(".entry-row")) {
+      const displayName =
+        row.querySelector(".entry-name")?.value.trim() || "";
+      const count = Math.trunc(
+        Number(row.querySelector(".entry-count")?.value) || 0
       );
-      const displayName = (match ? match[1] : line).trim();
-      const count = match ? Number(match[2]) : 1;
-      if (
-        !displayName
-        || !Number.isSafeInteger(count)
-        || count < 1
-      ) {
+      if (!displayName || !Number.isSafeInteger(count) || count < 1) {
         continue;
       }
 
@@ -424,6 +420,50 @@
       }
     }
     return items;
+  }
+
+  function addEntryRow(displayName = "", count = 1) {
+    const row = document.createElement("div");
+    row.className = "entry-row";
+
+    const name = document.createElement("input");
+    name.className = "entry-name";
+    name.type = "text";
+    name.value = displayName;
+    name.placeholder = "참가 항목";
+    name.setAttribute("aria-label", "참가 항목 이름");
+
+    const amount = document.createElement("input");
+    amount.className = "entry-count";
+    amount.type = "number";
+    amount.min = "1";
+    amount.step = "1";
+    amount.value = String(Math.max(1, Math.trunc(Number(count) || 1)));
+    amount.setAttribute("aria-label", "Marble 수");
+
+    const unit = document.createElement("span");
+    unit.className = "entry-unit";
+    unit.textContent = "개";
+
+    const remove = document.createElement("button");
+    remove.className = "entry-remove";
+    remove.type = "button";
+    remove.setAttribute("aria-label", "참가 항목 삭제");
+    remove.textContent = "×";
+
+    row.append(name, amount, unit, remove);
+    $("entryRows").appendChild(row);
+    updateEntryCount();
+    refreshEntryRemoveButtons();
+    name.focus();
+  }
+
+  function refreshEntryRemoveButtons() {
+    const rows = [...$("entryRows").querySelectorAll(".entry-row")];
+    rows.forEach((row) => {
+      const remove = row.querySelector(".entry-remove");
+      if (remove) remove.disabled = rows.length <= 1 || running;
+    });
   }
 
   function parseEntries() {
@@ -445,6 +485,7 @@
 
   function updateEntryCount() {
     const items = parseEntryItems();
+    entryItemCount = Math.max(1, items.length);
     const marbleCount = items.reduce(
       (sum, item) => sum + item.count,
       0
@@ -457,8 +498,38 @@
     );
   }
 
+  function launchModeValue() {
+    return document.querySelector(
+      'input[name="launchMode"]:checked'
+    )?.value === "BUNCH"
+      ? "BUNCH"
+      : "BURST";
+  }
+
+  function launchIntervalValue() {
+    return Math.max(
+      40,
+      Math.trunc(Number($("launchInterval")?.value) || 90)
+    );
+  }
+
+  function updateLaunchControls() {
+    const burst = launchModeValue() === "BURST";
+    $("launchInterval").disabled = running || !burst;
+  }
+
   function setRunControlsLocked(locked) {
-    $("entries").disabled = locked;
+    for (const input of $("entryRows").querySelectorAll("input")) {
+      input.disabled = locked;
+    }
+    for (const input of document.querySelectorAll(
+      'input[name="launchMode"]'
+    )) {
+      input.disabled = locked;
+    }
+    $("addEntry").disabled = locked;
+    refreshEntryRemoveButtons();
+    updateLaunchControls();
     $("winnerCount").disabled =
       locked
       || Engine.resolvedDrawRule(definition).type !== "RACE_FINISH";
@@ -710,10 +781,10 @@
   function marbleColor(marble) {
     const index = Math.max(
       0,
-      Number(String(marble.id).replace(/^m/, "")) - 1
+      Number(marble.entry?.itemIndex) || 0
     );
-    const total = Math.max(1, state?.totalCount || entries.length || 1);
-    return `hsl(${(index * 360 / total) % 360} 78% 68%)`;
+    const totalItems = Math.max(1, entryItemCount);
+    return `hsl(${(index * 360 / totalItems) % 360} 78% 68%)`;
   }
 
   function drawMarble(target, marble, view, {
@@ -808,8 +879,9 @@
     });
 
     if (state) {
+      const showLabels = state.marbles.length <= 120;
       for (const marble of state.marbles) {
-        drawMarble(ctx, marble, view);
+        drawMarble(ctx, marble, view, { label: showLabels });
       }
     }
 
@@ -926,24 +998,115 @@
     const active = state.marbles
       .filter(
         (marble) =>
-          !marble.finished && !marble.eliminated && !marble.dnf
+          !marble.finished
+          && !marble.eliminated
+          && !marble.dnf
+          && marble.launched !== false
       )
       .sort(
         (left, right) =>
           progressValue(right) - progressValue(left)
       );
+    const queued = state.marbles.filter(
+      (marble) =>
+        marble.launched === false
+        && !marble.finished
+        && !marble.eliminated
+        && !marble.dnf
+    );
     const eliminated = state.marbles.filter(
       (marble) => marble.eliminated
     );
     const dnf = state.marbles.filter(
       (marble) => marble.dnf
     );
-    return [...finished, ...active, ...eliminated, ...dnf];
+    return [...finished, ...active, ...queued, ...eliminated, ...dnf];
+  }
+
+  function renderSurvivorSummary(root) {
+    const groups = new Map();
+
+    for (const marble of state?.marbles || []) {
+      const entry = marble.entry || {};
+      const key = String(
+        entry.itemIndex ?? entry.displayName ?? marble.id
+      );
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          name: entry.displayName || marble.id,
+          total: 0,
+          queued: 0,
+          active: 0,
+          eliminated: 0,
+          dnf: 0,
+          winner: false
+        };
+        groups.set(key, group);
+      }
+
+      group.total += 1;
+      if (marble.finished && marble.rank === 1) {
+        group.winner = true;
+      } else if (marble.eliminated) {
+        group.eliminated += 1;
+      } else if (marble.dnf) {
+        group.dnf += 1;
+      } else if (marble.launched === false) {
+        group.queued += 1;
+      } else {
+        group.active += 1;
+      }
+    }
+
+    const ordered = [...groups.values()].sort((left, right) => {
+      if (left.winner !== right.winner) return left.winner ? -1 : 1;
+      return (
+        right.active + right.queued
+        - left.active - left.queued
+      );
+    });
+
+    for (const group of ordered) {
+      const row = document.createElement("div");
+      row.className = "rank-row";
+      if (group.winner) row.classList.add("winner");
+      else if (!group.active && !group.queued) {
+        row.classList.add("eliminated");
+      }
+
+      const rank = document.createElement("span");
+      rank.textContent = group.winner
+        ? "★"
+        : String(group.active + group.queued);
+
+      const name = document.createElement("strong");
+      name.textContent = group.name;
+
+      const status = document.createElement("small");
+      status.textContent = group.winner
+        ? "WINNER"
+        : (
+          "LIVE " + group.active
+          + " · QUEUE " + group.queued
+          + " · OUT " + group.eliminated
+        );
+
+      row.append(rank, name, status);
+      root.appendChild(row);
+    }
   }
 
   function renderRanks() {
     const root = $("rankList");
     root.replaceChildren();
+
+    if (
+      Engine.resolvedDrawRule(definition).type === "LAST_SURVIVOR"
+    ) {
+      renderSurvivorSummary(root);
+      return;
+    }
 
     const winnerCount = winnerCountValue();
 
@@ -962,6 +1125,7 @@
             !candidate.finished
             && !candidate.eliminated
             && !candidate.dnf
+            && candidate.launched !== false
         );
         if (firstActive?.id === marble.id) row.classList.add("leader");
       }
@@ -971,9 +1135,11 @@
         ? "×"
         : marble.dnf
           ? "DNF"
-          : marble.finished
-            ? "#" + marble.rank
-            : "~#" + (index + 1);
+          : marble.launched === false
+            ? "…"
+            : marble.finished
+              ? "#" + marble.rank
+              : "~#" + (index + 1);
 
       const name = document.createElement("strong");
       name.textContent =
@@ -985,7 +1151,9 @@
         ? "ELIMINATED"
         : marble.dnf
           ? "DNF"
-          : marble.finished
+          : marble.launched === false
+            ? "QUEUED"
+            : marble.finished
             ? (
               ruleType === "RACE_FINISH"
                 ? "FINISH"
@@ -1113,7 +1281,10 @@
     const active = state.marbles
       .filter(
         (marble) =>
-          !marble.finished && !marble.eliminated && !marble.dnf
+          !marble.finished
+          && !marble.eliminated
+          && !marble.dnf
+          && marble.launched !== false
       )
       .sort(
         (left, right) =>
@@ -1136,7 +1307,10 @@
       const active = state.marbles
         .filter(
           (marble) =>
-            !marble.finished && !marble.eliminated && !marble.dnf
+            !marble.finished
+            && !marble.eliminated
+            && !marble.dnf
+            && marble.launched !== false
         )
         .sort(
           (left, right) =>
@@ -1177,7 +1351,12 @@
 
     const activeIds = new Set();
     for (const marble of state.marbles) {
-      if (marble.finished || marble.eliminated || marble.dnf) continue;
+      if (
+        marble.finished
+        || marble.eliminated
+        || marble.dnf
+        || marble.launched === false
+      ) continue;
       activeIds.add(marble.id);
 
       const previous = stuckState.get(marble.id);
@@ -1327,6 +1506,9 @@
       `${state.finishedCount} / ${state.targetCount || state.totalCount}`;
     $("elapsed").textContent =
       state.time.toFixed(1) + "s";
+    $("launchStatus").textContent =
+      "LAUNCH " + (state.launchedCount || 0)
+      + "/" + (state.totalCount || entries.length);
     const policy = Engine.resolvedRunPolicy(definition);
     const qualifyTarget =
       policy.qualificationMinWinners || winnerCountValue();
@@ -1374,7 +1556,11 @@
     state = adapter.reset(
       frozenEntries,
       seed,
-      { winnerCount }
+      {
+        winnerCount,
+        launchMode: launchModeValue(),
+        launchIntervalMs: launchIntervalValue()
+      }
     );
     entries = frozenEntries;
     definition = frozenDefinition;
@@ -1392,6 +1578,9 @@
     resetCamera(true);
     camera.targetZoom = 1.35;
 
+    $("launchStatus").textContent =
+      "LAUNCH " + (state.launchedCount || 0)
+      + "/" + (state.totalCount || entries.length);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "RUNNING";
     $("qualificationBadge").textContent =
@@ -1433,11 +1622,18 @@
       ? adapter.reset(
           entries,
           Number($("seed").value) || 1,
-          { winnerCount: winnerCountValue() }
+          {
+            winnerCount: winnerCountValue(),
+            launchMode: launchModeValue(),
+            launchIntervalMs: launchIntervalValue()
+          }
         )
       : null;
 
     resetCamera(true);
+    $("launchStatus").textContent =
+      "LAUNCH " + (state?.launchedCount || 0)
+      + "/" + (state?.totalCount || entries.length);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "READY";
     $("qualificationBadge").textContent = lastAudit
@@ -1485,13 +1681,52 @@
     }
   });
 
-  $("entries").addEventListener("input", () => {
+  $("entryRows").addEventListener("input", (event) => {
+    if (
+      !event.target.classList.contains("entry-name")
+      && !event.target.classList.contains("entry-count")
+    ) {
+      return;
+    }
     updateEntryCount();
     if (!running) {
       clearAudit();
       $("drawState").textContent = "READY · INPUT CHANGED";
       $("winnerBanner").hidden = true;
     }
+  });
+
+  $("entryRows").addEventListener("click", (event) => {
+    const remove = event.target.closest(".entry-remove");
+    if (!remove || running) return;
+    const rows = $("entryRows").querySelectorAll(".entry-row");
+    if (rows.length <= 1) return;
+    remove.closest(".entry-row")?.remove();
+    updateEntryCount();
+    refreshEntryRemoveButtons();
+    clearAudit();
+  });
+
+  $("addEntry").addEventListener("click", () => {
+    if (running) return;
+    addEntryRow("", 1);
+    clearAudit();
+    $("drawState").textContent = "READY · INPUT CHANGED";
+    $("winnerBanner").hidden = true;
+  });
+
+  document.querySelectorAll('input[name="launchMode"]').forEach(
+    (input) => input.addEventListener("change", () => {
+      updateLaunchControls();
+      if (!running) {
+        clearAudit();
+        $("drawState").textContent = "READY · START STYLE CHANGED";
+      }
+    })
+  );
+
+  $("launchInterval").addEventListener("change", () => {
+    $("launchInterval").value = String(launchIntervalValue());
   });
   $("winnerCount").addEventListener("change", renderRanks);
   $("seed").addEventListener("change", () => {
@@ -1550,6 +1785,8 @@
   async function boot() {
     updateMuteButton();
     updateEntryCount();
+    refreshEntryRemoveButtons();
+    updateLaunchControls();
     adapter = await createPhysicsAdapter();
 
     let initialDefinition = definition;

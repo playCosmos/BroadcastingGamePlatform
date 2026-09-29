@@ -193,6 +193,11 @@
       this.time = 0;
       this.seed = 1;
       this.runtimeWinnerCount = 0;
+      this.launchMode = "BURST";
+      this.launchIntervalSeconds = 0.09;
+      this.nextLaunchIndex = 0;
+      this.nextLaunchAt = 0;
+      this.launchedCount = 0;
       this.random = mulberry32(1);
     }
 
@@ -253,6 +258,9 @@
       this.soundEvents = [];
       this.accumulator = 0;
       this.time = 0;
+      this.nextLaunchIndex = 0;
+      this.nextLaunchAt = 0;
+      this.launchedCount = 0;
 
       this.createWorldBounds();
 
@@ -922,6 +930,14 @@
       this.createWorld();
       this.entries = Array.isArray(entries) ? entries.slice() : [];
       this.seed = Math.trunc(Number(seed) || 1);
+      const rng = mulberry32(this.seed);
+      for (let i = this.entries.length - 1; i > 0; i -= 1) {
+        const j = Math.floor(rng() * (i + 1));
+        [this.entries[i], this.entries[j]] = [
+          this.entries[j],
+          this.entries[i]
+        ];
+      }
       this.runtimeWinnerCount = Math.max(
         0,
         Math.min(
@@ -929,7 +945,18 @@
           Math.trunc(Number(options?.winnerCount) || 0)
         )
       );
-      const rng = mulberry32(this.seed);
+      this.launchMode =
+        String(options?.launchMode || "BURST").toUpperCase()
+          === "BUNCH"
+          ? "BUNCH"
+          : "BURST";
+      this.launchIntervalSeconds = Math.max(
+        0.04,
+        Number(options?.launchIntervalMs || 90) / 1000
+      );
+      this.nextLaunchIndex = 0;
+      this.nextLaunchAt = 0;
+      this.launchedCount = 0;
       this.random = rng;
       this.selectedOutputKey = null;
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
@@ -966,9 +993,17 @@
           );
         }
       }
-      const spawns = this.definition.components.filter(
+      const allSpawns = this.definition.components.filter(
         (component) => component.type === "SPAWN"
       );
+      const desiredRole =
+        this.launchMode === "BUNCH" ? "BUNCH" : "LAUNCHER";
+      const roleSpawns = allSpawns.filter(
+        (component) =>
+          String(component.properties?.spawnRole || "")
+            .toUpperCase() === desiredRole
+      );
+      const spawns = roleSpawns.length ? roleSpawns : allSpawns;
 
       this.marbles = this.entries.map((entry, index) => {
         const spawn = spawns[index % spawns.length];
@@ -981,12 +1016,16 @@
         const angle =
           localIndex * 2.399963229728653
           + (rng() - 0.5) * 0.2;
-        const spread =
-          Math.sqrt(localIndex + 1)
-          * Math.min(radius * 1.35, 16);
+        const spread = this.launchMode === "BUNCH"
+          ? Math.sqrt(localIndex + 1)
+            * Math.min(radius * 1.35, 16)
+          : Math.min(
+              22,
+              Math.sqrt((localIndex % 9) + 1) * radius * 0.55
+            );
 
         const x = spawn.x + Math.cos(angle) * spread;
-        const y = spawn.y + Math.sin(angle) * spread;
+        const y = spawn.y + Math.sin(angle) * spread * 0.45;
         const B = this.Box2D;
         const bodyDef = new B.b2BodyDef();
         bodyDef.set_type(B.b2_dynamicBody);
@@ -1006,12 +1045,18 @@
         fixtureDef.set_restitution(0.62);
         fixtureDef.set_friction(0.03);
         body.CreateFixture(fixtureDef);
-        body.SetLinearVelocity(
-          new B.b2Vec2(
-            ((rng() - 0.5) * 35) / PIXELS_PER_METER,
-            ((rng() - 0.5) * 8) / PIXELS_PER_METER
-          )
-        );
+        const launched = this.launchMode === "BUNCH";
+        if (launched) {
+          body.SetLinearVelocity(
+            new B.b2Vec2(
+              ((rng() - 0.5) * 35) / PIXELS_PER_METER,
+              ((rng() - 0.5) * 8) / PIXELS_PER_METER
+            )
+          );
+        } else {
+          body.SetLinearVelocity(new B.b2Vec2(0, 0));
+          body.SetEnabled(false);
+        }
 
         return {
           id: "m" + (index + 1),
@@ -1025,11 +1070,60 @@
           finishTime: null,
           bumperContacts: new Set(),
           launcherContacts: new Set(),
-          lastSoundTime: -Infinity
+          lastSoundTime: -Infinity,
+          launched,
+          launchIndex: index,
+          spawnX: x,
+          spawnY: y
         };
       });
 
+      if (this.launchMode === "BUNCH") {
+        this.launchedCount = this.marbles.length;
+        this.nextLaunchIndex = this.marbles.length;
+      } else {
+        this.nextLaunchIndex = 0;
+        this.nextLaunchAt = 0;
+        this.launchedCount = 0;
+      }
+
       return this.snapshot();
+    }
+
+    releaseQueuedMarbles() {
+      if (
+        this.launchMode !== "BURST"
+        || this.nextLaunchIndex >= this.marbles.length
+        || this.time + 1e-9 < this.nextLaunchAt
+      ) {
+        return;
+      }
+
+      const remaining = this.marbles.length - this.nextLaunchIndex;
+      const burstSize = Math.min(
+        remaining,
+        3 + Math.floor(this.random() * 5)
+      );
+
+      for (let i = 0; i < burstSize; i += 1) {
+        const marble = this.marbles[this.nextLaunchIndex];
+        marble.body.SetEnabled(true);
+        marble.body.SetAwake(true);
+        marble.body.SetLinearVelocity(
+          new this.Box2D.b2Vec2(
+            ((this.random() - 0.5) * 14) / PIXELS_PER_METER,
+            ((this.random() - 0.5) * 5) / PIXELS_PER_METER
+          )
+        );
+        marble.launched = true;
+        marble.launchedAt = this.time;
+        this.nextLaunchIndex += 1;
+        this.launchedCount += 1;
+      }
+
+      this.nextLaunchAt =
+        this.time
+        + this.launchIntervalSeconds * (0.65 + this.random() * 0.7);
     }
 
     step(deltaSeconds) {
@@ -1041,6 +1135,7 @@
       this.accumulator += clamp(Number(deltaSeconds) || 0, 0, 0.05);
       let guard = 0;
       while (this.accumulator >= FIXED_DT && guard < 12) {
+        this.releaseQueuedMarbles();
         const beforeVelocities = this.captureVelocities();
         this.updateMovingComponents(this.time);
         this.updateElevators();
@@ -1146,9 +1241,41 @@
             launcher.id
           );
 
+          const spreadDegrees = clamp(
+            property(
+              launcher.properties,
+              "launchSpreadDegrees",
+              18
+            ),
+            0,
+            55
+          );
+          const powerVariance = clamp(
+            property(
+              launcher.properties,
+              "launchPowerVariance",
+              0.22
+            ),
+            0,
+            0.75
+          );
+          const angleJitter =
+            (this.random() * 2 - 1) * spreadDegrees;
+          const configuredDirection = Number(
+            launcher.properties?.launchDirectionDegrees
+          );
+          const directionDegrees = Number.isFinite(configuredDirection)
+            ? configuredDirection
+            : ((launcher.rotation || 0) - 90);
           const angle =
-            ((launcher.rotation || 0) - 90) * Math.PI / 180;
-          const impulse = power * 0.18;
+            (directionDegrees + angleJitter)
+            * Math.PI / 180;
+          const randomizedPower =
+            power * (
+              1
+              + (this.random() * 2 - 1) * powerVariance
+            );
+          const impulse = randomizedPower * 0.18;
           marble.body.ApplyLinearImpulseToCenter(
             new B.b2Vec2(
               Math.cos(angle) * impulse,
@@ -1690,7 +1817,13 @@
       const marble = this.marbles.find(
         (candidate) => candidate.id === id
       );
-      if (!marble || marble.finished || marble.eliminated || marble.dnf) return false;
+      if (
+        !marble
+        || marble.finished
+        || marble.eliminated
+        || marble.dnf
+        || marble.launched === false
+      ) return false;
 
       const angle = this.random() * Math.PI * 2;
       const magnitude = 0.12 + this.random() * 0.12;
@@ -1738,6 +1871,12 @@
           : this.finishOrder.length,
         targetCount: this.targetCount(),
         totalCount: this.marbles.length,
+        launchMode: this.launchMode,
+        launchedCount: this.launchedCount,
+        pendingCount: Math.max(
+          0,
+          this.marbles.length - this.launchedCount
+        ),
         components: this.reactiveComponents.map((item) => {
           const position = item.body.GetPosition();
           return {
@@ -1760,7 +1899,9 @@
             eliminated: marble.eliminated,
             dnf: marble.dnf,
             rank: marble.rank,
-            finishTime: marble.finishTime
+            finishTime: marble.finishTime,
+            launched: marble.launched !== false,
+            launchedAt: marble.launchedAt ?? null
           };
         })
       };

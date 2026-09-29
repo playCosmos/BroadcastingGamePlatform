@@ -726,6 +726,12 @@
     linkedSelect.value = String(c.properties?.linkedComponentId || "");
     $("propGearRatio").value = num(c.properties?.gearRatio, -1);
     $("propLaunchPower").value = num(c.properties?.launchPower, 1.2);
+    $("propLaunchDirection").value = num(
+      c.properties?.launchDirectionDegrees,
+      (c.rotation || 0) - 90
+    );
+    $("propLaunchSpread").value = num(c.properties?.launchSpreadDegrees, 18);
+    $("propLaunchVariance").value = num(c.properties?.launchPowerVariance, .22);
     $("propAxisAngle").value = num(c.properties?.axisAngle, -90);
     $("propTravelMin").value = num(c.properties?.travelMin, -120);
     $("propTravelMax").value = num(c.properties?.travelMax, 120);
@@ -942,7 +948,28 @@
       if (Math.abs(ratio) < .01) ratio = -1;
       c.properties.gearRatio = ratio;
     }
-    if (c.type === "LAUNCHER") c.properties.launchPower = clamp(num($("propLaunchPower").value, 1.2), 0, 5);
+    if (c.type === "LAUNCHER") {
+      c.properties.launchPower = clamp(
+        num($("propLaunchPower").value, 1.2),
+        0,
+        5
+      );
+      c.properties.launchDirectionDegrees = clamp(
+        num($("propLaunchDirection").value, (c.rotation || 0) - 90),
+        -360,
+        360
+      );
+      c.properties.launchSpreadDegrees = clamp(
+        num($("propLaunchSpread").value, 18),
+        0,
+        55
+      );
+      c.properties.launchPowerVariance = clamp(
+        num($("propLaunchVariance").value, .22),
+        0,
+        .75
+      );
+    }
     if (c.type === "ELEVATOR") {
       c.properties.axisAngle = clamp(num($("propAxisAngle").value, -90), -360, 360);
       c.properties.travelMin = clamp(num($("propTravelMin").value, -120), -1200, 1200);
@@ -1427,7 +1454,8 @@
    "propAmplitude","propOpenAngle","propGap","propThickness",
    "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
    "propMotorSpeed","propMotorTorque","propLinkedComponentId","propGearRatio",
-   "propLaunchPower","propAxisAngle","propTravelMin","propTravelMax",
+   "propLaunchPower","propLaunchDirection","propLaunchSpread","propLaunchVariance",
+   "propAxisAngle","propTravelMin","propTravelMax",
    "propElevatorSpeed","propMotorForce","propStartDirection",
    "propOutputKey","propOutputRank","propOutputCapacity","propOutputWeight",
    "propOutputPriority","propSensorTag","propConditionType","propConditionOutputKey",
