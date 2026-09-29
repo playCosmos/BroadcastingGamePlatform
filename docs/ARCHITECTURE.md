@@ -184,3 +184,6 @@ Server JBox2D Production Adapter
 Preview 순위와 Production 순위의 동일성은 요구하지 않는다.
 대신 component geometry, material property, Spawn/Finish 의미가 동일 MapDefinition으로 해석되는지를 검증한다.
 실제 Viewer Entry와 winner/audit 연결은 Marble Draw Session 계층에서 담당한다.
+
+Machine Map은 현재 definition 외에 revision별 immutable snapshot을 유지한다.
+따라서 추첨 Freeze/Audit에서는 mutable current map을 다시 조회하지 않고 `mapId + revision + definitionHash`에 해당하는 snapshot을 Production Adapter 입력으로 사용한다.
