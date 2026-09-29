@@ -52,6 +52,13 @@
   function renderNumberResult(numbers) {
     const root = $("numberResult");
     root.replaceChildren();
+    if (!numbers.length) {
+      const empty = document.createElement("div");
+      empty.className = "quick-empty";
+      empty.textContent = "추첨을 시작하세요.";
+      root.appendChild(empty);
+      return;
+    }
     for (const number of numbers) {
       const ball = document.createElement("div");
       ball.className = "number-ball";
@@ -85,6 +92,13 @@
   function renderViewerResult(winners) {
     const root = $("viewerResult");
     root.replaceChildren();
+    if (!winners.length) {
+      const empty = document.createElement("div");
+      empty.className = "quick-empty";
+      empty.textContent = "참가자를 입력하고 추첨하세요.";
+      root.appendChild(empty);
+      return;
+    }
     winners.forEach((name, index) => {
       const row = document.createElement("div");
       row.className = "viewer-winner";
