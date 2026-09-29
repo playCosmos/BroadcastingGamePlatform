@@ -22,7 +22,11 @@
   let lastTime = 0;
   let frameId = 0;
   let speedMultiplier = 1;
+  let fastForwardActive = false;
+  let finishSlowMotion = false;
   let stuckNudges = 0;
+
+  const FINISH_SLOW_RATE = 0.35;
   let stuckState = new Map();
 
   const camera = {
@@ -177,6 +181,12 @@
       RAMP: ["#9b6937", "#e0a45c"],
       PEG: ["#c9d0d5", "#f1f4f6"],
       BUMPER: ["#8b3d45", "#dd7982"],
+      GATE: ["#6d4e9a", "#b995ee"],
+      ROTATOR: ["#875b2f", "#f0b36a"],
+      PENDULUM: ["#496b8f", "#82b6e9"],
+      SEESAW: ["#6b6650", "#c5bb86"],
+      FUNNEL: ["#356f71", "#73c9cb"],
+      SPLITTER: ["#5e527d", "#a99bd3"],
       SPAWN: ["#1d6c8d", "#60c3e8"],
       FINISH: ["#327649", "#72cf90"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -285,7 +295,16 @@
     );
 
     definition.components.forEach((component) => {
-      drawComponent(ctx, component, view);
+      const shapes = Engine.componentShapes
+        ? Engine.componentShapes(component, state?.time || 0)
+        : [component];
+      shapes.forEach((shape) => {
+        drawComponent(
+          ctx,
+          { ...shape, type: component.type },
+          view
+        );
+      });
     });
 
     if (state) {
@@ -340,7 +359,17 @@
     minimapCtx.fillRect(0, 0, view.width, view.height);
 
     definition.components.forEach((component) => {
-      drawComponent(minimapCtx, component, view, true);
+      const shapes = Engine.componentShapes
+        ? Engine.componentShapes(component, state?.time || 0)
+        : [component];
+      shapes.forEach((shape) => {
+        drawComponent(
+          minimapCtx,
+          { ...shape, type: component.type },
+          view,
+          true
+        );
+      });
     });
 
     if (state) {
@@ -447,6 +476,58 @@
     );
   }
 
+  function winnerCountValue() {
+    return Math.max(
+      1,
+      Math.min(
+        entries.length || 1,
+        Math.trunc(Number($("winnerCount").value) || 1)
+      )
+    );
+  }
+
+  function updatePlaybackRate() {
+    const slow = finishSlowMotion && !fastForwardActive && running;
+    speedMultiplier = !running
+      ? 1
+      : fastForwardActive ? 2 : slow ? FINISH_SLOW_RATE : 1;
+    $("slowMotionBadge").hidden = !slow;
+    if (running) {
+      $("drawState").textContent = slow ? "SLOW MOTION" : "RUNNING";
+    }
+  }
+
+  function updateFinishSlowMotion() {
+    if (!running || !state) {
+      finishSlowMotion = false;
+      updatePlaybackRate();
+      return;
+    }
+
+    if (state.rankedEntries.length >= winnerCountValue()) {
+      finishSlowMotion = false;
+      updatePlaybackRate();
+      return;
+    }
+
+    const active = state.marbles
+      .filter((marble) => !marble.finished)
+      .sort(
+        (left, right) =>
+          progressValue(right) - progressValue(left)
+      );
+    const leader = active[0];
+    const threshold = Math.max(
+      definition.world.width,
+      definition.world.height
+    ) * 0.18;
+
+    finishSlowMotion = Boolean(
+      leader && nearestFinishDistance(leader) <= threshold
+    );
+    updatePlaybackRate();
+  }
+
   function updateCamera(deltaSeconds) {
     if (!camera.locked && state?.marbles?.length) {
       const active = state.marbles
@@ -531,34 +612,79 @@
   }
 
   function setFastForward(active) {
-    speedMultiplier = active && running ? 2 : 1;
+    fastForwardActive = Boolean(active && running);
+    updatePlaybackRate();
     $("fastForward").classList.toggle(
       "active",
-      speedMultiplier > 1
+      fastForwardActive
     );
     $("fastForward").textContent =
-      speedMultiplier > 1 ? "⏩ 2×" : "⏩ HOLD";
+      fastForwardActive ? "⏩ 2×" : "⏩ HOLD";
+  }
+
+  function renderPodium(winners) {
+    const root = $("podiumList");
+    root.replaceChildren();
+
+    const classByRank = ["first", "second", "third"];
+    const top = winners.slice(0, 3);
+    const displayOrder = top.length === 1
+      ? [0]
+      : top.length === 2
+        ? [1, 0]
+        : [1, 0, 2];
+
+    for (const index of displayOrder) {
+      const entry = top[index];
+      if (!entry) continue;
+      const card = document.createElement("div");
+      card.className =
+        "podium-card " + (classByRank[index] || "");
+      const rank = document.createElement("span");
+      rank.className = "podium-rank";
+      rank.textContent = "#" + (index + 1);
+      const name = document.createElement("strong");
+      name.textContent = entry.displayName;
+      card.append(rank, name);
+      root.appendChild(card);
+    }
+
+    if (winners.length > 3) {
+      const extra = document.createElement("div");
+      extra.className = "podium-extra";
+      winners.slice(3).forEach((entry, offset) => {
+        const row = document.createElement("div");
+        row.className = "podium-extra-row";
+        const rank = document.createElement("span");
+        rank.textContent = "#" + (offset + 4);
+        const name = document.createElement("strong");
+        name.textContent = entry.displayName;
+        row.append(rank, name);
+        extra.appendChild(row);
+      });
+      root.appendChild(extra);
+    }
+
+    $("winnerText").textContent = winners
+      .map((entry, index) =>
+        "#" + (index + 1) + " " + entry.displayName
+      )
+      .join(" · ");
   }
 
   function finalizeIfReady() {
     if (!running || completed || !state) return;
-    const winnerCount = Math.max(
-      1,
-      Math.min(
-        entries.length,
-        Math.trunc(Number($("winnerCount").value) || 1)
-      )
-    );
+    const winnerCount = winnerCountValue();
     if (state.rankedEntries.length < winnerCount) return;
 
     completed = true;
     running = false;
+    finishSlowMotion = false;
     setFastForward(false);
+    updatePlaybackRate();
     const winners = state.rankedEntries.slice(0, winnerCount);
     $("drawState").textContent = "COMPLETED";
-    $("winnerText").textContent = winners
-      .map((entry) => entry.displayName)
-      .join(" · ");
+    renderPodium(winners);
     $("winnerBanner").hidden = false;
     cancelAnimationFrame(frameId);
   }
@@ -572,8 +698,11 @@
     );
     lastTime = now;
 
-    state = adapter.step(wallDelta * speedMultiplier);
-    updateStuckWatchdog(wallDelta * 1000);
+    updateFinishSlowMotion();
+    const simulationDelta = wallDelta * speedMultiplier;
+    state = adapter.step(simulationDelta);
+    updateStuckWatchdog(simulationDelta * 1000);
+    updateFinishSlowMotion();
     updateCamera(wallDelta);
 
     $("progress").textContent =
@@ -625,6 +754,8 @@
     stuckNudges = 0;
     stuckState = new Map();
     speedMultiplier = 1;
+    fastForwardActive = false;
+    finishSlowMotion = false;
     lastTime = performance.now();
 
     setRunControlsLocked(true);
@@ -633,6 +764,8 @@
 
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "RUNNING";
+    $("slowMotionBadge").hidden = true;
+    $("podiumList").replaceChildren();
     $("winnerBanner").hidden = true;
     $("progress").textContent = `0 / ${entries.length}`;
     $("elapsed").textContent = "0.0s";
@@ -649,6 +782,8 @@
     running = false;
     completed = false;
     speedMultiplier = 1;
+    fastForwardActive = false;
+    finishSlowMotion = false;
     stuckNudges = 0;
     stuckState = new Map();
     setRunControlsLocked(false);
@@ -670,6 +805,8 @@
     $("drawState").textContent = "READY";
     $("progress").textContent = `0 / ${entries.length}`;
     $("elapsed").textContent = "0.0s";
+    $("slowMotionBadge").hidden = true;
+    $("podiumList").replaceChildren();
     $("winnerBanner").hidden = true;
     renderRanks();
     render();
