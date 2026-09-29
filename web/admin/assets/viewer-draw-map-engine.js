@@ -292,9 +292,42 @@
   }
 
   function defaultDefinition(){
+    const styled = (component, visualFill, visualStroke) => ({
+      ...component,
+      properties:{
+        ...(component.properties||{}),
+        visualFill,
+        visualStroke
+      }
+    });
+    const reactorPeg = (index) => {
+      const angle = index / 16 * Math.PI * 2;
+      return styled(
+        {
+          ...componentDefaults(
+            "PEG",
+            545 + Math.cos(angle) * 112,
+            520 + Math.sin(angle) * 112
+          ),
+          radius:10,
+          properties:{
+            restitution:.66,
+            friction:.025,
+            soundMaterial:"metal",
+            instrument:"click",
+            audioNote:60 + (index % 5),
+            audioGain:.62,
+            audioPan:Math.cos(angle) * .45
+          }
+        },
+        index % 2 ? "#f0c436" : "#6bd6ff",
+        "#fff1a3"
+      );
+    };
+
     return {
       schemaVersion:SCHEMA_VERSION,
-      name:"Retro Cadet Survivor",
+      name:"Retro Cadet Survivor V2",
       world:{width:1280,height:900,gravityX:0,gravityY:12},
       drawRule:{type:"LAST_SURVIVOR",winnerCount:1},
       runPolicy:{
@@ -303,98 +336,143 @@
         qualificationMaxNudges:0
       },
       components:[
-        // Two start styles: top-field bunch drop or right-side hopper burst.
-        {...componentDefaults("SPAWN",640,155),radius:26,properties:{
+        // Start systems.
+        {...componentDefaults("SPAWN",555,125),radius:28,properties:{
           marbleRadius:11,
           spawnRole:"BUNCH"
         }},
-        {...componentDefaults("SPAWN",1085,705),radius:22,properties:{
+        {...componentDefaults("SPAWN",1090,735),radius:22,properties:{
           marbleRadius:11,
           spawnRole:"LAUNCHER"
         }},
-        {...componentDefaults("FUNNEL",1085,660),width:132,height:150,rotation:0,properties:{
-          restitution:.28,friction:.045,gap:48,thickness:12,
-          soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.72
-        }},
-        {...componentDefaults("LAUNCHER",1085,805),width:132,height:24,rotation:0,properties:{
-          restitution:0.46,
-          friction:0.035,
-          launchPower:2.55,
-          launchDirectionDegrees:-90,
-          launchSpreadDegrees:24,
-          launchPowerVariance:.26,
-          soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.72
-        }},
-        {...componentDefaults("WALL",1160,450),width:760,height:18,rotation:90},
-        {...componentDefaults("WALL",1010,505),width:590,height:18,rotation:90},
+        styled(
+          {...componentDefaults("FUNNEL",1090,690),width:132,height:150,rotation:0,properties:{
+            restitution:.3,friction:.045,gap:46,thickness:12,
+            soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.75
+          }},
+          "#1c4059","#65bfe9"
+        ),
+        styled(
+          {...componentDefaults("LAUNCHER",1090,838),width:132,height:24,rotation:0,properties:{
+            restitution:.48,
+            friction:.03,
+            launchPower:2.7,
+            launchDirectionDegrees:-90,
+            launchSpreadDegrees:22,
+            launchPowerVariance:.25,
+            soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.75
+          }},
+          "#335f72","#8bd8f5"
+        ),
 
-        // Upper orbit / return lanes.
-        {...componentDefaults("RAMP",1040,125),width:250,height:18,rotation:-24},
-        {...componentDefaults("RAMP",845,105),width:300,height:18,rotation:5},
-        {...componentDefaults("RAMP",570,105),width:320,height:18,rotation:-5},
-        {...componentDefaults("RAMP",305,145),width:260,height:18,rotation:-18},
-        {...componentDefaults("WALL",165,385),width:470,height:18,rotation:76},
-        {...componentDefaults("WALL",930,350),width:300,height:18,rotation:-72},
+        // Shooter lane rails.
+        styled(
+          {...componentDefaults("WALL",1180,470),width:800,height:18,rotation:90},
+          "#7d5636","#d4a063"
+        ),
+        styled(
+          {...componentDefaults("WALL",1008,540),width:570,height:18,rotation:90},
+          "#6a472e","#c48750"
+        ),
+        styled(
+          {...componentDefaults("RAMP",1060,205),width:190,height:18,rotation:-31},
+          "#6f4c31","#d19a5d"
+        ),
+        styled(
+          {...componentDefaults("RAMP",973,142),width:165,height:18,rotation:-10},
+          "#6f4c31","#d19a5d"
+        ),
 
-        // Classic central bumper cluster.
-        {...componentDefaults("BUMPER",505,300),radius:34,properties:{
-          restitution:1.02,friction:.02,boost:1.32,
-          soundMaterial:"metal",instrument:"bell",audioNote:67,audioGain:1.08,audioPan:-.28
-        }},
-        {...componentDefaults("BUMPER",640,255),radius:36,properties:{
+        // Top arch / orbit.
+        styled({...componentDefaults("RAMP",845,105),width:220,height:18,rotation:10},"#765234","#d6a16a"),
+        styled({...componentDefaults("RAMP",680,82),width:170,height:18,rotation:3},"#765234","#d6a16a"),
+        styled({...componentDefaults("RAMP",505,82),width:180,height:18,rotation:-3},"#765234","#d6a16a"),
+        styled({...componentDefaults("RAMP",335,108),width:200,height:18,rotation:-12},"#765234","#d6a16a"),
+        styled({...componentDefaults("RAMP",205,165),width:150,height:18,rotation:-31},"#765234","#d6a16a"),
+        styled({...componentDefaults("WALL",128,330),width:330,height:18,rotation:78},"#604229","#c58a52"),
+
+        // Top bumper cluster.
+        styled({...componentDefaults("BUMPER",425,225),radius:35,properties:{
           restitution:1.04,friction:.02,boost:1.38,
+          soundMaterial:"metal",instrument:"bell",audioNote:67,audioGain:1.08,audioPan:-.3
+        }},"#e7e3d6","#fff9d7"),
+        styled({...componentDefaults("BUMPER",555,195),radius:37,properties:{
+          restitution:1.06,friction:.02,boost:1.42,
           soundMaterial:"metal",instrument:"bell",audioNote:72,audioGain:1.12,audioPan:0
-        }},
-        {...componentDefaults("BUMPER",775,305),radius:34,properties:{
-          restitution:1.02,friction:.02,boost:1.32,
-          soundMaterial:"metal",instrument:"bell",audioNote:76,audioGain:1.08,audioPan:.28
-        }},
-        {...componentDefaults("BUMPER",640,425),radius:27,properties:{
-          restitution:.98,friction:.02,boost:1.2,
-          soundMaterial:"metal",instrument:"chime",audioNote:64,audioGain:.92,audioPan:0
-        }},
+        }},"#e7e3d6","#fff9d7"),
+        styled({...componentDefaults("BUMPER",685,230),radius:35,properties:{
+          restitution:1.04,friction:.02,boost:1.38,
+          soundMaterial:"metal",instrument:"bell",audioNote:76,audioGain:1.08,audioPan:.3
+        }},"#e7e3d6","#fff9d7"),
 
-        // Peg / slingshot field to keep marbles circulating.
-        componentDefaults("PEG",405,405),
-        componentDefaults("PEG",535,465),
-        componentDefaults("PEG",745,465),
-        componentDefaults("PEG",875,405),
-        {...componentDefaults("RAMP",345,555),width:250,height:20,rotation:24,properties:{
-          restitution:.72,friction:.035,
-          soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.9,audioPan:-.55
-        }},
-        {...componentDefaults("RAMP",935,555),width:250,height:20,rotation:-24,properties:{
-          restitution:.72,friction:.035,
-          soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.9,audioPan:.55
-        }},
+        // Left purple ramp / wormhole-like lane.
+        styled({...componentDefaults("RAMP",205,285),width:245,height:24,rotation:55,properties:{
+          restitution:.46,friction:.045,
+          soundMaterial:"plastic",instrument:"none",audioNote:58,audioGain:.65,audioPan:-.7
+        }},"#5d3d99","#b28cff"),
+        styled({...componentDefaults("RAMP",250,415),width:245,height:24,rotation:72,properties:{
+          restitution:.46,friction:.045,
+          soundMaterial:"plastic",instrument:"none",audioNote:58,audioGain:.65,audioPan:-.62
+        }},"#6540a6","#c09bff"),
+        styled({...componentDefaults("RAMP",330,525),width:210,height:24,rotation:28,properties:{
+          restitution:.48,friction:.045,
+          soundMaterial:"plastic",instrument:"none",audioNote:60,audioGain:.65,audioPan:-.5
+        }},"#6b44ab","#c6a0ff"),
 
-        // Lower flipper-like oscillators. They rescue some marbles, but not forever.
-        {...componentDefaults("SEESAW",475,675),width:205,height:18,rotation:-10,properties:{
-          restitution:.55,friction:.05,amplitude:18,period:2.7,phase:0,
-          soundMaterial:"metal",instrument:"click",audioNote:57,audioGain:.8,audioPan:-.35
-        }},
-        {...componentDefaults("SEESAW",805,675),width:205,height:18,rotation:10,properties:{
-          restitution:.55,friction:.05,amplitude:18,period:2.7,phase:.5,
-          soundMaterial:"metal",instrument:"click",audioNote:57,audioGain:.8,audioPan:.35
-        }},
+        // Midfield guides.
+        styled({...componentDefaults("PEG",340,340),radius:13,properties:{restitution:.62,friction:.03}},"#f0d450","#fff2a1"),
+        styled({...componentDefaults("PEG",775,345),radius:13,properties:{restitution:.62,friction:.03}},"#e45d69","#ffb0b6"),
+        styled({...componentDefaults("PEG",850,430),radius:13,properties:{restitution:.62,friction:.03}},"#f0d450","#fff2a1"),
+        styled({...componentDefaults("RAMP",840,305),width:205,height:18,rotation:-58},"#7b2f3f","#dc6a7b"),
+        styled({...componentDefaults("RAMP",845,535),width:215,height:18,rotation:53},"#7b2f3f","#dc6a7b"),
 
-        // Lower playfield slopes toward the center drain.
-        {...componentDefaults("RAMP",450,785),width:360,height:20,rotation:16,properties:{
-          restitution:.34,friction:.055,
-          soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:-.4
-        }},
-        {...componentDefaults("RAMP",830,785),width:360,height:20,rotation:-16,properties:{
-          restitution:.34,friction:.055,
-          soundMaterial:"metal",instrument:"none",audioNote:52,audioGain:.72,audioPan:.4
-        }},
+        // Central reactor ring.
+        ...Array.from({length:16},(_,index)=>reactorPeg(index)),
+        styled({...componentDefaults("BUMPER",545,520),radius:52,properties:{
+          restitution:.9,friction:.02,boost:1.12,
+          soundMaterial:"metal",instrument:"chime",audioNote:64,audioGain:.85,audioPan:-.05
+        }},"#238eae","#72dcf5"),
+        styled({...componentDefaults("BUMPER",545,520),radius:24,properties:{
+          restitution:.82,friction:.025,boost:1.03,
+          soundMaterial:"glass",instrument:"bell",audioNote:76,audioGain:.6,audioPan:-.05
+        }},"#42b9d4","#b0f5ff"),
 
-        // Center-lower pinball drain. Every marble entering here is eliminated.
-        // LAST_SURVIVOR stops eliminating at one active marble and declares it winner.
-        {...componentDefaults("ELIMINATION",640,830),width:124,height:92,properties:{
+        // Lower triangular sling guides.
+        styled({...componentDefaults("RAMP",300,675),width:220,height:22,rotation:54,properties:{
+          restitution:.76,friction:.035,
+          soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.8,audioPan:-.55
+        }},"#7a3150","#e379a1"),
+        styled({...componentDefaults("RAMP",790,675),width:220,height:22,rotation:-54,properties:{
+          restitution:.76,friction:.035,
+          soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.8,audioPan:.5
+        }},"#7a3150","#e379a1"),
+
+        // Inlane / outlane rails.
+        styled({...componentDefaults("WALL",190,700),width:270,height:15,rotation:72},"#375b83","#7fb6e5"),
+        styled({...componentDefaults("WALL",250,735),width:245,height:15,rotation:62},"#375b83","#7fb6e5"),
+        styled({...componentDefaults("WALL",900,700),width:270,height:15,rotation:-72},"#375b83","#7fb6e5"),
+        styled({...componentDefaults("WALL",840,735),width:245,height:15,rotation:-62},"#375b83","#7fb6e5"),
+
+        // Flipper-like moving bars.
+        styled({...componentDefaults("SEESAW",420,805),width:185,height:24,rotation:-18,properties:{
+          restitution:.68,friction:.045,amplitude:12,period:2.3,phase:0,
+          soundMaterial:"rubber",instrument:"click",audioNote:55,audioGain:.82,audioPan:-.3
+        }},"#6941a9","#c49cff"),
+        styled({...componentDefaults("SEESAW",670,805),width:185,height:24,rotation:18,properties:{
+          restitution:.68,friction:.045,amplitude:12,period:2.3,phase:.5,
+          soundMaterial:"rubber",instrument:"click",audioNote:55,audioGain:.82,audioPan:.25
+        }},"#6941a9","#c49cff"),
+
+        // Drain guides and center drain.
+        styled({...componentDefaults("RAMP",310,850),width:265,height:18,rotation:10},"#62432b","#c98c54"),
+        styled({...componentDefaults("RAMP",780,850),width:265,height:18,rotation:-10},"#62432b","#c98c54"),
+        styled({...componentDefaults("ELIMINATION",545,866),width:160,height:58,properties:{
           eliminationKey:"CENTER_DRAIN",
           sensorTag:"CENTER_DRAIN",
-          soundMaterial:"metal",instrument:"drum",audioNote:43,audioGain:1.12,audioPan:0
-        }}
+          soundMaterial:"metal",instrument:"drum",audioNote:43,audioGain:1.12,audioPan:-.05,
+          visualFill:"#05070b",
+          visualStroke:"#d15378"
+        }},"#05070b","#d15378")
       ]
     };
   }
