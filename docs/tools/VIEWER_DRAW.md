@@ -803,6 +803,8 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 - Spawn
 - Finish
 - Output
+- Slot
+- Elimination
 - Canvas 배치/선택/드래그
 - Grid / Snap
 - Inspector 기반 위치/회전/크기/반발/마찰/Boost 수정
@@ -878,6 +880,10 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - Launcher one-shot contact impulse preview
 - Elevator 왕복 경로 근사 Preview
 - Ordered Output sensor / output rank Preview
+- Slot Collection sensor / capacity Preview
+- Last Survivor Elimination Zone Preview
+- Cascade Selection Output capacity Preview
+- seed 기반 Random Output Bucket Preview
 - marble ↔ marble collision
 - restitution
 - friction
@@ -1530,18 +1536,65 @@ V3 구현 완료:
 - V1 `Gate/Pendulum/Seesaw`의 time-driven kinematic motion은 그대로 유지한다.
 - V2/V3의 `HINGE/GEAR/PADDLE/ELEVATOR`는 실제 Box2D joint 기반이다.
 - Map Maker Preview의 Hinge/Gear/Elevator motion은 제작 확인용 근사치이며 추첨 결과 권위는 `Box2dWasmPhysicsAdapter`다.
-- Collision Web Audio V1은 oscillator 기반 로컬 합성음이다. material/instrument sample profile은 아직 결과 물리와 분리된 후속 레이어다.
+- Collision Web Audio V1은 oscillator 기반 로컬 합성음이다.
 - `ORDERED_OUTPUT`은 outputRank 1..winnerCount가 연속이어야 하며 각 Output은 최초 도착 Marble 1개만 claim한다.
+
+V4 구현 완료:
+
+- Material Sound Profile
+  - metal / wood / glass / rubber / plastic / stone
+  - 충돌 이벤트의 pitch / waveform / decay 특성에 반영
+- Instrument Profile
+  - material-only / bell / chime / xylophone / drum / click
+  - MIDI note 24~108
+  - per-component audioGain 0~2
+  - per-component stereo audioPan -1~1
+  - global 12 voice 제한과 DynamicsCompressor 유지
+- `SLOT` component
+  - slotKey
+  - slotCapacity
+  - 실제 도착 순서 기준 winnerOrder
+- `ELIMINATION` component
+  - eliminationKey
+  - 진입 Marble 제거
+  - configured winnerCount에 도달하면 추가 제거 즉시 중단
+- `SLOT_COLLECTION`
+  - 각 Slot capacity까지 Marble을 포획
+  - 전체 도착 순서로 당첨 순위 결정
+- `LAST_SURVIVOR`
+  - Elimination Zone을 통과한 Marble을 제거
+  - N명이 남는 순간 생존자를 확정
+- `CASCADE_SELECTION`
+  - 복수 Output의 outputCapacity 지원
+  - 어떤 Output에 들어왔는지와 무관하게 전역 도착 순서로 winnerOrder 결정
+- `RANDOM_OUTPUT_BUCKET`
+  - seed와 outputWeight로 하나의 Output bucket을 시작 시 1회 선택
+  - 선택된 bucket에 실제 도착한 Marble만 당첨
+  - 모든 후보 Output capacity가 winnerCount를 수용할 수 있어야 저장 가능
+- Browser Authority snapshot
+  - slotClaims
+  - eliminationOrder
+  - selectedOutputKey
+  - advanced outputClaims
+  - eliminated marble state
+- Browser/Server 공통 V4 property/rule validation
+- Map Maker에서 V4 draw rule, sensor capacity, sound material/instrument 편집
+
+중요:
+
+- V4에서도 실제 당첨 권위는 `Box2dWasmPhysicsAdapter`다.
+- Random Output Bucket은 winner Marble을 미리 선택하지 않는다. seed는 bucket만 선택하며, 당첨자는 그 bucket에 실제 물리적으로 도착한 Marble이다.
+- Material/Instrument 설정은 Physics 결과를 변경하지 않는 연출 레이어다.
+- `LAST_SURVIVOR`는 같은 simulation step에서 여러 Marble이 제거 영역에 들어와도 winnerCount 아래로 과잉 제거하지 않는다.
+- Map Maker Preview는 제작 확인용이며 최종 결과 권위는 실제 Box2D runtime이다.
 
 잔여 확장:
 
 - Gear chain 편집 UX / coupling visualization
-- Material Sound Profile / Instrument Profile
-- Slot Collection
-- Elimination
-- Cascade
-- Random Output Bucket
-- Multi-output 고급 draw rule
+- sample-based sound bank / material impulse response
+- Multi-output rule 조건 조합
+- branch / conditional machine rule
+- race timeout / DNF / qualification
 
 ### V9 — Overlay / Audit / Qualification
 
@@ -1602,7 +1655,8 @@ Map Format
 → Goldberg Components V1: Gate / Rotator / Pendulum / Seesaw / Funnel / Splitter [IMPLEMENTED]
 → Reactive Goldberg V2: Hinge / Gear Rotor / Paddle / Launcher [IMPLEMENTED]
 → Machine V3: Gear Coupling / Elevator / Collision Web Audio / Ordered Output [IMPLEMENTED]
-→ Material Audio / Slot / Elimination / Cascade / Advanced Draw Rules
+→ Machine V4: Material/Instrument Audio / Slot / Elimination / Cascade / Random Output [IMPLEMENTED]
+→ Conditional Multi-output Rules / Sound Bank / Qualification
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.

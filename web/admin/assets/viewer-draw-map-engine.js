@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "viewer-draw-machine-map/v0";
-  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT"]);
+  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT","SLOT","ELIMINATION"]);
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
@@ -153,7 +153,9 @@
       case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
       case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
       case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
-      case "OUTPUT": return {...base,width:180,height:60,properties:{outputKey:"OUT1",outputRank:1}};
+      case "OUTPUT": return {...base,width:180,height:60,properties:{outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1}};
+      case "SLOT": return {...base,width:180,height:70,properties:{slotKey:"SLOT1",slotCapacity:1}};
+      case "ELIMINATION": return {...base,width:180,height:70,properties:{eliminationKey:"OUT"}};
       default: throw new Error("Unsupported component type: "+type);
     }
   }
@@ -191,7 +193,14 @@
     const comps=Array.isArray(def?.components)?def.components:[];
     if(comps.length>500) errors.push("컴포넌트는 최대 500개입니다.");
     const rule=resolvedDrawRule(def);
-    if(!["RACE_FINISH","ORDERED_OUTPUT"].includes(rule.type)){
+    if(![
+      "RACE_FINISH",
+      "ORDERED_OUTPUT",
+      "SLOT_COLLECTION",
+      "LAST_SURVIVOR",
+      "CASCADE_SELECTION",
+      "RANDOM_OUTPUT_BUCKET"
+    ].includes(rule.type)){
       errors.push("지원하지 않는 drawRule type입니다.");
     }
     if(rule.winnerCount<0||rule.winnerCount>64){
@@ -201,7 +210,10 @@
     const typeById=new Map();
     const outputKeys=new Set();
     const outputRanks=new Set();
-    let spawn=0,finish=0,output=0;
+    const slotKeys=new Set();
+    const eliminationKeys=new Set();
+    let spawn=0,finish=0,output=0,slot=0,elimination=0;
+    let totalOutputCapacity=0,totalSlotCapacity=0;
     for(const c of comps){
       if(!c?.id || ids.has(c.id)) errors.push("컴포넌트 ID는 고유해야 합니다.");
       ids.add(c?.id);
@@ -213,7 +225,7 @@
       }else if(x<0||x>w||y<0||y>h){
         errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
-      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT"].includes(c?.type)){
+      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
           errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
@@ -269,14 +281,51 @@
       if(c?.type==="OUTPUT"){
         const key=String(p.outputKey||"").trim();
         const rank=Math.trunc(finiteOr(p.outputRank,0));
+        const capacity=Math.trunc(finiteOr(p.outputCapacity,1));
+        const weight=finiteOr(p.outputWeight,1);
         if(!key||key.length>32) errors.push("Output outputKey는 1~32자여야 합니다.");
         if(outputKeys.has(key)) errors.push("Output outputKey는 고유해야 합니다.");
         outputKeys.add(key);
         if(rank<1||rank>64) errors.push("Output outputRank는 1~64 범위여야 합니다.");
-        if(outputRanks.has(rank)) errors.push("Output outputRank는 고유해야 합니다.");
+        if(rule.type==="ORDERED_OUTPUT"&&outputRanks.has(rank)) errors.push("ORDERED_OUTPUT outputRank는 고유해야 합니다.");
         outputRanks.add(rank);
+        if(capacity<1||capacity>64) errors.push("Output outputCapacity는 1~64 범위여야 합니다.");
+        if(weight<=0||weight>100) errors.push("Output outputWeight는 0 초과 100 이하이어야 합니다.");
+        totalOutputCapacity+=Math.max(0,capacity);
         output++;
       }
+      if(c?.type==="SLOT"){
+        const key=String(p.slotKey||"").trim();
+        const capacity=Math.trunc(finiteOr(p.slotCapacity,1));
+        if(!key||key.length>32) errors.push("Slot slotKey는 1~32자여야 합니다.");
+        if(slotKeys.has(key)) errors.push("Slot slotKey는 고유해야 합니다.");
+        slotKeys.add(key);
+        if(capacity<1||capacity>64) errors.push("Slot slotCapacity는 1~64 범위여야 합니다.");
+        totalSlotCapacity+=Math.max(0,capacity);
+        slot++;
+      }
+      if(c?.type==="ELIMINATION"){
+        const key=String(p.eliminationKey||"").trim();
+        if(!key||key.length>32) errors.push("Elimination eliminationKey는 1~32자여야 합니다.");
+        if(eliminationKeys.has(key)) errors.push("Elimination eliminationKey는 고유해야 합니다.");
+        eliminationKeys.add(key);
+        elimination++;
+      }
+
+      const material=String(p.soundMaterial||"metal").toLowerCase();
+      const instrument=String(p.instrument||"none").toLowerCase();
+      const note=finiteOr(p.audioNote,60);
+      const gain=finiteOr(p.audioGain,1);
+      const pan=finiteOr(p.audioPan,0);
+      if(!["metal","wood","glass","rubber","plastic","stone"].includes(material)){
+        errors.push("soundMaterial이 유효하지 않습니다.");
+      }
+      if(!["none","bell","chime","xylophone","drum","click"].includes(instrument)){
+        errors.push("instrument가 유효하지 않습니다.");
+      }
+      if(note<24||note>108) errors.push("audioNote는 MIDI 24~108 범위여야 합니다.");
+      if(gain<0||gain>2) errors.push("audioGain은 0~2 범위여야 합니다.");
+      if(pan<-1||pan>1) errors.push("audioPan은 -1~1 범위여야 합니다.");
 
       if(c?.type==="SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
@@ -304,6 +353,34 @@
       if(winners<1||winners>output) errors.push("ORDERED_OUTPUT winnerCount가 OUTPUT 수보다 클 수 없습니다.");
       for(let rank=1;rank<=winners;rank++){
         if(!outputRanks.has(rank)) errors.push("ORDERED_OUTPUT은 1부터 winnerCount까지 연속 outputRank가 필요합니다.");
+      }
+    }
+    if(rule.type==="SLOT_COLLECTION"){
+      const winners=rule.winnerCount||totalSlotCapacity;
+      if(!slot) errors.push("SLOT_COLLECTION에는 SLOT이 최소 1개 필요합니다.");
+      if(winners<1||winners>totalSlotCapacity) errors.push("SLOT_COLLECTION winnerCount가 Slot 총 capacity를 초과할 수 없습니다.");
+    }
+    if(rule.type==="LAST_SURVIVOR"){
+      const winners=rule.winnerCount||1;
+      if(!elimination) errors.push("LAST_SURVIVOR에는 ELIMINATION이 최소 1개 필요합니다.");
+      if(winners<1||winners>64) errors.push("LAST_SURVIVOR winnerCount는 1~64여야 합니다.");
+    }
+    if(rule.type==="CASCADE_SELECTION"){
+      const winners=rule.winnerCount||totalOutputCapacity;
+      if(!output) errors.push("CASCADE_SELECTION에는 OUTPUT이 최소 1개 필요합니다.");
+      if(winners<1||winners>totalOutputCapacity) errors.push("CASCADE_SELECTION winnerCount가 Output 총 capacity를 초과할 수 없습니다.");
+    }
+    if(rule.type==="RANDOM_OUTPUT_BUCKET"){
+      const winners=rule.winnerCount||1;
+      if(!output) errors.push("RANDOM_OUTPUT_BUCKET에는 OUTPUT이 최소 1개 필요합니다.");
+      if(winners<1||winners>64) errors.push("RANDOM_OUTPUT_BUCKET winnerCount는 1~64여야 합니다.");
+      if(output>0){
+        const capacities=comps
+          .filter(c=>c?.type==="OUTPUT")
+          .map(c=>Math.trunc(finiteOr(c?.properties?.outputCapacity,1)));
+        if(capacities.some(capacity=>capacity<winners)){
+          errors.push("RANDOM_OUTPUT_BUCKET의 모든 Output capacity는 winnerCount 이상이어야 합니다.");
+        }
       }
     }
     return [...new Set(errors)];
@@ -337,6 +414,9 @@
       this.marbles=[];
       this.finishOrder=[];
       this.outputClaims=new Map();
+      this.slotClaims=new Map();
+      this.eliminationOrder=[];
+      this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
     }
@@ -349,8 +429,28 @@
       this.marbles=[];
       this.finishOrder=[];
       this.outputClaims=new Map();
+      this.slotClaims=new Map();
+      this.eliminationOrder=[];
+      this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
+
+      const rule=resolvedDrawRule(this.definition);
+      if(rule.type==="RANDOM_OUTPUT_BUCKET"){
+        const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
+        const total=outputs.reduce((sum,c)=>sum+Math.max(.0001,finiteOr(c.properties?.outputWeight,1)),0);
+        let pick=rng()*total;
+        for(const output of outputs){
+          pick-=Math.max(.0001,finiteOr(output.properties?.outputWeight,1));
+          if(pick<=0){
+            this.selectedOutputKey=String(output.properties?.outputKey||"");
+            break;
+          }
+        }
+        if(!this.selectedOutputKey&&outputs.length){
+          this.selectedOutputKey=String(outputs.at(-1).properties?.outputKey||"");
+        }
+      }
 
       for(let i=0;i<n;i++){
         const spawn=spawns[i%spawns.length];
@@ -366,6 +466,7 @@
           vy:(rng()-.5)*8,
           radius:r,
           finished:false,
+          eliminated:false,
           rank:0,
           finishTime:null,
           launcherContacts:new Set()
@@ -391,7 +492,7 @@
       this.time+=dt;
 
       for(const m of this.marbles){
-        if(m.finished) continue;
+        if(m.finished||m.eliminated) continue;
         m.vx+=world.gravityX*gravityScale*dt;
         m.vy+=world.gravityY*gravityScale*dt;
         m.vx*=0.9995;
@@ -414,11 +515,23 @@
       this.resolveMarblePairs();
       this.applyLauncherBoosts();
 
+      this.detectResultSensors();
+    }
+
+    completeMarble(m,rank){
+      m.finished=true;
+      m.rank=rank;
+      m.finishTime=this.time;
+      m.vx=0;m.vy=0;
+    }
+
+    detectResultSensors(){
       const rule=resolvedDrawRule(this.definition);
+      const active=this.marbles.filter(m=>!m.finished&&!m.eliminated);
+
       if(rule.type==="ORDERED_OUTPUT"){
         const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
-        for(const m of this.marbles){
-          if(m.finished) continue;
+        for(const m of active){
           const output=outputs.find(o=>
             !this.outputClaims.has(Math.trunc(finiteOr(o.properties?.outputRank,0)))
             && this.pointInRect(m.x,m.y,o)
@@ -426,25 +539,108 @@
           if(!output) continue;
           const rank=Math.trunc(finiteOr(output.properties?.outputRank,1));
           this.outputClaims.set(rank,m.id);
-          m.finished=true;
-          m.rank=rank;
-          m.finishTime=this.time;
-          m.vx=0;m.vy=0;
-          this.finishOrder=[...this.outputClaims.entries()]
-            .sort((a,b)=>a[0]-b[0])
-            .map(([,id])=>id);
+          this.completeMarble(m,rank);
         }
-      }else{
-        const finishes=this.definition.components.filter(c=>c.type==="FINISH");
-        for(const m of this.marbles){
-          if(m.finished) continue;
-          if(finishes.some(f=>this.pointInRect(m.x,m.y,f))){
-            m.finished=true;
-            m.rank=this.finishOrder.length+1;
-            m.finishTime=this.time;
-            m.vx=0;m.vy=0;
+        this.finishOrder=[...this.outputClaims.entries()]
+          .sort((a,b)=>a[0]-b[0])
+          .map(([,id])=>id);
+        return;
+      }
+
+      if(rule.type==="SLOT_COLLECTION"){
+        const slots=this.definition.components.filter(c=>c.type==="SLOT");
+        const target=rule.winnerCount||slots.reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.slotCapacity,1)),0);
+        for(const m of active){
+          if(this.finishOrder.length>=target) break;
+          const slot=slots.find(candidate=>{
+            const key=String(candidate.properties?.slotKey||candidate.id);
+            const claims=this.slotClaims.get(key)||[];
+            return claims.length<Math.trunc(finiteOr(candidate.properties?.slotCapacity,1))
+              && this.pointInRect(m.x,m.y,candidate);
+          });
+          if(!slot) continue;
+          const key=String(slot.properties?.slotKey||slot.id);
+          const claims=this.slotClaims.get(key)||[];
+          claims.push(m.id);
+          this.slotClaims.set(key,claims);
+          this.finishOrder.push(m.id);
+          this.completeMarble(m,this.finishOrder.length);
+        }
+        return;
+      }
+
+      if(rule.type==="LAST_SURVIVOR"){
+        const zones=this.definition.components.filter(c=>c.type==="ELIMINATION");
+        const winners=rule.winnerCount||1;
+        let remaining=active.length;
+        for(const m of active){
+          if(remaining<=winners) break;
+          if(!zones.some(zone=>this.pointInRect(m.x,m.y,zone))) continue;
+          m.eliminated=true;
+          m.vx=0;m.vy=0;
+          this.eliminationOrder.push(m.id);
+          remaining--;
+        }
+        const survivors=this.marbles.filter(m=>!m.finished&&!m.eliminated);
+        if(survivors.length>0&&survivors.length<=winners&&!this.finishOrder.length){
+          survivors.sort((a,b)=>{
+            const gx=finiteOr(this.definition.world.gravityX,0);
+            const gy=finiteOr(this.definition.world.gravityY,0);
+            return (b.x*gx+b.y*gy)-(a.x*gx+a.y*gy);
+          });
+          survivors.forEach((m,index)=>{
             this.finishOrder.push(m.id);
-          }
+            this.completeMarble(m,index+1);
+          });
+        }
+        return;
+      }
+
+      if(rule.type==="CASCADE_SELECTION"){
+        const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
+        const target=rule.winnerCount||outputs.reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.outputCapacity,1)),0);
+        for(const m of active){
+          if(this.finishOrder.length>=target) break;
+          const output=outputs.find(candidate=>{
+            const key=String(candidate.properties?.outputKey||candidate.id);
+            const claims=this.outputClaims.get(key)||[];
+            return Array.isArray(claims)
+              && claims.length<Math.trunc(finiteOr(candidate.properties?.outputCapacity,1))
+              && this.pointInRect(m.x,m.y,candidate);
+          });
+          if(!output) continue;
+          const key=String(output.properties?.outputKey||output.id);
+          const claims=this.outputClaims.get(key)||[];
+          claims.push(m.id);
+          this.outputClaims.set(key,claims);
+          this.finishOrder.push(m.id);
+          this.completeMarble(m,this.finishOrder.length);
+        }
+        return;
+      }
+
+      if(rule.type==="RANDOM_OUTPUT_BUCKET"){
+        const outputs=this.definition.components.filter(c=>
+          c.type==="OUTPUT"
+          && String(c.properties?.outputKey||"")===this.selectedOutputKey
+        );
+        const output=outputs[0];
+        if(!output) return;
+        const target=rule.winnerCount||1;
+        for(const m of active){
+          if(this.finishOrder.length>=target) break;
+          if(!this.pointInRect(m.x,m.y,output)) continue;
+          this.finishOrder.push(m.id);
+          this.completeMarble(m,this.finishOrder.length);
+        }
+        return;
+      }
+
+      const finishes=this.definition.components.filter(c=>c.type==="FINISH");
+      for(const m of active){
+        if(finishes.some(f=>this.pointInRect(m.x,m.y,f))){
+          this.finishOrder.push(m.id);
+          this.completeMarble(m,this.finishOrder.length);
         }
       }
     }
@@ -526,7 +722,7 @@
       const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
       if(!launchers.length) return;
       for(const m of this.marbles){
-        if(m.finished) continue;
+        if(m.finished||m.eliminated) continue;
         const next=new Set();
         for(const launcher of launchers){
           if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
@@ -551,9 +747,9 @@
     resolveMarblePairs(){
       const ms=this.marbles;
       for(let i=0;i<ms.length;i++){
-        const a=ms[i]; if(a.finished) continue;
+        const a=ms[i]; if(a.finished||a.eliminated) continue;
         for(let j=i+1;j<ms.length;j++){
-          const b=ms[j]; if(b.finished) continue;
+          const b=ms[j]; if(b.finished||b.eliminated) continue;
           let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);
           const target=a.radius+b.radius;
           if(dist>=target) continue;
@@ -580,7 +776,7 @@
 
     shakeMarble(id){
       const marble=this.marbles.find(m=>m.id===id);
-      if(!marble||marble.finished) return false;
+      if(!marble||marble.finished||marble.eliminated) return false;
       const angle=this.random()*Math.PI*2;
       const power=70+this.random()*50;
       marble.vx+=Math.cos(angle)*power;
@@ -593,15 +789,24 @@
         time:this.time,
         marbles:this.marbles.map(m=>({
           id:m.id,x:m.x,y:m.y,vx:m.vx,vy:m.vy,radius:m.radius,
-          finished:m.finished,rank:m.rank,finishTime:m.finishTime
+          finished:m.finished,eliminated:m.eliminated,rank:m.rank,finishTime:m.finishTime
         })),
         finishOrder:[...this.finishOrder],
         winnerOrder:[...this.finishOrder],
-        outputClaims:[...this.outputClaims.entries()].map(([rank,id])=>({rank,id})),
+        outputClaims:[...this.outputClaims.entries()].map(([key,value])=>({key,value})),
+        slotClaims:[...this.slotClaims.entries()].map(([key,ids])=>({key,ids:[...ids]})),
+        eliminationOrder:[...this.eliminationOrder],
+        selectedOutputKey:this.selectedOutputKey,
         finishedCount:this.finishOrder.length,
-        targetCount:resolvedDrawRule(this.definition).type==="ORDERED_OUTPUT"
-          ? (resolvedDrawRule(this.definition).winnerCount||this.definition.components.filter(c=>c.type==="OUTPUT").length)
-          : this.marbles.length,
+        targetCount:(()=>{
+          const rule=resolvedDrawRule(this.definition);
+          if(rule.type==="ORDERED_OUTPUT") return rule.winnerCount||this.definition.components.filter(c=>c.type==="OUTPUT").length;
+          if(rule.type==="SLOT_COLLECTION") return rule.winnerCount||this.definition.components.filter(c=>c.type==="SLOT").reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.slotCapacity,1)),0);
+          if(rule.type==="LAST_SURVIVOR") return rule.winnerCount||1;
+          if(rule.type==="CASCADE_SELECTION") return rule.winnerCount||this.definition.components.filter(c=>c.type==="OUTPUT").reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.outputCapacity,1)),0);
+          if(rule.type==="RANDOM_OUTPUT_BUCKET") return rule.winnerCount||1;
+          return this.marbles.length;
+        })(),
         totalCount:this.marbles.length
       };
     }

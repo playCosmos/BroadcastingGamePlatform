@@ -63,6 +63,13 @@
     return audioContext.state === "running";
   }
 
+  function midiFrequency(note) {
+    return 440 * Math.pow(
+      2,
+      (clamp(Number(note) || 60, 24, 108) - 69) / 12
+    );
+  }
+
   function playAudioEvents(events) {
     if (
       !audioIsEnabled()
@@ -73,6 +80,28 @@
       return;
     }
 
+    const materialProfiles = {
+      metal: { wave: "sine", pitch: 1, duration: 0.12 },
+      wood: { wave: "triangle", pitch: 0.78, duration: 0.09 },
+      glass: { wave: "sine", pitch: 1.55, duration: 0.2 },
+      rubber: { wave: "sine", pitch: 0.55, duration: 0.07 },
+      plastic: { wave: "square", pitch: 0.9, duration: 0.06 },
+      stone: { wave: "triangle", pitch: 0.65, duration: 0.11 }
+    };
+
+    const kindFrequencies = {
+      impact: 220,
+      bumper: 520,
+      launcher: 150,
+      finish: 760,
+      output: 640,
+      slot: 560,
+      elimination: 130,
+      survivor: 820,
+      cascade: 610,
+      bucket: 690
+    };
+
     for (const event of events) {
       const strength = clamp(Number(event.strength) || 0, 0, 1);
       if (strength < 0.08 || activeAudioVoices >= MAX_AUDIO_VOICES) {
@@ -80,49 +109,82 @@
       }
 
       const kind = String(event.kind || "impact");
+      const material =
+        materialProfiles[String(event.material || "metal")]
+        || materialProfiles.metal;
+      const instrument = String(event.instrument || "none");
+      const noteFrequency = midiFrequency(event.note);
+      let frequency =
+        (kindFrequencies[kind] || kindFrequencies.impact)
+        * material.pitch
+        * (0.88 + strength * 0.24);
+      let wave = material.wave;
+      let duration = material.duration;
+
+      if (instrument === "bell") {
+        frequency = noteFrequency * 1.5;
+        wave = "sine";
+        duration = 0.28;
+      } else if (instrument === "chime") {
+        frequency = noteFrequency * 2;
+        wave = "sine";
+        duration = 0.34;
+      } else if (instrument === "xylophone") {
+        frequency = noteFrequency;
+        wave = "triangle";
+        duration = 0.18;
+      } else if (instrument === "drum") {
+        frequency = 70 + (noteFrequency / 20);
+        wave = "sawtooth";
+        duration = 0.12;
+      } else if (instrument === "click") {
+        frequency = 900 + (noteFrequency / 4);
+        wave = "square";
+        duration = 0.045;
+      }
+
       const oscillator = audioContext.createOscillator();
       const gain = audioContext.createGain();
+      const panner = audioContext.createStereoPanner
+        ? audioContext.createStereoPanner()
+        : null;
       const now = audioContext.currentTime;
 
-      const frequencies = {
-        impact: 190 + strength * 180,
-        bumper: 520 + strength * 180,
-        launcher: 150 + strength * 90,
-        finish: 760 + strength * 140,
-        output: 640 + strength * 220
-      };
-      oscillator.frequency.setValueAtTime(
-        frequencies[kind] || frequencies.impact,
-        now
+      oscillator.type = wave;
+      oscillator.frequency.setValueAtTime(frequency, now);
+      const profileGain = clamp(Number(event.gain) || 1, 0, 2);
+      const peak = Math.max(
+        0.0002,
+        (0.018 + strength * 0.052) * profileGain
       );
-      oscillator.type =
-        kind === "launcher" ? "sawtooth"
-          : kind === "bumper" ? "triangle"
-            : "sine";
-
-      const peak = 0.025 + strength * 0.055;
       gain.gain.setValueAtTime(0.0001, now);
       gain.gain.exponentialRampToValueAtTime(
         peak,
-        now + 0.008
+        now + 0.006
       );
       gain.gain.exponentialRampToValueAtTime(
         0.0001,
-        now + (kind === "finish" || kind === "output" ? 0.16 : 0.08)
+        now + duration
       );
 
       oscillator.connect(gain);
-      gain.connect(audioMaster);
+      if (panner) {
+        panner.pan.value = clamp(Number(event.pan) || 0, -1, 1);
+        gain.connect(panner);
+        panner.connect(audioMaster);
+      } else {
+        gain.connect(audioMaster);
+      }
+
       activeAudioVoices += 1;
       oscillator.onended = () => {
         activeAudioVoices = Math.max(0, activeAudioVoices - 1);
         try { oscillator.disconnect(); } catch {}
         try { gain.disconnect(); } catch {}
+        try { panner?.disconnect(); } catch {}
       };
       oscillator.start(now);
-      oscillator.stop(
-        now + (kind === "finish" || kind === "output" ? 0.18 : 0.1)
-      );
+      oscillator.stop(now + duration + 0.02);
     }
   }
 
@@ -168,7 +230,7 @@
     $("entries").disabled = locked;
     $("winnerCount").disabled =
       locked
-      || Engine.resolvedDrawRule(definition).type === "ORDERED_OUTPUT";
+      || Engine.resolvedDrawRule(definition).type !== "RACE_FINISH";
     $("seed").disabled = locked;
     $("loadMapButton").disabled = locked;
     $("startDraw").disabled = locked;
@@ -207,15 +269,38 @@
     definition = structuredClone(next);
     adapter.loadMap(definition);
     const rule = Engine.resolvedDrawRule(definition);
-    if (rule.type === "ORDERED_OUTPUT") {
-      const outputCount = definition.components.filter(
-        (component) => component.type === "OUTPUT"
-      ).length;
-      $("winnerCount").value = String(
-        Math.max(1, rule.winnerCount || outputCount)
-      );
+    if (rule.type !== "RACE_FINISH") {
+      let target = rule.winnerCount;
+      if (!target && rule.type === "ORDERED_OUTPUT") {
+        target = definition.components.filter(
+          (component) => component.type === "OUTPUT"
+        ).length;
+      } else if (!target && rule.type === "SLOT_COLLECTION") {
+        target = definition.components
+          .filter((component) => component.type === "SLOT")
+          .reduce(
+            (sum, component) =>
+              sum + Math.trunc(
+                Number(component.properties?.slotCapacity) || 1
+              ),
+            0
+          );
+      } else if (!target && rule.type === "CASCADE_SELECTION") {
+        target = definition.components
+          .filter((component) => component.type === "OUTPUT")
+          .reduce(
+            (sum, component) =>
+              sum + Math.trunc(
+                Number(component.properties?.outputCapacity) || 1
+              ),
+            0
+          );
+      } else if (!target) {
+        target = 1;
+      }
+      $("winnerCount").value = String(Math.max(1, target));
     }
-    $("winnerCount").disabled = rule.type === "ORDERED_OUTPUT";
+    $("winnerCount").disabled = rule.type !== "RACE_FINISH";
     $("mapName").textContent = definition.name;
     $("mapSchema").textContent = definition.schemaVersion;
     resetCamera(true);
@@ -302,6 +387,8 @@
       LAUNCHER: ["#3e6675", "#78bdd5"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
       OUTPUT: ["#3f744c", "#8bd3a1"],
+      SLOT: ["#73503e", "#dda57e"],
+      ELIMINATION: ["#713d50", "#df789d"],
       SPAWN: ["#1d6c8d", "#60c3e8"],
       FINISH: ["#327649", "#72cf90"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -341,7 +428,7 @@
       );
       target.fillRect(-width / 2, -height / 2, width, height);
       target.strokeRect(-width / 2, -height / 2, width, height);
-      if (component.type === "FINISH" || component.type === "OUTPUT") {
+      if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(component.type)) {
         target.setLineDash([6, 4]);
         target.strokeRect(
           -width / 2 + 3,
@@ -377,12 +464,16 @@
     );
 
     target.save();
-    target.fillStyle = marble.finished
-      ? "#8ee0a6"
-      : marbleColor(marble);
-    target.strokeStyle = marble.finished
-      ? "#d9ffe3"
-      : "#d4e1ea";
+    target.fillStyle = marble.eliminated
+      ? "#5b6268"
+      : marble.finished
+        ? "#8ee0a6"
+        : marbleColor(marble);
+    target.strokeStyle = marble.eliminated
+      ? "#8b949b"
+      : marble.finished
+        ? "#d9ffe3"
+        : "#d4e1ea";
     target.lineWidth = simplified ? 0.8 : 1.3;
     target.beginPath();
     target.arc(p.x, p.y, radius, 0, Math.PI * 2);
@@ -395,9 +486,11 @@
         `800 ${Math.max(7, radius * 0.72)}px ui-monospace,monospace`;
       target.textAlign = "center";
       target.textBaseline = "middle";
-      const text = marble.finished
-        ? String(marble.rank)
-        : marble.entry?.displayName?.slice(0, 2) || marble.id;
+      const text = marble.eliminated
+        ? "×"
+        : marble.finished
+          ? String(marble.rank)
+          : marble.entry?.displayName?.slice(0, 2) || marble.id;
       target.fillText(text, p.x, p.y);
     }
     target.restore();
@@ -559,12 +652,15 @@
       .filter((marble) => marble.finished)
       .sort((left, right) => left.rank - right.rank);
     const active = state.marbles
-      .filter((marble) => !marble.finished)
+      .filter((marble) => !marble.finished && !marble.eliminated)
       .sort(
         (left, right) =>
           progressValue(right) - progressValue(left)
       );
-    return [...finished, ...active];
+    const eliminated = state.marbles.filter(
+      (marble) => marble.eliminated
+    );
+    return [...finished, ...active, ...eliminated];
   }
 
   function renderRanks() {
@@ -578,27 +674,42 @@
       row.className = "rank-row";
       if (marble.finished && marble.rank <= winnerCount) {
         row.classList.add("winner");
-      } else if (!marble.finished && index === state.finishedCount) {
-        row.classList.add("leader");
+      } else if (marble.eliminated) {
+        row.classList.add("eliminated");
+      } else if (!marble.finished) {
+        const firstActive = orderedMarbles().find(
+          (candidate) =>
+            !candidate.finished && !candidate.eliminated
+        );
+        if (firstActive?.id === marble.id) row.classList.add("leader");
       }
 
       const rank = document.createElement("span");
-      rank.textContent = marble.finished
-        ? "#" + marble.rank
-        : "~#" + (index + 1);
+      rank.textContent = marble.eliminated
+        ? "×"
+        : marble.finished
+          ? "#" + marble.rank
+          : "~#" + (index + 1);
 
       const name = document.createElement("strong");
       name.textContent =
         marble.entry?.displayName || marble.id;
 
       const status = document.createElement("small");
-      status.textContent = marble.finished
-        ? (
-            Engine.resolvedDrawRule(definition).type === "ORDERED_OUTPUT"
-              ? "OUTPUT"
-              : "FINISH"
-          )
-        : "RACING";
+      const ruleType = Engine.resolvedDrawRule(definition).type;
+      status.textContent = marble.eliminated
+        ? "ELIMINATED"
+        : marble.finished
+          ? (
+              ruleType === "RACE_FINISH"
+                ? "FINISH"
+                : ruleType === "LAST_SURVIVOR"
+                  ? "SURVIVOR"
+                  : ruleType === "SLOT_COLLECTION"
+                    ? "SLOT"
+                    : "OUTPUT"
+            )
+          : "RACING";
 
       row.append(rank, name, status);
       root.appendChild(row);
@@ -607,12 +718,27 @@
 
   function nearestFinishDistance(marble) {
     const rule = Engine.resolvedDrawRule(definition);
-    const targets = definition.components.filter(
-      (component) =>
-        component.type === (
-          rule.type === "ORDERED_OUTPUT" ? "OUTPUT" : "FINISH"
-        )
+    if (rule.type === "LAST_SURVIVOR") return Infinity;
+    const targetType =
+      rule.type === "SLOT_COLLECTION"
+        ? "SLOT"
+        : ["ORDERED_OUTPUT","CASCADE_SELECTION","RANDOM_OUTPUT_BUCKET"]
+            .includes(rule.type)
+          ? "OUTPUT"
+          : "FINISH";
+    let targets = definition.components.filter(
+      (component) => component.type === targetType
     );
+    if (
+      rule.type === "RANDOM_OUTPUT_BUCKET"
+      && state?.selectedOutputKey
+    ) {
+      targets = targets.filter(
+        (component) =>
+          String(component.properties?.outputKey || "")
+            === state.selectedOutputKey
+      );
+    }
     if (!targets.length) return Infinity;
     return Math.min(
       ...targets.map((target) =>
@@ -626,24 +752,44 @@
 
   function winnerCountValue() {
     const rule = Engine.resolvedDrawRule(definition);
-    if (rule.type === "ORDERED_OUTPUT") {
-      const outputCount = definition.components.filter(
+    let configured = rule.winnerCount;
+    if (!configured && rule.type === "ORDERED_OUTPUT") {
+      configured = definition.components.filter(
         (component) => component.type === "OUTPUT"
       ).length;
-      return Math.max(
-        1,
-        Math.min(
-          entries.length || 1,
-          rule.winnerCount || outputCount || 1
-        )
-      );
+    } else if (!configured && rule.type === "SLOT_COLLECTION") {
+      configured = definition.components
+        .filter((component) => component.type === "SLOT")
+        .reduce(
+          (sum, component) =>
+            sum + Math.trunc(
+              Number(component.properties?.slotCapacity) || 1
+            ),
+          0
+        );
+    } else if (!configured && rule.type === "CASCADE_SELECTION") {
+      configured = definition.components
+        .filter((component) => component.type === "OUTPUT")
+        .reduce(
+          (sum, component) =>
+            sum + Math.trunc(
+              Number(component.properties?.outputCapacity) || 1
+            ),
+          0
+        );
+    } else if (
+      !configured
+      && ["LAST_SURVIVOR","RANDOM_OUTPUT_BUCKET"].includes(rule.type)
+    ) {
+      configured = 1;
     }
+
+    const requested = rule.type === "RACE_FINISH"
+      ? Math.trunc(Number($("winnerCount").value) || 1)
+      : configured;
     return Math.max(
       1,
-      Math.min(
-        entries.length || 1,
-        Math.trunc(Number($("winnerCount").value) || 1)
-      )
+      Math.min(entries.length || 1, requested || 1)
     );
   }
 
@@ -671,8 +817,16 @@
       return;
     }
 
+    if (
+      Engine.resolvedDrawRule(definition).type === "LAST_SURVIVOR"
+    ) {
+      finishSlowMotion = false;
+      updatePlaybackRate();
+      return;
+    }
+
     const active = state.marbles
-      .filter((marble) => !marble.finished)
+      .filter((marble) => !marble.finished && !marble.eliminated)
       .sort(
         (left, right) =>
           progressValue(right) - progressValue(left)
@@ -692,7 +846,9 @@
   function updateCamera(deltaSeconds) {
     if (!camera.locked && state?.marbles?.length) {
       const active = state.marbles
-        .filter((marble) => !marble.finished)
+        .filter(
+          (marble) => !marble.finished && !marble.eliminated
+        )
         .sort(
           (left, right) =>
             progressValue(right) - progressValue(left)
@@ -732,7 +888,7 @@
 
     const activeIds = new Set();
     for (const marble of state.marbles) {
-      if (marble.finished) continue;
+      if (marble.finished || marble.eliminated) continue;
       activeIds.add(marble.id);
 
       const previous = stuckState.get(marble.id);

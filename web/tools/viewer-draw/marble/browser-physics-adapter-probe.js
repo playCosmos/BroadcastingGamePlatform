@@ -91,9 +91,11 @@ goldbergDefinition.components.splice(
     "PADDLE",
     "LAUNCHER",
     "ELEVATOR",
-    "OUTPUT"
+    "OUTPUT",
+    "SLOT",
+    "ELIMINATION"
   ].map((type, index) =>
-    Engine.componentDefaults(type, 70 + index * 65, 300)
+    Engine.componentDefaults(type, 60 + index * 50, 300)
   )
 );
 requireCondition(
@@ -126,8 +128,17 @@ requireCondition(
   "actual Marble Draw must include local collision Web Audio"
 );
 requireCondition(
-  controllerSource.includes("ORDERED_OUTPUT"),
-  "actual Marble Draw must honor map draw rules"
+  controllerSource.includes("ORDERED_OUTPUT")
+    && controllerSource.includes("SLOT_COLLECTION")
+    && controllerSource.includes("LAST_SURVIVOR")
+    && controllerSource.includes("CASCADE_SELECTION")
+    && controllerSource.includes("RANDOM_OUTPUT_BUCKET"),
+  "actual Marble Draw must honor advanced map draw rules"
+);
+requireCondition(
+  controllerSource.includes("materialProfiles")
+    && controllerSource.includes("midiFrequency"),
+  "actual Marble Draw must apply material/instrument audio profiles"
 );
 
 for (const forbidden of [

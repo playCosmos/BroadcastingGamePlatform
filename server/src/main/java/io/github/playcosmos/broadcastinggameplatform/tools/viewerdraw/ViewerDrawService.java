@@ -409,8 +409,14 @@ public final class ViewerDrawService {
             ? 0
             : rawRule.winnerCount();
         if (
-            !"RACE_FINISH".equals(drawRuleType)
-            && !"ORDERED_OUTPUT".equals(drawRuleType)
+            !java.util.Set.of(
+                "RACE_FINISH",
+                "ORDERED_OUTPUT",
+                "SLOT_COLLECTION",
+                "LAST_SURVIVOR",
+                "CASCADE_SELECTION",
+                "RANDOM_OUTPUT_BUCKET"
+            ).contains(drawRuleType)
         ) {
             throw new IllegalArgumentException(
                 "unsupported drawRule type: " + drawRuleType
@@ -434,16 +440,24 @@ public final class ViewerDrawService {
             "WALL", "RAMP", "PEG", "BUMPER", "SPAWN", "FINISH",
             "GATE", "ROTATOR", "PENDULUM", "SEESAW",
             "FUNNEL", "SPLITTER", "HINGE", "GEAR",
-            "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT"
+            "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT",
+            "SLOT", "ELIMINATION"
         );
         var ids = new java.util.LinkedHashSet<String>();
         var componentTypes = new java.util.LinkedHashMap<String, String>();
         var outputKeys = new java.util.LinkedHashSet<String>();
         var outputRanks = new java.util.LinkedHashSet<Integer>();
+        var slotKeys = new java.util.LinkedHashSet<String>();
+        var eliminationKeys = new java.util.LinkedHashSet<String>();
+        var outputCapacities = new ArrayList<Integer>();
         var normalizedComponents = new ArrayList<MachineComponent>();
         int spawnCount = 0;
         int finishCount = 0;
         int outputCount = 0;
+        int slotCount = 0;
+        int eliminationCount = 0;
+        int totalOutputCapacity = 0;
+        int totalSlotCapacity = 0;
 
         for (MachineComponent rawComponent : rawComponents) {
             if (rawComponent == null) continue;
@@ -491,6 +505,7 @@ public final class ViewerDrawService {
                     || "HINGE".equals(type) || "GEAR".equals(type)
                     || "PADDLE".equals(type) || "LAUNCHER".equals(type)
                     || "ELEVATOR".equals(type) || "OUTPUT".equals(type)
+                    || "SLOT".equals(type) || "ELIMINATION".equals(type)
                 )
                 && (
                     rawComponent.width() < 8
@@ -701,6 +716,16 @@ public final class ViewerDrawService {
                     "outputRank",
                     0
                 );
+                int outputCapacity = (int) numberProperty(
+                    properties,
+                    "outputCapacity",
+                    1
+                );
+                double outputWeight = numberProperty(
+                    properties,
+                    "outputWeight",
+                    1
+                );
                 if (outputKey.isBlank() || outputKey.length() > 32) {
                     throw new IllegalArgumentException(
                         id + " outputKey must be 1..32 characters"
@@ -716,12 +741,139 @@ public final class ViewerDrawService {
                         id + " outputRank must be within 1..64"
                     );
                 }
-                if (!outputRanks.add(outputRank)) {
+                if (
+                    "ORDERED_OUTPUT".equals(drawRuleType)
+                    && !outputRanks.add(outputRank)
+                ) {
                     throw new IllegalArgumentException(
-                        "outputRank must be unique"
+                        "ORDERED_OUTPUT outputRank must be unique"
                     );
                 }
+                outputRanks.add(outputRank);
+                if (outputCapacity < 1 || outputCapacity > 64) {
+                    throw new IllegalArgumentException(
+                        id + " outputCapacity must be within 1..64"
+                    );
+                }
+                if (outputWeight <= 0 || outputWeight > 100) {
+                    throw new IllegalArgumentException(
+                        id + " outputWeight must be > 0 and <= 100"
+                    );
+                }
+                outputCapacities.add(outputCapacity);
+                totalOutputCapacity += outputCapacity;
                 outputCount += 1;
+            }
+            if ("SLOT".equals(type)) {
+                String slotKey = stringProperty(
+                    properties,
+                    "slotKey",
+                    ""
+                ).trim();
+                int slotCapacity = (int) numberProperty(
+                    properties,
+                    "slotCapacity",
+                    1
+                );
+                if (slotKey.isBlank() || slotKey.length() > 32) {
+                    throw new IllegalArgumentException(
+                        id + " slotKey must be 1..32 characters"
+                    );
+                }
+                if (!slotKeys.add(slotKey)) {
+                    throw new IllegalArgumentException(
+                        "slotKey must be unique"
+                    );
+                }
+                if (slotCapacity < 1 || slotCapacity > 64) {
+                    throw new IllegalArgumentException(
+                        id + " slotCapacity must be within 1..64"
+                    );
+                }
+                totalSlotCapacity += slotCapacity;
+                slotCount += 1;
+            }
+            if ("ELIMINATION".equals(type)) {
+                String eliminationKey = stringProperty(
+                    properties,
+                    "eliminationKey",
+                    ""
+                ).trim();
+                if (
+                    eliminationKey.isBlank()
+                    || eliminationKey.length() > 32
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " eliminationKey must be 1..32 characters"
+                    );
+                }
+                if (!eliminationKeys.add(eliminationKey)) {
+                    throw new IllegalArgumentException(
+                        "eliminationKey must be unique"
+                    );
+                }
+                eliminationCount += 1;
+            }
+
+            String soundMaterial = stringProperty(
+                properties,
+                "soundMaterial",
+                "metal"
+            ).trim().toLowerCase(Locale.ROOT);
+            String instrument = stringProperty(
+                properties,
+                "instrument",
+                "none"
+            ).trim().toLowerCase(Locale.ROOT);
+            double audioNote = numberProperty(
+                properties,
+                "audioNote",
+                60
+            );
+            double audioGain = numberProperty(
+                properties,
+                "audioGain",
+                1
+            );
+            double audioPan = numberProperty(
+                properties,
+                "audioPan",
+                0
+            );
+            if (
+                !java.util.Set.of(
+                    "metal", "wood", "glass",
+                    "rubber", "plastic", "stone"
+                ).contains(soundMaterial)
+            ) {
+                throw new IllegalArgumentException(
+                    id + " soundMaterial is invalid"
+                );
+            }
+            if (
+                !java.util.Set.of(
+                    "none", "bell", "chime",
+                    "xylophone", "drum", "click"
+                ).contains(instrument)
+            ) {
+                throw new IllegalArgumentException(
+                    id + " instrument is invalid"
+                );
+            }
+            if (audioNote < 24 || audioNote > 108) {
+                throw new IllegalArgumentException(
+                    id + " audioNote must be within 24..108"
+                );
+            }
+            if (audioGain < 0 || audioGain > 2) {
+                throw new IllegalArgumentException(
+                    id + " audioGain must be within 0..2"
+                );
+            }
+            if (audioPan < -1 || audioPan > 1) {
+                throw new IllegalArgumentException(
+                    id + " audioPan must be within -1..1"
+                );
             }
 
             if ("SPAWN".equals(type)) spawnCount += 1;
@@ -798,6 +950,73 @@ public final class ViewerDrawService {
                 if (!outputRanks.contains(rank)) {
                     throw new IllegalArgumentException(
                         "ORDERED_OUTPUT requires contiguous outputRank values"
+                    );
+                }
+            }
+        }
+        if ("SLOT_COLLECTION".equals(drawRuleType)) {
+            int winners = drawRuleWinnerCount == 0
+                ? totalSlotCapacity
+                : drawRuleWinnerCount;
+            if (slotCount < 1) {
+                throw new IllegalArgumentException(
+                    "SLOT_COLLECTION requires at least one SLOT"
+                );
+            }
+            if (winners < 1 || winners > totalSlotCapacity) {
+                throw new IllegalArgumentException(
+                    "SLOT_COLLECTION winnerCount exceeds total slot capacity"
+                );
+            }
+        }
+        if ("LAST_SURVIVOR".equals(drawRuleType)) {
+            int winners = drawRuleWinnerCount == 0
+                ? 1
+                : drawRuleWinnerCount;
+            if (eliminationCount < 1) {
+                throw new IllegalArgumentException(
+                    "LAST_SURVIVOR requires at least one ELIMINATION"
+                );
+            }
+            if (winners < 1 || winners > 64) {
+                throw new IllegalArgumentException(
+                    "LAST_SURVIVOR winnerCount must be within 1..64"
+                );
+            }
+        }
+        if ("CASCADE_SELECTION".equals(drawRuleType)) {
+            int winners = drawRuleWinnerCount == 0
+                ? totalOutputCapacity
+                : drawRuleWinnerCount;
+            if (outputCount < 1) {
+                throw new IllegalArgumentException(
+                    "CASCADE_SELECTION requires at least one OUTPUT"
+                );
+            }
+            if (winners < 1 || winners > totalOutputCapacity) {
+                throw new IllegalArgumentException(
+                    "CASCADE_SELECTION winnerCount exceeds total output capacity"
+                );
+            }
+        }
+        if ("RANDOM_OUTPUT_BUCKET".equals(drawRuleType)) {
+            int winners = drawRuleWinnerCount == 0
+                ? 1
+                : drawRuleWinnerCount;
+            if (outputCount < 1) {
+                throw new IllegalArgumentException(
+                    "RANDOM_OUTPUT_BUCKET requires at least one OUTPUT"
+                );
+            }
+            if (winners < 1 || winners > 64) {
+                throw new IllegalArgumentException(
+                    "RANDOM_OUTPUT_BUCKET winnerCount must be within 1..64"
+                );
+            }
+            for (int capacity : outputCapacities) {
+                if (capacity < winners) {
+                    throw new IllegalArgumentException(
+                        "every random output bucket must fit winnerCount"
                     );
                 }
             }
