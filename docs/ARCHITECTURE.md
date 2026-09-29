@@ -27,7 +27,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Broadcast Tool**
-   - Viewer Draw: Random/Number + Marble Map Maker/Preview Physics + JBox2D Production Physics V0 구현
+   - Viewer Draw: Random/Number + Marble Map Maker + Browser Marble Physics/Draw V0 구현
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
    - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 UI/연출을 재사용한다.
    - Marble Physics Draw는 Goldberg Machine / Marble Machine 컨셉의 물리 추첨으로 확장한다.
@@ -154,36 +154,30 @@ Sound/Visual 설정은 물리 결과와 분리하며, 실제 물리 구조 변�
 
 ## Viewer Draw Machine Map / Physics Boundary
 
-Marble Machine은 고정 Stage 코드가 아니라 데이터 기반 `MachineMapDefinition`을 실행한다.
+Marble Machine의 실제 추첨 Authority는 브라우저다.
 
 ~~~text
 Map Maker
-   ↓
-viewer-draw-machine-map/v0
-   ├─ DB persistence / revision / hash
-   ├─ Preview Physics Engine
-   └─ future Production Physics Adapter
+   ├─ optional DB save / revision history
+   └─ JSON export
+          ↓
+Browser Marble Runtime
+   ├─ BrowserPhysicsAdapter
+   ├─ Physics simulation
+   ├─ Finish rank
+   └─ Winner
 ~~~
 
-Preview Engine과 Production Draw Authority는 같은 MapDefinition 계약을 공유하지만 서로 같은 엔진이라고 가정하지 않는다.
+서버는 Marble physics를 실행하거나 winner를 확정하지 않는다.
+Map DB는 제작 편의 기능이며 실제 추첨 런타임의 필수 의존성이 아니다.
 
-현재 Production Adapter는 서버 JVM의 `JBox2dMarblePhysicsAdapter`다.
+현재 브라우저 런타임:
 
 ~~~text
-Browser Map Maker
-   ├─ JS Preview Engine
-   └─ Save MapDefinition
-              ↓
-          Platform DB
-              ↓
-Server JBox2D Production Adapter
-              ↓
-      SimulationResult
+/tools/viewer-draw/marble/
 ~~~
 
-Preview 순위와 Production 순위의 동일성은 요구하지 않는다.
-대신 component geometry, material property, Spawn/Finish 의미가 동일 MapDefinition으로 해석되는지를 검증한다.
-실제 Viewer Entry와 winner/audit 연결은 Marble Draw Session 계층에서 담당한다.
+현재 `BuiltinBrowserPhysicsAdapter`는 V0 Authority이고,
+후속 `Box2dWasmPhysicsAdapter`가 동일 인터페이스를 구현한다.
 
-Machine Map은 현재 definition 외에 revision별 immutable snapshot을 유지한다.
-따라서 추첨 Freeze/Audit에서는 mutable current map을 다시 조회하지 않고 `mapId + revision + definitionHash`에 해당하는 snapshot을 Production Adapter 입력으로 사용한다.
+lazygyu/roulette의 `IPhysics`, `Box2dPhysics`, `Camera`, `RankRenderer`, `Minimap`, `FastForwader` 구조를 브라우저 런타임 계층에서 계승한다.
