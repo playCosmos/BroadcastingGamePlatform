@@ -10,8 +10,10 @@
 - V2 Physics Preview Engine V0: **IMPLEMENTED**
 - V3 Browser Marble Draw Runtime V0: **IMPLEMENTED**
 - V4 Box2D-WASM Browser Adapter: **IMPLEMENTED**
-- V5 Camera / Rank / Minimap / Stuck Recovery 계승: PLANNED
-- V6 Chat Entry Collection: PLANNED
+- V5 Camera / Rank / Minimap / Stuck Recovery 계승: **IMPLEMENTED**
+- V6 Finish Slow Motion / Result Podium: **IMPLEMENTED**
+- V7 Goldberg Components V1: **IMPLEMENTED**
+- V8 Chat Entry Collection: PLANNED
 
 플랫폼 분류: **Broadcast Tool / Interaction Module**
 
@@ -787,6 +789,12 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 - Ramp
 - Peg
 - Bumper
+- Gate
+- Rotator
+- Pendulum
+- Seesaw
+- Funnel
+- Splitter
 - Spawn
 - Finish
 - Canvas 배치/선택/드래그
@@ -854,6 +862,8 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - world boundary
 - marble ↔ rotated Wall/Ramp collision
 - marble ↔ Peg/Bumper circle collision
+- Gate / Rotator / Pendulum / Seesaw time-driven collision
+- Funnel / Splitter composite rail collision
 - marble ↔ marble collision
 - restitution
 - friction
@@ -1399,11 +1409,46 @@ lazygyu/roulette에서 특히 검토할 부분:
 
 잔여:
 
-- finish slow motion
-- 최종 podium / result presentation
 - Camera/Minimap 추가 튜닝
 
-### V5 — Chat Entry Collection
+### V5 — Finish Presentation — IMPLEMENTED
+
+- Finish 근접 선두 Marble 감지
+- 0.35× Finish Slow Motion
+- fixed timestep 1/120s 유지
+- Fast Forward 입력 시 2× 우선
+- winnerCount 충족 즉시 결과 확정
+- 1~3위 Result Podium
+- 4위 이상 다중 당첨 결과 목록
+
+Slow Motion은 물리 상수를 변경하지 않고 브라우저가 Box2D에 공급하는 simulation elapsed time만 줄인다.
+따라서 같은 고정 timestep 물리 경로를 더 느리게 재생하며, Slow Motion 자체가 충돌 계산 규칙을 바꾸지 않는다.
+
+### V6 — Goldberg / Machine Components V1 — IMPLEMENTED
+
+Map Maker와 Browser Box2D Authority에 다음 컴포넌트를 같은 MachineMapDefinition으로 연결했다.
+
+- Gate: 주기적으로 열리고 닫히는 회전 장치
+- Rotator: 지정 angular speed로 연속 회전
+- Pendulum: amplitude / period 기반 왕복 회전
+- Seesaw: amplitude / period 기반 왕복 회전
+- Funnel: 두 개의 수렴 rail로 구성되는 복합 충돌체
+- Splitter: 두 개의 분기 rail로 구성되는 복합 충돌체
+
+공통:
+
+- Map Maker palette 배치
+- Inspector 위치/회전/크기/물성 편집
+- 장치별 motion/property 편집
+- JSON import/export
+- DB 저장/revision/hash
+- Preview geometry/physics
+- 실제 Browser Box2D draw에서 동일 map component 소비
+
+V1의 Gate/Pendulum/Seesaw는 joint solver 기반 자유 회전체가 아니라 **정의된 time-driven kinematic motion**이다.
+따라서 제작자가 설정한 운동이 재현 가능하고 맵 정의에 포함되며, 추후 reactive joint component와 구분한다.
+
+### V7 — Chat Entry Collection
 
 - SOOP ChatMessageEvent
 - 참가 키워드
@@ -1413,19 +1458,17 @@ lazygyu/roulette에서 특히 검토할 부분:
 - 추첨 시작 전 브라우저로 참가자 snapshot 전달
 - CHZZK 대응 인터페이스
 
-### V6 — Goldberg / Machine Expansion
+### V8 — Goldberg / Machine Expansion
 
-- Gate
-- Rotator
-- Pendulum
-- Seesaw
-- Funnel
-- Splitter
+V1 기본 장치 이후 확장:
+
+- reactive joint / hinge component
+- Gear / Paddle / Elevator / Launcher
 - Sound / Web Audio
 - Machine draw rule
 - Slot / Elimination / Cascade / Multi-output
 
-### V7 — Overlay / Audit / Qualification
+### V9 — Overlay / Audit / Qualification
 
 - OBS presentation
 - 로컬 Marble run audit export
@@ -1480,8 +1523,9 @@ Map Format
 → Browser Marble Draw Runtime V0 [IMPLEMENTED]
 → Box2D-WASM Browser Adapter [IMPLEMENTED]
 → Camera / Rank / Minimap / Fast Forward / Stuck Recovery [IMPLEMENTED]
-→ Finish Slow Motion / Podium
-→ Goldberg / Marble Machine Components
+→ Finish Slow Motion / Podium [IMPLEMENTED]
+→ Goldberg Components V1: Gate / Rotator / Pendulum / Seesaw / Funnel / Splitter [IMPLEMENTED]
+→ Sound / Reactive Joint / Advanced Machine Components
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.
@@ -1529,7 +1573,10 @@ Marble
 → Local Entry ↔ Marble
 
 Camera / RankRenderer / Minimap / FastForwarder
-→ 후속 브라우저 런타임 계승
+→ 브라우저 런타임 계승 완료
+
+Finish Slow Motion / Result presentation
+→ 브라우저 로컬 결과 연출 계승 완료
 ~~~
 
 

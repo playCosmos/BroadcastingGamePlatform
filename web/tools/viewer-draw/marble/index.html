@@ -73,6 +73,7 @@ Hotel</textarea>
         </div>
         <div class="stage-tools">
           <span id="stuckCount">NUDGE 0</span>
+          <span id="slowMotionBadge" class="slow-motion-badge" hidden>SLOW 0.35×</span>
           <button id="cameraAuto" type="button" class="stage-tool active">CAM AUTO</button>
           <button id="fastForward" type="button" class="stage-tool">⏩ HOLD</button>
           <strong id="elapsed">0.0s</strong>
@@ -88,9 +89,10 @@ Hotel</textarea>
         ></canvas>
       </div>
 
-      <div class="winner-banner" id="winnerBanner" hidden>
-        <span>WINNER</span>
-        <strong id="winnerText">-</strong>
+      <div class="winner-banner result-podium" id="winnerBanner" hidden>
+        <span>RESULT</span>
+        <div id="podiumList" class="podium-list"></div>
+        <strong id="winnerText" class="winner-summary">-</strong>
       </div>
     </section>
 

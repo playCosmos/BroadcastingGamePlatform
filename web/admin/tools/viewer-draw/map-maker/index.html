@@ -43,6 +43,12 @@
       <button class="palette-item" data-tool="RAMP">Ramp</button>
       <button class="palette-item" data-tool="PEG">Peg</button>
       <button class="palette-item" data-tool="BUMPER">Bumper</button>
+      <button class="palette-item" data-tool="GATE">Gate</button>
+      <button class="palette-item" data-tool="ROTATOR">Rotator</button>
+      <button class="palette-item" data-tool="PENDULUM">Pendulum</button>
+      <button class="palette-item" data-tool="SEESAW">Seesaw</button>
+      <button class="palette-item" data-tool="FUNNEL">Funnel</button>
+      <button class="palette-item" data-tool="SPLITTER">Splitter</button>
       <button class="palette-item" data-tool="SPAWN">Spawn</button>
       <button class="palette-item" data-tool="FINISH">Finish</button>
 
@@ -101,6 +107,12 @@
         <label class="mini-field radius-field"><span>Radius</span><input id="propRadius" type="number" min="0" step="1"></label>
         <label class="mini-field physics-field"><span>Restitution</span><input id="propRestitution" type="number" min="0" max="1.4" step=".05"></label>
         <label class="mini-field physics-field"><span>Friction</span><input id="propFriction" type="number" min="0" max=".5" step=".01"></label>
+        <label class="mini-field rotator-field"><span>Angular °/s</span><input id="propAngularSpeed" type="number" min="-720" max="720" step="5"></label>
+        <label class="mini-field motion-period-field"><span>Period s</span><input id="propPeriod" type="number" min=".25" max="30" step=".1"></label>
+        <label class="mini-field swing-field"><span>Amplitude °</span><input id="propAmplitude" type="number" min="0" max="120" step="1"></label>
+        <label class="mini-field gate-field"><span>Open Angle °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
+        <label class="mini-field funnel-field"><span>Funnel Gap</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
+        <label class="mini-field thickness-field"><span>Rail Thickness</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
         <label class="mini-field bumper-field"><span>Bumper Boost</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
         <label class="mini-field spawn-field"><span>Marble Radius</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
       </div>

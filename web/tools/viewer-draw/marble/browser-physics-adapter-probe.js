@@ -74,6 +74,27 @@ requireCondition(
   "browser authority winner must be a local entry"
 );
 
+const goldbergDefinition = structuredClone(definition);
+goldbergDefinition.name = "Goldberg Contract Probe";
+goldbergDefinition.components.splice(
+  1,
+  0,
+  ...[
+    "GATE",
+    "ROTATOR",
+    "PENDULUM",
+    "SEESAW",
+    "FUNNEL",
+    "SPLITTER"
+  ].map((type, index) =>
+    Engine.componentDefaults(type, 80 + index * 110, 300)
+  )
+);
+requireCondition(
+  Engine.validateDefinition(goldbergDefinition).length === 0,
+  "browser authority contract must accept Goldberg map components"
+);
+
 const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
   "utf8"
@@ -81,6 +102,14 @@ const controllerSource = fs.readFileSync(
 requireCondition(
   !controllerSource.includes("BuiltinBrowserPhysicsAdapter"),
   "actual Marble Draw must not silently substitute the preview physics engine"
+);
+requireCondition(
+  controllerSource.includes("FINISH_SLOW_RATE = 0.35"),
+  "actual Marble Draw must include inherited finish slow motion"
+);
+requireCondition(
+  controllerSource.includes("renderPodium"),
+  "actual Marble Draw must include result podium presentation"
 );
 
 for (const forbidden of [

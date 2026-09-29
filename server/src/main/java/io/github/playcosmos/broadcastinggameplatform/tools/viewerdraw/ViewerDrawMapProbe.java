@@ -50,6 +50,22 @@ public final class ViewerDrawMapProbe {
                     "friction", 0.05
                 )
             );
+            var gate = new ViewerDrawService.MachineComponent(
+                "gate-1",
+                "GATE",
+                320,
+                300,
+                0,
+                180,
+                16,
+                0,
+                Map.of(
+                    "restitution", 0.35,
+                    "friction", 0.05,
+                    "openAngle", 78,
+                    "period", 3.6
+                )
+            );
             var finish = new ViewerDrawService.MachineComponent(
                 "finish-1",
                 "FINISH",
@@ -67,7 +83,7 @@ public final class ViewerDrawMapProbe {
                     "viewer-draw-machine-map/v0",
                     "Probe Machine",
                     world,
-                    List.of(spawn, wall, finish)
+                    List.of(spawn, wall, gate, finish)
                 );
 
             require(
@@ -115,6 +131,7 @@ public final class ViewerDrawMapProbe {
                                 "friction", 0.05
                             )
                         ),
+                        gate,
                         finish
                     )
                 );
