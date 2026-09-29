@@ -1,0 +1,84 @@
+name: Deploy GitHub Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "web/**"
+      - ".github/workflows/github-pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: github-pages
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+
+      - name: Build static Pages artifact
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import shutil
+
+          repository = "BroadcastingGamePlatform"
+          prefix = f"/{repository}"
+          source = Path("web")
+          target = Path("_site")
+
+          if target.exists():
+              shutil.rmtree(target)
+          shutil.copytree(source, target)
+
+          for path in target.rglob("*.html"):
+              text = path.read_text(encoding="utf-8")
+              replacements = (
+                  ('href="/', f'href="{prefix}/'),
+                  ("href='/", f"href='{prefix}/"),
+                  ('src="/', f'src="{prefix}/'),
+                  ("src='/", f"src='{prefix}/"),
+                  ('action="/', f'action="{prefix}/'),
+                  ("action='/", f"action='{prefix}/"),
+                  ('url=/', f'url={prefix}/'),
+                  ('location.replace("/', f'location.replace("{prefix}/'),
+                  ("location.replace('/", f"location.replace('{prefix}/"),
+                  ('location.assign("/', f'location.assign("{prefix}/'),
+                  ("location.assign('/", f"location.assign('{prefix}/"),
+              )
+              for old, new in replacements:
+                  text = text.replace(old, new)
+              path.write_text(text, encoding="utf-8")
+
+          # Project Pages should resolve unknown root navigation back to the
+          # platform landing instead of the account-level 404 page.
+          shutil.copy2(target / "index.html", target / "404.html")
+          (target / ".nojekyll").write_text("", encoding="utf-8")
+          PY
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
