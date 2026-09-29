@@ -153,6 +153,9 @@
       this.finishOrder = [];
       this.winnerOrder = [];
       this.outputClaims = new Map();
+      this.slotClaims = new Map();
+      this.eliminationOrder = [];
+      this.selectedOutputKey = null;
       this.bumpers = [];
       this.launchers = [];
       this.movingComponents = [];
@@ -208,6 +211,9 @@
       this.finishOrder = [];
       this.winnerOrder = [];
       this.outputClaims = new Map();
+      this.slotClaims = new Map();
+      this.eliminationOrder = [];
+      this.selectedOutputKey = null;
       this.bumpers = [];
       this.launchers = [];
       this.movingComponents = [];
@@ -261,6 +267,8 @@
             this.createPrismaticComponent(component);
             break;
           case "OUTPUT":
+          case "SLOT":
+          case "ELIMINATION":
             break;
         }
       }
@@ -715,15 +723,77 @@
       }
     }
 
+    componentAudioProfile(component) {
+      const p = component?.properties || {};
+      const materials = new Set([
+        "metal","wood","glass","rubber","plastic","stone"
+      ]);
+      const instruments = new Set([
+        "none","bell","chime","xylophone","drum","click"
+      ]);
+      const materialRaw = String(
+        p.soundMaterial || "metal"
+      ).toLowerCase();
+      const instrumentRaw = String(
+        p.instrument || "none"
+      ).toLowerCase();
+      return {
+        material: materials.has(materialRaw) ? materialRaw : "metal",
+        instrument: instruments.has(instrumentRaw)
+          ? instrumentRaw
+          : "none",
+        note: clamp(
+          Math.trunc(property(p, "audioNote", 60)),
+          24,
+          108
+        ),
+        gain: clamp(property(p, "audioGain", 1), 0, 2),
+        pan: clamp(property(p, "audioPan", 0), -1, 1)
+      };
+    }
+
     queueSound(kind, strength = 0.5, componentId = "") {
       if (this.soundEvents.length >= 24) return;
+      const component = componentId
+        ? this.definition.components.find(
+            (candidate) => candidate.id === componentId
+          )
+        : null;
+      const profile = this.componentAudioProfile(component);
       this.soundSequence += 1;
       this.soundEvents.push({
         id: this.soundSequence,
         kind,
         strength: clamp(Number(strength) || 0, 0, 1),
-        componentId
+        componentId,
+        ...profile
       });
+    }
+
+    nearestImpactComponent(x, y, radius) {
+      let best = null;
+      let bestDistance = Infinity;
+      for (const component of this.definition.components) {
+        if ([
+          "SPAWN","FINISH","OUTPUT","SLOT","ELIMINATION"
+        ].includes(component.type)) {
+          continue;
+        }
+        const dx = x - component.x;
+        const dy = y - component.y;
+        const distance = Math.hypot(dx, dy);
+        const reach = ["PEG","BUMPER"].includes(component.type)
+          ? (component.radius || 0) + radius + 24
+          : Math.hypot(
+              component.width || 0,
+              component.height || 0
+            ) / 2 + radius + 28;
+        if (distance <= reach && distance < bestDistance) {
+          best = component;
+          bestDistance = distance;
+        }
+      }
+      return best;
     }
 
     captureVelocities() {
@@ -742,7 +812,7 @@
 
     detectImpactSounds(before) {
       for (const marble of this.marbles) {
-        if (marble.finished) continue;
+        if (marble.finished || marble.eliminated) continue;
         const previous = before.get(marble.id);
         if (!previous) continue;
         const velocity = marble.body.GetLinearVelocity();
@@ -758,9 +828,18 @@
           continue;
         }
         marble.lastSoundTime = this.time;
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        const component = this.nearestImpactComponent(
+          x,
+          y,
+          marble.radius
+        );
         this.queueSound(
           "impact",
-          clamp(delta / 2.4, 0.08, 1)
+          clamp(delta / 2.4, 0.08, 1),
+          component?.id || ""
         );
       }
     }
@@ -813,6 +892,41 @@
       this.seed = Math.trunc(Number(seed) || 1);
       const rng = mulberry32(this.seed);
       this.random = rng;
+      this.selectedOutputKey = null;
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      if (rule.type === "RANDOM_OUTPUT_BUCKET") {
+        const outputs = this.definition.components.filter(
+          (component) => component.type === "OUTPUT"
+        );
+        const totalWeight = outputs.reduce(
+          (sum, component) =>
+            sum + Math.max(
+              0.0001,
+              property(component.properties, "outputWeight", 1)
+            ),
+          0
+        );
+        let pick = rng() * totalWeight;
+        for (const output of outputs) {
+          pick -= Math.max(
+            0.0001,
+            property(output.properties, "outputWeight", 1)
+          );
+          if (pick <= 0) {
+            this.selectedOutputKey = String(
+              output.properties?.outputKey || ""
+            );
+            break;
+          }
+        }
+        if (!this.selectedOutputKey && outputs.length) {
+          this.selectedOutputKey = String(
+            outputs.at(-1).properties?.outputKey || ""
+          );
+        }
+      }
       const spawns = this.definition.components.filter(
         (component) => component.type === "SPAWN"
       );
@@ -865,6 +979,7 @@
           body,
           radius,
           finished: false,
+          eliminated: false,
           rank: 0,
           finishTime: null,
           bumperContacts: new Set(),
@@ -903,7 +1018,7 @@
     applyBumperBoosts() {
       const B = this.Box2D;
       for (const marble of this.marbles) {
-        if (marble.finished) continue;
+        if (marble.finished || marble.eliminated) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1020,10 +1135,25 @@
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
         this.definition
       );
-      if (rule.type === "ORDERED_OUTPUT") {
-        this.detectOutputs();
-      } else {
-        this.detectFinishes();
+      switch (rule.type) {
+        case "ORDERED_OUTPUT":
+          this.detectOrderedOutputs();
+          break;
+        case "SLOT_COLLECTION":
+          this.detectSlots();
+          break;
+        case "LAST_SURVIVOR":
+          this.detectEliminations();
+          break;
+        case "CASCADE_SELECTION":
+          this.detectCascadeOutputs();
+          break;
+        case "RANDOM_OUTPUT_BUCKET":
+          this.detectRandomOutputBucket();
+          break;
+        default:
+          this.detectFinishes();
+          break;
       }
     }
 
@@ -1047,14 +1177,16 @@
         marble.finishTime = this.time;
         this.finishOrder.push(marble.id);
         this.winnerOrder = this.finishOrder.slice();
-        this.queueSound("finish", 0.8);
+        this.queueSound("finish", 0.8, finishes.find(
+          (finish) => this.pointInRect(x, y, finish)
+        )?.id || "");
         marble.body.SetLinearVelocity(
           new this.Box2D.b2Vec2(0, 0)
         );
       }
     }
 
-    detectOutputs() {
+    detectOrderedOutputs() {
       const outputs = this.definition.components.filter(
         (component) => component.type === "OUTPUT"
       );
@@ -1092,6 +1224,231 @@
       }
     }
 
+    captureMarble(marble, rank, kind, component) {
+      marble.finished = true;
+      marble.rank = rank;
+      marble.finishTime = this.time;
+      marble.body.SetLinearVelocity(
+        new this.Box2D.b2Vec2(0, 0)
+      );
+      marble.body.SetEnabled(false);
+      this.queueSound(kind, 0.9, component?.id || "");
+    }
+
+    detectSlots() {
+      const slots = this.definition.components.filter(
+        (component) => component.type === "SLOT"
+      );
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      const target = rule.winnerCount || slots.reduce(
+        (sum, slot) =>
+          sum + Math.trunc(
+            property(slot.properties, "slotCapacity", 1)
+          ),
+        0
+      );
+
+      for (const marble of this.marbles) {
+        if (
+          marble.finished
+          || marble.eliminated
+          || this.winnerOrder.length >= target
+        ) {
+          continue;
+        }
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        const slot = slots.find((candidate) => {
+          const key = String(
+            candidate.properties?.slotKey || candidate.id
+          );
+          const claims = this.slotClaims.get(key) || [];
+          return claims.length < Math.trunc(
+            property(candidate.properties, "slotCapacity", 1)
+          ) && this.pointInRect(x, y, candidate);
+        });
+        if (!slot) continue;
+
+        const key = String(
+          slot.properties?.slotKey || slot.id
+        );
+        const claims = this.slotClaims.get(key) || [];
+        claims.push(marble.id);
+        this.slotClaims.set(key, claims);
+        this.winnerOrder.push(marble.id);
+        this.finishOrder.push(marble.id);
+        this.captureMarble(
+          marble,
+          this.winnerOrder.length,
+          "slot",
+          slot
+        );
+      }
+    }
+
+    detectEliminations() {
+      const zones = this.definition.components.filter(
+        (component) => component.type === "ELIMINATION"
+      );
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      const winnerCount = rule.winnerCount || 1;
+
+      for (const marble of this.marbles) {
+        if (marble.finished || marble.eliminated) continue;
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        const zone = zones.find(
+          (candidate) => this.pointInRect(x, y, candidate)
+        );
+        if (!zone) continue;
+
+        marble.eliminated = true;
+        marble.body.SetLinearVelocity(
+          new this.Box2D.b2Vec2(0, 0)
+        );
+        marble.body.SetEnabled(false);
+        this.eliminationOrder.push(marble.id);
+        this.queueSound("elimination", 0.85, zone.id);
+      }
+
+      if (this.winnerOrder.length) return;
+
+      const survivors = this.marbles.filter(
+        (marble) => !marble.finished && !marble.eliminated
+      );
+      if (
+        survivors.length < 1
+        || survivors.length > winnerCount
+      ) {
+        return;
+      }
+
+      const gx = Number(this.definition.world.gravityX) || 0;
+      const gy = Number(this.definition.world.gravityY) || 0;
+      survivors.sort((left, right) => {
+        const lp = left.body.GetPosition();
+        const rp = right.body.GetPosition();
+        const leftScore = Math.hypot(gx, gy) < 1e-6
+          ? lp.y
+          : lp.x * gx + lp.y * gy;
+        const rightScore = Math.hypot(gx, gy) < 1e-6
+          ? rp.y
+          : rp.x * gx + rp.y * gy;
+        return rightScore - leftScore;
+      });
+
+      survivors.forEach((marble, index) => {
+        this.winnerOrder.push(marble.id);
+        this.finishOrder.push(marble.id);
+        this.captureMarble(
+          marble,
+          index + 1,
+          "survivor",
+          null
+        );
+      });
+    }
+
+    detectCascadeOutputs() {
+      const outputs = this.definition.components.filter(
+        (component) => component.type === "OUTPUT"
+      );
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      const target = rule.winnerCount || outputs.reduce(
+        (sum, output) =>
+          sum + Math.trunc(
+            property(output.properties, "outputCapacity", 1)
+          ),
+        0
+      );
+
+      for (const marble of this.marbles) {
+        if (
+          marble.finished
+          || marble.eliminated
+          || this.winnerOrder.length >= target
+        ) {
+          continue;
+        }
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        const output = outputs.find((candidate) => {
+          const key = String(
+            candidate.properties?.outputKey || candidate.id
+          );
+          const claims = this.outputClaims.get(key) || [];
+          return Array.isArray(claims)
+            && claims.length < Math.trunc(
+              property(candidate.properties, "outputCapacity", 1)
+            )
+            && this.pointInRect(x, y, candidate);
+        });
+        if (!output) continue;
+
+        const key = String(
+          output.properties?.outputKey || output.id
+        );
+        const claims = this.outputClaims.get(key) || [];
+        claims.push(marble.id);
+        this.outputClaims.set(key, claims);
+        this.winnerOrder.push(marble.id);
+        this.finishOrder.push(marble.id);
+        this.captureMarble(
+          marble,
+          this.winnerOrder.length,
+          "cascade",
+          output
+        );
+      }
+    }
+
+    detectRandomOutputBucket() {
+      const output = this.definition.components.find(
+        (component) =>
+          component.type === "OUTPUT"
+          && String(component.properties?.outputKey || "")
+            === this.selectedOutputKey
+      );
+      if (!output) return;
+
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      const target = rule.winnerCount || 1;
+
+      for (const marble of this.marbles) {
+        if (
+          marble.finished
+          || marble.eliminated
+          || this.winnerOrder.length >= target
+        ) {
+          continue;
+        }
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+        if (!this.pointInRect(x, y, output)) continue;
+
+        this.winnerOrder.push(marble.id);
+        this.finishOrder.push(marble.id);
+        this.captureMarble(
+          marble,
+          this.winnerOrder.length,
+          "bucket",
+          output
+        );
+      }
+    }
+
     pointInRect(x, y, component) {
       const angle = (component.rotation || 0) * Math.PI / 180;
       const cos = Math.cos(angle);
@@ -1111,7 +1468,7 @@
       const marble = this.marbles.find(
         (candidate) => candidate.id === id
       );
-      if (!marble || marble.finished) return false;
+      if (!marble || marble.finished || marble.eliminated) return false;
 
       const angle = this.random() * Math.PI * 2;
       const magnitude = 0.12 + this.random() * 0.12;
@@ -1133,23 +1490,66 @@
           ? this.winnerOrder.slice()
           : this.finishOrder.slice(),
         outputClaims: [...this.outputClaims.entries()].map(
-          ([rank, id]) => ({ rank, id })
+          ([key, value]) => ({ key, value })
         ),
+        slotClaims: [...this.slotClaims.entries()].map(
+          ([key, ids]) => ({ key, ids: ids.slice() })
+        ),
+        eliminationOrder: this.eliminationOrder.slice(),
+        selectedOutputKey: this.selectedOutputKey,
         audioEvents: this.soundEvents.slice(),
         finishedCount: this.winnerOrder.length
           ? this.winnerOrder.length
           : this.finishOrder.length,
-        targetCount:
-          root.ViewerDrawMapEngine.resolvedDrawRule(this.definition).type
-            === "ORDERED_OUTPUT"
-            ? (
-                root.ViewerDrawMapEngine.resolvedDrawRule(this.definition)
-                  .winnerCount
-                || this.definition.components.filter(
-                  (component) => component.type === "OUTPUT"
-                ).length
-              )
-            : this.marbles.length,
+        targetCount: (() => {
+          const rule =
+            root.ViewerDrawMapEngine.resolvedDrawRule(this.definition);
+          if (rule.type === "ORDERED_OUTPUT") {
+            return rule.winnerCount
+              || this.definition.components.filter(
+                (component) => component.type === "OUTPUT"
+              ).length;
+          }
+          if (rule.type === "SLOT_COLLECTION") {
+            return rule.winnerCount
+              || this.definition.components
+                .filter((component) => component.type === "SLOT")
+                .reduce(
+                  (sum, component) =>
+                    sum + Math.trunc(
+                      property(
+                        component.properties,
+                        "slotCapacity",
+                        1
+                      )
+                    ),
+                  0
+                );
+          }
+          if (rule.type === "LAST_SURVIVOR") {
+            return rule.winnerCount || 1;
+          }
+          if (rule.type === "CASCADE_SELECTION") {
+            return rule.winnerCount
+              || this.definition.components
+                .filter((component) => component.type === "OUTPUT")
+                .reduce(
+                  (sum, component) =>
+                    sum + Math.trunc(
+                      property(
+                        component.properties,
+                        "outputCapacity",
+                        1
+                      )
+                    ),
+                  0
+                );
+          }
+          if (rule.type === "RANDOM_OUTPUT_BUCKET") {
+            return rule.winnerCount || 1;
+          }
+          return this.marbles.length;
+        })(),
         totalCount: this.marbles.length,
         components: this.reactiveComponents.map((item) => {
           const position = item.body.GetPosition();
@@ -1170,6 +1570,7 @@
             y: position.y * PIXELS_PER_METER,
             radius: marble.radius,
             finished: marble.finished,
+            eliminated: marble.eliminated,
             rank: marble.rank,
             finishTime: marble.finishTime
           };
