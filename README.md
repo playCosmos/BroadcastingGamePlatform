@@ -25,7 +25,7 @@
 - Game Module: Board (현재)
 - Game Module: Yacht (계획, Yahtzee 계열)
 - Game Module: Drawing Guess (Classic Guess D0~D5 구현)
-- Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V0 + Preview Physics + JBox2D Production Physics V0 구현)
+- Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V0 + Browser Marble Draw/Physics V0 구현)
 - 추가 게임/방송 도구: 독립 모듈로 확장
 
 보드게임은 플랫폼의 첫 게임일 뿐이며, SOOP 연결 코드나 플랫폼 인증/HTTP/API 생명주기를 게임 모듈 안에 중복 구현하지 않습니다.
@@ -39,6 +39,7 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - Board: `/admin/games/board/` → 룸 운영 → `/games/board/`
 - Drawing Guess: `/admin/games/drawing-guess/` → `room.html?roomId=...` → 고정 OBS URL `/games/drawing-guess/?roomId=XXXXXX`
 - Viewer Draw: `/admin/tools/viewer-draw/` → 공개 결과 Overlay
+- Browser Marble Draw: `/tools/viewer-draw/marble/` → 서버 API 없이 로컬 물리 추첨
 
 관리 경로를 직접 열어 인증해도 인증 완료 후 원래 요청 경로로 돌아갑니다.
 
@@ -52,9 +53,9 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 ## 구현 현황
 
 - Board: AVAILABLE
-- Viewer Draw: Core + Number Draw + Marble Map Maker V0 + Preview Physics + JBox2D Production Physics V0 IMPLEMENTED
+- Viewer Draw: Core + Number Draw + Marble Map Maker V0 + Browser Marble Draw/Physics V0 IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
 - Yacht: PLANNED
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: PLANNED
-- Viewer Draw Marble Draw Session / Goldberg Machine: PLANNED
+- Viewer Draw Box2D-WASM Adapter / Goldberg Machine: PLANNED
