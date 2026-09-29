@@ -368,8 +368,8 @@
           spawnRole:"LAUNCHER"
         }},
         styled(
-          {...componentDefaults("FUNNEL",1090,690),width:132,height:150,rotation:0,properties:{
-            restitution:.3,friction:.045,gap:46,thickness:12,
+          {...componentDefaults("FUNNEL",1090,690),width:144,height:150,rotation:0,properties:{
+            restitution:.3,friction:.045,gap:58,thickness:12,
             soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.75
           }},
           "#1c4059","#65bfe9"
@@ -380,7 +380,7 @@
             friction:.025,
             launchPower:4.0,
             launchDirectionDegrees:-90,
-            launchSpreadDegrees:10,
+            launchSpreadDegrees:8,
             launchPowerVariance:.16,
             soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.75
           }},
@@ -414,7 +414,6 @@
         rail(990,280,958,238,"#513824","#bb7e4a"),
         rail(958,238,910,204,"#573c26","#c4864f"),
         rail(910,204,850,182,"#5d4028","#ca9158"),
-        rail(850,182,805,176,"#5d4028","#ca9158"),
 
         // Top bumper cluster.
         styled({...componentDefaults("BUMPER",425,225),radius:35,properties:{
