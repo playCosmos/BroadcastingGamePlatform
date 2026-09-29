@@ -152,6 +152,10 @@
         <label class="mini-field motor-field"><span>Motor Torque</span><input id="propMotorTorque" type="number" min="0" max="200" step="1"></label>
         <label class="mini-field gear-link-field"><span>Linked Joint</span><select id="propLinkedComponentId"><option value="">None</option></select></label>
         <label class="mini-field gear-link-field"><span>Gear Ratio</span><input id="propGearRatio" type="number" min="-20" max="20" step=".05"></label>
+        <div class="button-pair gear-link-field">
+          <button id="gearLinkNearest" class="small-button" type="button">Nearest Joint</button>
+          <button id="gearLinkClear" class="small-button" type="button">Clear Link</button>
+        </div>
         <label class="mini-field launcher-field"><span>Launch Power</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
         <label class="mini-field elevator-field"><span>Axis Angle °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field elevator-field"><span>Travel Min px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
@@ -164,16 +168,26 @@
         <label class="mini-field output-field"><span>Output Capacity</span><input id="propOutputCapacity" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field output-field"><span>Output Weight</span><input id="propOutputWeight" type="number" min=".01" max="100" step=".05"></label>
         <label class="mini-field output-field"><span>Output Priority</span><input id="propOutputPriority" type="number" min="-100" max="100" step="1"></label>
+        <label class="mini-field sensor-tag-field"><span>Sensor Tag</span><input id="propSensorTag" maxlength="32" placeholder="optional"></label>
         <label class="mini-field output-field"><span>Condition</span>
           <select id="propConditionType">
             <option value="ALWAYS">Always</option>
             <option value="AFTER_ANY_CLAIM">After Any Claim</option>
             <option value="AFTER_OUTPUT_CLAIMS">After Output Claims</option>
             <option value="AFTER_OUTPUT_FULL">After Output Full</option>
+            <option value="AFTER_SECONDS">After Seconds</option>
+            <option value="AFTER_SENSOR_CLAIMS">After Sensor Claims</option>
+            <option value="AFTER_BRANCH_STATE">After Branch State</option>
           </select>
         </label>
-        <label class="mini-field output-field"><span>Condition Output</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
-        <label class="mini-field output-field"><span>Condition Claims</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field condition-output-ref-field"><span>Condition Output</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-claims-field"><span>Condition Claims</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field condition-time-field"><span>Condition Seconds</span><input id="propConditionSeconds" type="number" min=".01" max="1800" step=".1"></label>
+        <label class="mini-field output-field condition-sensor-field"><span>Condition Sensor</span><select id="propConditionSensorTag"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-branch-field"><span>Branch Key</span><input id="propConditionBranchKey" maxlength="32"></label>
+        <label class="mini-field output-field condition-branch-field"><span>Branch Value</span><input id="propConditionBranchValue" maxlength="32"></label>
+        <label class="mini-field output-field"><span>Set Branch Key</span><input id="propBranchSetKey" maxlength="32" placeholder="optional"></label>
+        <label class="mini-field output-field"><span>Set Branch Value</span><input id="propBranchSetValue" maxlength="32" value="ON"></label>
         <label class="mini-field slot-field"><span>Slot Key</span><input id="propSlotKey" maxlength="32"></label>
         <label class="mini-field slot-field"><span>Slot Capacity</span><input id="propSlotCapacity" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field elimination-field"><span>Elimination Key</span><input id="propEliminationKey" maxlength="32"></label>

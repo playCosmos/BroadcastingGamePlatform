@@ -63,7 +63,7 @@
     return Number.POSITIVE_INFINITY;
   }
 
-  function conditionalOutputActive(output,outputs,claims){
+  function conditionalOutputActive(output,definition,context={}){
     const p=output?.properties||{};
     const mode=String(p.conditionType||"ALWAYS").toUpperCase();
     const threshold=clamp(
@@ -71,19 +71,54 @@
       1,
       64
     );
+    const outputs=(definition?.components||[]).filter(
+      c=>c?.type==="OUTPUT"
+    );
+    const outputClaims=context.outputClaims instanceof Map
+      ? context.outputClaims
+      : new Map();
+    const sensorClaims=context.sensorClaims instanceof Map
+      ? context.sensorClaims
+      : new Map();
+    const branchStates=context.branchStates instanceof Map
+      ? context.branchStates
+      : new Map();
+    const time=Math.max(0,finiteOr(context.time,0));
     if(mode==="ALWAYS") return true;
+
     const claimCount=(key)=>{
-      const value=claims.get(key);
+      const value=outputClaims.get(key);
       return Array.isArray(value) ? value.length : value ? 1 : 0;
     };
+
     if(mode==="AFTER_ANY_CLAIM"){
       let total=0;
-      for(const value of claims.values()){
+      for(const value of outputClaims.values()){
         total+=Array.isArray(value)?value.length:(value?1:0);
       }
       return total>=threshold;
     }
-    const targetKey=String(p.conditionOutputKey||"");
+
+    if(mode==="AFTER_SECONDS"){
+      return time>=clamp(finiteOr(p.conditionSeconds,1),.01,1800);
+    }
+
+    if(mode==="AFTER_SENSOR_CLAIMS"){
+      const tag=String(p.conditionSensorTag||"").trim();
+      return tag
+        ? (sensorClaims.get(tag)?.size||0)>=threshold
+        : false;
+    }
+
+    if(mode==="AFTER_BRANCH_STATE"){
+      const key=String(p.conditionBranchKey||"").trim();
+      const value=String(p.conditionBranchValue||"ON").trim();
+      return key
+        ? String(branchStates.get(key)??"")===value
+        : false;
+    }
+
+    const targetKey=String(p.conditionOutputKey||"").trim();
     if(!targetKey) return false;
     const target=outputs.find(c=>
       String(c.properties?.outputKey||"")===targetKey
@@ -223,7 +258,7 @@
       case "PEG": return {...base,radius:13,properties:{restitution:0.55,friction:0.03}};
       case "BUMPER": return {...base,radius:24,properties:{restitution:0.95,friction:0.02,boost:1.15}};
       case "SPAWN": return {...base,radius:18,properties:{marbleRadius:11}};
-      case "FINISH": return {...base,width:260,height:56,properties:{}};
+      case "FINISH": return {...base,width:260,height:56,properties:{sensorTag:""}};
       case "GATE": return {...base,width:180,height:16,properties:{restitution:0.35,friction:0.05,openAngle:78,period:3.6,phase:0}};
       case "ROTATOR": return {...base,width:190,height:16,properties:{restitution:0.42,friction:0.04,angularSpeed:90}};
       case "PENDULUM": return {...base,width:18,height:190,properties:{restitution:0.4,friction:0.05,amplitude:42,period:3.2,phase:0}};
@@ -235,9 +270,16 @@
       case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
       case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
       case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
-      case "OUTPUT": return {...base,width:180,height:60,properties:{outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1,outputPriority:0,conditionType:"ALWAYS",conditionOutputKey:"",conditionClaims:1}};
-      case "SLOT": return {...base,width:180,height:70,properties:{slotKey:"SLOT1",slotCapacity:1}};
-      case "ELIMINATION": return {...base,width:180,height:70,properties:{eliminationKey:"OUT"}};
+      case "OUTPUT": return {...base,width:180,height:60,properties:{
+        outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1,
+        outputPriority:0,sensorTag:"",
+        conditionType:"ALWAYS",conditionOutputKey:"",conditionClaims:1,
+        conditionSeconds:1,conditionSensorTag:"",
+        conditionBranchKey:"",conditionBranchValue:"ON",
+        branchSetKey:"",branchSetValue:"ON"
+      }};
+      case "SLOT": return {...base,width:180,height:70,properties:{slotKey:"SLOT1",slotCapacity:1,sensorTag:""}};
+      case "ELIMINATION": return {...base,width:180,height:70,properties:{eliminationKey:"OUT",sensorTag:""}};
       default: throw new Error("Unsupported component type: "+type);
     }
   }
@@ -313,6 +355,8 @@
     const outputRanks=new Set();
     const slotKeys=new Set();
     const eliminationKeys=new Set();
+    const sensorTags=new Set();
+    const branchProducerKeys=new Set();
     let spawn=0,finish=0,output=0,slot=0,elimination=0;
     let totalOutputCapacity=0,totalSlotCapacity=0;
     for(const c of comps){
@@ -342,6 +386,13 @@
         errors.push("FINISH 크기는 최소 10×10이어야 합니다.");
       }
       const p=c?.properties||{};
+      if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
+        const sensorTag=String(p.sensorTag||"").trim();
+        if(sensorTag.length>32){
+          errors.push("sensorTag는 최대 32자입니다.");
+        }
+        if(sensorTag) sensorTags.add(sensorTag);
+      }
       if(["HINGE","PADDLE"].includes(c?.type)){
         const pivot=finiteOr(p.pivotRatio,c?.type==="PADDLE"?-.48:0);
         if(pivot<-.5||pivot>.5) errors.push("pivotRatio는 -0.5~0.5 범위여야 합니다.");
@@ -387,6 +438,9 @@
         const priority=Math.trunc(finiteOr(p.outputPriority,0));
         const conditionType=String(p.conditionType||"ALWAYS").toUpperCase();
         const conditionClaims=Math.trunc(finiteOr(p.conditionClaims,1));
+        const conditionSeconds=finiteOr(p.conditionSeconds,1);
+        const branchSetKey=String(p.branchSetKey||"").trim();
+        const branchSetValue=String(p.branchSetValue||"ON").trim();
         if(!key||key.length>32) errors.push("Output outputKey는 1~32자여야 합니다.");
         if(outputKeys.has(key)) errors.push("Output outputKey는 고유해야 합니다.");
         outputKeys.add(key);
@@ -400,13 +454,25 @@
           "ALWAYS",
           "AFTER_ANY_CLAIM",
           "AFTER_OUTPUT_CLAIMS",
-          "AFTER_OUTPUT_FULL"
+          "AFTER_OUTPUT_FULL",
+          "AFTER_SECONDS",
+          "AFTER_SENSOR_CLAIMS",
+          "AFTER_BRANCH_STATE"
         ].includes(conditionType)){
           errors.push("Output conditionType이 유효하지 않습니다.");
         }
         if(conditionClaims<1||conditionClaims>64){
           errors.push("Output conditionClaims는 1~64 범위여야 합니다.");
         }
+        if(conditionType==="AFTER_SECONDS"&&(conditionSeconds<=0||conditionSeconds>1800)){
+          errors.push("conditionSeconds는 0초 초과 1800초 이하이어야 합니다.");
+        }
+        if(branchSetKey.length>32||branchSetValue.length>32){
+          errors.push("branch state key/value는 최대 32자입니다.");
+        }
+        if(branchSetKey) branchProducerKeys.add(
+          branchSetKey+"\u0000"+branchSetValue
+        );
         totalOutputCapacity+=Math.max(0,capacity);
         output++;
       }
@@ -482,16 +548,74 @@
           }
         }
       }
+      if(mode==="AFTER_SENSOR_CLAIMS"){
+        const tag=String(p.conditionSensorTag||"").trim();
+        if(!tag||!sensorTags.has(tag)){
+          errors.push("Conditional Output sensor tag 대상이 존재하지 않습니다.");
+        }
+      }
+      if(mode==="AFTER_BRANCH_STATE"){
+        const key=String(p.conditionBranchKey||"").trim();
+        const value=String(p.conditionBranchValue||"ON").trim();
+        if(!key||!branchProducerKeys.has(key+"\u0000"+value)){
+          errors.push("Conditional Output branch state producer가 존재하지 않습니다.");
+        }
+      }
     }
 
     if(rule.type==="CONDITIONAL_OUTPUT"){
       if(!outputs.length){
         errors.push("CONDITIONAL_OUTPUT에는 OUTPUT이 최소 1개 필요합니다.");
       }
-      if(outputs.length&&!outputs.some(c=>
-        String(c.properties?.conditionType||"ALWAYS").toUpperCase()==="ALWAYS"
-      )){
-        errors.push("CONDITIONAL_OUTPUT에는 ALWAYS Output이 최소 1개 필요합니다.");
+      const dependencies=(c)=>{
+        const p=c?.properties||{};
+        const mode=String(p.conditionType||"ALWAYS").toUpperCase();
+        if(["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(mode)){
+          const key=String(p.conditionOutputKey||"").trim();
+          return key&&outputByKey.has(key)?[key]:[];
+        }
+        if(mode==="AFTER_SENSOR_CLAIMS"){
+          const tag=String(p.conditionSensorTag||"").trim();
+          const external=(def.components||[]).some(sensor=>
+            sensor.type!=="OUTPUT"
+            && ["FINISH","SLOT","ELIMINATION"].includes(sensor.type)
+            && String(sensor.properties?.sensorTag||"").trim()===tag
+          );
+          if(external) return [];
+          const producers=outputs
+            .filter(o=>String(o.properties?.sensorTag||"").trim()===tag)
+            .map(o=>String(o.properties?.outputKey||""));
+          return producers.length===1 ? producers : [];
+        }
+        if(mode==="AFTER_BRANCH_STATE"){
+          const key=String(p.conditionBranchKey||"").trim();
+          const value=String(p.conditionBranchValue||"ON").trim();
+          const producers=outputs
+            .filter(o=>
+              String(o.properties?.branchSetKey||"").trim()===key
+              && String(o.properties?.branchSetValue||"ON").trim()===value
+            )
+            .map(o=>String(o.properties?.outputKey||""));
+          return producers.length===1 ? producers : [];
+        }
+        return [];
+      };
+      const starter=outputs.some(c=>{
+        const p=c.properties||{};
+        const mode=String(p.conditionType||"ALWAYS").toUpperCase();
+        if(["ALWAYS","AFTER_SECONDS"].includes(mode)) return true;
+        if(mode==="AFTER_SENSOR_CLAIMS"){
+          const tag=String(p.conditionSensorTag||"").trim();
+          return comps.some(sensor=>
+            sensor.type!=="OUTPUT"
+            && ["FINISH","SLOT","ELIMINATION"].includes(sensor.type)
+            && String(sensor.properties?.sensorTag||"").trim()===tag
+          );
+        }
+        return false;
+      });
+      if(outputs.length&&!starter){
+        errors.push("CONDITIONAL_OUTPUT에는 독립적으로 활성화 가능한 root 조건이 필요합니다.");
       }
       const visiting=new Set(),visited=new Set();
       const hasCycle=(key)=>{
@@ -499,10 +623,8 @@
         if(visited.has(key)) return false;
         visiting.add(key);
         const c=outputByKey.get(key);
-        const mode=String(c?.properties?.conditionType||"ALWAYS").toUpperCase();
-        const next=String(c?.properties?.conditionOutputKey||"").trim();
-        if(["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(mode)&&next&&outputByKey.has(next)){
-          if(hasCycle(next)) return true;
+        for(const next of dependencies(c)){
+          if(next&&outputByKey.has(next)&&hasCycle(next)) return true;
         }
         visiting.delete(key);
         visited.add(key);
@@ -591,6 +713,8 @@
       this.finishOrder=[];
       this.outputClaims=new Map();
       this.slotClaims=new Map();
+      this.sensorClaims=new Map();
+      this.branchStates=new Map();
       this.eliminationOrder=[];
       this.dnfOrder=[];
       this.timedOut=false;
@@ -608,6 +732,8 @@
       this.finishOrder=[];
       this.outputClaims=new Map();
       this.slotClaims=new Map();
+      this.sensorClaims=new Map();
+      this.branchStates=new Map();
       this.eliminationOrder=[];
       this.dnfOrder=[];
       this.timedOut=false;
@@ -696,8 +822,36 @@
       this.resolveMarblePairs();
       this.applyLauncherBoosts();
 
+      this.detectTaggedSensors();
       this.detectResultSensors();
       this.applyTimeout();
+    }
+
+    detectTaggedSensors(){
+      const sensors=this.definition.components.filter(c=>
+        ["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)
+        && String(c.properties?.sensorTag||"").trim()
+      );
+      if(!sensors.length) return;
+      for(const m of this.marbles){
+        if(m.finished||m.eliminated||m.dnf) continue;
+        for(const sensor of sensors){
+          if(!this.pointInRect(m.x,m.y,sensor)) continue;
+          const tag=String(sensor.properties?.sensorTag||"").trim();
+          const claims=this.sensorClaims.get(tag)||new Set();
+          claims.add(m.id);
+          this.sensorClaims.set(tag,claims);
+        }
+      }
+    }
+
+    applyOutputBranch(output){
+      const key=String(output?.properties?.branchSetKey||"").trim();
+      if(!key) return;
+      this.branchStates.set(
+        key,
+        String(output.properties?.branchSetValue||"ON").trim()
+      );
     }
 
     applyTimeout(){
@@ -804,7 +958,16 @@
               const claims=this.outputClaims.get(key)||[];
               return Array.isArray(claims)
                 && claims.length<Math.trunc(finiteOr(candidate.properties?.outputCapacity,1))
-                && conditionalOutputActive(candidate,outputs,this.outputClaims)
+                && conditionalOutputActive(
+                  candidate,
+                  this.definition,
+                  {
+                    outputClaims:this.outputClaims,
+                    sensorClaims:this.sensorClaims,
+                    branchStates:this.branchStates,
+                    time:this.time
+                  }
+                )
                 && this.pointInRect(m.x,m.y,candidate);
             })
             .sort((a,b)=>{
@@ -820,6 +983,7 @@
           const claims=this.outputClaims.get(key)||[];
           claims.push(m.id);
           this.outputClaims.set(key,claims);
+          this.applyOutputBranch(output);
           this.finishOrder.push(m.id);
           this.completeMarble(m,this.finishOrder.length);
         }
@@ -1025,6 +1189,8 @@
         winnerOrder:[...this.finishOrder],
         outputClaims:[...this.outputClaims.entries()].map(([key,value])=>({key,value})),
         slotClaims:[...this.slotClaims.entries()].map(([key,ids])=>({key,ids:[...ids]})),
+        sensorClaims:[...this.sensorClaims.entries()].map(([tag,ids])=>({tag,ids:[...ids]})),
+        branchStates:[...this.branchStates.entries()].map(([key,value])=>({key,value})),
         eliminationOrder:[...this.eliminationOrder],
         dnfOrder:[...this.dnfOrder],
         timedOut:this.timedOut,

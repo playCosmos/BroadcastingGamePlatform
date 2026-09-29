@@ -176,6 +176,9 @@
     $("exportAudit").disabled = true;
     $("qualificationBadge").textContent = "QUALIFY -";
     $("qualificationBadge").classList.remove("active");
+    window.dispatchEvent(
+      new CustomEvent("viewer-draw-audit-cleared")
+    );
   }
 
   async function buildRunAudit(generation) {
@@ -288,6 +291,12 @@
         slotClaims: structuredClone(
           auditState?.slotClaims || []
         ),
+        sensorClaims: structuredClone(
+          auditState?.sensorClaims || []
+        ),
+        branchStates: structuredClone(
+          auditState?.branchStates || []
+        ),
         selectedOutputKey:
           auditState?.selectedOutputKey || null
       }
@@ -302,6 +311,11 @@
       qualified
     );
     $("exportAudit").disabled = false;
+    window.dispatchEvent(
+      new CustomEvent("viewer-draw-audit-ready", {
+        detail: structuredClone(lastAudit)
+      })
+    );
   }
 
   function exportAudit() {

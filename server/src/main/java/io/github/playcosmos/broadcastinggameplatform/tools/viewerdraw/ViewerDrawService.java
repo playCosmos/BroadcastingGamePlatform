@@ -149,6 +149,279 @@ public final class ViewerDrawService {
         MachineMapDefinition definition
     ) {}
 
+    public record MarbleAuditSummary(
+        String auditId,
+        String publicCode,
+        String resultStatus,
+        String qualificationStatus,
+        String mapName,
+        String definitionHash,
+        String engineId,
+        long seed,
+        String completedAt,
+        String createdAt
+    ) {}
+
+    public record MarbleAudit(
+        String auditId,
+        String publicCode,
+        String schemaVersion,
+        String resultStatus,
+        String qualificationStatus,
+        String mapName,
+        String definitionHash,
+        String entrySnapshotHash,
+        String engineId,
+        long seed,
+        String startedAt,
+        String completedAt,
+        String createdAt,
+        Map<String, Object> audit
+    ) {}
+
+    public MarbleAudit saveMarbleAudit(
+        Map<String, Object> rawAudit
+    ) throws SQLException {
+        Map<String, Object> audit = normalizeMarbleAudit(rawAudit);
+        Map<String, Object> qualification = objectMap(
+            audit.get("qualification"),
+            "qualification"
+        );
+        Map<String, Object> engine = objectMap(
+            audit.get("engine"),
+            "engine"
+        );
+        Map<String, Object> map = objectMap(
+            audit.get("map"),
+            "map"
+        );
+        Map<String, Object> run = objectMap(
+            audit.get("run"),
+            "run"
+        );
+        Map<String, Object> entries = objectMap(
+            audit.get("entries"),
+            "entries"
+        );
+
+        String auditId = UUID.randomUUID().toString();
+        String createdAt = Instant.now().toString();
+        String publicCode;
+
+        try (var connection = database.open()) {
+            publicCode = createUnusedAuditCode(connection);
+            try (var statement = connection.prepareStatement("""
+                INSERT INTO viewer_draw_marble_audit(
+                  audit_id, public_code, schema_version,
+                  result_status, qualification_status,
+                  map_name, definition_hash, entry_snapshot_hash,
+                  engine_id, seed, started_at, completed_at,
+                  audit_json, created_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """)) {
+                statement.setString(1, auditId);
+                statement.setString(
+                    2,
+                    publicCode
+                );
+                statement.setString(
+                    3,
+                    requiredString(
+                        audit,
+                        "schemaVersion",
+                        64
+                    )
+                );
+                statement.setString(
+                    4,
+                    requiredString(
+                        audit,
+                        "resultStatus",
+                        32
+                    )
+                );
+                statement.setString(
+                    5,
+                    requiredString(
+                        qualification,
+                        "status",
+                        32
+                    )
+                );
+                statement.setString(
+                    6,
+                    requiredString(
+                        map,
+                        "name",
+                        80
+                    )
+                );
+                statement.setString(
+                    7,
+                    requiredHash(
+                        map,
+                        "definitionHash"
+                    )
+                );
+                statement.setString(
+                    8,
+                    requiredHash(
+                        entries,
+                        "snapshotHash"
+                    )
+                );
+                statement.setString(
+                    9,
+                    requiredString(
+                        engine,
+                        "id",
+                        80
+                    )
+                );
+                statement.setLong(
+                    10,
+                    longValue(run, "seed", 0)
+                );
+                statement.setString(
+                    11,
+                    optionalString(
+                        run.get("startedAt"),
+                        64
+                    )
+                );
+                statement.setString(
+                    12,
+                    optionalString(
+                        run.get("completedAt"),
+                        64
+                    )
+                );
+                statement.setString(
+                    13,
+                    GSON.toJson(audit)
+                );
+                statement.setString(14, createdAt);
+                statement.executeUpdate();
+            }
+        }
+
+        return findMarbleAudit(auditId);
+    }
+
+    public List<MarbleAuditSummary> recentMarbleAudits(
+        int limit
+    ) throws SQLException {
+        int normalizedLimit = Math.max(1, Math.min(100, limit));
+        var result = new ArrayList<MarbleAuditSummary>();
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT audit_id, public_code, result_status,
+                        qualification_status, map_name,
+                        definition_hash, engine_id, seed,
+                        completed_at, created_at
+                 FROM viewer_draw_marble_audit
+                 ORDER BY created_at DESC
+                 LIMIT ?
+                 """)) {
+            statement.setInt(1, normalizedLimit);
+            try (var rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    result.add(
+                        new MarbleAuditSummary(
+                            rows.getString("audit_id"),
+                            rows.getString("public_code"),
+                            rows.getString("result_status"),
+                            rows.getString("qualification_status"),
+                            rows.getString("map_name"),
+                            rows.getString("definition_hash"),
+                            rows.getString("engine_id"),
+                            rows.getLong("seed"),
+                            rows.getString("completed_at"),
+                            rows.getString("created_at")
+                        )
+                    );
+                }
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    public MarbleAudit findMarbleAudit(String auditId)
+        throws SQLException {
+        return findMarbleAuditByColumn("audit_id", auditId);
+    }
+
+    public MarbleAudit findMarbleAuditByPublicCode(
+        String publicCode
+    ) throws SQLException {
+        String normalized = normalizePublicCode(publicCode);
+        if (normalized.length() != 6) {
+            throw new NoSuchElementException(
+                "viewer draw marble audit not found"
+            );
+        }
+        return findMarbleAuditByColumn(
+            "public_code",
+            normalized
+        );
+    }
+
+    private MarbleAudit findMarbleAuditByColumn(
+        String column,
+        String value
+    ) throws SQLException {
+        if (
+            !"audit_id".equals(column)
+            && !"public_code".equals(column)
+        ) {
+            throw new IllegalArgumentException(
+                "unsupported audit lookup"
+            );
+        }
+        try (var connection = database.open();
+             var statement = connection.prepareStatement(
+                 """
+                 SELECT audit_id, public_code, schema_version,
+                        result_status, qualification_status,
+                        map_name, definition_hash, entry_snapshot_hash,
+                        engine_id, seed, started_at, completed_at,
+                        created_at, audit_json
+                 FROM viewer_draw_marble_audit
+                 WHERE %s = ?
+                 """.formatted(column)
+             )) {
+            statement.setString(1, value);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new NoSuchElementException(
+                        "viewer draw marble audit not found"
+                    );
+                }
+                @SuppressWarnings("unchecked")
+                Map<String, Object> audit = GSON.fromJson(
+                    rows.getString("audit_json"),
+                    new TypeToken<Map<String, Object>>() {}.getType()
+                );
+                return new MarbleAudit(
+                    rows.getString("audit_id"),
+                    rows.getString("public_code"),
+                    rows.getString("schema_version"),
+                    rows.getString("result_status"),
+                    rows.getString("qualification_status"),
+                    rows.getString("map_name"),
+                    rows.getString("definition_hash"),
+                    rows.getString("entry_snapshot_hash"),
+                    rows.getString("engine_id"),
+                    rows.getLong("seed"),
+                    rows.getString("started_at"),
+                    rows.getString("completed_at"),
+                    rows.getString("created_at"),
+                    Map.copyOf(audit)
+                );
+            }
+        }
+    }
+
     public MachineMap saveMachineMap(
         String mapId,
         MachineMapDefinition definition
@@ -508,6 +781,8 @@ public final class ViewerDrawService {
         var outputRanks = new java.util.LinkedHashSet<Integer>();
         var slotKeys = new java.util.LinkedHashSet<String>();
         var eliminationKeys = new java.util.LinkedHashSet<String>();
+        var sensorTags = new java.util.LinkedHashSet<String>();
+        var branchProducerKeys = new java.util.LinkedHashSet<String>();
         var outputCapacities = new ArrayList<Integer>();
         var normalizedComponents = new ArrayList<MachineComponent>();
         int spawnCount = 0;
@@ -605,6 +880,26 @@ public final class ViewerDrawService {
                 rawComponent.properties() == null
                     ? Map.of()
                     : rawComponent.properties();
+
+            if (
+                java.util.Set.of(
+                    "FINISH", "OUTPUT", "SLOT", "ELIMINATION"
+                ).contains(type)
+            ) {
+                String sensorTag = stringProperty(
+                    properties,
+                    "sensorTag",
+                    ""
+                ).trim();
+                if (sensorTag.length() > 32) {
+                    throw new IllegalArgumentException(
+                        id + " sensorTag must be at most 32 characters"
+                    );
+                }
+                if (!sensorTag.isBlank()) {
+                    sensorTags.add(sensorTag);
+                }
+            }
 
             if ("HINGE".equals(type) || "PADDLE".equals(type)) {
                 double pivotRatio = numberProperty(
@@ -800,6 +1095,21 @@ public final class ViewerDrawService {
                     "conditionClaims",
                     1
                 );
+                double conditionSeconds = numberProperty(
+                    properties,
+                    "conditionSeconds",
+                    1
+                );
+                String branchSetKey = stringProperty(
+                    properties,
+                    "branchSetKey",
+                    ""
+                ).trim();
+                String branchSetValue = stringProperty(
+                    properties,
+                    "branchSetValue",
+                    "ON"
+                ).trim();
                 if (outputKey.isBlank() || outputKey.length() > 32) {
                     throw new IllegalArgumentException(
                         id + " outputKey must be 1..32 characters"
@@ -844,7 +1154,10 @@ public final class ViewerDrawService {
                         "ALWAYS",
                         "AFTER_ANY_CLAIM",
                         "AFTER_OUTPUT_CLAIMS",
-                        "AFTER_OUTPUT_FULL"
+                        "AFTER_OUTPUT_FULL",
+                        "AFTER_SECONDS",
+                        "AFTER_SENSOR_CLAIMS",
+                        "AFTER_BRANCH_STATE"
                     ).contains(conditionType)
                 ) {
                     throw new IllegalArgumentException(
@@ -854,6 +1167,27 @@ public final class ViewerDrawService {
                 if (conditionClaims < 1 || conditionClaims > 64) {
                     throw new IllegalArgumentException(
                         id + " conditionClaims must be within 1..64"
+                    );
+                }
+                if (
+                    "AFTER_SECONDS".equals(conditionType)
+                    && (conditionSeconds <= 0 || conditionSeconds > 1800)
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " conditionSeconds must be > 0 and <= 1800"
+                    );
+                }
+                if (
+                    branchSetKey.length() > 32
+                    || branchSetValue.length() > 32
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " branch state key/value must be <= 32 characters"
+                    );
+                }
+                if (!branchSetKey.isBlank()) {
+                    branchProducerKeys.add(
+                        branchSetKey + "\u0000" + branchSetValue
                     );
                 }
                 outputCapacities.add(outputCapacity);
@@ -1036,52 +1370,90 @@ public final class ViewerDrawService {
                 "conditionType",
                 "ALWAYS"
             ).trim().toUpperCase(Locale.ROOT);
+
             if (
-                !"AFTER_OUTPUT_CLAIMS".equals(mode)
-                && !"AFTER_OUTPUT_FULL".equals(mode)
+                "AFTER_OUTPUT_CLAIMS".equals(mode)
+                || "AFTER_OUTPUT_FULL".equals(mode)
             ) {
-                continue;
-            }
-            String targetKey = stringProperty(
-                component.properties(),
-                "conditionOutputKey",
-                ""
-            ).trim();
-            String ownKey = stringProperty(
-                component.properties(),
-                "outputKey",
-                ""
-            ).trim();
-            if (
-                targetKey.isBlank()
-                || !outputsByKey.containsKey(targetKey)
-            ) {
-                throw new IllegalArgumentException(
-                    component.id()
-                        + " conditional output target does not exist"
-                );
-            }
-            if (ownKey.equals(targetKey)) {
-                throw new IllegalArgumentException(
-                    component.id()
-                        + " conditional output cannot reference itself"
-                );
-            }
-            if ("AFTER_OUTPUT_CLAIMS".equals(mode)) {
-                int threshold = (int) numberProperty(
+                String targetKey = stringProperty(
                     component.properties(),
-                    "conditionClaims",
-                    1
-                );
-                int capacity = (int) numberProperty(
-                    outputsByKey.get(targetKey).properties(),
-                    "outputCapacity",
-                    1
-                );
-                if (threshold > capacity) {
+                    "conditionOutputKey",
+                    ""
+                ).trim();
+                String ownKey = stringProperty(
+                    component.properties(),
+                    "outputKey",
+                    ""
+                ).trim();
+                if (
+                    targetKey.isBlank()
+                    || !outputsByKey.containsKey(targetKey)
+                ) {
                     throw new IllegalArgumentException(
                         component.id()
-                            + " conditionClaims exceeds target capacity"
+                            + " conditional output target does not exist"
+                    );
+                }
+                if (ownKey.equals(targetKey)) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " conditional output cannot reference itself"
+                    );
+                }
+                if ("AFTER_OUTPUT_CLAIMS".equals(mode)) {
+                    int threshold = (int) numberProperty(
+                        component.properties(),
+                        "conditionClaims",
+                        1
+                    );
+                    int capacity = (int) numberProperty(
+                        outputsByKey.get(targetKey).properties(),
+                        "outputCapacity",
+                        1
+                    );
+                    if (threshold > capacity) {
+                        throw new IllegalArgumentException(
+                            component.id()
+                                + " conditionClaims exceeds target capacity"
+                        );
+                    }
+                }
+            }
+
+            if ("AFTER_SENSOR_CLAIMS".equals(mode)) {
+                String tag = stringProperty(
+                    component.properties(),
+                    "conditionSensorTag",
+                    ""
+                ).trim();
+                if (tag.isBlank() || !sensorTags.contains(tag)) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " conditional sensor tag does not exist"
+                    );
+                }
+            }
+
+            if ("AFTER_BRANCH_STATE".equals(mode)) {
+                String key = stringProperty(
+                    component.properties(),
+                    "conditionBranchKey",
+                    ""
+                ).trim();
+                String value = stringProperty(
+                    component.properties(),
+                    "conditionBranchValue",
+                    "ON"
+                ).trim();
+                if (
+                    key.isBlank()
+                    || !branchProducerKeys.contains(
+                        key + "\u0000" + value
+                    )
+                ) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " branch state producer does not exist"
                     );
                 }
             }
@@ -1093,18 +1465,49 @@ public final class ViewerDrawService {
                     "CONDITIONAL_OUTPUT requires at least one OUTPUT"
                 );
             }
-            boolean hasAlways = outputsByKey.values().stream().anyMatch(
-                component -> "ALWAYS".equals(
-                    stringProperty(
+            boolean hasStarter = false;
+            for (MachineComponent component : outputsByKey.values()) {
+                String mode = stringProperty(
+                    component.properties(),
+                    "conditionType",
+                    "ALWAYS"
+                ).trim().toUpperCase(Locale.ROOT);
+                if (
+                    "ALWAYS".equals(mode)
+                    || "AFTER_SECONDS".equals(mode)
+                ) {
+                    hasStarter = true;
+                    break;
+                }
+                if ("AFTER_SENSOR_CLAIMS".equals(mode)) {
+                    String tag = stringProperty(
                         component.properties(),
-                        "conditionType",
-                        "ALWAYS"
-                    ).trim().toUpperCase(Locale.ROOT)
-                )
-            );
-            if (!hasAlways) {
+                        "conditionSensorTag",
+                        ""
+                    ).trim();
+                    boolean externalSensor = normalizedComponents.stream()
+                        .anyMatch(sensor ->
+                            !"OUTPUT".equals(sensor.type())
+                            && java.util.Set.of(
+                                "FINISH", "SLOT", "ELIMINATION"
+                            ).contains(sensor.type())
+                            && tag.equals(
+                                stringProperty(
+                                    sensor.properties(),
+                                    "sensorTag",
+                                    ""
+                                ).trim()
+                            )
+                        );
+                    if (externalSensor) {
+                        hasStarter = true;
+                        break;
+                    }
+                }
+            }
+            if (!hasStarter) {
                 throw new IllegalArgumentException(
-                    "CONDITIONAL_OUTPUT requires at least one ALWAYS output"
+                    "CONDITIONAL_OUTPUT requires an independently activatable root condition"
                 );
             }
             var visiting = new java.util.LinkedHashSet<String>();
@@ -1114,6 +1517,7 @@ public final class ViewerDrawService {
                     hasConditionalOutputCycle(
                         key,
                         outputsByKey,
+                        normalizedComponents,
                         visiting,
                         visited
                     )
@@ -1260,6 +1664,7 @@ public final class ViewerDrawService {
     private static boolean hasConditionalOutputCycle(
         String key,
         Map<String, MachineComponent> outputsByKey,
+        List<MachineComponent> components,
         java.util.Set<String> visiting,
         java.util.Set<String> visited
     ) {
@@ -1269,26 +1674,19 @@ public final class ViewerDrawService {
         visiting.add(key);
         MachineComponent component = outputsByKey.get(key);
         if (component != null) {
-            String mode = stringProperty(
-                component.properties(),
-                "conditionType",
-                "ALWAYS"
-            ).trim().toUpperCase(Locale.ROOT);
-            if (
-                "AFTER_OUTPUT_CLAIMS".equals(mode)
-                || "AFTER_OUTPUT_FULL".equals(mode)
+            for (
+                String next : conditionalOutputDependencies(
+                    component,
+                    outputsByKey,
+                    components
+                )
             ) {
-                String next = stringProperty(
-                    component.properties(),
-                    "conditionOutputKey",
-                    ""
-                ).trim();
                 if (
-                    !next.isBlank()
-                    && outputsByKey.containsKey(next)
+                    outputsByKey.containsKey(next)
                     && hasConditionalOutputCycle(
                         next,
                         outputsByKey,
+                        components,
                         visiting,
                         visited
                     )
@@ -1300,6 +1698,323 @@ public final class ViewerDrawService {
         visiting.remove(key);
         visited.add(key);
         return false;
+    }
+
+    private static List<String> conditionalOutputDependencies(
+        MachineComponent component,
+        Map<String, MachineComponent> outputsByKey,
+        List<MachineComponent> components
+    ) {
+        String mode = stringProperty(
+            component.properties(),
+            "conditionType",
+            "ALWAYS"
+        ).trim().toUpperCase(Locale.ROOT);
+        var result = new ArrayList<String>();
+
+        if (
+            "AFTER_OUTPUT_CLAIMS".equals(mode)
+            || "AFTER_OUTPUT_FULL".equals(mode)
+        ) {
+            String key = stringProperty(
+                component.properties(),
+                "conditionOutputKey",
+                ""
+            ).trim();
+            if (!key.isBlank()) result.add(key);
+            return List.copyOf(result);
+        }
+
+        if ("AFTER_SENSOR_CLAIMS".equals(mode)) {
+            String tag = stringProperty(
+                component.properties(),
+                "conditionSensorTag",
+                ""
+            ).trim();
+            boolean external = components.stream().anyMatch(
+                sensor ->
+                    !"OUTPUT".equals(sensor.type())
+                    && java.util.Set.of(
+                        "FINISH", "SLOT", "ELIMINATION"
+                    ).contains(sensor.type())
+                    && tag.equals(
+                        stringProperty(
+                            sensor.properties(),
+                            "sensorTag",
+                            ""
+                        ).trim()
+                    )
+            );
+            if (external) return List.of();
+
+            for (MachineComponent candidate : outputsByKey.values()) {
+                if (
+                    tag.equals(
+                        stringProperty(
+                            candidate.properties(),
+                            "sensorTag",
+                            ""
+                        ).trim()
+                    )
+                ) {
+                    result.add(
+                        stringProperty(
+                            candidate.properties(),
+                            "outputKey",
+                            ""
+                        ).trim()
+                    );
+                }
+            }
+            return result.size() == 1
+                ? List.copyOf(result)
+                : List.of();
+        }
+
+        if ("AFTER_BRANCH_STATE".equals(mode)) {
+            String branchKey = stringProperty(
+                component.properties(),
+                "conditionBranchKey",
+                ""
+            ).trim();
+            String branchValue = stringProperty(
+                component.properties(),
+                "conditionBranchValue",
+                "ON"
+            ).trim();
+            for (MachineComponent candidate : outputsByKey.values()) {
+                if (
+                    branchKey.equals(
+                        stringProperty(
+                            candidate.properties(),
+                            "branchSetKey",
+                            ""
+                        ).trim()
+                    )
+                    && branchValue.equals(
+                        stringProperty(
+                            candidate.properties(),
+                            "branchSetValue",
+                            "ON"
+                        ).trim()
+                    )
+                ) {
+                    result.add(
+                        stringProperty(
+                            candidate.properties(),
+                            "outputKey",
+                            ""
+                        ).trim()
+                    );
+                }
+            }
+            return result.size() == 1
+                ? List.copyOf(result)
+                : List.of();
+        }
+
+        return List.copyOf(result);
+    }
+
+    private Map<String, Object> normalizeMarbleAudit(
+        Map<String, Object> rawAudit
+    ) {
+        if (rawAudit == null) {
+            throw new IllegalArgumentException(
+                "marble audit is required"
+            );
+        }
+
+        String json = GSON.toJson(rawAudit);
+        if (json.length() > 2_000_000) {
+            throw new IllegalArgumentException(
+                "marble audit is too large"
+            );
+        }
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> audit = GSON.fromJson(
+            json,
+            new TypeToken<Map<String, Object>>() {}.getType()
+        );
+
+        String schemaVersion = requiredString(
+            audit,
+            "schemaVersion",
+            64
+        );
+        if (!"viewer-draw-run-audit/v0".equals(schemaVersion)) {
+            throw new IllegalArgumentException(
+                "unsupported marble audit schemaVersion"
+            );
+        }
+
+        String resultStatus = requiredString(
+            audit,
+            "resultStatus",
+            32
+        ).toUpperCase(Locale.ROOT);
+        if (
+            !"COMPLETED".equals(resultStatus)
+            && !"TIMEOUT".equals(resultStatus)
+        ) {
+            throw new IllegalArgumentException(
+                "invalid marble audit resultStatus"
+            );
+        }
+
+        Map<String, Object> qualification = objectMap(
+            audit.get("qualification"),
+            "qualification"
+        );
+        String qualificationStatus = requiredString(
+            qualification,
+            "status",
+            32
+        ).toUpperCase(Locale.ROOT);
+        if (
+            !"QUALIFIED".equals(qualificationStatus)
+            && !"NOT_QUALIFIED".equals(qualificationStatus)
+        ) {
+            throw new IllegalArgumentException(
+                "invalid marble audit qualification status"
+            );
+        }
+
+        Map<String, Object> map = objectMap(
+            audit.get("map"),
+            "map"
+        );
+        requiredString(map, "name", 80);
+        requiredHash(map, "definitionHash");
+
+        Map<String, Object> entries = objectMap(
+            audit.get("entries"),
+            "entries"
+        );
+        requiredHash(entries, "snapshotHash");
+
+        Map<String, Object> engine = objectMap(
+            audit.get("engine"),
+            "engine"
+        );
+        requiredString(engine, "id", 80);
+
+        Map<String, Object> run = objectMap(
+            audit.get("run"),
+            "run"
+        );
+        longValue(run, "seed", 0);
+        optionalString(run.get("startedAt"), 64);
+        optionalString(run.get("completedAt"), 64);
+
+        objectMap(audit.get("result"), "result");
+        return Map.copyOf(audit);
+    }
+
+    private String createUnusedAuditCode(
+        java.sql.Connection connection
+    ) throws SQLException {
+        for (int attempt = 0; attempt < 32; attempt += 1) {
+            String code = createPublicCode();
+            try (var statement = connection.prepareStatement("""
+                SELECT 1
+                FROM viewer_draw_marble_audit
+                WHERE public_code = ?
+                """)) {
+                statement.setString(1, code);
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next()) return code;
+                }
+            }
+        }
+        throw new SQLException(
+            "failed to allocate marble audit public code"
+        );
+    }
+
+    private static Map<String, Object> objectMap(
+        Object value,
+        String name
+    ) {
+        if (!(value instanceof Map<?, ?> raw)) {
+            throw new IllegalArgumentException(
+                name + " must be an object"
+            );
+        }
+        var result = new LinkedHashMap<String, Object>();
+        for (var entry : raw.entrySet()) {
+            if (!(entry.getKey() instanceof String key)) {
+                throw new IllegalArgumentException(
+                    name + " contains a non-string key"
+                );
+            }
+            result.put(key, entry.getValue());
+        }
+        return result;
+    }
+
+    private static String requiredString(
+        Map<String, Object> source,
+        String key,
+        int maxLength
+    ) {
+        String value = optionalString(
+            source.get(key),
+            maxLength
+        );
+        if (value == null || value.isBlank()) {
+            throw new IllegalArgumentException(
+                key + " is required"
+            );
+        }
+        return value;
+    }
+
+    private static String requiredHash(
+        Map<String, Object> source,
+        String key
+    ) {
+        String value = requiredString(source, key, 64);
+        if (!value.matches("[0-9a-fA-F]{64}")) {
+            throw new IllegalArgumentException(
+                key + " must be a SHA-256 hex value"
+            );
+        }
+        return value.toLowerCase(Locale.ROOT);
+    }
+
+    private static String optionalString(
+        Object value,
+        int maxLength
+    ) {
+        if (value == null) return null;
+        String text = String.valueOf(value).trim();
+        if (text.length() > maxLength) {
+            throw new IllegalArgumentException(
+                "string value is too long"
+            );
+        }
+        return text;
+    }
+
+    private static long longValue(
+        Map<String, Object> source,
+        String key,
+        long fallback
+    ) {
+        Object value = source.get(key);
+        if (value == null) return fallback;
+        if (value instanceof Number number) {
+            return number.longValue();
+        }
+        try {
+            return Long.parseLong(String.valueOf(value).trim());
+        } catch (NumberFormatException error) {
+            throw new IllegalArgumentException(
+                key + " must be an integer"
+            );
+        }
     }
 
     private static String stringProperty(

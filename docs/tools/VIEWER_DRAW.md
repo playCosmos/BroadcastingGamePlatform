@@ -1728,33 +1728,75 @@ V5 구현 완료:
 - PCM Sound Bank와 Audit 생성은 Physics 결과에 영향을 주지 않는다.
 - Server는 MapDefinition/runPolicy를 저장·검증할 뿐 Marble winner/timeout 판정을 수행하지 않는다.
 
-잔여 확장:
+V6 운영/제작 확장 구현 완료:
 
-- Gear chain dependency visualization / coupling editor UX
-- Conditional predicate 확장: timer / sensor tag / branch state
-- 더 높은 품질의 recorded sample bank / material impulse response
-- OBS Overlay에 timeout/DNF/qualification 표시
-- optional post-run Audit server upload/history
+- Conditional Predicate V2
+  - `AFTER_SECONDS`
+  - `AFTER_SENSOR_CLAIMS`
+  - `AFTER_BRANCH_STATE`
+  - `sensorTag`는 Finish / Output / Slot / Elimination에 설정 가능
+  - Output claim 시 `branchSetKey / branchSetValue` 상태 변경
+  - Preview와 실제 Box2D Authority가 동일 predicate contract 사용
+  - Browser/Server에서 predicate target과 dependency cycle 검증
+- Map Maker Dependency Visualization
+  - Gear linked joint: solid link + gear ratio
+  - direct Output dependency: claim/full link
+  - Sensor dependency: sensor tag + required claim count
+  - Branch dependency: key=value link
+  - Timer condition: T+Ns badge
+- Gear Chain 편집 UX
+  - linked joint select 유지
+  - `Nearest Joint`로 가장 가까운 Gear/Hinge/Paddle/Elevator 자동 연결
+  - `Clear Link`로 연결 해제
+  - Output key rename 시 direct dependency 참조 자동 동기화
+- Predicate Runtime State
+  - `sensorClaims`
+  - `branchStates`
+  - 두 상태 모두 Browser Authority snapshot과 Local Audit에 포함
+- Optional Marble Audit History
+  - DB migration `V22__viewer_draw_marble_audit.sql`
+  - 완료된 로컬 Audit만 사용자가 명시적으로 서버 저장 가능
+  - 최근 Audit history 조회
+  - 각 저장 Audit에 6자리 public code 발급
+  - Physics/winner 결정 경로와 서버 sync 경로 분리
+- OBS Marble Result Overlay
+  - `/tools/viewer-draw/?auditCode=XXXXXX`
+  - COMPLETED / TIMEOUT
+  - QUALIFIED / NOT_QUALIFIED
+  - DNF 수
+  - NUDGE 수
+  - simulation time
+  - winner 목록
+  - winner 없는 TIMEOUT 표시
+
+중요:
+
+- `viewer-draw-marble.js`는 여전히 서버 transport를 결과 판정에 사용하지 않는다.
+- Audit 업로드/이력은 별도 `viewer-draw-audit-sync.js` 모듈에서만 처리한다.
+- 서버가 중단되어도 이미 시작한 Marble 추첨의 Physics/winner/timeout/qualification에는 영향이 없다.
+- OBS audit overlay는 완료 후 저장된 Audit의 표현 계층이며 Physics authority가 아니다.
+- Branch state는 Output이 실제로 claim된 순간에만 변경된다.
+- Sensor predicate는 Marble의 실제 sensor 접촉을 누적해 활성화한다.
+
+잔여 중 테스트성 항목:
+
 - 1/10/100/대량 참가자 성능·편향 Qualification suite
-- 공식 Machine timeout/profile preset
+- multi-winner qualification suite
+- browser/OBS 성능/네트워크 차단 회귀 검증
+- Board/Yacht/Drawing Guess regression 지속
 
-### V9 — Overlay / Audit / Qualification — PARTIAL IMPLEMENTED
+### V9 — Overlay / Audit / Qualification — OPERATIONAL IMPLEMENTED
 
 구현:
 
 - 로컬 Marble run audit export
 - timeout / DNF
 - Qualification V1
+- 선택적 post-run Audit 서버 저장/history
+- public audit code 기반 OBS 결과 Overlay
+- Timeout / DNF / Qualification OBS 표시
 
-잔여:
-
-- OBS presentation
-- optional post-run server history upload
-- 1/10/100/대량 참가자
-- multi-winner qualification suite
-- browser/OBS performance
-- 페이지 로드 후 네트워크 차단 상태 추첨 확대 검증
-- Board/Yacht/Drawing Guess regression 지속
+서버 이력 저장은 선택 기능이며 추첨 결과 authority는 계속 브라우저 로컬 Box2D다.
 
 ---
 
@@ -1804,7 +1846,8 @@ Map Format
 → Machine V3: Gear Coupling / Elevator / Collision Web Audio / Ordered Output [IMPLEMENTED]
 → Machine V4: Material/Instrument Audio / Slot / Elimination / Cascade / Random Output [IMPLEMENTED]
 → Machine V5: Conditional Output / PCM Sound Bank / Timeout-DNF / Local Audit-Qualification [IMPLEMENTED]
-→ Dependency Visualization / Conditional Predicates / OBS Audit / Qualification Suite
+→ Machine V6: Dependency Visualization / Timer-Sensor-Branch Predicates / Gear Chain UX / OBS Audit / Server Audit History [IMPLEMENTED]
+→ Qualification Performance/Bias Suite [TEST SCOPE]
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.
@@ -1833,8 +1876,11 @@ Browser Marble Runtime
 - Map Maker DB 저장
 - 저장 맵 목록 관리
 - 채팅 참가자 수집 후 로컬 런타임으로 전달
+- 완료된 Local Audit의 선택적 사후 저장/history
+- 저장 Audit public code 기반 OBS 결과 표시
 
-하지만 추첨 시작 시점부터 winner 확정까지는 서버 round-trip을 요구하지 않는다.
+하지만 추첨 시작 시점부터 winner/timeout/qualification 확정까지는 서버 round-trip을 요구하지 않는다.
+Audit 서버 저장은 결과 확정 이후의 선택 동작이며 `viewer-draw-audit-sync.js`로 물리 controller와 분리한다.
 
 lazygyu/roulette 계승 방향:
 
