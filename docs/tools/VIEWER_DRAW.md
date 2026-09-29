@@ -8,9 +8,10 @@
 - V1 Number Draw Migration: **IMPLEMENTED**
 - V2 Marble Map Maker V0: **IMPLEMENTED**
 - V2 Physics Preview Engine V0: **IMPLEMENTED**
-- V3 Production Physics Adapter V0 (JBox2D): **IMPLEMENTED**
-- V4 Marble Draw Session / Audit: PLANNED
-- V5 Chat Entry Collection: PLANNED
+- V3 Browser Marble Draw Runtime V0: **IMPLEMENTED**
+- V4 Box2D-WASM Browser Adapter: PLANNED
+- V5 Camera / Rank / Minimap / Stuck Recovery 계승: PLANNED
+- V6 Chat Entry Collection: PLANNED
 
 플랫폼 분류: **Broadcast Tool / Interaction Module**
 
@@ -408,45 +409,63 @@ winnerCount를 지원한다.
 3~5등 = 당첨
 ~~~
 
-골인 판정과 순위는 Simulation Authority가 결정한다.
-공개 Overlay가 독자적으로 winner를 결정하지 않는다.
+골인 판정과 순위는 **현재 추첨을 실행 중인 브라우저 Simulation Authority**가 결정한다.
+서버는 Marble winner를 계산하거나 확정하지 않는다.
 
 ---
 
 ## 11. 물리 추첨 Authority
 
-일반 Random Draw:
+Marble Race Draw의 실제 추첨은 **브라우저 내부에서 완결**한다.
 
 ~~~text
-server RNG
-→ winner
+MapDefinition
++ Local Entry Set
++ Browser Physics
+        ↓
+collision / gravity / obstacle interaction
+        ↓
+finish rank
+        ↓
+winner(s)
 ~~~
 
-Marble Race Draw:
+원칙:
+
+- Marble 추첨은 서버 RNG를 사용하지 않는다.
+- 서버가 winner를 미리 정하지 않는다.
+- 서버가 물리 simulation을 실행하지 않는다.
+- 서버가 Marble 결과를 승인해야 완료되는 구조를 사용하지 않는다.
+- 추첨이 시작된 뒤 플랫폼 서버 연결이 끊겨도 현재 추첨은 계속 진행되어야 한다.
+- Browser Canvas / Physics runtime 자체가 해당 추첨의 Authority다.
+- OBS/browser frame presentation과 physics timestep은 분리할 수 있다.
+
+Map Maker의 DB 저장 기능은 **맵 제작 편의 기능**이다.
+실제 추첨은 Map Maker에서 내보낸 JSON 파일만 있어도 실행할 수 있어야 한다.
+
+현재 독립 실행 경로:
 
 ~~~text
-initial simulation seed/config
-→ physics simulation
-→ collision outcome
-→ finish rank
-→ winner
+/tools/viewer-draw/marble/
 ~~~
 
-따라서 Marble Race는 winner를 사전에 정하지 않는다.
+입력:
 
-공정성 및 장애 분석을 위해 다음을 저장한다.
+- MachineMapDefinition JSON
+- 참가자 목록
+- winnerCount
+- seed
 
-- simulation seed
-- map ID/version/hash
-- physics config/version
-- 참가자 초기 순서
-- spawn assignment
-- marble properties
-- start timestamp
-- finish rank
+출력:
 
-Box2D floating-point 차이 때문에 cross-platform 완전 deterministic replay를 당연시하지 않는다.
-v1은 하나의 authoritative simulation이 결과를 결정하는 것을 우선한다.
+- finish order
+- winner(s)
+
+현재 V0는 브라우저 내장 Physics Adapter를 사용한다.
+후속으로 lazygyu/roulette와 같은 `box2d-wasm` 기반 Browser Adapter를 동일 인터페이스에 연결한다.
+
+Box2D floating-point 차이 때문에 다른 브라우저/CPU에서 완전한 cross-platform deterministic replay를 당연시하지 않는다.
+한 번의 추첨에서 **그 추첨을 실행한 브라우저 인스턴스의 simulation 결과**가 결과다.
 
 ---
 
@@ -812,18 +831,8 @@ viewer_draw_machine_map
 
 각 저장 revision은 `viewer_draw_machine_map_revision`에 immutable snapshot으로 별도 보존한다.
 
-~~~text
-map r1 저장
-→ r1 definition/hash snapshot 유지
-
-map 수정 후 r2 저장
-→ current map = r2
-→ r1 snapshot 유지
-→ r2 snapshot 추가
-~~~
-
-Production Physics는 최신 맵뿐 아니라 특정 과거 revision을 직접 실행할 수 있다.
-실제 Marble Draw Session은 Freeze 시 이 revision/hash를 고정해 사용한다.
+이 revision history는 Map Maker의 제작 이력 관리용이다.
+실제 브라우저 Marble Draw는 서버 revision 조회가 없어도 JSON 맵 파일만으로 실행할 수 있다.
 
 ### 13.6.2 Physics Preview Engine V0
 
@@ -855,99 +864,64 @@ Preview Physics Engine
 
 으로 실행하므로 에디터에서 보이는 정의와 Preview 실행 정의가 동일하다.
 
-단, V0 Preview Engine을 아직 실제 방송 추첨의 **Production Draw Authority**로 사용하지 않는다.
+현재 V0 브라우저 Marble Draw는 이 물리 코어를 Browser Physics Adapter로 감싸 실제 로컬 추첨에도 사용한다.
 
-현재 목적:
+현재 역할:
 
-- 맵 제작
-- 배치 검증
-- 충돌/경로 확인
+- 맵 제작 Preview
+- 배치/충돌/경로 확인
 - Spawn/Finish 확인
-- Production Box2D 계열 엔진 어댑터 설계 기준 확정
+- 브라우저 로컬 Marble Draw Authority V0
 
-다음 물리 단계에서는 같은 MapDefinition을 읽는 Production Physics Adapter를 구현하고 Preview와 결과 편차를 비교한다.
+후속 단계에서는 동일 Browser Physics Adapter 계약을 구현하는 `box2d-wasm` 어댑터로 교체/확장한다.
 
 
-### 13.6.3 Production Physics Adapter V0 — IMPLEMENTED
+### 13.6.3 Browser Marble Draw Runtime V0 — IMPLEMENTED
 
-실제 방송 추첨 Authority 후보는 브라우저 Preview와 분리해 서버 내부 JBox2D로 구현한다.
-
-~~~text
-MachineMapDefinition
-        ↓
-JBox2dMarblePhysicsAdapter
-        ↓
-Server-authoritative SimulationResult
-~~~
-
-엔진:
-
-- `org.jbox2d:jbox2d-library:2.2.1.1`
-- engine ID: `JBOX2D`
-- engine version: `2.2.1.1-v0`
-- fixed timestep: 1/120s
-- velocity iterations: 8
-- position iterations: 3
-- server JVM에서 실행
-- 브라우저/OBS frame rate와 결과 결정 분리
-
-V0 지원 컴포넌트:
-
-- Wall
-- Ramp
-- Peg
-- Bumper
-- Spawn
-- Finish
-
-지원 물리:
-
-- gravity
-- static rotated box collision
-- static circle collision
-- dynamic marble ↔ marble collision
-- restitution / friction
-- Bumper boost
-- world boundary
-- seeded initial Spawn distribution
-- Finish rank
-- timeout evidence
-
-Map Maker의 `JBox2D Production Test`는 저장된 map revision/hash를 기준으로 서버 Production Adapter를 실행한다.
-
-API:
+실제 Marble 추첨은 서버가 아니라 브라우저에서 실행한다.
 
 ~~~text
-POST /api/v1/tools/viewer-draw/maps/{mapId}/simulate
+Map JSON
++ Local Entries
+        ↓
+BrowserPhysicsAdapter
+        ↓
+Browser Physics Engine
+        ↓
+Finish Rank / Winner
 ~~~
 
-결과에는 최소 다음이 포함된다.
+현재 경로:
 
-- mapId
-- mapRevision
-- mapHash
-- engineId / engineVersion
+~~~text
+/tools/viewer-draw/marble/
+~~~
+
+특징:
+
+- Backend API 호출 없이 추첨 실행
+- Map JSON 파일 직접 import
+- 참가자 한 줄 입력
+- winnerCount
 - seed
-- marbleCount
-- fixed timestep
-- step count
-- simulated seconds
-- timedOut
-- finishOrder
-- final marble states
+- 브라우저 Canvas 렌더링
+- finish rank 실시간 표시
+- winner 확정
+- 페이지가 이미 로드된 뒤 플랫폼 서버가 중단되어도 현재 추첨 지속
 
-Preview와 Production은 같은 MapDefinition과 seed를 사용하지만 솔버가 다르므로 동일한 finish order를 강제로 요구하지 않는다.
-Preview의 목적은 제작 피드백이고 Production Adapter의 목적은 최종 Authority다.
+현재 Adapter:
 
-아직 구현하지 않은 경계:
+- `BuiltinBrowserPhysicsAdapter`
+- engine ID: `BROWSER_PHYSICS_V0`
 
-- Frozen Viewer Entry → Marble assignment
-- Production run persistence/audit
-- public real-time Marble Overlay
-- stuck recovery / DNF policy
-- 실제 winnerCount 판정
+후속 Adapter:
 
-이 항목들은 다음 Marble Draw Session 단계에서 연결한다.
+- `Box2dWasmPhysicsAdapter`
+- lazygyu/roulette의 `IPhysics + box2d-wasm` 구조를 계승
+- 현재 MapDefinition을 그대로 입력으로 사용
+
+서버의 역할은 실제 Marble 추첨에서 제외한다.
+서버의 Map 저장 API는 Map Maker 편의 기능일 뿐 Marble Draw Runtime의 필수 의존성이 아니다.
 
 
 장기적으로 Admin에 시각적 편집기를 제공한다.
@@ -1482,10 +1456,56 @@ Map Format
 → Map Maker V0
 → Physics Preview Engine V0
 → Map Validator / Simulation Tools
-→ Production Physics Adapter V0 [IMPLEMENTED]
-→ Marble Draw Session / Audit
+→ Browser Marble Draw Runtime V0 [IMPLEMENTED]
+→ Box2D-WASM Browser Adapter
+→ Camera / Rank / Minimap / Stuck Recovery
 → Goldberg / Marble Machine Components
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.
 Runtime이 MapDefinition을 소비하도록 하여 사용자 제작 맵이 기본 구조가 되도록 한다.
+
+
+## 22. Browser-Only Marble Draw 원칙
+
+Marble 추첨은 Platform Server의 가용성과 분리한다.
+
+~~~text
+Server ON/OFF
+    X
+    │ 결과 결정에 관여하지 않음
+    │
+Browser Marble Runtime
+├─ MapDefinition
+├─ Entry List
+├─ Physics
+├─ Rank
+└─ Winner
+~~~
+
+서버와 연결 가능한 기능:
+
+- Map Maker DB 저장
+- 저장 맵 목록 관리
+- 채팅 참가자 수집 후 로컬 런타임으로 전달
+
+하지만 추첨 시작 시점부터 winner 확정까지는 서버 round-trip을 요구하지 않는다.
+
+lazygyu/roulette 계승 방향:
+
+~~~text
+IPhysics
+→ BrowserPhysicsAdapter
+
+Box2dPhysics
+→ Box2dWasmPhysicsAdapter
+
+Roulette
+→ Browser Marble Draw Controller
+
+Marble
+→ Local Entry ↔ Marble
+
+Camera / RankRenderer / Minimap / FastForwarder
+→ 후속 브라우저 런타임 계승
+~~~
