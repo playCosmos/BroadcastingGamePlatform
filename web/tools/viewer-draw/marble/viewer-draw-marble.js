@@ -28,6 +28,103 @@
 
   const FINISH_SLOW_RATE = 0.35;
   let stuckState = new Map();
+  let audioContext = null;
+  let audioMaster = null;
+  let audioCompressor = null;
+  let activeAudioVoices = 0;
+  const MAX_AUDIO_VOICES = 12;
+
+  function audioIsEnabled() {
+    return Boolean($("audioEnabled")?.checked);
+  }
+
+  async function ensureAudioReady() {
+    if (!audioIsEnabled()) return false;
+    const AudioCtor =
+      window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) return false;
+
+    if (!audioContext) {
+      audioContext = new AudioCtor();
+      audioMaster = audioContext.createGain();
+      audioMaster.gain.value = 0.18;
+      audioCompressor = audioContext.createDynamicsCompressor();
+      audioCompressor.threshold.value = -18;
+      audioCompressor.knee.value = 12;
+      audioCompressor.ratio.value = 6;
+      audioCompressor.attack.value = 0.004;
+      audioCompressor.release.value = 0.12;
+      audioMaster.connect(audioCompressor);
+      audioCompressor.connect(audioContext.destination);
+    }
+    if (audioContext.state === "suspended") {
+      await audioContext.resume();
+    }
+    return audioContext.state === "running";
+  }
+
+  function playAudioEvents(events) {
+    if (
+      !audioIsEnabled()
+      || !audioContext
+      || audioContext.state !== "running"
+      || !Array.isArray(events)
+    ) {
+      return;
+    }
+
+    for (const event of events) {
+      const strength = clamp(Number(event.strength) || 0, 0, 1);
+      if (strength < 0.08 || activeAudioVoices >= MAX_AUDIO_VOICES) {
+        continue;
+      }
+
+      const kind = String(event.kind || "impact");
+      const oscillator = audioContext.createOscillator();
+      const gain = audioContext.createGain();
+      const now = audioContext.currentTime;
+
+      const frequencies = {
+        impact: 190 + strength * 180,
+        bumper: 520 + strength * 180,
+        launcher: 150 + strength * 90,
+        finish: 760 + strength * 140,
+        output: 640 + strength * 220
+      };
+      oscillator.frequency.setValueAtTime(
+        frequencies[kind] || frequencies.impact,
+        now
+      );
+      oscillator.type =
+        kind === "launcher" ? "sawtooth"
+          : kind === "bumper" ? "triangle"
+            : "sine";
+
+      const peak = 0.025 + strength * 0.055;
+      gain.gain.setValueAtTime(0.0001, now);
+      gain.gain.exponentialRampToValueAtTime(
+        peak,
+        now + 0.008
+      );
+      gain.gain.exponentialRampToValueAtTime(
+        0.0001,
+        now + (kind === "finish" || kind === "output" ? 0.16 : 0.08)
+      );
+
+      oscillator.connect(gain);
+      gain.connect(audioMaster);
+      activeAudioVoices += 1;
+      oscillator.onended = () => {
+        activeAudioVoices = Math.max(0, activeAudioVoices - 1);
+        try { oscillator.disconnect(); } catch {}
+        try { gain.disconnect(); } catch {}
+      };
+      oscillator.start(now);
+      oscillator.stop(
+        now + (kind === "finish" || kind === "output" ? 0.18 : 0.1)
+      );
+    }
+  }
 
   const camera = {
     x: definition.world.width / 2,
@@ -69,7 +166,9 @@
 
   function setRunControlsLocked(locked) {
     $("entries").disabled = locked;
-    $("winnerCount").disabled = locked;
+    $("winnerCount").disabled =
+      locked
+      || Engine.resolvedDrawRule(definition).type === "ORDERED_OUTPUT";
     $("seed").disabled = locked;
     $("loadMapButton").disabled = locked;
     $("startDraw").disabled = locked;
@@ -107,6 +206,16 @@
     }
     definition = structuredClone(next);
     adapter.loadMap(definition);
+    const rule = Engine.resolvedDrawRule(definition);
+    if (rule.type === "ORDERED_OUTPUT") {
+      const outputCount = definition.components.filter(
+        (component) => component.type === "OUTPUT"
+      ).length;
+      $("winnerCount").value = String(
+        Math.max(1, rule.winnerCount || outputCount)
+      );
+    }
+    $("winnerCount").disabled = rule.type === "ORDERED_OUTPUT";
     $("mapName").textContent = definition.name;
     $("mapSchema").textContent = definition.schemaVersion;
     resetCamera(true);
@@ -191,6 +300,8 @@
       GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
       LAUNCHER: ["#3e6675", "#78bdd5"],
+      ELEVATOR: ["#3f586d", "#84a8c6"],
+      OUTPUT: ["#3f744c", "#8bd3a1"],
       SPAWN: ["#1d6c8d", "#60c3e8"],
       FINISH: ["#327649", "#72cf90"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -230,6 +341,15 @@
       );
       target.fillRect(-width / 2, -height / 2, width, height);
       target.strokeRect(-width / 2, -height / 2, width, height);
+      if (component.type === "FINISH" || component.type === "OUTPUT") {
+        target.setLineDash([6, 4]);
+        target.strokeRect(
+          -width / 2 + 3,
+          -height / 2 + 3,
+          Math.max(1, width - 6),
+          Math.max(1, height - 6)
+        );
+      }
     }
     target.restore();
   }
@@ -451,13 +571,7 @@
     const root = $("rankList");
     root.replaceChildren();
 
-    const winnerCount = Math.max(
-      1,
-      Math.min(
-        entries.length || 1,
-        Math.trunc(Number($("winnerCount").value) || 1)
-      )
-    );
+    const winnerCount = winnerCountValue();
 
     orderedMarbles().forEach((marble, index) => {
       const row = document.createElement("div");
@@ -479,7 +593,11 @@
 
       const status = document.createElement("small");
       status.textContent = marble.finished
-        ? "FINISH"
+        ? (
+            Engine.resolvedDrawRule(definition).type === "ORDERED_OUTPUT"
+              ? "OUTPUT"
+              : "FINISH"
+          )
         : "RACING";
 
       row.append(rank, name, status);
@@ -488,21 +606,38 @@
   }
 
   function nearestFinishDistance(marble) {
-    const finishes = definition.components.filter(
-      (component) => component.type === "FINISH"
+    const rule = Engine.resolvedDrawRule(definition);
+    const targets = definition.components.filter(
+      (component) =>
+        component.type === (
+          rule.type === "ORDERED_OUTPUT" ? "OUTPUT" : "FINISH"
+        )
     );
-    if (!finishes.length) return Infinity;
+    if (!targets.length) return Infinity;
     return Math.min(
-      ...finishes.map((finish) =>
+      ...targets.map((target) =>
         Math.hypot(
-          marble.x - finish.x,
-          marble.y - finish.y
+          marble.x - target.x,
+          marble.y - target.y
         )
       )
     );
   }
 
   function winnerCountValue() {
+    const rule = Engine.resolvedDrawRule(definition);
+    if (rule.type === "ORDERED_OUTPUT") {
+      const outputCount = definition.components.filter(
+        (component) => component.type === "OUTPUT"
+      ).length;
+      return Math.max(
+        1,
+        Math.min(
+          entries.length || 1,
+          rule.winnerCount || outputCount || 1
+        )
+      );
+    }
     return Math.max(
       1,
       Math.min(
@@ -727,12 +862,13 @@
     updateFinishSlowMotion();
     const simulationDelta = wallDelta * speedMultiplier;
     state = adapter.step(simulationDelta);
+    playAudioEvents(state.audioEvents);
     updateStuckWatchdog(simulationDelta * 1000);
     updateFinishSlowMotion();
     updateCamera(wallDelta);
 
     $("progress").textContent =
-      `${state.finishedCount} / ${state.totalCount}`;
+      `${state.finishedCount} / ${state.targetCount || state.totalCount}`;
     $("elapsed").textContent =
       state.time.toFixed(1) + "s";
     renderRanks();
@@ -756,14 +892,9 @@
       return;
     }
 
-    const winnerCount = Math.max(
-      1,
-      Math.min(
-        entries.length,
-        Math.trunc(Number($("winnerCount").value) || 1)
-      )
-    );
+    const winnerCount = winnerCountValue();
     $("winnerCount").value = String(winnerCount);
+    await ensureAudioReady();
 
     // Freeze everything needed for result determination in browser memory.
     const frozenDefinition = structuredClone(definition);
@@ -793,7 +924,7 @@
     $("slowMotionBadge").hidden = true;
     $("podiumList").replaceChildren();
     $("winnerBanner").hidden = true;
-    $("progress").textContent = `0 / ${entries.length}`;
+    $("progress").textContent = `0 / ${state.targetCount || entries.length}`;
     $("elapsed").textContent = "0.0s";
 
     renderRanks();
