@@ -189,6 +189,8 @@
       LAUNCHER: ["#3e6675", "#78bdd5"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
       OUTPUT: ["#3f744c", "#8bd3a1"],
+      SLOT: ["#73503e", "#dda57e"],
+      ELIMINATION: ["#713d50", "#df789d"],
       SPAWN: ["#216e8f", "#62c3e7"],
       FINISH: ["#367c4d", "#74d191"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -227,7 +229,7 @@
       ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
 
-      if (c.type === "FINISH" || c.type === "OUTPUT") {
+      if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)) {
         ctx.setLineDash([7, 5]);
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
@@ -400,6 +402,18 @@
       c.properties.outputKey = "OUT" + count;
       c.properties.outputRank = count;
     }
+    if (type === "SLOT") {
+      const count = definition.components.filter(
+        (component) => component.type === "SLOT"
+      ).length + 1;
+      c.properties.slotKey = "SLOT" + count;
+    }
+    if (type === "ELIMINATION") {
+      const count = definition.components.filter(
+        (component) => component.type === "ELIMINATION"
+      ).length + 1;
+      c.properties.eliminationKey = "OUT" + count;
+    }
     definition.components.push(c);
     select(c.id);
     setTool("SELECT");
@@ -508,11 +522,21 @@
     $("propStartDirection").value = String(num(c.properties?.startDirection, 1) < 0 ? -1 : 1);
     $("propOutputKey").value = String(c.properties?.outputKey || "OUT1");
     $("propOutputRank").value = Math.trunc(num(c.properties?.outputRank, 1));
+    $("propOutputCapacity").value = Math.trunc(num(c.properties?.outputCapacity, 1));
+    $("propOutputWeight").value = num(c.properties?.outputWeight, 1);
+    $("propSlotKey").value = String(c.properties?.slotKey || "SLOT1");
+    $("propSlotCapacity").value = Math.trunc(num(c.properties?.slotCapacity, 1));
+    $("propEliminationKey").value = String(c.properties?.eliminationKey || "OUT");
+    $("propSoundMaterial").value = String(c.properties?.soundMaterial || "metal").toLowerCase();
+    $("propInstrument").value = String(c.properties?.instrument || "none").toLowerCase();
+    $("propAudioNote").value = Math.trunc(num(c.properties?.audioNote, 60));
+    $("propAudioGain").value = num(c.properties?.audioGain, 1);
+    $("propAudioPan").value = num(c.properties?.audioPan, 0);
     $("propBoost").value = num(c.properties?.boost, 1.15);
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     document.querySelectorAll(".dimension-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type);
     });
     document.querySelectorAll(".radius-field").forEach((el) => {
       el.hidden = !["PEG", "BUMPER", "SPAWN"].includes(c.type);
@@ -559,6 +583,15 @@
     document.querySelectorAll(".output-field").forEach((el) => {
       el.hidden = c.type !== "OUTPUT";
     });
+    document.querySelectorAll(".slot-field").forEach((el) => {
+      el.hidden = c.type !== "SLOT";
+    });
+    document.querySelectorAll(".elimination-field").forEach((el) => {
+      el.hidden = c.type !== "ELIMINATION";
+    });
+    document.querySelectorAll(".audio-field").forEach((el) => {
+      el.hidden = c.type === "SPAWN";
+    });
     document.querySelectorAll(".bumper-field").forEach((el) => {
       el.hidden = c.type !== "BUMPER";
     });
@@ -575,7 +608,7 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT"].includes(c.type)) {
+    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
       c.width = Math.max(1, num($("propWidth").value, c.width));
       c.height = Math.max(1, num($("propHeight").value, c.height));
     }
@@ -628,6 +661,22 @@
     if (c.type === "OUTPUT") {
       c.properties.outputKey = $("propOutputKey").value.trim() || "OUT1";
       c.properties.outputRank = clamp(Math.trunc(num($("propOutputRank").value, 1)), 1, 64);
+      c.properties.outputCapacity = clamp(Math.trunc(num($("propOutputCapacity").value, 1)), 1, 64);
+      c.properties.outputWeight = clamp(num($("propOutputWeight").value, 1), .01, 100);
+    }
+    if (c.type === "SLOT") {
+      c.properties.slotKey = $("propSlotKey").value.trim() || "SLOT1";
+      c.properties.slotCapacity = clamp(Math.trunc(num($("propSlotCapacity").value, 1)), 1, 64);
+    }
+    if (c.type === "ELIMINATION") {
+      c.properties.eliminationKey = $("propEliminationKey").value.trim() || "OUT";
+    }
+    if (c.type !== "SPAWN") {
+      c.properties.soundMaterial = $("propSoundMaterial").value;
+      c.properties.instrument = $("propInstrument").value;
+      c.properties.audioNote = clamp(Math.trunc(num($("propAudioNote").value, 60)), 24, 108);
+      c.properties.audioGain = clamp(num($("propAudioGain").value, 1), 0, 2);
+      c.properties.audioPan = clamp(num($("propAudioPan").value, 0), -1, 1);
     }
     if (c.type === "BUMPER") c.properties.boost = clamp(num($("propBoost").value, 1.15), 0, 3);
     if (c.type === "SPAWN") c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
@@ -644,9 +693,18 @@
   function updateDrawRule() {
     if (previewRunning) return;
     pushUndo();
+    const supportedRules = new Set([
+      "RACE_FINISH",
+      "ORDERED_OUTPUT",
+      "SLOT_COLLECTION",
+      "LAST_SURVIVOR",
+      "CASCADE_SELECTION",
+      "RANDOM_OUTPUT_BUCKET"
+    ]);
+    const selectedRule = $("drawRuleType").value;
     definition.drawRule = {
-      type: $("drawRuleType").value === "ORDERED_OUTPUT"
-        ? "ORDERED_OUTPUT"
+      type: supportedRules.has(selectedRule)
+        ? selectedRule
         : "RACE_FINISH",
       winnerCount: clamp(
         Math.trunc(num($("drawRuleWinnerCount").value, 0)),
@@ -686,7 +744,7 @@
     }
     if (showSuccess) {
       setStatus(
-        `검증 통과 · ${definition.components.length} components · SPAWN/FINISH OK`,
+        `검증 통과 · ${definition.components.length} components · ${Engine.resolvedDrawRule(definition).type}`,
         "ok"
       );
     }
@@ -991,7 +1049,10 @@
    "propMotorSpeed","propMotorTorque","propLinkedComponentId","propGearRatio",
    "propLaunchPower","propAxisAngle","propTravelMin","propTravelMax",
    "propElevatorSpeed","propMotorForce","propStartDirection",
-   "propOutputKey","propOutputRank","propBoost","propMarbleRadius"]
+   "propOutputKey","propOutputRank","propOutputCapacity","propOutputWeight",
+   "propSlotKey","propSlotCapacity","propEliminationKey",
+   "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
+   "propBoost","propMarbleRadius"]
     .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
