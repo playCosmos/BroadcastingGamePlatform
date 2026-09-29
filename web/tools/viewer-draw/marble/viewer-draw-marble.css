@@ -18,3 +18,5 @@ html,body{margin:0;min-height:100%;background:#060b10;color:#e7edf2;font-family:
 .podium-extra-row{display:grid;grid-template-columns:34px minmax(0,1fr);gap:8px;padding:7px 9px;border-radius:8px;background:#111920;color:#b9c5ce;font-size:10px}
 .winner-summary{margin-top:5px;max-width:640px;text-align:center;font-size:11px!important;line-height:1.45;color:#dbc78d!important}
 @media(max-width:720px){.result-podium{min-width:92%;padding:16px 12px}.podium-list{gap:6px;min-height:135px}.podium-card{min-width:86px;padding:9px 7px}.podium-card strong{max-width:100px;font-size:12px}}
+
+#muteAudio.muted{border-color:#805247;color:#f1b2a2;background:#2a1510}
