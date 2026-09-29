@@ -152,6 +152,7 @@
       this.marbles = [];
       this.finishOrder = [];
       this.bumpers = [];
+      this.movingComponents = [];
       this.accumulator = 0;
       this.time = 0;
       this.seed = 1;
@@ -198,6 +199,7 @@
       this.marbles = [];
       this.finishOrder = [];
       this.bumpers = [];
+      this.movingComponents = [];
       this.accumulator = 0;
       this.time = 0;
 
@@ -215,6 +217,21 @@
           case "BUMPER":
             this.createStaticCircle(component);
             this.bumpers.push(component);
+            break;
+          case "GATE":
+          case "ROTATOR":
+          case "PENDULUM":
+          case "SEESAW":
+            this.createKinematicBox(component);
+            break;
+          case "FUNNEL":
+          case "SPLITTER":
+            for (const shape of root.ViewerDrawMapEngine.componentShapes(
+              component,
+              0
+            )) {
+              this.createStaticBox(shape);
+            }
             break;
         }
       }
@@ -298,6 +315,70 @@
         clamp(property(component.properties, "friction", 0.05), 0, 0.5)
       );
       body.CreateFixture(fixtureDef);
+    }
+
+    createKinematicBox(component) {
+      const B = this.Box2D;
+      const bodyDef = new B.b2BodyDef();
+      bodyDef.set_type(B.b2_kinematicBody);
+      bodyDef.set_position(
+        new B.b2Vec2(
+          component.x / PIXELS_PER_METER,
+          component.y / PIXELS_PER_METER
+        )
+      );
+
+      const body = this.world.CreateBody(bodyDef);
+      body.SetTransform(
+        body.GetPosition(),
+        root.ViewerDrawMapEngine.motionRotation(component, 0)
+          * Math.PI / 180
+      );
+
+      const shape = new B.b2PolygonShape();
+      shape.SetAsBox(
+        Math.max(0.01, component.width / PIXELS_PER_METER / 2),
+        Math.max(0.01, component.height / PIXELS_PER_METER / 2)
+      );
+
+      const fixtureDef = new B.b2FixtureDef();
+      fixtureDef.set_shape(shape);
+      fixtureDef.set_density(1);
+      fixtureDef.set_restitution(
+        clamp(property(component.properties, "restitution", 0.35), 0, 1.4)
+      );
+      fixtureDef.set_friction(
+        clamp(property(component.properties, "friction", 0.05), 0, 0.5)
+      );
+      body.CreateFixture(fixtureDef);
+
+      this.movingComponents.push({
+        component,
+        body
+      });
+    }
+
+    updateMovingComponents(time) {
+      if (!this.movingComponents.length) return;
+      const B = this.Box2D;
+      for (const item of this.movingComponents) {
+        const current = root.ViewerDrawMapEngine.motionRotation(
+          item.component,
+          time
+        );
+        const next = root.ViewerDrawMapEngine.motionRotation(
+          item.component,
+          time + FIXED_DT
+        );
+        item.body.SetTransform(
+          item.body.GetPosition(),
+          current * Math.PI / 180
+        );
+        item.body.SetLinearVelocity(new B.b2Vec2(0, 0));
+        item.body.SetAngularVelocity(
+          ((next - current) * Math.PI / 180) / FIXED_DT
+        );
+      }
     }
 
     createStaticCircle(component) {
@@ -417,6 +498,7 @@
       this.accumulator += clamp(Number(deltaSeconds) || 0, 0, 0.05);
       let guard = 0;
       while (this.accumulator >= FIXED_DT && guard < 12) {
+        this.updateMovingComponents(this.time);
         this.world.Step(FIXED_DT, 6, 2);
         this.time += FIXED_DT;
         this.applyBumperBoosts();
