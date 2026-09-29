@@ -62,6 +62,9 @@
 
     adapter.loadMap(definition);
     let state = adapter.reset(entries, 42);
+    if (!adapter.shakeMarble("m1")) {
+      throw new Error("box2d stuck-recovery nudge failed");
+    }
 
     for (
       let step = 0;
