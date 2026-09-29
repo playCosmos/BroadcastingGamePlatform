@@ -391,7 +391,8 @@ public final class ViewerDrawService {
         var allowedTypes = java.util.Set.of(
             "WALL", "RAMP", "PEG", "BUMPER", "SPAWN", "FINISH",
             "GATE", "ROTATOR", "PENDULUM", "SEESAW",
-            "FUNNEL", "SPLITTER"
+            "FUNNEL", "SPLITTER", "HINGE", "GEAR",
+            "PADDLE", "LAUNCHER"
         );
         var ids = new java.util.LinkedHashSet<String>();
         var normalizedComponents = new ArrayList<MachineComponent>();
@@ -440,6 +441,8 @@ public final class ViewerDrawService {
                     || "GATE".equals(type) || "ROTATOR".equals(type)
                     || "PENDULUM".equals(type) || "SEESAW".equals(type)
                     || "FUNNEL".equals(type) || "SPLITTER".equals(type)
+                    || "HINGE".equals(type) || "GEAR".equals(type)
+                    || "PADDLE".equals(type) || "LAUNCHER".equals(type)
                 )
                 && (
                     rawComponent.width() < 8
