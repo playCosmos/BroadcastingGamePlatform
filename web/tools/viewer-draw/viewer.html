@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>시청자 뽑기 · BroadcastingGamePlatform</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/tools/viewer-draw/browser-draw.css">
+</head>
+<body data-draw-mode="VIEWER">
+  <main class="shell quick-draw">
+    <header class="hero compact">
+      <p class="eyebrow">BROWSER LOCAL / VIEWER DRAW</p>
+      <h1>시청자 뽑기</h1>
+      <p class="lead">참가자 목록을 브라우저에 입력하고 서버 없이 바로 당첨자를 뽑습니다.</p>
+      <div class="hero-actions">
+        <a class="secondary" href="/">← 플랫폼 홈</a>
+        <a class="secondary" href="/tools/viewer-draw/number.html">숫자 뽑기 →</a>
+      </div>
+    </header>
+    <section class="quick-draw-grid">
+      <article class="quick-panel">
+        <h2>참가자</h2>
+        <label class="quick-field">
+          <span>한 줄에 한 명</span>
+          <textarea id="entries" rows="14" placeholder="viewer01&#10;viewer02&#10;viewer03"></textarea>
+        </label>
+        <label class="quick-field">
+          <span>당첨자 수</span>
+          <input id="winnerCount" type="number" min="1" max="100" value="1">
+        </label>
+        <div class="quick-actions">
+          <button id="runDraw" class="primary" type="button">시청자 뽑기</button>
+          <button id="copyResult" type="button">결과 복사</button>
+        </div>
+        <p class="quick-status" id="status">준비됨</p>
+        <div class="quick-note">
+          중복 이름은 한 번만 참가 처리하며 난수는 브라우저의 Web Crypto API를 사용합니다.
+          서버 API나 DB 연결은 사용하지 않습니다.
+        </div>
+      </article>
+      <article class="quick-stage">
+        <h2>당첨자</h2>
+        <div class="quick-result">
+          <div class="viewer-result" id="viewerResult">
+            <div class="quick-empty">참가자를 입력하고 추첨하세요.</div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="/tools/viewer-draw/browser-draw.js"></script>
+</body>
+</html>
