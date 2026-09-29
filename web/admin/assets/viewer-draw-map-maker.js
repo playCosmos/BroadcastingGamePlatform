@@ -824,6 +824,16 @@
   });
   $("previewToggle").addEventListener("click", startPreview);
   $("previewReset").addEventListener("click", resetPreview);
+  $("openMarbleDraw").addEventListener("click", (event) => {
+    event.preventDefault();
+    definition.name = $("mapName").value.trim() || definition.name;
+    if (!validateClient()) return;
+    sessionStorage.setItem(
+      "viewerDrawMarbleMapDefinition",
+      JSON.stringify(definition)
+    );
+    window.location.assign("/tools/viewer-draw/marble/");
+  });
 
   window.addEventListener("keydown", (event) => {
     const target = event.target;
