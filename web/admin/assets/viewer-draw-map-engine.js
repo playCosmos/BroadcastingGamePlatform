@@ -300,6 +300,28 @@
         visualStroke
       }
     });
+    const rail = (
+      x1, y1, x2, y2,
+      visualFill, visualStroke,
+      thickness = 20
+    ) => {
+      const dx = x2 - x1;
+      const dy = y2 - y1;
+      return styled(
+        {
+          ...componentDefaults(
+            "WALL",
+            (x1 + x2) / 2,
+            (y1 + y2) / 2
+          ),
+          width:Math.hypot(dx,dy),
+          height:thickness,
+          rotation:Math.atan2(dy,dx)*180/Math.PI
+        },
+        visualFill,
+        visualStroke
+      );
+    };
     const reactorPeg = (index) => {
       const angle = index / 16 * Math.PI * 2;
       return styled(
@@ -327,7 +349,7 @@
 
     return {
       schemaVersion:SCHEMA_VERSION,
-      name:"Retro Cadet Survivor V2",
+      name:"Retro Cadet Survivor V3",
       world:{width:1280,height:900,gravityX:0,gravityY:12,visualBackground:"#102758"},
       drawRule:{type:"LAST_SURVIVOR",winnerCount:1},
       runPolicy:{
@@ -366,98 +388,33 @@
         ),
 
         // Closed pinball cabinet perimeter.
-        // The explicit rails are visible/physical; world bounds remain a safety shell.
-        styled(
-          {...componentDefaults("WALL",620,886),width:1120,height:20,rotation:0},
-          "#513821","#bd8149"
-        ),
-        styled(
-          {...componentDefaults("WALL",60,560),width:650,height:20,rotation:90},
-          "#513821","#bd8149"
-        ),
-        styled(
-          {...componentDefaults("RAMP",92,180),width:132,height:20,rotation:-60},
-          "#5d4028","#ca9158"
-        ),
-        styled(
-          {...componentDefaults("RAMP",160,105),width:160,height:20,rotation:-25},
-          "#65452b","#d19a61"
-        ),
-        styled(
-          {...componentDefaults("RAMP",305,61),width:190,height:20,rotation:-4},
-          "#6c4a2e","#d5a066"
-        ),
-        styled(
-          {...componentDefaults("RAMP",495,53),width:200,height:20,rotation:-1},
-          "#704d30","#d8a46a"
-        ),
-        styled(
-          {...componentDefaults("RAMP",695,53),width:205,height:20,rotation:1},
-          "#704d30","#d8a46a"
-        ),
-        styled(
-          {...componentDefaults("RAMP",870,58),width:150,height:20,rotation:5},
-          "#704d30","#d8a46a"
-        ),
+        // Every segment shares an exact endpoint with the next segment.
+        rail(60,886,60,235,"#513821","#bd8149"),
+        rail(60,235,125,123,"#5d4028","#ca9158"),
+        rail(125,123,230,72,"#65452b","#d19a61"),
+        rail(230,72,400,54,"#6c4a2e","#d5a066"),
+        rail(400,54,595,52,"#704d30","#d8a46a"),
+        rail(595,52,797,55,"#704d30","#d8a46a"),
+        rail(797,55,945,65,"#704d30","#d8a46a"),
 
-        // Right shooter lane: straight vertical rise, then a polygonal quarter-curve
-        // that physically redirects the marbles left into the closed playfield.
-        styled(
-          {...componentDefaults("WALL",1190,515),width:735,height:20,rotation:90},
-          "#5d4028","#ca9158"
-        ),
-        styled(
-          {...componentDefaults("WALL",1005,585),width:500,height:20,rotation:90},
-          "#4f3724","#b77b48"
-        ),
+        // Shooter outer curve and right cabinet wall.
+        rail(945,65,1082,75,"#704d30","#d8a46a"),
+        rail(1082,75,1157,118,"#704d30","#d8a46a"),
+        rail(1157,118,1188,170,"#6f4c31","#d19a5d"),
+        rail(1188,170,1190,886,"#5d4028","#ca9158"),
 
-        // Outer side of the shooter curve. This also closes the upper-right cabinet.
-        styled(
-          {...componentDefaults("RAMP",1155,132),width:96,height:20,rotation:55},
-          "#6f4c31","#d19a5d"
-        ),
-        styled(
-          {...componentDefaults("RAMP",1098,88),width:132,height:20,rotation:27},
-          "#704d30","#d8a46a"
-        ),
-        styled(
-          {...componentDefaults("RAMP",1008,62),width:150,height:20,rotation:10},
-          "#704d30","#d8a46a"
-        ),
+        // Bottom cabinet closes the table completely.
+        rail(1190,886,60,886,"#513821","#bd8149"),
 
-        // Inner side of the shooter curve. It deliberately ends near x=815,
-        // leaving the curve mouth open into the main playfield.
-        styled(
-          {...componentDefaults("RAMP",997,286),width:94,height:20,rotation:-72},
-          "#4f3724","#b77b48"
-        ),
-        styled(
-          {...componentDefaults("RAMP",965,237),width:86,height:20,rotation:-48},
-          "#513824","#bb7e4a"
-        ),
-        styled(
-          {...componentDefaults("RAMP",915,199),width:82,height:20,rotation:-28},
-          "#573c26","#c4864f"
-        ),
-        styled(
-          {...componentDefaults("RAMP",850,178),width:78,height:20,rotation:-12},
-          "#5d4028","#ca9158"
-        ),
-
-        // Inner upper orbit guide. The gap between this guide and the cabinet roof
-        // is the actual shooter exit; it is not sealed by a vertical wall.
-        styled(
-          {...componentDefaults("RAMP",760,161),width:120,height:18,rotation:-4},
-          "#754f31","#d6a067"
-        ),
-        styled(
-          {...componentDefaults("RAMP",620,155),width:145,height:18,rotation:0},
-          "#754f31","#d6a067"
-        ),
-        styled(
-          {...componentDefaults("RAMP",480,160),width:135,height:18,rotation:5},
-          "#754f31","#d6a067"
-        ),
+        // Shooter inner rail: straight vertical rise, then a true open curve
+        // into the upper-right playfield. It ends at x=805 instead of sealing
+        // the lane across the board.
+        rail(1005,835,1005,325,"#4f3724","#b77b48"),
+        rail(1005,325,990,280,"#4f3724","#b77b48"),
+        rail(990,280,958,238,"#513824","#bb7e4a"),
+        rail(958,238,910,204,"#573c26","#c4864f"),
+        rail(910,204,850,182,"#5d4028","#ca9158"),
+        rail(850,182,805,176,"#5d4028","#ca9158"),
 
         // Top bumper cluster.
         styled({...componentDefaults("BUMPER",425,225),radius:35,properties:{
