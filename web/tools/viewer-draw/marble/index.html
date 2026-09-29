@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Viewer Draw · Marble Draw</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/tools/viewer-draw/marble/viewer-draw-marble.css">
+</head>
+<body>
+<main class="marble-shell">
+  <header class="marble-header">
+    <div>
+      <p class="eyebrow">VIEWER DRAW / BROWSER ONLY</p>
+      <h1>Marble Draw</h1>
+      <p>맵·참가자·물리·당첨 판정이 모두 현재 브라우저에서 처리됩니다.</p>
+    </div>
+    <strong id="engineBadge">BROWSER_PHYSICS_V0</strong>
+  </header>
+
+  <section class="marble-grid">
+    <aside class="control-panel">
+      <section>
+        <p class="panel-title">MAP</p>
+        <div class="file-row">
+          <button id="loadMapButton" type="button">JSON 맵 불러오기</button>
+          <input id="mapFile" type="file" accept=".json,application/json" hidden>
+        </div>
+        <div class="meta-row"><span>Name</span><strong id="mapName">Default Map</strong></div>
+        <div class="meta-row"><span>Schema</span><strong id="mapSchema">-</strong></div>
+      </section>
+
+      <section>
+        <p class="panel-title">ENTRIES</p>
+        <textarea id="entries" rows="14" placeholder="참가자 이름을 한 줄에 한 명씩 입력">Alice
+Bob
+Charlie
+Delta
+Echo
+Foxtrot
+Golf
+Hotel</textarea>
+        <small id="entryCount">8 entries</small>
+      </section>
+
+      <section class="two-col">
+        <label>
+          <span>Winner Count</span>
+          <input id="winnerCount" type="number" min="1" max="64" value="1">
+        </label>
+        <label>
+          <span>Seed</span>
+          <input id="seed" type="number" value="1">
+        </label>
+      </section>
+
+      <section class="button-stack">
+        <button id="startDraw" class="primary-button" type="button">추첨 시작</button>
+        <button id="resetDraw" type="button">초기화</button>
+      </section>
+
+      <p class="runtime-note">
+        이 추첨 경로는 서버 API를 호출하지 않습니다. 페이지 로드 이후 플랫폼 서버가 중단되어도 현재 추첨은 계속 진행됩니다.
+      </p>
+    </aside>
+
+    <section class="stage-panel">
+      <div class="stage-top">
+        <div>
+          <span id="drawState">READY</span>
+          <strong id="progress">0 / 0</strong>
+        </div>
+        <div id="elapsed">0.0s</div>
+      </div>
+
+      <div class="stage-wrap" id="stageWrap">
+        <canvas id="stageCanvas"></canvas>
+      </div>
+
+      <div class="winner-banner" id="winnerBanner" hidden>
+        <span>WINNER</span>
+        <strong id="winnerText">-</strong>
+      </div>
+    </section>
+
+    <aside class="rank-panel">
+      <p class="panel-title">RANK</p>
+      <div id="rankList" class="rank-list"></div>
+    </aside>
+  </section>
+</main>
+
+<script src="/admin/assets/viewer-draw-map-engine.js"></script>
+<script src="/tools/viewer-draw/marble/browser-physics-adapter.js"></script>
+<script src="/tools/viewer-draw/marble/viewer-draw-marble.js"></script>
+</body>
+</html>
