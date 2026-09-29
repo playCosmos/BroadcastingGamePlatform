@@ -92,9 +92,17 @@
             <option value="LAST_SURVIVOR">Last Survivor</option>
             <option value="CASCADE_SELECTION">Cascade Selection</option>
             <option value="RANDOM_OUTPUT_BUCKET">Random Output Bucket</option>
+            <option value="CONDITIONAL_OUTPUT">Conditional Output</option>
           </select>
         </label>
         <label class="mini-field"><span>Winner Count</span><input id="drawRuleWinnerCount" type="number" min="0" max="64" value="0"></label>
+      </div>
+
+      <div class="panel-section">
+        <p class="panel-title">RUN POLICY</p>
+        <label class="mini-field"><span>Timeout s (0=off)</span><input id="runTimeoutSeconds" type="number" min="0" max="1800" step="1" value="0"></label>
+        <label class="mini-field"><span>Qualify Min Winners</span><input id="qualificationMinWinners" type="number" min="0" max="64" step="1" value="0"></label>
+        <label class="mini-field"><span>Max Nudges (0=off)</span><input id="qualificationMaxNudges" type="number" min="0" max="1000" step="1" value="0"></label>
       </div>
     </aside>
 
@@ -155,6 +163,17 @@
         <label class="mini-field output-field"><span>Output Rank</span><input id="propOutputRank" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field output-field"><span>Output Capacity</span><input id="propOutputCapacity" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field output-field"><span>Output Weight</span><input id="propOutputWeight" type="number" min=".01" max="100" step=".05"></label>
+        <label class="mini-field output-field"><span>Output Priority</span><input id="propOutputPriority" type="number" min="-100" max="100" step="1"></label>
+        <label class="mini-field output-field"><span>Condition</span>
+          <select id="propConditionType">
+            <option value="ALWAYS">Always</option>
+            <option value="AFTER_ANY_CLAIM">After Any Claim</option>
+            <option value="AFTER_OUTPUT_CLAIMS">After Output Claims</option>
+            <option value="AFTER_OUTPUT_FULL">After Output Full</option>
+          </select>
+        </label>
+        <label class="mini-field output-field"><span>Condition Output</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
+        <label class="mini-field output-field"><span>Condition Claims</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field slot-field"><span>Slot Key</span><input id="propSlotKey" maxlength="32"></label>
         <label class="mini-field slot-field"><span>Slot Capacity</span><input id="propSlotCapacity" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field elimination-field"><span>Elimination Key</span><input id="propEliminationKey" maxlength="32"></label>

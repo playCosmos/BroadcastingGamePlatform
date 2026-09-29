@@ -18,6 +18,88 @@
     return {type,winnerCount};
   }
 
+  function resolvedRunPolicy(def){
+    const raw=def?.runPolicy||{};
+    return {
+      timeoutSeconds:clamp(finiteOr(raw.timeoutSeconds,0),0,1800),
+      qualificationMinWinners:clamp(
+        Math.trunc(finiteOr(raw.qualificationMinWinners,0)),
+        0,
+        64
+      ),
+      qualificationMaxNudges:clamp(
+        Math.trunc(finiteOr(raw.qualificationMaxNudges,0)),
+        0,
+        1000
+      )
+    };
+  }
+
+  function targetCountForDefinition(def){
+    const rule=resolvedDrawRule(def);
+    const comps=Array.isArray(def?.components)?def.components:[];
+    if(rule.type==="RACE_FINISH"&&rule.winnerCount>0){
+      return rule.winnerCount;
+    }
+    if(rule.type==="ORDERED_OUTPUT"){
+      return rule.winnerCount||comps.filter(c=>c.type==="OUTPUT").length;
+    }
+    if(rule.type==="SLOT_COLLECTION"){
+      return rule.winnerCount||comps
+        .filter(c=>c.type==="SLOT")
+        .reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.slotCapacity,1)),0);
+    }
+    if(rule.type==="LAST_SURVIVOR"){
+      return rule.winnerCount||1;
+    }
+    if(["CASCADE_SELECTION","CONDITIONAL_OUTPUT"].includes(rule.type)){
+      return rule.winnerCount||comps
+        .filter(c=>c.type==="OUTPUT")
+        .reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.outputCapacity,1)),0);
+    }
+    if(rule.type==="RANDOM_OUTPUT_BUCKET"){
+      return rule.winnerCount||1;
+    }
+    return Number.POSITIVE_INFINITY;
+  }
+
+  function conditionalOutputActive(output,outputs,claims){
+    const p=output?.properties||{};
+    const mode=String(p.conditionType||"ALWAYS").toUpperCase();
+    const threshold=clamp(
+      Math.trunc(finiteOr(p.conditionClaims,1)),
+      1,
+      64
+    );
+    if(mode==="ALWAYS") return true;
+    const claimCount=(key)=>{
+      const value=claims.get(key);
+      return Array.isArray(value) ? value.length : value ? 1 : 0;
+    };
+    if(mode==="AFTER_ANY_CLAIM"){
+      let total=0;
+      for(const value of claims.values()){
+        total+=Array.isArray(value)?value.length:(value?1:0);
+      }
+      return total>=threshold;
+    }
+    const targetKey=String(p.conditionOutputKey||"");
+    if(!targetKey) return false;
+    const target=outputs.find(c=>
+      String(c.properties?.outputKey||"")===targetKey
+    );
+    if(!target) return false;
+    if(mode==="AFTER_OUTPUT_CLAIMS"){
+      return claimCount(targetKey)>=threshold;
+    }
+    if(mode==="AFTER_OUTPUT_FULL"){
+      return claimCount(targetKey)>=Math.trunc(
+        finiteOr(target.properties?.outputCapacity,1)
+      );
+    }
+    return false;
+  }
+
   function elevatorPosition(c,time=0){
     const p=c.properties||{};
     const min=clamp(finiteOr(p.travelMin,-120),-1200,1200);
@@ -153,7 +235,7 @@
       case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
       case "LAUNCHER": return {...base,width:140,height:22,properties:{restitution:0.4,friction:0.05,launchPower:1.2}};
       case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
-      case "OUTPUT": return {...base,width:180,height:60,properties:{outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1}};
+      case "OUTPUT": return {...base,width:180,height:60,properties:{outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1,outputPriority:0,conditionType:"ALWAYS",conditionOutputKey:"",conditionClaims:1}};
       case "SLOT": return {...base,width:180,height:70,properties:{slotKey:"SLOT1",slotCapacity:1}};
       case "ELIMINATION": return {...base,width:180,height:70,properties:{eliminationKey:"OUT"}};
       default: throw new Error("Unsupported component type: "+type);
@@ -166,6 +248,11 @@
       name:"New Marble Machine",
       world:{width:1280,height:720,gravityX:0,gravityY:12},
       drawRule:{type:"RACE_FINISH",winnerCount:0},
+      runPolicy:{
+        timeoutSeconds:0,
+        qualificationMinWinners:0,
+        qualificationMaxNudges:0
+      },
       components:[
         componentDefaults("SPAWN",640,70),
         {...componentDefaults("RAMP",430,215),rotation:12,width:470},
@@ -199,12 +286,26 @@
       "SLOT_COLLECTION",
       "LAST_SURVIVOR",
       "CASCADE_SELECTION",
-      "RANDOM_OUTPUT_BUCKET"
+      "RANDOM_OUTPUT_BUCKET",
+      "CONDITIONAL_OUTPUT"
     ].includes(rule.type)){
       errors.push("지원하지 않는 drawRule type입니다.");
     }
     if(rule.winnerCount<0||rule.winnerCount>64){
       errors.push("drawRule winnerCount는 0~64 범위여야 합니다.");
+    }
+    const runPolicy=resolvedRunPolicy(def);
+    const rawTimeout=finiteOr(def?.runPolicy?.timeoutSeconds,0);
+    const rawMinWinners=Math.trunc(finiteOr(def?.runPolicy?.qualificationMinWinners,0));
+    const rawMaxNudges=Math.trunc(finiteOr(def?.runPolicy?.qualificationMaxNudges,0));
+    if(rawTimeout<0||rawTimeout>1800){
+      errors.push("timeoutSeconds는 0~1800초 범위여야 합니다.");
+    }
+    if(rawMinWinners<0||rawMinWinners>64){
+      errors.push("qualificationMinWinners는 0~64 범위여야 합니다.");
+    }
+    if(rawMaxNudges<0||rawMaxNudges>1000){
+      errors.push("qualificationMaxNudges는 0~1000 범위여야 합니다.");
     }
     const ids=new Set();
     const typeById=new Map();
@@ -283,6 +384,9 @@
         const rank=Math.trunc(finiteOr(p.outputRank,0));
         const capacity=Math.trunc(finiteOr(p.outputCapacity,1));
         const weight=finiteOr(p.outputWeight,1);
+        const priority=Math.trunc(finiteOr(p.outputPriority,0));
+        const conditionType=String(p.conditionType||"ALWAYS").toUpperCase();
+        const conditionClaims=Math.trunc(finiteOr(p.conditionClaims,1));
         if(!key||key.length>32) errors.push("Output outputKey는 1~32자여야 합니다.");
         if(outputKeys.has(key)) errors.push("Output outputKey는 고유해야 합니다.");
         outputKeys.add(key);
@@ -291,6 +395,18 @@
         outputRanks.add(rank);
         if(capacity<1||capacity>64) errors.push("Output outputCapacity는 1~64 범위여야 합니다.");
         if(weight<=0||weight>100) errors.push("Output outputWeight는 0 초과 100 이하이어야 합니다.");
+        if(priority<-100||priority>100) errors.push("Output outputPriority는 -100~100 범위여야 합니다.");
+        if(![
+          "ALWAYS",
+          "AFTER_ANY_CLAIM",
+          "AFTER_OUTPUT_CLAIMS",
+          "AFTER_OUTPUT_FULL"
+        ].includes(conditionType)){
+          errors.push("Output conditionType이 유효하지 않습니다.");
+        }
+        if(conditionClaims<1||conditionClaims>64){
+          errors.push("Output conditionClaims는 1~64 범위여야 합니다.");
+        }
         totalOutputCapacity+=Math.max(0,capacity);
         output++;
       }
@@ -343,6 +459,60 @@
       }
     }
 
+    const outputs=comps.filter(c=>c?.type==="OUTPUT");
+    const outputByKey=new Map(outputs.map(c=>[
+      String(c.properties?.outputKey||""),
+      c
+    ]));
+    for(const c of outputs){
+      const p=c.properties||{};
+      const mode=String(p.conditionType||"ALWAYS").toUpperCase();
+      const targetKey=String(p.conditionOutputKey||"").trim();
+      if(["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(mode)){
+        if(!targetKey||!outputByKey.has(targetKey)){
+          errors.push("Conditional Output 참조 대상이 존재하지 않습니다.");
+        }else if(targetKey===String(p.outputKey||"")){
+          errors.push("Conditional Output은 자기 자신을 참조할 수 없습니다.");
+        }else if(mode==="AFTER_OUTPUT_CLAIMS"){
+          const target=outputByKey.get(targetKey);
+          const threshold=Math.trunc(finiteOr(p.conditionClaims,1));
+          const capacity=Math.trunc(finiteOr(target?.properties?.outputCapacity,1));
+          if(threshold>capacity){
+            errors.push("conditionClaims는 참조 Output capacity를 초과할 수 없습니다.");
+          }
+        }
+      }
+    }
+
+    if(rule.type==="CONDITIONAL_OUTPUT"){
+      if(!outputs.length){
+        errors.push("CONDITIONAL_OUTPUT에는 OUTPUT이 최소 1개 필요합니다.");
+      }
+      if(outputs.length&&!outputs.some(c=>
+        String(c.properties?.conditionType||"ALWAYS").toUpperCase()==="ALWAYS"
+      )){
+        errors.push("CONDITIONAL_OUTPUT에는 ALWAYS Output이 최소 1개 필요합니다.");
+      }
+      const visiting=new Set(),visited=new Set();
+      const hasCycle=(key)=>{
+        if(visiting.has(key)) return true;
+        if(visited.has(key)) return false;
+        visiting.add(key);
+        const c=outputByKey.get(key);
+        const mode=String(c?.properties?.conditionType||"ALWAYS").toUpperCase();
+        const next=String(c?.properties?.conditionOutputKey||"").trim();
+        if(["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(mode)&&next&&outputByKey.has(next)){
+          if(hasCycle(next)) return true;
+        }
+        visiting.delete(key);
+        visited.add(key);
+        return false;
+      };
+      if(outputs.some(c=>hasCycle(String(c.properties?.outputKey||"")))){
+        errors.push("Conditional Output dependency에 순환 참조가 있습니다.");
+      }
+    }
+
     if(!spawn) errors.push("SPAWN이 최소 1개 필요합니다.");
     if(rule.type==="RACE_FINISH"&&!finish){
       errors.push("RACE_FINISH에는 FINISH가 최소 1개 필요합니다.");
@@ -369,6 +539,12 @@
       const winners=rule.winnerCount||totalOutputCapacity;
       if(!output) errors.push("CASCADE_SELECTION에는 OUTPUT이 최소 1개 필요합니다.");
       if(winners<1||winners>totalOutputCapacity) errors.push("CASCADE_SELECTION winnerCount가 Output 총 capacity를 초과할 수 없습니다.");
+    }
+    if(rule.type==="CONDITIONAL_OUTPUT"){
+      const winners=rule.winnerCount||totalOutputCapacity;
+      if(winners<1||winners>totalOutputCapacity){
+        errors.push("CONDITIONAL_OUTPUT winnerCount가 Output 총 capacity를 초과할 수 없습니다.");
+      }
     }
     if(rule.type==="RANDOM_OUTPUT_BUCKET"){
       const winners=rule.winnerCount||1;
@@ -416,6 +592,8 @@
       this.outputClaims=new Map();
       this.slotClaims=new Map();
       this.eliminationOrder=[];
+      this.dnfOrder=[];
+      this.timedOut=false;
       this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
@@ -431,6 +609,8 @@
       this.outputClaims=new Map();
       this.slotClaims=new Map();
       this.eliminationOrder=[];
+      this.dnfOrder=[];
+      this.timedOut=false;
       this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
@@ -467,6 +647,7 @@
           radius:r,
           finished:false,
           eliminated:false,
+          dnf:false,
           rank:0,
           finishTime:null,
           launcherContacts:new Set()
@@ -492,7 +673,7 @@
       this.time+=dt;
 
       for(const m of this.marbles){
-        if(m.finished||m.eliminated) continue;
+        if(m.finished||m.eliminated||m.dnf) continue;
         m.vx+=world.gravityX*gravityScale*dt;
         m.vy+=world.gravityY*gravityScale*dt;
         m.vx*=0.9995;
@@ -516,6 +697,22 @@
       this.applyLauncherBoosts();
 
       this.detectResultSensors();
+      this.applyTimeout();
+    }
+
+    applyTimeout(){
+      if(this.timedOut) return;
+      const policy=resolvedRunPolicy(this.definition);
+      if(policy.timeoutSeconds<=0||this.time<policy.timeoutSeconds) return;
+      const target=targetCountForDefinition(this.definition);
+      if(this.finishOrder.length>=target) return;
+      this.timedOut=true;
+      for(const m of this.marbles){
+        if(m.finished||m.eliminated||m.dnf) continue;
+        m.dnf=true;
+        m.vx=0;m.vy=0;
+        this.dnfOrder.push(m.id);
+      }
     }
 
     completeMarble(m,rank){
@@ -527,7 +724,7 @@
 
     detectResultSensors(){
       const rule=resolvedDrawRule(this.definition);
-      const active=this.marbles.filter(m=>!m.finished&&!m.eliminated);
+      const active=this.marbles.filter(m=>!m.finished&&!m.eliminated&&!m.dnf);
 
       if(rule.type==="ORDERED_OUTPUT"){
         const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
@@ -581,7 +778,7 @@
           this.eliminationOrder.push(m.id);
           remaining--;
         }
-        const survivors=this.marbles.filter(m=>!m.finished&&!m.eliminated);
+        const survivors=this.marbles.filter(m=>!m.finished&&!m.eliminated&&!m.dnf);
         if(survivors.length>0&&survivors.length<=winners&&!this.finishOrder.length){
           survivors.sort((a,b)=>{
             const gx=finiteOr(this.definition.world.gravityX,0);
@@ -592,6 +789,39 @@
             this.finishOrder.push(m.id);
             this.completeMarble(m,index+1);
           });
+        }
+        return;
+      }
+
+      if(rule.type==="CONDITIONAL_OUTPUT"){
+        const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
+        const target=rule.winnerCount||outputs.reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.outputCapacity,1)),0);
+        for(const m of active){
+          if(this.finishOrder.length>=target) break;
+          const candidates=outputs
+            .filter(candidate=>{
+              const key=String(candidate.properties?.outputKey||candidate.id);
+              const claims=this.outputClaims.get(key)||[];
+              return Array.isArray(claims)
+                && claims.length<Math.trunc(finiteOr(candidate.properties?.outputCapacity,1))
+                && conditionalOutputActive(candidate,outputs,this.outputClaims)
+                && this.pointInRect(m.x,m.y,candidate);
+            })
+            .sort((a,b)=>{
+              const pa=Math.trunc(finiteOr(a.properties?.outputPriority,0));
+              const pb=Math.trunc(finiteOr(b.properties?.outputPriority,0));
+              if(pa!==pb) return pb-pa;
+              return Math.trunc(finiteOr(a.properties?.outputRank,1))
+                - Math.trunc(finiteOr(b.properties?.outputRank,1));
+            });
+          const output=candidates[0];
+          if(!output) continue;
+          const key=String(output.properties?.outputKey||output.id);
+          const claims=this.outputClaims.get(key)||[];
+          claims.push(m.id);
+          this.outputClaims.set(key,claims);
+          this.finishOrder.push(m.id);
+          this.completeMarble(m,this.finishOrder.length);
         }
         return;
       }
@@ -722,7 +952,7 @@
       const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
       if(!launchers.length) return;
       for(const m of this.marbles){
-        if(m.finished||m.eliminated) continue;
+        if(m.finished||m.eliminated||m.dnf) continue;
         const next=new Set();
         for(const launcher of launchers){
           if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
@@ -747,9 +977,9 @@
     resolveMarblePairs(){
       const ms=this.marbles;
       for(let i=0;i<ms.length;i++){
-        const a=ms[i]; if(a.finished||a.eliminated) continue;
+        const a=ms[i]; if(a.finished||a.eliminated||a.dnf) continue;
         for(let j=i+1;j<ms.length;j++){
-          const b=ms[j]; if(b.finished||b.eliminated) continue;
+          const b=ms[j]; if(b.finished||b.eliminated||b.dnf) continue;
           let dx=b.x-a.x,dy=b.y-a.y,dist=Math.hypot(dx,dy);
           const target=a.radius+b.radius;
           if(dist>=target) continue;
@@ -776,7 +1006,7 @@
 
     shakeMarble(id){
       const marble=this.marbles.find(m=>m.id===id);
-      if(!marble||marble.finished||marble.eliminated) return false;
+      if(!marble||marble.finished||marble.eliminated||marble.dnf) return false;
       const angle=this.random()*Math.PI*2;
       const power=70+this.random()*50;
       marble.vx+=Math.cos(angle)*power;
@@ -789,24 +1019,25 @@
         time:this.time,
         marbles:this.marbles.map(m=>({
           id:m.id,x:m.x,y:m.y,vx:m.vx,vy:m.vy,radius:m.radius,
-          finished:m.finished,eliminated:m.eliminated,rank:m.rank,finishTime:m.finishTime
+          finished:m.finished,eliminated:m.eliminated,dnf:m.dnf,rank:m.rank,finishTime:m.finishTime
         })),
         finishOrder:[...this.finishOrder],
         winnerOrder:[...this.finishOrder],
         outputClaims:[...this.outputClaims.entries()].map(([key,value])=>({key,value})),
         slotClaims:[...this.slotClaims.entries()].map(([key,ids])=>({key,ids:[...ids]})),
         eliminationOrder:[...this.eliminationOrder],
+        dnfOrder:[...this.dnfOrder],
+        timedOut:this.timedOut,
+        runStatus:this.timedOut
+          ? "TIMEOUT"
+          : this.finishOrder.length>=targetCountForDefinition(this.definition)
+            ? "COMPLETED"
+            : "RUNNING",
         selectedOutputKey:this.selectedOutputKey,
         finishedCount:this.finishOrder.length,
-        targetCount:(()=>{
-          const rule=resolvedDrawRule(this.definition);
-          if(rule.type==="ORDERED_OUTPUT") return rule.winnerCount||this.definition.components.filter(c=>c.type==="OUTPUT").length;
-          if(rule.type==="SLOT_COLLECTION") return rule.winnerCount||this.definition.components.filter(c=>c.type==="SLOT").reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.slotCapacity,1)),0);
-          if(rule.type==="LAST_SURVIVOR") return rule.winnerCount||1;
-          if(rule.type==="CASCADE_SELECTION") return rule.winnerCount||this.definition.components.filter(c=>c.type==="OUTPUT").reduce((sum,c)=>sum+Math.trunc(finiteOr(c.properties?.outputCapacity,1)),0);
-          if(rule.type==="RANDOM_OUTPUT_BUCKET") return rule.winnerCount||1;
-          return this.marbles.length;
-        })(),
+        targetCount:Number.isFinite(targetCountForDefinition(this.definition))
+          ? targetCountForDefinition(this.definition)
+          : this.marbles.length,
         totalCount:this.marbles.length
       };
     }
@@ -820,6 +1051,9 @@
     componentShapes,
     motionRotation,
     resolvedDrawRule,
+    resolvedRunPolicy,
+    targetCountForDefinition,
+    conditionalOutputActive,
     elevatorPosition,
     PreviewEngine
   };

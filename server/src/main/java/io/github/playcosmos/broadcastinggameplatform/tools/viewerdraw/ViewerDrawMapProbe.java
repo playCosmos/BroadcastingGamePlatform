@@ -207,6 +207,11 @@ public final class ViewerDrawMapProbe {
                         "ORDERED_OUTPUT",
                         1
                     ),
+                    new ViewerDrawService.MachineRunPolicy(
+                        120,
+                        1,
+                        5
+                    ),
                     List.of(
                         spawn,
                         new ViewerDrawService.MachineComponent(
@@ -251,6 +256,13 @@ public final class ViewerDrawMapProbe {
                     updated.definition().drawRule().type()
                 ),
                 "updated map must persist draw rule"
+            );
+            require(
+                updated.definition().runPolicy().timeoutSeconds() == 120
+                    && updated.definition()
+                        .runPolicy()
+                        .qualificationMaxNudges() == 5,
+                "updated map must persist run policy"
             );
 
             var revision1 = service.findMachineMapRevision(
@@ -440,6 +452,132 @@ public final class ViewerDrawMapProbe {
                     randomBucketDefinition
                 ).isEmpty(),
                 "random bucket map must pass server validation"
+            );
+
+            var conditionalA =
+                new ViewerDrawService.MachineComponent(
+                    "conditional-a",
+                    "OUTPUT",
+                    600,
+                    660,
+                    0,
+                    220,
+                    80,
+                    0,
+                    Map.of(
+                        "outputKey", "A",
+                        "outputRank", 1,
+                        "outputCapacity", 1,
+                        "outputWeight", 1,
+                        "outputPriority", 10,
+                        "conditionType", "ALWAYS",
+                        "conditionClaims", 1
+                    )
+                );
+            var conditionalB =
+                new ViewerDrawService.MachineComponent(
+                    "conditional-b",
+                    "OUTPUT",
+                    680,
+                    660,
+                    0,
+                    220,
+                    80,
+                    0,
+                    Map.of(
+                        "outputKey", "B",
+                        "outputRank", 2,
+                        "outputCapacity", 1,
+                        "outputWeight", 1,
+                        "outputPriority", 20,
+                        "conditionType", "AFTER_OUTPUT_FULL",
+                        "conditionOutputKey", "A",
+                        "conditionClaims", 1
+                    )
+                );
+            var conditionalDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Conditional Probe",
+                    world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "CONDITIONAL_OUTPUT",
+                        2
+                    ),
+                    new ViewerDrawService.MachineRunPolicy(
+                        30,
+                        2,
+                        4
+                    ),
+                    List.of(
+                        spawn,
+                        conditionalA,
+                        conditionalB
+                    )
+                );
+            require(
+                service.validateMachineMap(
+                    conditionalDefinition
+                ).isEmpty(),
+                "conditional output map must pass server validation"
+            );
+
+            var cycleA =
+                new ViewerDrawService.MachineComponent(
+                    "cycle-a",
+                    "OUTPUT",
+                    600,
+                    660,
+                    0,
+                    220,
+                    80,
+                    0,
+                    Map.of(
+                        "outputKey", "A",
+                        "outputRank", 1,
+                        "outputCapacity", 1,
+                        "outputWeight", 1,
+                        "conditionType", "AFTER_OUTPUT_FULL",
+                        "conditionOutputKey", "B",
+                        "conditionClaims", 1
+                    )
+                );
+            var cycleB =
+                new ViewerDrawService.MachineComponent(
+                    "cycle-b",
+                    "OUTPUT",
+                    680,
+                    660,
+                    0,
+                    220,
+                    80,
+                    0,
+                    Map.of(
+                        "outputKey", "B",
+                        "outputRank", 2,
+                        "outputCapacity", 1,
+                        "outputWeight", 1,
+                        "conditionType", "AFTER_OUTPUT_FULL",
+                        "conditionOutputKey", "A",
+                        "conditionClaims", 1
+                    )
+                );
+            var cycleDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Conditional Cycle Probe",
+                    world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "CONDITIONAL_OUTPUT",
+                        2
+                    ),
+                    List.of(spawn, cycleA, cycleB)
+                );
+            require(
+                !service.validateMachineMap(
+                    cycleDefinition
+                ).isEmpty(),
+                "conditional output cycle must fail server validation"
             );
 
             var invalid =

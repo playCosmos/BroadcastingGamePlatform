@@ -830,6 +830,10 @@ MachineMapDefinition
 ├─ drawRule
 │  ├─ type
 │  └─ winnerCount
+├─ runPolicy
+│  ├─ timeoutSeconds
+│  ├─ qualificationMinWinners
+│  └─ qualificationMaxNudges
 └─ components[]
    ├─ id
    ├─ type
@@ -884,6 +888,8 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - Last Survivor Elimination Zone Preview
 - Cascade Selection Output capacity Preview
 - seed 기반 Random Output Bucket Preview
+- Conditional Output dependency / priority Preview
+- timeout → DNF Preview
 - marble ↔ marble collision
 - restitution
 - friction
@@ -956,11 +962,12 @@ Finish Rank / Winner
 - 현재 MapDefinition을 그대로 입력으로 사용
 - 로컬 `/vendor/box2d-wasm/` 자산 사용
 
-Fallback:
+Preview 전용 Adapter:
 
 - `BuiltinBrowserPhysicsAdapter`
 - engine ID: `BROWSER_PHYSICS_V0`
-- WASM 로딩 실패 시에만 사용
+- Map Maker/계약 테스트용
+- 실제 Marble Draw는 WASM 초기화 실패 시 Preview 엔진으로 자동 대체하지 않고 추첨 시작을 차단한다.
 
 서버의 역할은 실제 Marble 추첨에서 제외한다.
 서버의 Map 저장 API는 Map Maker 편의 기능일 뿐 Marble Draw Runtime의 필수 의존성이 아니다.
@@ -1061,6 +1068,29 @@ Output B = 2등
 Output C = 3등
 ~~~
 
+### CONDITIONAL_OUTPUT
+
+Output 간 의존 조건을 이용해 물리 장치의 단계적 분기/해금을 표현한다.
+
+지원 조건:
+
+- `ALWAYS`
+- `AFTER_ANY_CLAIM`
+- `AFTER_OUTPUT_CLAIMS`
+- `AFTER_OUTPUT_FULL`
+
+Output별 설정:
+
+- `outputCapacity`
+- `outputPriority`
+- `conditionType`
+- `conditionOutputKey`
+- `conditionClaims`
+
+같은 위치에서 여러 Output이 동시에 활성화되면 높은 `outputPriority`가 먼저 적용되고, 동률이면 낮은 `outputRank`를 우선한다.
+
+참조 Output이 충족된 뒤 다음 Output이 활성화되는 chain을 구성할 수 있지만 dependency cycle은 Browser/Server validation에서 저장을 거부한다. `CONDITIONAL_OUTPUT` Machine에는 최소 하나의 `ALWAYS` Output이 필요하다.
+
 이를 통해 **추첨 방식 자체를 물리 장치 설계로 표현**할 수 있게 한다.
 
 ---
@@ -1122,14 +1152,23 @@ Bell/Xylophone/Metal Plate 등을 지나며 음악적 소리를 만드는 추첨
 
 물리 추첨은 비정상 종료 방지가 필수다.
 
-지원:
+현재 구현:
 
-- movement watchdog
+- 5초 movement watchdog
 - stuck detection
-- controlled shake
-- global race timeout
-- impossible state detection
-- DNF
+- deterministic controlled nudge
+- `runPolicy.timeoutSeconds` 기반 global simulation timeout
+- timeout 시 미확정 Marble을 DNF 처리
+- DNF body 비활성화
+- `dnfOrder`, `timedOut`, `runStatus` snapshot 기록
+- RACE_FINISH는 MapDefinition의 고정값이 아니라 실제 Marble Draw UI의 runtime winnerCount도 timeout 목표 수에 반영
+
+`timeoutSeconds=0`이면 timeout을 비활성화한다.
+
+후속 검증:
+
+- impossible state 사전 탐지
+- 공식 Machine별 권장 timeout preset
 
 예:
 
@@ -1142,14 +1181,17 @@ stuck
 → DNF
 ~~~
 
-winnerCount를 충족하지 못했을 때 fallback은 별도 규칙으로 고정한다.
+timeout 시 남은 Marble을 goal distance 등으로 임의 보정해 당첨자로 승격하지 않는다.
 
-기본 후보:
+~~~text
+winner target 미충족
+→ TIMEOUT
+→ 남은 활성 Marble = DNF
+→ 현재까지 실제 확정된 winner만 유지
+→ Qualification 결과로 유효성 판정
+~~~
 
-- race invalidation + rerun
-- 남은 Marble의 goal distance 기반 순위
-
-공정성 때문에 구현/테스트 후 하나로 고정해야 한다.
+재실행 여부는 운영 정책에서 결정하며 Physics 결과를 사후 보정하지 않는다.
 
 ---
 
@@ -1218,7 +1260,55 @@ Marble:
 - physics version/config
 - final rank
 
-운영자는 이전 추첨 결과와 설정을 확인할 수 있어야 한다.
+현재 Browser Marble Draw는 서버 업로드 없이 로컬 JSON Audit을 생성한다.
+
+~~~text
+viewer-draw-run-audit/v0
+├─ resultStatus: COMPLETED | TIMEOUT
+├─ qualification
+│  ├─ status: QUALIFIED | NOT_QUALIFIED
+│  ├─ requiredWinners
+│  ├─ maxNudges
+│  └─ reasons[]
+├─ engine
+│  ├─ id
+│  └─ fixedTimestepSeconds
+├─ map
+│  ├─ schemaVersion
+│  ├─ name
+│  ├─ definitionHash (SHA-256)
+│  ├─ drawRule
+│  └─ runPolicy
+├─ run
+│  ├─ seed
+│  ├─ startedAt / completedAt
+│  ├─ wallElapsedMs
+│  ├─ simulationSeconds
+│  ├─ stuckNudges
+│  └─ timedOut
+├─ entries
+│  ├─ count
+│  ├─ snapshotHash (SHA-256)
+│  └─ values[]
+└─ result
+   ├─ winners[]
+   ├─ dnf[]
+   ├─ eliminated[]
+   ├─ outputClaims
+   ├─ slotClaims
+   └─ selectedOutputKey
+~~~
+
+Qualification V1:
+
+- `qualificationMinWinners=0`: 현재 추첨 winner target을 기준으로 사용
+- `qualificationMaxNudges=0`: nudge 횟수 제한 비활성화
+- 미달 시 `INSUFFICIENT_WINNERS`
+- nudge 한도 초과 시 `NUDGE_LIMIT_EXCEEDED`
+
+Audit 생성/해시/내보내기는 브라우저 로컬에서 처리하며 물리 추첨 중 서버 round-trip을 요구하지 않는다.
+
+운영자는 이후 선택적으로 이 Audit을 플랫폼 이력에 업로드/보관할 수 있게 확장한다.
 
 ---
 
@@ -1588,26 +1678,83 @@ V4 구현 완료:
 - `LAST_SURVIVOR`는 같은 simulation step에서 여러 Marble이 제거 영역에 들어와도 winnerCount 아래로 과잉 제거하지 않는다.
 - Map Maker Preview는 제작 확인용이며 최종 결과 권위는 실제 Box2D runtime이다.
 
+V5 구현 완료:
+
+- `CONDITIONAL_OUTPUT`
+  - `ALWAYS`
+  - `AFTER_ANY_CLAIM`
+  - `AFTER_OUTPUT_CLAIMS`
+  - `AFTER_OUTPUT_FULL`
+  - `outputPriority`
+  - `conditionOutputKey`
+  - `conditionClaims`
+  - Browser/Server dependency target 검증
+  - 자기 참조 및 dependency cycle 차단
+  - 최소 하나의 ALWAYS root Output 강제
+- Run Policy V1
+  - `timeoutSeconds`
+  - `qualificationMinWinners`
+  - `qualificationMaxNudges`
+  - 기존 `viewer-draw-machine-map/v0` 유지
+  - 구맵은 runPolicy 부재 시 모두 0으로 해석
+- Timeout / DNF
+  - fixed timestep simulation time 기준 timeout
+  - 목표 winner 미달 상태에서 timeout 시 활성 Marble DNF
+  - DNF body 비활성화
+  - RACE_FINISH runtime winnerCount를 Box2D authority에 명시 전달
+- Local PCM Sound Bank V1
+  - `viewer-draw-sound-bank.js`
+  - package-local 8 kHz Int8 PCM sample 11종
+  - material 6종 + instrument 5종
+  - `AudioBufferSourceNode` sample-first 재생
+  - MIDI note 기반 `playbackRate` pitch shift
+  - 외부 CDN/네트워크 의존 없음
+  - Sound Bank 부재 시 기존 oscillator synth fallback
+- Qualification / Local Audit V1
+  - `viewer-draw-run-audit/v0`
+  - MapDefinition SHA-256
+  - Frozen Entry snapshot SHA-256
+  - engine/fixed timestep/seed/timestamps 기록
+  - winners / DNF / elimination / output / slot claim 기록
+  - timeout / stuck nudge 기록
+  - QUALIFIED / NOT_QUALIFIED 및 reason 기록
+  - 브라우저에서 Audit JSON 직접 내보내기
+
+중요:
+
+- Conditional Output도 winner를 사전 선택하지 않는다. 활성 조건을 만족한 Output에 Marble이 실제 물리적으로 도착해야 claim된다.
+- timeout은 미완료 Marble의 순위를 거리 기반으로 보정하지 않고 DNF로 종료한다.
+- Qualification은 결과의 유효성 표시이며 winner를 새로 선택하거나 재정렬하지 않는다.
+- PCM Sound Bank와 Audit 생성은 Physics 결과에 영향을 주지 않는다.
+- Server는 MapDefinition/runPolicy를 저장·검증할 뿐 Marble winner/timeout 판정을 수행하지 않는다.
+
 잔여 확장:
 
-- Gear chain 편집 UX / coupling visualization
-- sample-based sound bank / material impulse response
-- Multi-output rule 조건 조합
-- branch / conditional machine rule
-- race timeout / DNF / qualification
+- Gear chain dependency visualization / coupling editor UX
+- Conditional predicate 확장: timer / sensor tag / branch state
+- 더 높은 품질의 recorded sample bank / material impulse response
+- OBS Overlay에 timeout/DNF/qualification 표시
+- optional post-run Audit server upload/history
+- 1/10/100/대량 참가자 성능·편향 Qualification suite
+- 공식 Machine timeout/profile preset
 
-### V9 — Overlay / Audit / Qualification
+### V9 — Overlay / Audit / Qualification — PARTIAL IMPLEMENTED
+
+구현:
+
+- 로컬 Marble run audit export
+- timeout / DNF
+- Qualification V1
+
+잔여:
 
 - OBS presentation
-- 로컬 Marble run audit export
 - optional post-run server history upload
 - 1/10/100/대량 참가자
-- multi-winner
-- stuck marble
-- race timeout
+- multi-winner qualification suite
 - browser/OBS performance
-- 페이지 로드 후 네트워크 차단 상태 추첨
-- Board/Yacht/Drawing Guess regression
+- 페이지 로드 후 네트워크 차단 상태 추첨 확대 검증
+- Board/Yacht/Drawing Guess regression 지속
 
 ---
 
@@ -1656,7 +1803,8 @@ Map Format
 → Reactive Goldberg V2: Hinge / Gear Rotor / Paddle / Launcher [IMPLEMENTED]
 → Machine V3: Gear Coupling / Elevator / Collision Web Audio / Ordered Output [IMPLEMENTED]
 → Machine V4: Material/Instrument Audio / Slot / Elimination / Cascade / Random Output [IMPLEMENTED]
-→ Conditional Multi-output Rules / Sound Bank / Qualification
+→ Machine V5: Conditional Output / PCM Sound Bank / Timeout-DNF / Local Audit-Qualification [IMPLEMENTED]
+→ Dependency Visualization / Conditional Predicates / OBS Audit / Qualification Suite
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.

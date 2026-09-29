@@ -376,6 +376,138 @@ requireCondition(
   "random bucket preview must seed-select one output and one winner"
 );
 
+const conditionalA = Engine.componentDefaults(
+  "OUTPUT",
+  400,
+  535
+);
+conditionalA.id = "conditional-a";
+conditionalA.width = 460;
+conditionalA.height = 100;
+conditionalA.properties = {
+  ...conditionalA.properties,
+  outputKey: "A",
+  outputRank: 1,
+  outputCapacity: 1,
+  outputPriority: 10,
+  conditionType: "ALWAYS"
+};
+const conditionalB = Engine.componentDefaults(
+  "OUTPUT",
+  400,
+  535
+);
+conditionalB.id = "conditional-b";
+conditionalB.width = 460;
+conditionalB.height = 100;
+conditionalB.properties = {
+  ...conditionalB.properties,
+  outputKey: "B",
+  outputRank: 2,
+  outputCapacity: 1,
+  outputPriority: 20,
+  conditionType: "AFTER_OUTPUT_FULL",
+  conditionOutputKey: "A",
+  conditionClaims: 1
+};
+const conditionalDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Conditional Output Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  drawRule: { type: "CONDITIONAL_OUTPUT", winnerCount: 2 },
+  runPolicy: {
+    timeoutSeconds: 10,
+    qualificationMinWinners: 2,
+    qualificationMaxNudges: 3
+  },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 400, 60),
+      properties: { marbleRadius: 10 }
+    },
+    conditionalA,
+    conditionalB
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(conditionalDefinition).length === 0,
+  "conditional output map must validate"
+);
+const conditionalState = runSensorPreview(
+  conditionalDefinition,
+  3,
+  71,
+  2
+);
+requireCondition(
+  conditionalState.winnerOrder.length === 2,
+  "conditional output preview must produce two winners"
+);
+const conditionalClaims = new Map(
+  conditionalState.outputClaims.map((item) => [
+    item.key,
+    item.value
+  ])
+);
+requireCondition(
+  conditionalClaims.get("A")?.length === 1
+    && conditionalClaims.get("B")?.length === 1,
+  "conditional output chain must unlock B after A fills"
+);
+
+const cycleDefinition = structuredClone(conditionalDefinition);
+const cycleA = cycleDefinition.components.find(
+  (component) => component.id === "conditional-a"
+);
+cycleA.properties.conditionType = "AFTER_OUTPUT_FULL";
+cycleA.properties.conditionOutputKey = "B";
+requireCondition(
+  Engine.validateDefinition(cycleDefinition).length > 0,
+  "conditional output cycle must fail validation"
+);
+
+const timeoutDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Timeout Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 0 },
+  drawRule: { type: "RACE_FINISH", winnerCount: 1 },
+  runPolicy: {
+    timeoutSeconds: 0.1,
+    qualificationMinWinners: 1,
+    qualificationMaxNudges: 0
+  },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 100, 100),
+      properties: { marbleRadius: 10 }
+    },
+    {
+      ...Engine.componentDefaults("FINISH", 700, 530),
+      width: 60,
+      height: 40
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(timeoutDefinition).length === 0,
+  "timeout map must validate"
+);
+const timeoutPreview = new Engine.PreviewEngine(
+  timeoutDefinition,
+  { seed: 81 }
+);
+let timeoutState = timeoutPreview.reset(3, 81);
+for (let step = 0; step < 120 && !timeoutState.timedOut; step += 1) {
+  timeoutPreview.step(1 / 120);
+  timeoutState = timeoutPreview.snapshot();
+}
+requireCondition(
+  timeoutState.timedOut
+    && timeoutState.dnfOrder.length === 3
+    && timeoutState.runStatus === "TIMEOUT",
+  "preview timeout must mark active marbles DNF"
+);
+
 const invalid = structuredClone(definition);
 invalid.components = invalid.components.filter(
   (component) => component.type !== "FINISH"

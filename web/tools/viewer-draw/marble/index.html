@@ -66,6 +66,7 @@ Hotel</textarea>
       <section class="button-stack">
         <button id="startDraw" class="primary-button" type="button">추첨 시작</button>
         <button id="resetDraw" type="button">초기화</button>
+        <button id="exportAudit" type="button" disabled>Audit JSON 내보내기</button>
       </section>
 
       <p class="runtime-note">
@@ -81,6 +82,8 @@ Hotel</textarea>
         </div>
         <div class="stage-tools">
           <span id="stuckCount">NUDGE 0</span>
+          <span id="qualificationBadge" class="stage-tool">QUALIFY -</span>
+          <span id="timeoutBadge" class="stage-tool" hidden>TIMEOUT</span>
           <span id="slowMotionBadge" class="slow-motion-badge" hidden>SLOW 0.35×</span>
           <button id="cameraAuto" type="button" class="stage-tool active">CAM AUTO</button>
           <button id="fastForward" type="button" class="stage-tool">⏩ HOLD</button>
@@ -113,6 +116,7 @@ Hotel</textarea>
 </main>
 
 <script src="/admin/assets/viewer-draw-map-engine.js"></script>
+<script src="/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
 <script src="/tools/viewer-draw/marble/browser-physics-adapter.js"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-marble.js"></script>
 </body>
