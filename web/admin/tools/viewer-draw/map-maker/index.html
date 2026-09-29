@@ -53,8 +53,10 @@
       <button class="palette-item" data-tool="GEAR">Gear Rotor</button>
       <button class="palette-item" data-tool="PADDLE">Paddle</button>
       <button class="palette-item" data-tool="LAUNCHER">Launcher</button>
+      <button class="palette-item" data-tool="ELEVATOR">Elevator</button>
       <button class="palette-item" data-tool="SPAWN">Spawn</button>
       <button class="palette-item" data-tool="FINISH">Finish</button>
+      <button class="palette-item" data-tool="OUTPUT">Output</button>
 
       <div class="panel-section">
         <p class="panel-title">EDIT</p>
@@ -76,6 +78,17 @@
         <label class="mini-field"><span>Gravity Y</span><input id="gravityY" type="number" min="-50" max="50" step=".5" value="12"></label>
         <label class="mini-field"><span>Grid</span><input id="gridSize" type="number" min="5" max="100" value="20"></label>
         <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>Snap to grid</span></label>
+      </div>
+
+      <div class="panel-section">
+        <p class="panel-title">DRAW RULE</p>
+        <label class="mini-field"><span>Type</span>
+          <select id="drawRuleType">
+            <option value="RACE_FINISH">Race Finish</option>
+            <option value="ORDERED_OUTPUT">Ordered Output</option>
+          </select>
+        </label>
+        <label class="mini-field"><span>Winner Count</span><input id="drawRuleWinnerCount" type="number" min="0" max="64" value="0"></label>
       </div>
     </aside>
 
@@ -123,7 +136,17 @@
         <label class="mini-field hinge-field"><span>Joint Friction</span><input id="propJointFriction" type="number" min="0" max="50" step=".1"></label>
         <label class="mini-field motor-field"><span>Motor °/s</span><input id="propMotorSpeed" type="number" min="-720" max="720" step="5"></label>
         <label class="mini-field motor-field"><span>Motor Torque</span><input id="propMotorTorque" type="number" min="0" max="200" step="1"></label>
+        <label class="mini-field gear-link-field"><span>Linked Joint</span><select id="propLinkedComponentId"><option value="">None</option></select></label>
+        <label class="mini-field gear-link-field"><span>Gear Ratio</span><input id="propGearRatio" type="number" min="-20" max="20" step=".05"></label>
         <label class="mini-field launcher-field"><span>Launch Power</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
+        <label class="mini-field elevator-field"><span>Axis Angle °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field elevator-field"><span>Travel Min px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
+        <label class="mini-field elevator-field"><span>Travel Max px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
+        <label class="mini-field elevator-field"><span>Motor px/s</span><input id="propElevatorSpeed" type="number" min="1" max="600" step="1"></label>
+        <label class="mini-field elevator-field"><span>Motor Force</span><input id="propMotorForce" type="number" min="0" max="500" step="1"></label>
+        <label class="mini-field elevator-field"><span>Start Direction</span><select id="propStartDirection"><option value="1">+</option><option value="-1">−</option></select></label>
+        <label class="mini-field output-field"><span>Output Key</span><input id="propOutputKey" maxlength="32"></label>
+        <label class="mini-field output-field"><span>Output Rank</span><input id="propOutputRank" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field bumper-field"><span>Bumper Boost</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
         <label class="mini-field spawn-field"><span>Marble Radius</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
       </div>
