@@ -183,6 +183,10 @@
       SEESAW: ["#6b6650", "#c5bb86"],
       FUNNEL: ["#356f71", "#73c9cb"],
       SPLITTER: ["#5e527d", "#a99bd3"],
+      HINGE: ["#47605b", "#8fc5b7"],
+      GEAR: ["#6d5730", "#dfbc6b"],
+      PADDLE: ["#7a4936", "#e8996f"],
+      LAUNCHER: ["#3e6675", "#78bdd5"],
       SPAWN: ["#216e8f", "#62c3e7"],
       FINISH: ["#367c4d", "#74d191"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -226,6 +230,23 @@
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
       }
+      if (["HINGE","GEAR","PADDLE"].includes(c.type)) {
+        const pivotRatio = c.type === "PADDLE"
+          ? num(c.properties?.pivotRatio, -.48)
+          : c.type === "HINGE"
+            ? num(c.properties?.pivotRatio, 0)
+            : 0;
+        ctx.beginPath();
+        ctx.fillStyle = "#f4fbff";
+        ctx.arc(
+          pivotRatio * w,
+          0,
+          Math.max(3, 5 * view.scale),
+          0,
+          Math.PI * 2
+        );
+        ctx.fill();
+      }
     }
 
     if (selected) {
@@ -250,8 +271,8 @@
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
     }
     const p = toScreen(c.x, c.y, view);
-    const w = c.width * view.scale;
-    const h = c.height * view.scale;
+    const w = (c.type === "GEAR" ? Math.max(c.width, c.height) : c.width) * view.scale;
+    const h = (c.type === "GEAR" ? Math.max(c.width, c.height) : c.height) * view.scale;
     const a = (c.rotation || 0) * Math.PI / 180;
     const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a));
     const bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
@@ -338,7 +359,10 @@
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
         const p = localPointFor(c, x, y);
-        if (
+        if (c.type === "GEAR") {
+          const radius = Math.max(c.width, c.height) / 2 + 8;
+          if (Math.abs(p.x) <= radius && Math.abs(p.y) <= radius) return c;
+        } else if (
           Math.abs(p.x) <= c.width / 2 + 8
           && Math.abs(p.y) <= c.height / 2 + 8
         ) return c;
@@ -430,17 +454,24 @@
     $("propOpenAngle").value = num(c.properties?.openAngle, 78);
     $("propGap").value = num(c.properties?.gap, 52);
     $("propThickness").value = num(c.properties?.thickness, 14);
+    $("propPivotRatio").value = num(c.properties?.pivotRatio, c.type === "PADDLE" ? -.48 : 0);
+    $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
+    $("propUpperAngle").value = num(c.properties?.upperAngle, 70);
+    $("propJointFriction").value = num(c.properties?.jointFriction, 1.2);
+    $("propMotorSpeed").value = num(c.properties?.motorSpeed, c.type === "GEAR" ? 120 : 180);
+    $("propMotorTorque").value = num(c.properties?.motorTorque, c.type === "GEAR" ? 35 : 30);
+    $("propLaunchPower").value = num(c.properties?.launchPower, 1.2);
     $("propBoost").value = num(c.properties?.boost, 1.15);
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     document.querySelectorAll(".dimension-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type);
     });
     document.querySelectorAll(".radius-field").forEach((el) => {
       el.hidden = !["PEG", "BUMPER", "SPAWN"].includes(c.type);
     });
     document.querySelectorAll(".physics-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type);
+      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type);
     });
     document.querySelectorAll(".rotator-field").forEach((el) => {
       el.hidden = c.type !== "ROTATOR";
@@ -460,6 +491,18 @@
     document.querySelectorAll(".thickness-field").forEach((el) => {
       el.hidden = !["FUNNEL", "SPLITTER"].includes(c.type);
     });
+    document.querySelectorAll(".pivot-field").forEach((el) => {
+      el.hidden = !["HINGE", "PADDLE"].includes(c.type);
+    });
+    document.querySelectorAll(".hinge-field").forEach((el) => {
+      el.hidden = c.type !== "HINGE";
+    });
+    document.querySelectorAll(".motor-field").forEach((el) => {
+      el.hidden = !["GEAR", "PADDLE"].includes(c.type);
+    });
+    document.querySelectorAll(".launcher-field").forEach((el) => {
+      el.hidden = c.type !== "LAUNCHER";
+    });
     document.querySelectorAll(".bumper-field").forEach((el) => {
       el.hidden = c.type !== "BUMPER";
     });
@@ -476,7 +519,7 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type)) {
+    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type)) {
       c.width = Math.max(1, num($("propWidth").value, c.width));
       c.height = Math.max(1, num($("propHeight").value, c.height));
     }
@@ -485,7 +528,7 @@
     }
 
     c.properties = c.properties || {};
-    if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER"].includes(c.type)) {
+    if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER"].includes(c.type)) {
       c.properties.restitution = clamp(num($("propRestitution").value, .35), 0, 1.4);
       c.properties.friction = clamp(num($("propFriction").value, .05), 0, .5);
     }
@@ -495,6 +538,20 @@
     if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
     if (c.type === "FUNNEL") c.properties.gap = clamp(num($("propGap").value, 52), 8, Math.max(8, c.width * .8));
     if (["FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, 14), 4, 80);
+    if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = clamp(num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0), -.5, .5);
+    if (c.type === "HINGE") {
+      c.properties.lowerAngle = clamp(num($("propLowerAngle").value, -70), -180, 180);
+      c.properties.upperAngle = clamp(num($("propUpperAngle").value, 70), -180, 180);
+      if (c.properties.lowerAngle > c.properties.upperAngle) {
+        [c.properties.lowerAngle, c.properties.upperAngle] = [c.properties.upperAngle, c.properties.lowerAngle];
+      }
+      c.properties.jointFriction = clamp(num($("propJointFriction").value, 1.2), 0, 50);
+    }
+    if (["GEAR", "PADDLE"].includes(c.type)) {
+      c.properties.motorSpeed = clamp(num($("propMotorSpeed").value, c.type === "GEAR" ? 120 : 180), -720, 720);
+      c.properties.motorTorque = clamp(num($("propMotorTorque").value, c.type === "GEAR" ? 35 : 30), 0, 200);
+    }
+    if (c.type === "LAUNCHER") c.properties.launchPower = clamp(num($("propLaunchPower").value, 1.2), 0, 5);
     if (c.type === "BUMPER") c.properties.boost = clamp(num($("propBoost").value, 1.15), 0, 3);
     if (c.type === "SPAWN") c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
 
@@ -836,6 +893,8 @@
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
    "propRestitution","propFriction","propAngularSpeed","propPeriod",
    "propAmplitude","propOpenAngle","propGap","propThickness",
+   "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
+   "propMotorSpeed","propMotorTorque","propLaunchPower",
    "propBoost","propMarbleRadius"]
     .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
 
