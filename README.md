@@ -24,7 +24,7 @@
 - Provider: CHZZK (추후)
 - Game Module: Board (현재)
 - Game Module: Yacht (계획, Yahtzee 계열)
-- Game Module: Drawing Guess (Classic Guess D0~D5 구현)
+- Game Module: Drawing Guess (Classic Guess D0~D6 구현)
 - Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V0 + Browser Box2D-WASM Marble Draw V0 구현)
 - 추가 게임/방송 도구: 독립 모듈로 확장
 
