@@ -693,7 +693,13 @@
   }
 
   function drawComponent(target, component, view, simplified = false) {
-    const [fill, stroke] = componentStyle(component.type);
+    const [defaultFill, defaultStroke] = componentStyle(component.type);
+    const fill = String(
+      component.properties?.visualFill || defaultFill
+    );
+    const stroke = String(
+      component.properties?.visualStroke || defaultStroke
+    );
     const p = {
       x: view.ox + component.x * view.scale,
       y: view.oy + component.y * view.scale
@@ -724,8 +730,8 @@
         simplified ? 2 : 8,
         component.height * view.scale
       );
-      target.fillStyle = "#07090c";
-      target.strokeStyle = "#c65d76";
+      target.fillStyle = fill;
+      target.strokeStyle = stroke;
       target.lineWidth = simplified ? 1 : 2;
       target.beginPath();
       target.ellipse(
@@ -740,7 +746,9 @@
       target.fill();
       target.stroke();
       if (!simplified) {
-        target.strokeStyle = "rgba(255,158,180,.38)";
+        target.strokeStyle =
+          component.properties?.visualGlow
+          || "rgba(255,158,180,.38)";
         target.lineWidth = 5;
         target.beginPath();
         target.ellipse(
