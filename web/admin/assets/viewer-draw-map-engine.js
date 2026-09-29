@@ -12,7 +12,7 @@
   };
 
   function componentDefaults(type,x=640,y=360){
-    const id=(crypto?.randomUUID?.() || ("c-"+Date.now()+"-"+Math.random())).replaceAll(".","-");
+    const id=(root.crypto?.randomUUID?.() || ("c-"+Date.now()+"-"+Math.random())).replaceAll(".","-");
     const base={id,type,x,y,rotation:0,width:0,height:0,radius:0,properties:{}};
     switch(type){
       case "WALL": return {...base,width:260,height:18,properties:{restitution:0.35,friction:0.06}};
