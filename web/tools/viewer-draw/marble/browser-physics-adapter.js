@@ -820,14 +820,17 @@
         finishOrder: this.finishOrder.slice(),
         finishedCount: this.finishOrder.length,
         totalCount: this.marbles.length,
-        components: this.reactiveComponents.map((item) => ({
-          id: item.component.id,
-          type: item.component.type,
-          x: item.component.x,
-          y: item.component.y,
-          runtimeRotation:
-            item.body.GetAngle() * 180 / Math.PI
-        })),
+        components: this.reactiveComponents.map((item) => {
+          const position = item.body.GetPosition();
+          return {
+            id: item.component.id,
+            type: item.component.type,
+            x: position.x * PIXELS_PER_METER,
+            y: position.y * PIXELS_PER_METER,
+            runtimeRotation:
+              item.body.GetAngle() * 180 / Math.PI
+          };
+        }),
         marbles: this.marbles.map((marble) => {
           const position = marble.body.GetPosition();
           return {
