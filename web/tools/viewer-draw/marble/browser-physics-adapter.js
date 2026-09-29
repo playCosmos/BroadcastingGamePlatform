@@ -17,6 +17,15 @@
       ).href
     : "/vendor/box2d-wasm/";
 
+  const GITHUB_PAGES_BOX2D_ASSET_BASE_URL =
+    "https://cdn.jsdelivr.net/npm/box2d-wasm@7.0.0/dist/es/";
+  const IS_GITHUB_PAGES =
+    typeof location !== "undefined"
+    && location.hostname.toLowerCase().endsWith(".github.io");
+  const ACTIVE_BOX2D_ASSET_BASE_URL = IS_GITHUB_PAGES
+    ? GITHUB_PAGES_BOX2D_ASSET_BASE_URL
+    : DEFAULT_BOX2D_ASSET_BASE_URL;
+
   function clamp(value, min, max) {
     return Math.max(min, Math.min(max, value));
   }
@@ -151,8 +160,8 @@
 
   class Box2dWasmPhysicsAdapter extends BrowserPhysicsAdapter {
     constructor({
-      moduleUrl = DEFAULT_BOX2D_ASSET_BASE_URL + "entry.js",
-      assetBaseUrl = DEFAULT_BOX2D_ASSET_BASE_URL
+      moduleUrl = ACTIVE_BOX2D_ASSET_BASE_URL + "entry.js",
+      assetBaseUrl = ACTIVE_BOX2D_ASSET_BASE_URL
     } = {}) {
       super();
       this.moduleUrl = moduleUrl;
