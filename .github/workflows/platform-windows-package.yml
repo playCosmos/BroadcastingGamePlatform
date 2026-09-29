@@ -54,6 +54,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node web/tools/viewer-draw/marble/browser-physics-adapter-probe.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node web/tools/viewer-draw/marble/box2d-wasm-adapter-probe.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-create.js
