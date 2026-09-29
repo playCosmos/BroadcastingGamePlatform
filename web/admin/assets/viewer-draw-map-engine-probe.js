@@ -66,7 +66,9 @@ const goldbergTypes = [
   "HINGE",
   "GEAR",
   "PADDLE",
-  "LAUNCHER"
+  "LAUNCHER",
+  "ELEVATOR",
+  "OUTPUT"
 ];
 
 for (const [index, type] of goldbergTypes.entries()) {
@@ -123,6 +125,72 @@ requireCondition(
   Engine.motionRotation(gear, 1)
     !== Engine.motionRotation(gear, 0),
   "gear preview rotation must advance with simulation time"
+);
+
+const linkedGear = Engine.componentDefaults("GEAR", 250, 300);
+linkedGear.id = "gear-linked";
+const linkedHinge = Engine.componentDefaults("HINGE", 500, 300);
+linkedHinge.id = "hinge-target";
+linkedGear.properties.linkedComponentId = linkedHinge.id;
+linkedGear.properties.gearRatio = -1.5;
+const linkedDefinition = structuredClone(definition);
+linkedDefinition.components.splice(
+  1,
+  0,
+  linkedGear,
+  linkedHinge
+);
+requireCondition(
+  Engine.validateDefinition(linkedDefinition).length === 0,
+  "linked gear map contract must validate"
+);
+
+const outputDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Ordered Output Probe",
+  world: {
+    width: 800,
+    height: 600,
+    gravityX: 0,
+    gravityY: 12
+  },
+  drawRule: {
+    type: "ORDERED_OUTPUT",
+    winnerCount: 1
+  },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 400, 60),
+      properties: { marbleRadius: 10 }
+    },
+    {
+      ...Engine.componentDefaults("OUTPUT", 400, 535),
+      width: 460,
+      height: 100,
+      properties: {
+        outputKey: "WIN",
+        outputRank: 1
+      }
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(outputDefinition).length === 0,
+  "ordered output map without FINISH must validate"
+);
+const outputPhysics = new Engine.PreviewEngine(
+  outputDefinition,
+  { seed: 19 }
+);
+let outputState = outputPhysics.reset(3, 19);
+for (let step = 0; step < 2400 && outputState.finishedCount < 1; step += 1) {
+  outputPhysics.step(1 / 120);
+  outputState = outputPhysics.snapshot();
+}
+requireCondition(
+  outputState.finishedCount === 1
+    && outputState.winnerOrder.length === 1,
+  "ordered output preview must claim ranked output"
 );
 
 const invalid = structuredClone(definition);
