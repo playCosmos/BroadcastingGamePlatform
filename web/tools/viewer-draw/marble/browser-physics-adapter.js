@@ -922,10 +922,12 @@
       this.createWorld();
       this.entries = Array.isArray(entries) ? entries.slice() : [];
       this.seed = Math.trunc(Number(seed) || 1);
-      this.runtimeWinnerCount = clamp(
-        Math.trunc(Number(options?.winnerCount) || 0),
+      this.runtimeWinnerCount = Math.max(
         0,
-        64
+        Math.min(
+          this.entries.length,
+          Math.trunc(Number(options?.winnerCount) || 0)
+        )
       );
       const rng = mulberry32(this.seed);
       this.random = rng;
@@ -975,12 +977,13 @@
           5,
           24
         );
-        const ring = Math.floor(index / spawns.length);
+        const localIndex = Math.floor(index / spawns.length);
         const angle =
-          index * 2.399963229728653
+          localIndex * 2.399963229728653
           + (rng() - 0.5) * 0.2;
         const spread =
-          (ring + 1) * Math.min(radius * 1.5, 18);
+          Math.sqrt(localIndex + 1)
+          * Math.min(radius * 1.35, 16);
 
         const x = spawn.x + Math.cos(angle) * spread;
         const y = spawn.y + Math.sin(angle) * spread;
