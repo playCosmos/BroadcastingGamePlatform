@@ -805,7 +805,7 @@
       return new Map(
         this.marbles
           .filter(
-            (marble) => !marble.finished && !marble.eliminated
+            (marble) => !marble.finished && !marble.eliminated && !marble.dnf && !marble.dnf
           )
           .map((marble) => {
             const velocity = marble.body.GetLinearVelocity();
@@ -1270,6 +1270,7 @@
         if (
           marble.finished
           || marble.eliminated
+          || marble.dnf
           || this.winnerOrder.length >= target
         ) {
           continue;
@@ -1395,6 +1396,7 @@
         if (
           marble.finished
           || marble.eliminated
+          || marble.dnf
           || this.winnerOrder.length >= target
         ) {
           continue;
@@ -1576,6 +1578,7 @@
         if (
           marble.finished
           || marble.eliminated
+          || marble.dnf
           || this.winnerOrder.length >= target
         ) {
           continue;
