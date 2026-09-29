@@ -354,42 +354,110 @@
         ),
         styled(
           {...componentDefaults("LAUNCHER",1090,838),width:132,height:24,rotation:0,properties:{
-            restitution:.48,
-            friction:.03,
-            launchPower:2.7,
+            restitution:.5,
+            friction:.025,
+            launchPower:4.0,
             launchDirectionDegrees:-90,
-            launchSpreadDegrees:22,
-            launchPowerVariance:.25,
+            launchSpreadDegrees:10,
+            launchPowerVariance:.16,
             soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.75
           }},
           "#335f72","#8bd8f5"
         ),
 
-        // Shooter lane rails.
+        // Closed pinball cabinet perimeter.
+        // The explicit rails are visible/physical; world bounds remain a safety shell.
         styled(
-          {...componentDefaults("WALL",1180,470),width:800,height:18,rotation:90},
-          "#7d5636","#d4a063"
+          {...componentDefaults("WALL",620,886),width:1120,height:20,rotation:0},
+          "#513821","#bd8149"
         ),
         styled(
-          {...componentDefaults("WALL",1008,540),width:570,height:18,rotation:90},
-          "#6a472e","#c48750"
+          {...componentDefaults("WALL",60,560),width:650,height:20,rotation:90},
+          "#513821","#bd8149"
         ),
         styled(
-          {...componentDefaults("RAMP",1060,205),width:190,height:18,rotation:-31},
-          "#6f4c31","#d19a5d"
+          {...componentDefaults("RAMP",92,180),width:132,height:20,rotation:-60},
+          "#5d4028","#ca9158"
         ),
         styled(
-          {...componentDefaults("RAMP",973,142),width:165,height:18,rotation:-10},
-          "#6f4c31","#d19a5d"
+          {...componentDefaults("RAMP",160,105),width:160,height:20,rotation:-25},
+          "#65452b","#d19a61"
+        ),
+        styled(
+          {...componentDefaults("RAMP",305,61),width:190,height:20,rotation:-4},
+          "#6c4a2e","#d5a066"
+        ),
+        styled(
+          {...componentDefaults("RAMP",495,53),width:200,height:20,rotation:-1},
+          "#704d30","#d8a46a"
+        ),
+        styled(
+          {...componentDefaults("RAMP",695,53),width:205,height:20,rotation:1},
+          "#704d30","#d8a46a"
+        ),
+        styled(
+          {...componentDefaults("RAMP",870,58),width:150,height:20,rotation:5},
+          "#704d30","#d8a46a"
         ),
 
-        // Top arch / orbit.
-        styled({...componentDefaults("RAMP",845,105),width:220,height:18,rotation:10},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",680,82),width:170,height:18,rotation:3},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",505,82),width:180,height:18,rotation:-3},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",335,108),width:200,height:18,rotation:-12},"#765234","#d6a16a"),
-        styled({...componentDefaults("RAMP",205,165),width:150,height:18,rotation:-31},"#765234","#d6a16a"),
-        styled({...componentDefaults("WALL",128,330),width:330,height:18,rotation:78},"#604229","#c58a52"),
+        // Right shooter lane: straight vertical rise, then a polygonal quarter-curve
+        // that physically redirects the marbles left into the closed playfield.
+        styled(
+          {...componentDefaults("WALL",1190,515),width:735,height:20,rotation:90},
+          "#5d4028","#ca9158"
+        ),
+        styled(
+          {...componentDefaults("WALL",1005,585),width:500,height:20,rotation:90},
+          "#4f3724","#b77b48"
+        ),
+
+        // Outer side of the shooter curve. This also closes the upper-right cabinet.
+        styled(
+          {...componentDefaults("RAMP",1155,132),width:96,height:20,rotation:55},
+          "#6f4c31","#d19a5d"
+        ),
+        styled(
+          {...componentDefaults("RAMP",1098,88),width:132,height:20,rotation:27},
+          "#704d30","#d8a46a"
+        ),
+        styled(
+          {...componentDefaults("RAMP",1008,62),width:150,height:20,rotation:10},
+          "#704d30","#d8a46a"
+        ),
+
+        // Inner side of the shooter curve. It deliberately ends near x=815,
+        // leaving the curve mouth open into the main playfield.
+        styled(
+          {...componentDefaults("RAMP",997,286),width:94,height:20,rotation:-72},
+          "#4f3724","#b77b48"
+        ),
+        styled(
+          {...componentDefaults("RAMP",965,237),width:86,height:20,rotation:-48},
+          "#513824","#bb7e4a"
+        ),
+        styled(
+          {...componentDefaults("RAMP",915,199),width:82,height:20,rotation:-28},
+          "#573c26","#c4864f"
+        ),
+        styled(
+          {...componentDefaults("RAMP",850,178),width:78,height:20,rotation:-12},
+          "#5d4028","#ca9158"
+        ),
+
+        // Inner upper orbit guide. The gap between this guide and the cabinet roof
+        // is the actual shooter exit; it is not sealed by a vertical wall.
+        styled(
+          {...componentDefaults("RAMP",760,161),width:120,height:18,rotation:-4},
+          "#754f31","#d6a067"
+        ),
+        styled(
+          {...componentDefaults("RAMP",620,155),width:145,height:18,rotation:0},
+          "#754f31","#d6a067"
+        ),
+        styled(
+          {...componentDefaults("RAMP",480,160),width:135,height:18,rotation:5},
+          "#754f31","#d6a067"
+        ),
 
         // Top bumper cluster.
         styled({...componentDefaults("BUMPER",425,225),radius:35,properties:{
