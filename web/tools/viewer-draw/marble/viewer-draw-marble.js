@@ -57,23 +57,11 @@
   }
 
   async function createPhysicsAdapter() {
-    const preferred = new Physics.Box2dWasmPhysicsAdapter();
-    try {
-      $("engineBadge").textContent = "BOX2D-WASM LOADING";
-      await preferred.init();
-      $("engineBadge").textContent = preferred.engineId();
-      return preferred;
-    } catch (error) {
-      console.warn(
-        "[viewer-draw] box2d-wasm unavailable; using builtin fallback",
-        error
-      );
-      const fallback = new Physics.BuiltinBrowserPhysicsAdapter();
-      await fallback.init();
-      $("engineBadge").textContent =
-        fallback.engineId() + " · FALLBACK";
-      return fallback;
-    }
+    const adapter = new Physics.Box2dWasmPhysicsAdapter();
+    $("engineBadge").textContent = "BOX2D-WASM LOADING";
+    await adapter.init();
+    $("engineBadge").textContent = adapter.engineId();
+    return adapter;
   }
 
   function fit() {
