@@ -111,6 +111,14 @@ const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
   "utf8"
 );
+const soundBankSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw-sound-bank.js"),
+  "utf8"
+);
+const runtimeHtml = fs.readFileSync(
+  path.join(__dirname, "index.html"),
+  "utf8"
+);
 requireCondition(
   !controllerSource.includes("BuiltinBrowserPhysicsAdapter"),
   "actual Marble Draw must not silently substitute the preview physics engine"
@@ -132,13 +140,23 @@ requireCondition(
     && controllerSource.includes("SLOT_COLLECTION")
     && controllerSource.includes("LAST_SURVIVOR")
     && controllerSource.includes("CASCADE_SELECTION")
-    && controllerSource.includes("RANDOM_OUTPUT_BUCKET"),
+    && controllerSource.includes("RANDOM_OUTPUT_BUCKET")
+    && controllerSource.includes("CONDITIONAL_OUTPUT"),
   "actual Marble Draw must honor advanced map draw rules"
 );
 requireCondition(
-  controllerSource.includes("materialProfiles")
-    && controllerSource.includes("midiFrequency"),
-  "actual Marble Draw must apply material/instrument audio profiles"
+  controllerSource.includes("ViewerDrawSoundBank")
+    && controllerSource.includes("createBufferSource")
+    && soundBankSource.includes("new Int8Array")
+    && runtimeHtml.includes("viewer-draw-sound-bank.js"),
+  "actual Marble Draw must use packaged PCM sample bank first"
+);
+requireCondition(
+  controllerSource.includes("viewer-draw-run-audit/v0")
+    && controllerSource.includes("crypto.subtle.digest")
+    && controllerSource.includes("dnfOrder")
+    && controllerSource.includes("qualificationMaxNudges"),
+  "actual Marble Draw must export local qualification audit"
 );
 
 for (const forbidden of [
