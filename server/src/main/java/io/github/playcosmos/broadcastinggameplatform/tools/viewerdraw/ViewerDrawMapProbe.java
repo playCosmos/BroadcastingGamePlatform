@@ -66,6 +66,24 @@ public final class ViewerDrawMapProbe {
                     "period", 3.6
                 )
             );
+            var hinge = new ViewerDrawService.MachineComponent(
+                "hinge-1",
+                "HINGE",
+                940,
+                430,
+                0,
+                220,
+                16,
+                0,
+                Map.of(
+                    "restitution", 0.34,
+                    "friction", 0.08,
+                    "pivotRatio", 0,
+                    "lowerAngle", -70,
+                    "upperAngle", 70,
+                    "jointFriction", 1.2
+                )
+            );
             var finish = new ViewerDrawService.MachineComponent(
                 "finish-1",
                 "FINISH",
@@ -83,7 +101,7 @@ public final class ViewerDrawMapProbe {
                     "viewer-draw-machine-map/v0",
                     "Probe Machine",
                     world,
-                    List.of(spawn, wall, gate, finish)
+                    List.of(spawn, wall, gate, hinge, finish)
                 );
 
             require(
@@ -132,6 +150,7 @@ public final class ViewerDrawMapProbe {
                             )
                         ),
                         gate,
+                        hinge,
                         finish
                     )
                 );
