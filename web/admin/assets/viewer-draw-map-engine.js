@@ -6,6 +6,10 @@
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
+  const finiteOr = (value, fallback) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : fallback;
+  };
 
   function componentDefaults(type,x=640,y=360){
     const id=(crypto?.randomUUID?.() || ("c-"+Date.now()+"-"+Math.random())).replaceAll(".","-");
@@ -206,10 +210,10 @@
       m.y+=wy*penetration;
       const vn=m.vx*wx+m.vy*wy;
       if(vn<0){
-        const restitution=clamp(Number(c.properties?.restitution)??.35,0,1.4);
+        const restitution=clamp(finiteOr(c.properties?.restitution,.35),0,1.4);
         m.vx-=(1+restitution)*vn*wx;
         m.vy-=(1+restitution)*vn*wy;
-        const friction=clamp(Number(c.properties?.friction)??.05,0,.5);
+        const friction=clamp(finiteOr(c.properties?.friction,.05),0,.5);
         const tx=-wy,ty=wx,vt=m.vx*tx+m.vy*ty;
         m.vx-=vt*friction*tx;
         m.vy-=vt*friction*ty;
@@ -228,7 +232,14 @@
       m.y+=ny*penetration;
       const vn=m.vx*nx+m.vy*ny;
       if(vn<0){
-        const restitution=clamp(Number(c.properties?.restitution)??(c.type==="BUMPER"?.95:.55),0,1.4);
+        const restitution=clamp(
+          finiteOr(
+            c.properties?.restitution,
+            c.type==="BUMPER" ? .95 : .55
+          ),
+          0,
+          1.4
+        );
         m.vx-=(1+restitution)*vn*nx;
         m.vy-=(1+restitution)*vn*ny;
       }
