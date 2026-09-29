@@ -340,7 +340,26 @@
   async function boot() {
     updateEntryCount();
     adapter = await createPhysicsAdapter();
-    loadDefinition(definition);
+
+    let initialDefinition = definition;
+    const handedOff = sessionStorage.getItem(
+      "viewerDrawMarbleMapDefinition"
+    );
+    if (handedOff) {
+      sessionStorage.removeItem(
+        "viewerDrawMarbleMapDefinition"
+      );
+      try {
+        initialDefinition = JSON.parse(handedOff);
+      } catch (error) {
+        console.warn(
+          "[viewer-draw] ignored invalid local map handoff",
+          error
+        );
+      }
+    }
+
+    loadDefinition(initialDefinition);
   }
 
   boot().catch((error) => {
