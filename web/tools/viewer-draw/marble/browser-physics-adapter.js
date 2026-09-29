@@ -38,7 +38,7 @@
         ...marble,
         entry: entryByMarble.get(marble.id) || null
       })),
-      rankedEntries: state.finishOrder
+      rankedEntries: (state.winnerOrder || state.finishOrder)
         .map((id) => entryByMarble.get(id))
         .filter(Boolean)
     };
@@ -151,10 +151,16 @@
       this.entries = [];
       this.marbles = [];
       this.finishOrder = [];
+      this.winnerOrder = [];
+      this.outputClaims = new Map();
       this.bumpers = [];
       this.launchers = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
+      this.gearCouplings = [];
+      this.elevators = [];
+      this.soundEvents = [];
+      this.soundSequence = 0;
       this.accumulator = 0;
       this.time = 0;
       this.seed = 1;
@@ -200,10 +206,15 @@
       );
       this.marbles = [];
       this.finishOrder = [];
+      this.winnerOrder = [];
+      this.outputClaims = new Map();
       this.bumpers = [];
       this.launchers = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
+      this.gearCouplings = [];
+      this.elevators = [];
+      this.soundEvents = [];
       this.accumulator = 0;
       this.time = 0;
 
@@ -246,8 +257,15 @@
             this.createStaticBox(component);
             this.launchers.push(component);
             break;
+          case "ELEVATOR":
+            this.createPrismaticComponent(component);
+            break;
+          case "OUTPUT":
+            break;
         }
       }
+
+      this.createGearCouplings();
     }
 
     createWorldBounds() {
@@ -518,8 +536,233 @@
         component,
         body,
         anchorBody,
-        joint
+        joint,
+        jointType: "REVOLUTE"
       });
+    }
+
+    createPrismaticComponent(component) {
+      const B = this.Box2D;
+      const p = component.properties || {};
+      const angle = (component.rotation || 0) * Math.PI / 180;
+      const axisAngle =
+        property(p, "axisAngle", -90) * Math.PI / 180;
+
+      const anchorDef = new B.b2BodyDef();
+      anchorDef.set_type(B.b2_staticBody);
+      anchorDef.set_position(
+        new B.b2Vec2(
+          component.x / PIXELS_PER_METER,
+          component.y / PIXELS_PER_METER
+        )
+      );
+      const anchorBody = this.world.CreateBody(anchorDef);
+
+      const bodyDef = new B.b2BodyDef();
+      bodyDef.set_type(B.b2_dynamicBody);
+      bodyDef.set_position(
+        new B.b2Vec2(
+          component.x / PIXELS_PER_METER,
+          component.y / PIXELS_PER_METER
+        )
+      );
+      const body = this.world.CreateBody(bodyDef);
+      body.SetTransform(body.GetPosition(), angle);
+
+      const shape = new B.b2PolygonShape();
+      shape.SetAsBox(
+        Math.max(0.01, component.width / PIXELS_PER_METER / 2),
+        Math.max(0.01, component.height / PIXELS_PER_METER / 2)
+      );
+      const fixtureDef = new B.b2FixtureDef();
+      fixtureDef.set_shape(shape);
+      fixtureDef.set_density(1);
+      fixtureDef.set_restitution(
+        clamp(property(p, "restitution", 0.34), 0, 1.4)
+      );
+      fixtureDef.set_friction(
+        clamp(property(p, "friction", 0.08), 0, 0.5)
+      );
+      body.CreateFixture(fixtureDef);
+
+      const lower = clamp(
+        property(p, "travelMin", -120),
+        -1200,
+        1200
+      ) / PIXELS_PER_METER;
+      const upper = clamp(
+        property(p, "travelMax", 120),
+        -1200,
+        1200
+      ) / PIXELS_PER_METER;
+      const direction =
+        property(p, "startDirection", 1) < 0 ? -1 : 1;
+      const speed = clamp(
+        Math.abs(property(p, "motorSpeed", 90)),
+        1,
+        600
+      ) / PIXELS_PER_METER;
+      const force = clamp(
+        property(p, "motorForce", 45),
+        0,
+        500
+      );
+
+      const jointDef = new B.b2PrismaticJointDef();
+      jointDef.Initialize(
+        anchorBody,
+        body,
+        new B.b2Vec2(
+          component.x / PIXELS_PER_METER,
+          component.y / PIXELS_PER_METER
+        ),
+        new B.b2Vec2(
+          Math.cos(axisAngle),
+          Math.sin(axisAngle)
+        )
+      );
+      jointDef.set_enableLimit(true);
+      jointDef.set_lowerTranslation(Math.min(lower, upper));
+      jointDef.set_upperTranslation(Math.max(lower, upper));
+      jointDef.set_enableMotor(force > 0);
+      jointDef.set_motorSpeed(speed * direction);
+      jointDef.set_maxMotorForce(force);
+
+      const joint = B.castObject(
+        this.world.CreateJoint(jointDef),
+        B.b2PrismaticJoint
+      );
+      const item = {
+        component,
+        body,
+        anchorBody,
+        joint,
+        jointType: "PRISMATIC",
+        direction,
+        speed,
+        lower: Math.min(lower, upper),
+        upper: Math.max(lower, upper)
+      };
+      this.elevators.push(item);
+      this.reactiveComponents.push(item);
+    }
+
+    createGearCouplings() {
+      const B = this.Box2D;
+      const byId = new Map(
+        this.reactiveComponents.map((item) => [
+          item.component.id,
+          item
+        ])
+      );
+      const pairs = new Set();
+
+      for (const component of this.definition.components) {
+        if (component.type !== "GEAR") continue;
+        const linkedId = String(
+          component.properties?.linkedComponentId || ""
+        ).trim();
+        if (!linkedId) continue;
+
+        const source = byId.get(component.id);
+        const target = byId.get(linkedId);
+        if (!source || !target) continue;
+
+        const pairKey = [component.id, linkedId]
+          .sort()
+          .join("|");
+        if (pairs.has(pairKey)) continue;
+        pairs.add(pairKey);
+
+        const ratio = clamp(
+          property(component.properties, "gearRatio", -1),
+          -20,
+          20
+        );
+        const jointDef = new B.b2GearJointDef();
+        jointDef.set_joint1(source.joint);
+        jointDef.set_joint2(target.joint);
+        jointDef.set_ratio(
+          Math.abs(ratio) < 0.01 ? -1 : ratio
+        );
+        const joint = this.world.CreateJoint(jointDef);
+        this.gearCouplings.push({
+          sourceId: component.id,
+          targetId: linkedId,
+          ratio,
+          joint
+        });
+      }
+    }
+
+    updateElevators() {
+      for (const item of this.elevators) {
+        const translation = item.joint.GetJointTranslation();
+        if (
+          item.direction > 0
+          && translation >= item.upper - 0.005
+        ) {
+          item.direction = -1;
+        } else if (
+          item.direction < 0
+          && translation <= item.lower + 0.005
+        ) {
+          item.direction = 1;
+        }
+        item.joint.SetMotorSpeed(
+          item.speed * item.direction
+        );
+      }
+    }
+
+    queueSound(kind, strength = 0.5, componentId = "") {
+      if (this.soundEvents.length >= 24) return;
+      this.soundSequence += 1;
+      this.soundEvents.push({
+        id: this.soundSequence,
+        kind,
+        strength: clamp(Number(strength) || 0, 0, 1),
+        componentId
+      });
+    }
+
+    captureVelocities() {
+      return new Map(
+        this.marbles
+          .filter((marble) => !marble.finished)
+          .map((marble) => {
+            const velocity = marble.body.GetLinearVelocity();
+            return [
+              marble.id,
+              { x: velocity.x, y: velocity.y }
+            ];
+          })
+      );
+    }
+
+    detectImpactSounds(before) {
+      for (const marble of this.marbles) {
+        if (marble.finished) continue;
+        const previous = before.get(marble.id);
+        if (!previous) continue;
+        const velocity = marble.body.GetLinearVelocity();
+        const delta = Math.hypot(
+          velocity.x - previous.x,
+          velocity.y - previous.y
+        );
+        if (delta < 0.18) continue;
+        if (
+          this.time - (marble.lastSoundTime ?? -Infinity)
+          < 0.07
+        ) {
+          continue;
+        }
+        marble.lastSoundTime = this.time;
+        this.queueSound(
+          "impact",
+          clamp(delta / 2.4, 0.08, 1)
+        );
+      }
     }
 
     createStaticCircle(component) {
@@ -625,7 +868,8 @@
           rank: 0,
           finishTime: null,
           bumperContacts: new Set(),
-          launcherContacts: new Set()
+          launcherContacts: new Set(),
+          lastSoundTime: -Infinity
         };
       });
 
@@ -637,15 +881,19 @@
         throw new Error("map must be loaded first");
       }
 
+      this.soundEvents = [];
       this.accumulator += clamp(Number(deltaSeconds) || 0, 0, 0.05);
       let guard = 0;
       while (this.accumulator >= FIXED_DT && guard < 12) {
+        const beforeVelocities = this.captureVelocities();
         this.updateMovingComponents(this.time);
+        this.updateElevators();
         this.world.Step(FIXED_DT, 6, 2);
         this.time += FIXED_DT;
+        this.detectImpactSounds(beforeVelocities);
         this.applyBumperBoosts();
         this.applyLauncherBoosts();
-        this.detectFinishes();
+        this.detectResults();
         this.accumulator -= FIXED_DT;
         guard += 1;
       }
@@ -677,6 +925,12 @@
             3
           );
           if (boost <= 0) continue;
+
+          this.queueSound(
+            "bumper",
+            clamp(boost / 3, 0.15, 1),
+            bumper.id
+          );
 
           if (distance < 1e-6) {
             dx = 1;
@@ -728,6 +982,12 @@
           );
           if (power <= 0) continue;
 
+          this.queueSound(
+            "launcher",
+            clamp(power / 5, 0.15, 1),
+            launcher.id
+          );
+
           const angle =
             ((launcher.rotation || 0) - 90) * Math.PI / 180;
           const impulse = power * 0.18;
@@ -756,6 +1016,17 @@
         && Math.abs(localY) <= component.height / 2 + pad;
     }
 
+    detectResults() {
+      const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
+        this.definition
+      );
+      if (rule.type === "ORDERED_OUTPUT") {
+        this.detectOutputs();
+      } else {
+        this.detectFinishes();
+      }
+    }
+
     detectFinishes() {
       const finishes = this.definition.components.filter(
         (component) => component.type === "FINISH"
@@ -775,6 +1046,46 @@
         marble.rank = this.finishOrder.length + 1;
         marble.finishTime = this.time;
         this.finishOrder.push(marble.id);
+        this.winnerOrder = this.finishOrder.slice();
+        this.queueSound("finish", 0.8);
+        marble.body.SetLinearVelocity(
+          new this.Box2D.b2Vec2(0, 0)
+        );
+      }
+    }
+
+    detectOutputs() {
+      const outputs = this.definition.components.filter(
+        (component) => component.type === "OUTPUT"
+      );
+
+      for (const marble of this.marbles) {
+        if (marble.finished) continue;
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+
+        const output = outputs.find((candidate) => {
+          const rank = Math.trunc(
+            property(candidate.properties, "outputRank", 0)
+          );
+          return !this.outputClaims.has(rank)
+            && this.pointInRect(x, y, candidate);
+        });
+        if (!output) continue;
+
+        const rank = Math.trunc(
+          property(output.properties, "outputRank", 1)
+        );
+        this.outputClaims.set(rank, marble.id);
+        marble.finished = true;
+        marble.rank = rank;
+        marble.finishTime = this.time;
+        this.finishOrder.push(marble.id);
+        this.winnerOrder = [...this.outputClaims.entries()]
+          .sort((left, right) => left[0] - right[0])
+          .map(([, id]) => id);
+        this.queueSound("output", 0.9, output.id);
         marble.body.SetLinearVelocity(
           new this.Box2D.b2Vec2(0, 0)
         );
@@ -818,7 +1129,27 @@
       const state = {
         time: this.time,
         finishOrder: this.finishOrder.slice(),
-        finishedCount: this.finishOrder.length,
+        winnerOrder: this.winnerOrder.length
+          ? this.winnerOrder.slice()
+          : this.finishOrder.slice(),
+        outputClaims: [...this.outputClaims.entries()].map(
+          ([rank, id]) => ({ rank, id })
+        ),
+        audioEvents: this.soundEvents.slice(),
+        finishedCount: this.winnerOrder.length
+          ? this.winnerOrder.length
+          : this.finishOrder.length,
+        targetCount:
+          root.ViewerDrawMapEngine.resolvedDrawRule(this.definition).type
+            === "ORDERED_OUTPUT"
+            ? (
+                root.ViewerDrawMapEngine.resolvedDrawRule(this.definition)
+                  .winnerCount
+                || this.definition.components.filter(
+                  (component) => component.type === "OUTPUT"
+                ).length
+              )
+            : this.marbles.length,
         totalCount: this.marbles.length,
         components: this.reactiveComponents.map((item) => {
           const position = item.body.GetPosition();

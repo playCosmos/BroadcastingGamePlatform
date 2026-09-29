@@ -87,6 +87,16 @@
       throw new Error("ranked entries mismatch");
     }
 
+    const gearA = Engine.componentDefaults("GEAR", 360, 430);
+    gearA.id = "gear-a";
+    const gearB = Engine.componentDefaults("GEAR", 520, 430);
+    gearB.id = "gear-b";
+    gearA.properties = {
+      ...gearA.properties,
+      linkedComponentId: gearB.id,
+      gearRatio: -1
+    };
+
     const goldbergDefinition = {
       schemaVersion: Engine.SCHEMA_VERSION,
       name: "Goldberg Box2D Probe",
@@ -108,10 +118,12 @@
         Engine.componentDefaults("SEESAW", 750, 220),
         Engine.componentDefaults("FUNNEL", 960, 270),
         Engine.componentDefaults("SPLITTER", 1120, 270),
-        Engine.componentDefaults("HINGE", 220, 430),
-        Engine.componentDefaults("GEAR", 430, 430),
-        Engine.componentDefaults("PADDLE", 650, 430),
-        Engine.componentDefaults("LAUNCHER", 860, 430),
+        Engine.componentDefaults("HINGE", 180, 430),
+        gearA,
+        gearB,
+        Engine.componentDefaults("PADDLE", 690, 430),
+        Engine.componentDefaults("LAUNCHER", 880, 430),
+        Engine.componentDefaults("ELEVATOR", 1060, 430),
         {
           ...Engine.componentDefaults("FINISH", 640, 660),
           width: 420,
@@ -128,14 +140,68 @@
     if (!state || state.totalCount !== 2) {
       throw new Error("Goldberg Box2D map failed to step");
     }
-    if (!Array.isArray(state.components) || state.components.length !== 3) {
+    if (!Array.isArray(state.components) || state.components.length !== 5) {
       throw new Error("reactive component runtime state missing");
+    }
+    if (adapter.gearCouplings.length !== 1) {
+      throw new Error("gear coupling was not created");
+    }
+    if (adapter.elevators.length !== 1) {
+      throw new Error("elevator prismatic joint was not created");
+    }
+    if (!Array.isArray(state.audioEvents)) {
+      throw new Error("physics audio event channel missing");
     }
     const gearState = state.components.find(
       (component) => component.type === "GEAR"
     );
     if (!gearState || !Number.isFinite(gearState.runtimeRotation)) {
       throw new Error("gear runtime rotation missing");
+    }
+
+    const outputDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Ordered Output Box2D Probe",
+      world: {
+        width: 800,
+        height: 600,
+        gravityX: 0,
+        gravityY: 12
+      },
+      drawRule: {
+        type: "ORDERED_OUTPUT",
+        winnerCount: 1
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 60),
+          properties: { marbleRadius: 10 }
+        },
+        {
+          ...Engine.componentDefaults("OUTPUT", 400, 530),
+          width: 460,
+          height: 100,
+          properties: {
+            outputKey: "WIN",
+            outputRank: 1
+          }
+        }
+      ]
+    };
+    adapter.loadMap(outputDefinition);
+    state = adapter.reset(entries.slice(0, 3), 91);
+    for (
+      let step = 0;
+      step < 3600 && state.finishedCount < 1;
+      step += 1
+    ) {
+      state = adapter.step(1 / 120);
+    }
+    if (
+      state.finishedCount !== 1
+      || state.rankedEntries.length !== 1
+    ) {
+      throw new Error("ordered output did not select one winner");
     }
 
     document.body.dataset.status = "pass";

@@ -75,12 +75,33 @@ public final class ViewerDrawService {
         Map<String, Object> properties
     ) {}
 
+    public record MachineDrawRule(
+        String type,
+        int winnerCount
+    ) {}
+
     public record MachineMapDefinition(
         String schemaVersion,
         String name,
         MachineWorld world,
+        MachineDrawRule drawRule,
         List<MachineComponent> components
-    ) {}
+    ) {
+        public MachineMapDefinition(
+            String schemaVersion,
+            String name,
+            MachineWorld world,
+            List<MachineComponent> components
+        ) {
+            this(
+                schemaVersion,
+                name,
+                world,
+                new MachineDrawRule("RACE_FINISH", 0),
+                components
+            );
+        }
+    }
 
     public record MachineMap(
         String mapId,
@@ -380,6 +401,27 @@ public final class ViewerDrawService {
             );
         }
 
+        MachineDrawRule rawRule = raw.drawRule();
+        String drawRuleType = rawRule == null || rawRule.type() == null
+            ? "RACE_FINISH"
+            : rawRule.type().trim().toUpperCase(Locale.ROOT);
+        int drawRuleWinnerCount = rawRule == null
+            ? 0
+            : rawRule.winnerCount();
+        if (
+            !"RACE_FINISH".equals(drawRuleType)
+            && !"ORDERED_OUTPUT".equals(drawRuleType)
+        ) {
+            throw new IllegalArgumentException(
+                "unsupported drawRule type: " + drawRuleType
+            );
+        }
+        if (drawRuleWinnerCount < 0 || drawRuleWinnerCount > 64) {
+            throw new IllegalArgumentException(
+                "drawRule winnerCount must be within 0..64"
+            );
+        }
+
         List<MachineComponent> rawComponents =
             raw.components() == null ? List.of() : raw.components();
         if (rawComponents.size() > 500) {
@@ -392,12 +434,16 @@ public final class ViewerDrawService {
             "WALL", "RAMP", "PEG", "BUMPER", "SPAWN", "FINISH",
             "GATE", "ROTATOR", "PENDULUM", "SEESAW",
             "FUNNEL", "SPLITTER", "HINGE", "GEAR",
-            "PADDLE", "LAUNCHER"
+            "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT"
         );
         var ids = new java.util.LinkedHashSet<String>();
+        var componentTypes = new java.util.LinkedHashMap<String, String>();
+        var outputKeys = new java.util.LinkedHashSet<String>();
+        var outputRanks = new java.util.LinkedHashSet<Integer>();
         var normalizedComponents = new ArrayList<MachineComponent>();
         int spawnCount = 0;
         int finishCount = 0;
+        int outputCount = 0;
 
         for (MachineComponent rawComponent : rawComponents) {
             if (rawComponent == null) continue;
@@ -418,6 +464,7 @@ public final class ViewerDrawService {
                     "unsupported component type: " + type
                 );
             }
+            componentTypes.put(id, type);
 
             requireFinite(rawComponent.x(), id + ".x");
             requireFinite(rawComponent.y(), id + ".y");
@@ -443,6 +490,7 @@ public final class ViewerDrawService {
                     || "FUNNEL".equals(type) || "SPLITTER".equals(type)
                     || "HINGE".equals(type) || "GEAR".equals(type)
                     || "PADDLE".equals(type) || "LAUNCHER".equals(type)
+                    || "ELEVATOR".equals(type) || "OUTPUT".equals(type)
                 )
                 && (
                     rawComponent.width() < 8
@@ -560,6 +608,121 @@ public final class ViewerDrawService {
                     );
                 }
             }
+            if ("GEAR".equals(type)) {
+                String linkedComponentId = stringProperty(
+                    properties,
+                    "linkedComponentId",
+                    ""
+                ).trim();
+                double ratio = numberProperty(
+                    properties,
+                    "gearRatio",
+                    -1
+                );
+                if (id.equals(linkedComponentId)) {
+                    throw new IllegalArgumentException(
+                        id + " cannot link to itself"
+                    );
+                }
+                if (Math.abs(ratio) < 0.01 || Math.abs(ratio) > 20) {
+                    throw new IllegalArgumentException(
+                        id + " gearRatio absolute value must be within 0.01..20"
+                    );
+                }
+            }
+            if ("ELEVATOR".equals(type)) {
+                double axisAngle = numberProperty(
+                    properties,
+                    "axisAngle",
+                    -90
+                );
+                double travelMin = numberProperty(
+                    properties,
+                    "travelMin",
+                    -120
+                );
+                double travelMax = numberProperty(
+                    properties,
+                    "travelMax",
+                    120
+                );
+                double motorSpeed = numberProperty(
+                    properties,
+                    "motorSpeed",
+                    90
+                );
+                double motorForce = numberProperty(
+                    properties,
+                    "motorForce",
+                    45
+                );
+                double startDirection = numberProperty(
+                    properties,
+                    "startDirection",
+                    1
+                );
+                if (axisAngle < -360 || axisAngle > 360) {
+                    throw new IllegalArgumentException(
+                        id + " axisAngle must be within -360..360"
+                    );
+                }
+                if (
+                    travelMin < -1200 || travelMax > 1200
+                    || travelMin >= travelMax
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " elevator travel range is invalid"
+                    );
+                }
+                if (motorSpeed < 1 || motorSpeed > 600) {
+                    throw new IllegalArgumentException(
+                        id + " motorSpeed must be within 1..600"
+                    );
+                }
+                if (motorForce < 0 || motorForce > 500) {
+                    throw new IllegalArgumentException(
+                        id + " motorForce must be within 0..500"
+                    );
+                }
+                if (startDirection != 1 && startDirection != -1) {
+                    throw new IllegalArgumentException(
+                        id + " startDirection must be -1 or 1"
+                    );
+                }
+            }
+            if ("OUTPUT".equals(type)) {
+                String outputKey = stringProperty(
+                    properties,
+                    "outputKey",
+                    ""
+                ).trim();
+                int outputRank = (int) numberProperty(
+                    properties,
+                    "outputRank",
+                    0
+                );
+                if (outputKey.isBlank() || outputKey.length() > 32) {
+                    throw new IllegalArgumentException(
+                        id + " outputKey must be 1..32 characters"
+                    );
+                }
+                if (!outputKeys.add(outputKey)) {
+                    throw new IllegalArgumentException(
+                        "outputKey must be unique"
+                    );
+                }
+                if (outputRank < 1 || outputRank > 64) {
+                    throw new IllegalArgumentException(
+                        id + " outputRank must be within 1..64"
+                    );
+                }
+                if (!outputRanks.add(outputRank)) {
+                    throw new IllegalArgumentException(
+                        "outputRank must be unique"
+                    );
+                }
+                outputCount += 1;
+            }
 
             if ("SPAWN".equals(type)) spawnCount += 1;
             if ("FINISH".equals(type)) finishCount += 1;
@@ -581,15 +744,63 @@ public final class ViewerDrawService {
             );
         }
 
+        for (MachineComponent component : normalizedComponents) {
+            if (!"GEAR".equals(component.type())) continue;
+            String linkedComponentId = stringProperty(
+                component.properties(),
+                "linkedComponentId",
+                ""
+            ).trim();
+            if (linkedComponentId.isBlank()) continue;
+
+            String targetType = componentTypes.get(linkedComponentId);
+            if (targetType == null) {
+                throw new IllegalArgumentException(
+                    component.id() + " linkedComponentId target does not exist"
+                );
+            }
+            if (
+                !java.util.Set.of(
+                    "GEAR", "HINGE", "PADDLE", "ELEVATOR"
+                ).contains(targetType)
+            ) {
+                throw new IllegalArgumentException(
+                    component.id() + " gear link requires a joint component"
+                );
+            }
+        }
+
         if (spawnCount < 1) {
             throw new IllegalArgumentException(
                 "machine map requires at least one SPAWN"
             );
         }
-        if (finishCount < 1) {
+        if ("RACE_FINISH".equals(drawRuleType) && finishCount < 1) {
             throw new IllegalArgumentException(
-                "machine map requires at least one FINISH"
+                "RACE_FINISH requires at least one FINISH"
             );
+        }
+        if ("ORDERED_OUTPUT".equals(drawRuleType)) {
+            int winners = drawRuleWinnerCount == 0
+                ? outputCount
+                : drawRuleWinnerCount;
+            if (outputCount < 1) {
+                throw new IllegalArgumentException(
+                    "ORDERED_OUTPUT requires at least one OUTPUT"
+                );
+            }
+            if (winners < 1 || winners > outputCount) {
+                throw new IllegalArgumentException(
+                    "ORDERED_OUTPUT winnerCount exceeds OUTPUT count"
+                );
+            }
+            for (int rank = 1; rank <= winners; rank += 1) {
+                if (!outputRanks.contains(rank)) {
+                    throw new IllegalArgumentException(
+                        "ORDERED_OUTPUT requires contiguous outputRank values"
+                    );
+                }
+            }
         }
 
         return new MachineMapDefinition(
@@ -601,8 +812,21 @@ public final class ViewerDrawService {
                 world.gravityX(),
                 world.gravityY()
             ),
+            new MachineDrawRule(
+                drawRuleType,
+                drawRuleWinnerCount
+            ),
             List.copyOf(normalizedComponents)
         );
+    }
+
+    private static String stringProperty(
+        Map<String, Object> properties,
+        String key,
+        String fallback
+    ) {
+        Object value = properties.get(key);
+        return value == null ? fallback : String.valueOf(value);
     }
 
     private static double numberProperty(

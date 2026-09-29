@@ -799,8 +799,10 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 - Gear Rotor
 - Paddle
 - Launcher
+- Elevator
 - Spawn
 - Finish
+- Output
 - Canvas 배치/선택/드래그
 - Grid / Snap
 - Inspector 기반 위치/회전/크기/반발/마찰/Boost 수정
@@ -823,6 +825,9 @@ MachineMapDefinition
 ├─ world
 │  ├─ width / height
 │  └─ gravityX / gravityY
+├─ drawRule
+│  ├─ type
+│  └─ winnerCount
 └─ components[]
    ├─ id
    ├─ type
@@ -871,6 +876,8 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - Hinge / Pivot preview collision
 - Gear / Paddle motor preview collision
 - Launcher one-shot contact impulse preview
+- Elevator 왕복 경로 근사 Preview
+- Ordered Output sensor / output rank Preview
 - marble ↔ marble collision
 - restitution
 - friction
@@ -1487,20 +1494,54 @@ V2 구현 완료:
 - 실제 Box2D snapshot의 runtimeRotation을 Canvas/Minimap 렌더링에 반영
 - Browser/Server 양쪽에서 V2 component property 범위 검증
 
+V3 구현 완료:
+
+- `GEAR` linked joint
+  - `linkedComponentId`
+  - `gearRatio`
+  - 실제 `b2GearJoint` 생성
+  - Gear/Hinge/Paddle/Elevator joint와 연결 가능
+- `ELEVATOR`
+  - 실제 `b2PrismaticJoint`
+  - axisAngle
+  - travelMin / travelMax
+  - motorSpeed / motorForce
+  - limit 도달 시 자동 왕복
+- Collision Web Audio V1
+  - Box2D step의 Marble 속도 변화량으로 유효 충돌 이벤트 생성
+  - Bumper / Launcher / Finish / Output 전용 이벤트
+  - minimum strength threshold
+  - Marble collision cooldown
+  - step당 event 상한
+  - global 12 voice limit
+  - DynamicsCompressor
+  - Physics → Audio 단방향
+- Machine Output / Draw Rule V1
+  - `RACE_FINISH`
+  - `ORDERED_OUTPUT`
+  - `OUTPUT` component의 outputKey / outputRank
+  - outputRank 순서로 winnerOrder 확정
+  - Map Maker에서 draw rule과 winnerCount 편집
+  - Browser/Server 공통 validation
+- 실제 Browser Authority snapshot에 joint body 위치/회전, winnerOrder, outputClaims, audioEvents 포함
+
 중요:
 
 - V1 `Gate/Pendulum/Seesaw`의 time-driven kinematic motion은 그대로 유지한다.
-- V2 `HINGE/GEAR/PADDLE`은 `b2RevoluteJoint` 기반 dynamic body다.
-- Map Maker 내장 Preview Engine은 V2 장치의 경로/충돌 확인용 근사 Preview이고, 실제 추첨 결과의 권위는 `Box2dWasmPhysicsAdapter`다.
-- 현재 `GEAR`는 독립 motor rotor다. 두 Gear를 맞물려 강제 coupling하는 Gear Joint/constraint는 아직 구현하지 않는다.
+- V2/V3의 `HINGE/GEAR/PADDLE/ELEVATOR`는 실제 Box2D joint 기반이다.
+- Map Maker Preview의 Hinge/Gear/Elevator motion은 제작 확인용 근사치이며 추첨 결과 권위는 `Box2dWasmPhysicsAdapter`다.
+- Collision Web Audio V1은 oscillator 기반 로컬 합성음이다. material/instrument sample profile은 아직 결과 물리와 분리된 후속 레이어다.
+- `ORDERED_OUTPUT`은 outputRank 1..winnerCount가 연속이어야 하며 각 Output은 최초 도착 Marble 1개만 claim한다.
 
 잔여 확장:
 
-- Gear coupling / linked joint
-- Elevator / Linear actuator
-- Sound / Web Audio
-- Machine draw rule
-- Slot / Elimination / Cascade / Multi-output
+- Gear chain 편집 UX / coupling visualization
+- Material Sound Profile / Instrument Profile
+- Slot Collection
+- Elimination
+- Cascade
+- Random Output Bucket
+- Multi-output 고급 draw rule
 
 ### V9 — Overlay / Audit / Qualification
 
@@ -1560,7 +1601,8 @@ Map Format
 → Finish Slow Motion / Podium [IMPLEMENTED]
 → Goldberg Components V1: Gate / Rotator / Pendulum / Seesaw / Funnel / Splitter [IMPLEMENTED]
 → Reactive Goldberg V2: Hinge / Gear Rotor / Paddle / Launcher [IMPLEMENTED]
-→ Gear Coupling / Elevator / Sound / Advanced Machine Components
+→ Machine V3: Gear Coupling / Elevator / Collision Web Audio / Ordered Output [IMPLEMENTED]
+→ Material Audio / Slot / Elimination / Cascade / Advanced Draw Rules
 ~~~
 
 고정 Track 코드를 먼저 만들고 나중에 Editor에 맞추는 방식은 사용하지 않는다.

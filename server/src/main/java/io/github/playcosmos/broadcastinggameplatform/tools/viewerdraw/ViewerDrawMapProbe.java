@@ -84,6 +84,76 @@ public final class ViewerDrawMapProbe {
                     "jointFriction", 1.2
                 )
             );
+            var elevator = new ViewerDrawService.MachineComponent(
+                "elevator-1",
+                "ELEVATOR",
+                760,
+                430,
+                0,
+                180,
+                20,
+                0,
+                Map.of(
+                    "restitution", 0.34,
+                    "friction", 0.08,
+                    "axisAngle", -90,
+                    "travelMin", -120,
+                    "travelMax", 120,
+                    "motorSpeed", 90,
+                    "motorForce", 45,
+                    "startDirection", 1
+                )
+            );
+            var gearB = new ViewerDrawService.MachineComponent(
+                "gear-b",
+                "GEAR",
+                520,
+                430,
+                0,
+                170,
+                18,
+                0,
+                Map.of(
+                    "restitution", 0.4,
+                    "friction", 0.06,
+                    "motorSpeed", 120,
+                    "motorTorque", 35,
+                    "linkedComponentId", "",
+                    "gearRatio", -1
+                )
+            );
+            var gearA = new ViewerDrawService.MachineComponent(
+                "gear-a",
+                "GEAR",
+                360,
+                430,
+                0,
+                170,
+                18,
+                0,
+                Map.of(
+                    "restitution", 0.4,
+                    "friction", 0.06,
+                    "motorSpeed", 120,
+                    "motorTorque", 35,
+                    "linkedComponentId", "gear-b",
+                    "gearRatio", -1
+                )
+            );
+            var output = new ViewerDrawService.MachineComponent(
+                "output-1",
+                "OUTPUT",
+                640,
+                660,
+                0,
+                300,
+                60,
+                0,
+                Map.of(
+                    "outputKey", "WIN",
+                    "outputRank", 1
+                )
+            );
             var finish = new ViewerDrawService.MachineComponent(
                 "finish-1",
                 "FINISH",
@@ -133,6 +203,10 @@ public final class ViewerDrawMapProbe {
                     "viewer-draw-machine-map/v0",
                     "Probe Machine Updated",
                     world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "ORDERED_OUTPUT",
+                        1
+                    ),
                     List.of(
                         spawn,
                         new ViewerDrawService.MachineComponent(
@@ -151,7 +225,10 @@ public final class ViewerDrawMapProbe {
                         ),
                         gate,
                         hinge,
-                        finish
+                        gearA,
+                        gearB,
+                        elevator,
+                        output
                     )
                 );
 
@@ -168,6 +245,12 @@ public final class ViewerDrawMapProbe {
                     updated.definitionHash()
                 ),
                 "physics map change must change hash"
+            );
+            require(
+                "ORDERED_OUTPUT".equals(
+                    updated.definition().drawRule().type()
+                ),
+                "updated map must persist draw rule"
             );
 
             var revision1 = service.findMachineMapRevision(
