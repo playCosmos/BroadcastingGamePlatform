@@ -628,7 +628,10 @@
       jointDef.set_motorSpeed(speed * direction);
       jointDef.set_maxMotorForce(force);
 
-      const joint = this.world.CreateJoint(jointDef);
+      const joint = B.castObject(
+        this.world.CreateJoint(jointDef),
+        B.b2PrismaticJoint
+      );
       const item = {
         component,
         body,
