@@ -572,11 +572,14 @@
       if(rule.type==="LAST_SURVIVOR"){
         const zones=this.definition.components.filter(c=>c.type==="ELIMINATION");
         const winners=rule.winnerCount||1;
+        let remaining=active.length;
         for(const m of active){
+          if(remaining<=winners) break;
           if(!zones.some(zone=>this.pointInRect(m.x,m.y,zone))) continue;
           m.eliminated=true;
           m.vx=0;m.vy=0;
           this.eliminationOrder.push(m.id);
+          remaining--;
         }
         const survivors=this.marbles.filter(m=>!m.finished&&!m.eliminated);
         if(survivors.length>0&&survivors.length<=winners&&!this.finishOrder.length){
