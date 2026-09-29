@@ -68,13 +68,15 @@ const goldbergTypes = [
   "PADDLE",
   "LAUNCHER",
   "ELEVATOR",
-  "OUTPUT"
+  "OUTPUT",
+  "SLOT",
+  "ELIMINATION"
 ];
 
 for (const [index, type] of goldbergTypes.entries()) {
   const component = Engine.componentDefaults(
     type,
-    70 + index * 65,
+    60 + index * 50,
     300
   );
   const candidate = structuredClone(definition);
@@ -191,6 +193,187 @@ requireCondition(
   outputState.finishedCount === 1
     && outputState.winnerOrder.length === 1,
   "ordered output preview must claim ranked output"
+);
+
+function runSensorPreview(sensorDefinition, count, seed, target) {
+  const preview = new Engine.PreviewEngine(
+    sensorDefinition,
+    { seed }
+  );
+  let state = preview.reset(count, seed);
+  for (
+    let step = 0;
+    step < 3000 && state.finishedCount < target;
+    step += 1
+  ) {
+    preview.step(1 / 120);
+    state = preview.snapshot();
+  }
+  return state;
+}
+
+const slotDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Slot Collection Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  drawRule: { type: "SLOT_COLLECTION", winnerCount: 2 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 400, 60),
+      properties: { marbleRadius: 10 }
+    },
+    {
+      ...Engine.componentDefaults("SLOT", 400, 535),
+      width: 460,
+      height: 100,
+      properties: {
+        slotKey: "A",
+        slotCapacity: 2,
+        soundMaterial: "wood",
+        instrument: "xylophone",
+        audioNote: 64,
+        audioGain: 1.2,
+        audioPan: -0.2
+      }
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(slotDefinition).length === 0,
+  "slot collection map must validate"
+);
+const slotState = runSensorPreview(
+  slotDefinition,
+  3,
+  33,
+  2
+);
+requireCondition(
+  slotState.winnerOrder.length === 2
+    && slotState.slotClaims[0].ids.length === 2,
+  "slot collection preview must capture two winners"
+);
+
+const eliminationDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Last Survivor Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  drawRule: { type: "LAST_SURVIVOR", winnerCount: 1 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 400, 60),
+      properties: { marbleRadius: 10 }
+    },
+    {
+      ...Engine.componentDefaults("ELIMINATION", 400, 520),
+      width: 600,
+      height: 130,
+      properties: { eliminationKey: "PIT" }
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(eliminationDefinition).length === 0,
+  "last survivor map must validate"
+);
+const eliminationState = runSensorPreview(
+  eliminationDefinition,
+  4,
+  41,
+  1
+);
+requireCondition(
+  eliminationState.winnerOrder.length === 1
+    && eliminationState.eliminationOrder.length === 3,
+  "last survivor preview must preserve one survivor"
+);
+
+const cascadeDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Cascade Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  drawRule: { type: "CASCADE_SELECTION", winnerCount: 2 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 400, 60),
+      properties: { marbleRadius: 10 }
+    },
+    {
+      ...Engine.componentDefaults("OUTPUT", 400, 535),
+      width: 460,
+      height: 100,
+      properties: {
+        outputKey: "CASCADE",
+        outputRank: 1,
+        outputCapacity: 2,
+        outputWeight: 1
+      }
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(cascadeDefinition).length === 0,
+  "cascade map must validate"
+);
+const cascadeState = runSensorPreview(
+  cascadeDefinition,
+  3,
+  51,
+  2
+);
+requireCondition(
+  cascadeState.winnerOrder.length === 2,
+  "cascade preview must select winners by arrival order"
+);
+
+const randomDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Random Bucket Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  drawRule: { type: "RANDOM_OUTPUT_BUCKET", winnerCount: 1 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 400, 60),
+      properties: { marbleRadius: 10 }
+    },
+    {
+      ...Engine.componentDefaults("OUTPUT", 400, 535),
+      width: 460,
+      height: 100,
+      properties: {
+        outputKey: "A",
+        outputRank: 1,
+        outputCapacity: 1,
+        outputWeight: 1
+      }
+    },
+    {
+      ...Engine.componentDefaults("OUTPUT", 400, 535),
+      width: 460,
+      height: 100,
+      properties: {
+        outputKey: "B",
+        outputRank: 1,
+        outputCapacity: 1,
+        outputWeight: 3
+      }
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(randomDefinition).length === 0,
+  "random bucket map must validate"
+);
+const randomState = runSensorPreview(
+  randomDefinition,
+  3,
+  61,
+  1
+);
+requireCondition(
+  ["A", "B"].includes(randomState.selectedOutputKey)
+    && randomState.winnerOrder.length === 1,
+  "random bucket preview must seed-select one output and one winner"
 );
 
 const invalid = structuredClone(definition);
