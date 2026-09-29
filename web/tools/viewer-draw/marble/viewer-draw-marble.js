@@ -1487,7 +1487,11 @@
 
   $("entries").addEventListener("input", () => {
     updateEntryCount();
-    if (!running) resetDraw();
+    if (!running) {
+      clearAudit();
+      $("drawState").textContent = "READY · INPUT CHANGED";
+      $("winnerBanner").hidden = true;
+    }
   });
   $("winnerCount").addEventListener("change", renderRanks);
   $("seed").addEventListener("change", () => {
