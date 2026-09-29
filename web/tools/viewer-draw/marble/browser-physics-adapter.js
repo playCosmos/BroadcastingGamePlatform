@@ -66,6 +66,10 @@
     snapshot() {
       throw new Error("snapshot() must be implemented");
     }
+
+    shakeMarble(_id) {
+      throw new Error("shakeMarble() must be implemented");
+    }
   }
 
   class BuiltinBrowserPhysicsAdapter extends BrowserPhysicsAdapter {
@@ -124,6 +128,13 @@
         this.entries
       );
     }
+
+    shakeMarble(id) {
+      if (!this.engine) {
+        throw new Error("map must be loaded first");
+      }
+      return this.engine.shakeMarble(id);
+    }
   }
 
   class Box2dWasmPhysicsAdapter extends BrowserPhysicsAdapter {
@@ -144,6 +155,7 @@
       this.accumulator = 0;
       this.time = 0;
       this.seed = 1;
+      this.random = mulberry32(1);
     }
 
     engineId() {
@@ -335,6 +347,7 @@
       this.entries = Array.isArray(entries) ? entries.slice() : [];
       this.seed = Math.trunc(Number(seed) || 1);
       const rng = mulberry32(this.seed);
+      this.random = rng;
       const spawns = this.definition.components.filter(
         (component) => component.type === "SPAWN"
       );
@@ -494,6 +507,27 @@
       const localY = -dx * sin + dy * cos;
       return Math.abs(localX) <= component.width / 2
         && Math.abs(localY) <= component.height / 2;
+    }
+
+    shakeMarble(id) {
+      if (!this.world) {
+        throw new Error("map must be loaded first");
+      }
+      const marble = this.marbles.find(
+        (candidate) => candidate.id === id
+      );
+      if (!marble || marble.finished) return false;
+
+      const angle = this.random() * Math.PI * 2;
+      const magnitude = 0.12 + this.random() * 0.12;
+      marble.body.ApplyLinearImpulseToCenter(
+        new this.Box2D.b2Vec2(
+          Math.cos(angle) * magnitude,
+          Math.sin(angle) * magnitude
+        ),
+        true
+      );
+      return true;
     }
 
     snapshot() {
