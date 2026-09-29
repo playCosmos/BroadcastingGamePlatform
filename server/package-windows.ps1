@@ -86,7 +86,7 @@ Broadcasting Game Platform Server
 - Viewer Draw Random / Number
 - Viewer Draw Marble Map Maker V0
 - Viewer Draw Physics Preview Engine V0
-- Viewer Draw Browser Marble Physics V0
+- Viewer Draw Browser Box2D-WASM Marble Draw V0
 
 플랫폼 역할
 -----------
