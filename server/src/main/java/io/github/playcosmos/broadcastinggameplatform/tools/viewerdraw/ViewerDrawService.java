@@ -108,6 +108,15 @@ public final class ViewerDrawService {
         MachineMapDefinition definition
     ) {}
 
+    public record MachineMapRevision(
+        String mapId,
+        int revision,
+        String schemaVersion,
+        String definitionHash,
+        String createdAt,
+        MachineMapDefinition definition
+    ) {}
+
     public record ProductionSimulation(
         String mapId,
         int mapRevision,
@@ -151,6 +160,8 @@ public final class ViewerDrawService {
                     }
                 }
 
+                int nextRevision = currentRevision + 1;
+
                 if (currentRevision == 0) {
                     try (var statement = connection.prepareStatement("""
                         INSERT INTO viewer_draw_machine_map(
@@ -192,6 +203,22 @@ public final class ViewerDrawService {
                         }
                     }
                 }
+
+                try (var statement = connection.prepareStatement("""
+                    INSERT INTO viewer_draw_machine_map_revision(
+                      map_id, revision, schema_version,
+                      definition_json, definition_hash, created_at
+                    ) VALUES (?, ?, ?, ?, ?, ?)
+                    """)) {
+                    statement.setString(1, id);
+                    statement.setInt(2, nextRevision);
+                    statement.setString(3, normalized.schemaVersion());
+                    statement.setString(4, json);
+                    statement.setString(5, hash);
+                    statement.setString(6, now);
+                    statement.executeUpdate();
+                }
+
                 connection.commit();
             } catch (Exception error) {
                 connection.rollback();
@@ -260,6 +287,81 @@ public final class ViewerDrawService {
         }
     }
 
+    public MachineMapRevision findMachineMapRevision(
+        String mapId,
+        int revision
+    ) throws SQLException {
+        if (revision < 1) {
+            throw new IllegalArgumentException(
+                "revision must be positive"
+            );
+        }
+
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT schema_version, definition_json,
+                        definition_hash, created_at
+                 FROM viewer_draw_machine_map_revision
+                 WHERE map_id = ? AND revision = ?
+                 """)) {
+            statement.setString(1, mapId);
+            statement.setInt(2, revision);
+            try (var rows = statement.executeQuery()) {
+                if (!rows.next()) {
+                    throw new NoSuchElementException(
+                        "viewer draw machine map revision not found"
+                    );
+                }
+
+                return new MachineMapRevision(
+                    mapId,
+                    revision,
+                    rows.getString("schema_version"),
+                    rows.getString("definition_hash"),
+                    rows.getString("created_at"),
+                    GSON.fromJson(
+                        rows.getString("definition_json"),
+                        MachineMapDefinition.class
+                    )
+                );
+            }
+        }
+    }
+
+    public ProductionSimulation simulateMachineMapRevision(
+        String mapId,
+        int revision,
+        long seed,
+        int marbleCount,
+        double timeoutSeconds
+    ) throws SQLException {
+        MachineMapRevision snapshot = findMachineMapRevision(
+            mapId,
+            revision
+        );
+        MachineMapDefinition normalized =
+            normalizeMachineMap(snapshot.definition());
+
+        var result = productionPhysics.simulate(
+            normalized,
+            seed,
+            marbleCount,
+            timeoutSeconds
+        );
+
+        return new ProductionSimulation(
+            snapshot.mapId(),
+            snapshot.revision(),
+            snapshot.definitionHash(),
+            result.engineId(),
+            result.engineVersion(),
+            seed,
+            marbleCount,
+            timeoutSeconds,
+            result
+        );
+    }
+
     public ProductionSimulation simulateMachineMap(
         String mapId,
         long seed,
@@ -273,25 +375,12 @@ public final class ViewerDrawService {
             );
         }
 
-        MachineMapDefinition normalized =
-            normalizeMachineMap(map.definition());
-        var result = productionPhysics.simulate(
-            normalized,
+        return simulateMachineMapRevision(
+            map.mapId(),
+            map.revision(),
             seed,
             marbleCount,
             timeoutSeconds
-        );
-
-        return new ProductionSimulation(
-            map.mapId(),
-            map.revision(),
-            map.definitionHash(),
-            result.engineId(),
-            result.engineVersion(),
-            seed,
-            marbleCount,
-            timeoutSeconds,
-            result
         );
     }
 
