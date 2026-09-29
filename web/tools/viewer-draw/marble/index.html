@@ -36,35 +36,22 @@
       </section>
 
       <section>
-        <p class="panel-title">ENTRIES</p>
-        <textarea id="entries" rows="14" placeholder="참가자 이름을 한 줄에 한 명씩 입력">Alice
-Bob
-Charlie
-Delta
-Echo
-Foxtrot
-Golf
-Hotel</textarea>
-        <small id="entryCount">8 entries</small>
+        <p class="panel-title">ENTRIES / MARBLE COUNT</p>
+        <textarea id="entries" rows="14" placeholder="항목명 개수&#10;예: 1번 50개&#10;예: 2번 30개">1번 50개
+2번 30개</textarea>
+        <small id="entryCount">2 items · 80 marbles</small>
+        <small>한 줄에 항목명과 Marble 수를 입력합니다. 개수를 생략하면 1개로 처리합니다.</small>
       </section>
 
       <section class="two-col">
         <label>
           <span>Winner Count</span>
-          <input id="winnerCount" type="number" min="1" max="64" value="1">
+          <input id="winnerCount" type="number" min="1" value="1">
         </label>
         <label>
           <span>Seed</span>
           <input id="seed" type="number" value="1">
         </label>
-      </section>
-
-      <section>
-        <label class="check-row">
-          <input id="audioEnabled" type="checkbox" checked>
-          <span>Collision Web Audio</span>
-        </label>
-        <small>충돌/범퍼/런처/골인 이벤트를 로컬 Web Audio로 재생합니다.</small>
       </section>
 
       <section class="button-stack">
@@ -103,6 +90,7 @@ Hotel</textarea>
           <span id="qualificationBadge" class="stage-tool">QUALIFY -</span>
           <span id="timeoutBadge" class="stage-tool" hidden>TIMEOUT</span>
           <span id="slowMotionBadge" class="slow-motion-badge" hidden>SLOW 0.35×</span>
+          <button id="muteAudio" type="button" class="stage-tool" aria-pressed="false">🔊 사운드</button>
           <button id="cameraAuto" type="button" class="stage-tool active">CAM AUTO</button>
           <button id="fastForward" type="button" class="stage-tool">⏩ HOLD</button>
           <strong id="elapsed">0.0s</strong>
@@ -136,7 +124,7 @@ Hotel</textarea>
 <script src="/admin/assets/viewer-draw-map-engine.js?v=20260929-3"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
 <script src="/tools/viewer-draw/marble/browser-physics-adapter.js?v=20260929-1"></script>
-<script src="/tools/viewer-draw/marble/viewer-draw-marble.js?v=20260929-3"></script>
+<script src="/tools/viewer-draw/marble/viewer-draw-marble.js?v=20260929-4"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-audit-sync.js"></script>
 </body>
 </html>
