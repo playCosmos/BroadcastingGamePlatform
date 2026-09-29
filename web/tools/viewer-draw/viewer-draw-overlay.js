@@ -1,10 +1,12 @@
 (() => {
   const params = new URLSearchParams(location.search);
   const drawCode = String(params.get("drawCode") || "").trim().toUpperCase();
+  const auditCode = String(params.get("auditCode") || "").trim().toUpperCase();
   const waiting = document.getElementById("waiting");
   const result = document.getElementById("result");
   const title = document.getElementById("title");
   const winners = document.getElementById("winners");
+  const auditMeta = document.getElementById("auditMeta");
   const canvas = document.getElementById("numberCanvas");
   const numbersRoot = document.getElementById("numbers");
   let renderedState = "";
@@ -82,7 +84,7 @@
   }
 
   function renderRandom(session){
-    canvas.hidden=true;numbersRoot.replaceChildren();winners.replaceChildren();
+    auditMeta.hidden=true;canvas.hidden=true;numbersRoot.replaceChildren();winners.replaceChildren();
     (session.result?.winners || []).forEach((winner,index)=>{
       const row=document.createElement("div");row.className="winner";
       const rank=document.createElement("span");rank.textContent=`#${index+1}`;
@@ -91,7 +93,91 @@
     });
   }
 
+  function addAuditBadge(text,kind=""){
+    const badge=document.createElement("span");
+    badge.className="audit-badge"+(kind?" "+kind:"");
+    badge.textContent=text;
+    auditMeta.appendChild(badge);
+  }
+
+  function renderMarbleAudit(stored){
+    const audit=stored?.audit || {};
+    const resultData=audit.result || {};
+    const qualification=audit.qualification || {};
+    const run=audit.run || {};
+    const map=audit.map || {};
+    const key="AUDIT"+stored.publicCode+JSON.stringify({
+      resultStatus:audit.resultStatus,
+      qualification:qualification.status,
+      winners:resultData.winners,
+      dnf:resultData.dnf,
+      nudges:run.stuckNudges
+    });
+    if(key===renderedState)return;
+    renderedState=key;
+
+    waiting.hidden=true;
+    result.hidden=false;
+    canvas.hidden=true;
+    numbersRoot.replaceChildren();
+    winners.replaceChildren();
+    auditMeta.replaceChildren();
+    auditMeta.hidden=false;
+    title.textContent=map.name || stored.mapName || "Marble Draw";
+
+    const resultStatus=String(audit.resultStatus || stored.resultStatus || "-");
+    const qStatus=String(
+      qualification.status || stored.qualificationStatus || "-"
+    );
+    addAuditBadge(
+      resultStatus,
+      resultStatus==="TIMEOUT" ? "warn" : "good"
+    );
+    addAuditBadge(
+      qStatus,
+      qStatus==="QUALIFIED" ? "good" : "bad"
+    );
+    const dnfCount=Array.isArray(resultData.dnf)
+      ? resultData.dnf.length
+      : 0;
+    addAuditBadge("DNF "+dnfCount, dnfCount ? "warn" : "");
+    addAuditBadge(
+      "NUDGE "+(Number(run.stuckNudges)||0),
+      Number(run.stuckNudges) ? "warn" : ""
+    );
+    addAuditBadge(
+      (Number(run.simulationSeconds)||0).toFixed(1)+"s"
+    );
+
+    const resultWinners=Array.isArray(resultData.winners)
+      ? resultData.winners
+      : [];
+    if(!resultWinners.length){
+      const row=document.createElement("div");
+      row.className="winner";
+      const left=document.createElement("span");
+      left.textContent=resultStatus==="TIMEOUT"?"TIMEOUT":"RESULT";
+      const right=document.createElement("strong");
+      right.textContent="NO WINNER";
+      row.append(left,right);
+      winners.appendChild(row);
+      return;
+    }
+
+    resultWinners.forEach((winner,index)=>{
+      const row=document.createElement("div");
+      row.className="winner";
+      const rank=document.createElement("span");
+      rank.textContent="#"+(winner.rank || index+1);
+      const name=document.createElement("strong");
+      name.textContent=winner.displayName || winner.entryId || "당첨";
+      row.append(rank,name);
+      winners.appendChild(row);
+    });
+  }
+
   function render(session){
+    auditMeta.hidden=true;
     const key=session.state+JSON.stringify(session.result);
     if(key===renderedState)return;
     renderedState=key;
@@ -105,12 +191,35 @@
   }
 
   async function poll(){
-    if(!drawCode){waiting.textContent="drawCode가 필요합니다.";return;}
+    if(!drawCode&&!auditCode){
+      waiting.textContent="drawCode 또는 auditCode가 필요합니다.";
+      return;
+    }
     try{
-      const response=await fetch("/api/v1/tools/viewer-draw/public/"+encodeURIComponent(drawCode),{cache:"no-store"});
-      if(!response.ok)throw new Error("HTTP "+response.status);
-      render(await response.json());
-    }catch(error){waiting.textContent="추첨 정보 대기 중...";}
+      if(auditCode){
+        const response=await fetch(
+          "/api/v1/tools/viewer-draw/public-audit/"
+            +encodeURIComponent(auditCode),
+          {cache:"no-store"}
+        );
+        if(!response.ok)throw new Error("HTTP "+response.status);
+        renderMarbleAudit(await response.json());
+      }else{
+        const response=await fetch(
+          "/api/v1/tools/viewer-draw/public/"
+            +encodeURIComponent(drawCode),
+          {cache:"no-store"}
+        );
+        if(!response.ok)throw new Error("HTTP "+response.status);
+        render(await response.json());
+      }
+    }catch(error){
+      waiting.hidden=false;
+      result.hidden=true;
+      waiting.textContent=auditCode
+        ? "Marble Audit 대기 중..."
+        : "추첨 정보 대기 중...";
+    }
     setTimeout(poll,1000);
   }
   poll();
