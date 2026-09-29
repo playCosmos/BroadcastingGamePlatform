@@ -290,6 +290,158 @@ public final class ViewerDrawMapProbe {
                 "recent maps must contain saved map"
             );
 
+            var slot = new ViewerDrawService.MachineComponent(
+                "slot-1",
+                "SLOT",
+                640,
+                660,
+                0,
+                420,
+                80,
+                0,
+                Map.of(
+                    "slotKey", "A",
+                    "slotCapacity", 2,
+                    "soundMaterial", "wood",
+                    "instrument", "xylophone",
+                    "audioNote", 64,
+                    "audioGain", 1.2,
+                    "audioPan", -0.2
+                )
+            );
+            var elimination =
+                new ViewerDrawService.MachineComponent(
+                    "elimination-1",
+                    "ELIMINATION",
+                    640,
+                    650,
+                    0,
+                    500,
+                    100,
+                    0,
+                    Map.of(
+                        "eliminationKey", "PIT",
+                        "soundMaterial", "stone",
+                        "instrument", "drum",
+                        "audioNote", 40
+                    )
+                );
+            var cascadeOutput =
+                new ViewerDrawService.MachineComponent(
+                    "cascade-output",
+                    "OUTPUT",
+                    640,
+                    660,
+                    0,
+                    420,
+                    80,
+                    0,
+                    Map.of(
+                        "outputKey", "CASCADE",
+                        "outputRank", 1,
+                        "outputCapacity", 2,
+                        "outputWeight", 1
+                    )
+                );
+
+            var slotDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Slot Probe",
+                    world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "SLOT_COLLECTION",
+                        2
+                    ),
+                    List.of(spawn, slot)
+                );
+            require(
+                service.validateMachineMap(slotDefinition).isEmpty(),
+                "slot collection map must pass server validation"
+            );
+
+            var survivorDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Survivor Probe",
+                    world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "LAST_SURVIVOR",
+                        1
+                    ),
+                    List.of(spawn, elimination)
+                );
+            require(
+                service.validateMachineMap(survivorDefinition).isEmpty(),
+                "last survivor map must pass server validation"
+            );
+
+            var cascadeDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Cascade Probe",
+                    world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "CASCADE_SELECTION",
+                        2
+                    ),
+                    List.of(spawn, cascadeOutput)
+                );
+            require(
+                service.validateMachineMap(cascadeDefinition).isEmpty(),
+                "cascade map must pass server validation"
+            );
+
+            var bucketA = new ViewerDrawService.MachineComponent(
+                "bucket-a",
+                "OUTPUT",
+                500,
+                660,
+                0,
+                220,
+                80,
+                0,
+                Map.of(
+                    "outputKey", "A",
+                    "outputRank", 1,
+                    "outputCapacity", 1,
+                    "outputWeight", 1
+                )
+            );
+            var bucketB = new ViewerDrawService.MachineComponent(
+                "bucket-b",
+                "OUTPUT",
+                780,
+                660,
+                0,
+                220,
+                80,
+                0,
+                Map.of(
+                    "outputKey", "B",
+                    "outputRank", 1,
+                    "outputCapacity", 1,
+                    "outputWeight", 3
+                )
+            );
+            var randomBucketDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Random Bucket Probe",
+                    world,
+                    new ViewerDrawService.MachineDrawRule(
+                        "RANDOM_OUTPUT_BUCKET",
+                        1
+                    ),
+                    List.of(spawn, bucketA, bucketB)
+                );
+            require(
+                service.validateMachineMap(
+                    randomBucketDefinition
+                ).isEmpty(),
+                "random bucket map must pass server validation"
+            );
+
             var invalid =
                 new ViewerDrawService.MachineMapDefinition(
                     "viewer-draw-machine-map/v0",
