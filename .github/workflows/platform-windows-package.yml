@@ -3,7 +3,7 @@ name: Broadcasting Game Platform Windows Package
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/viewer-draw-machine-v5]
+    branches: [main]
     paths:
       - "server/**"
       - "web/**"
