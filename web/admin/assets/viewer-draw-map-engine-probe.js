@@ -72,7 +72,7 @@ const goldbergTypes = [
 for (const [index, type] of goldbergTypes.entries()) {
   const component = Engine.componentDefaults(
     type,
-    80 + index * 100,
+    70 + index * 65,
     300
   );
   const candidate = structuredClone(definition);
