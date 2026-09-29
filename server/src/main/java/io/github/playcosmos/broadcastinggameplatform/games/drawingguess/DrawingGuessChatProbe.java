@@ -65,9 +65,7 @@ public final class DrawingGuessChatProbe {
                 streamerRoom.roomId(),
                 1
             );
-            Instant started = Instant.parse(
-                "2026-09-28T13:00:00Z"
-            );
+            Instant started = Instant.now();
             var roundStart = service.startRound(
                 streamerMatch.matchId(),
                 new DrawingGuessGameService.StartRoundCommand(
