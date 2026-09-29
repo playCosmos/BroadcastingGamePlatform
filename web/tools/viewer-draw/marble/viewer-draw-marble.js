@@ -303,7 +303,12 @@
         (item) => item.id === component.id
       );
       const renderComponent = runtimeComponent
-        ? { ...component, runtimeRotation: runtimeComponent.runtimeRotation }
+        ? {
+            ...component,
+            x: runtimeComponent.x,
+            y: runtimeComponent.y,
+            runtimeRotation: runtimeComponent.runtimeRotation
+          }
         : component;
       const shapes = Engine.componentShapes
         ? Engine.componentShapes(renderComponent, state?.time || 0)
@@ -373,7 +378,12 @@
         (item) => item.id === component.id
       );
       const renderComponent = runtimeComponent
-        ? { ...component, runtimeRotation: runtimeComponent.runtimeRotation }
+        ? {
+            ...component,
+            x: runtimeComponent.x,
+            y: runtimeComponent.y,
+            runtimeRotation: runtimeComponent.runtimeRotation
+          }
         : component;
       const shapes = Engine.componentShapes
         ? Engine.componentShapes(renderComponent, state?.time || 0)
