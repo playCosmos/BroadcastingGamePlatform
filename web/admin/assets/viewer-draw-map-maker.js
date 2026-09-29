@@ -513,7 +513,9 @@
     ctx.fillRect(0, 0, view.width, view.height);
 
     const worldTopLeft = toScreen(0, 0, view);
-    ctx.fillStyle = "#0a1117";
+    ctx.fillStyle = String(
+      definition.world?.visualBackground || "#0a1117"
+    );
     ctx.fillRect(
       worldTopLeft.x,
       worldTopLeft.y,
