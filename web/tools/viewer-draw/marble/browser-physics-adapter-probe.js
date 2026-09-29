@@ -89,7 +89,9 @@ goldbergDefinition.components.splice(
     "HINGE",
     "GEAR",
     "PADDLE",
-    "LAUNCHER"
+    "LAUNCHER",
+    "ELEVATOR",
+    "OUTPUT"
   ].map((type, index) =>
     Engine.componentDefaults(type, 70 + index * 65, 300)
   )
@@ -118,6 +120,14 @@ requireCondition(
 requireCondition(
   controllerSource.includes("renderPodium"),
   "actual Marble Draw must include result podium presentation"
+);
+requireCondition(
+  controllerSource.includes("AudioContext"),
+  "actual Marble Draw must include local collision Web Audio"
+);
+requireCondition(
+  controllerSource.includes("ORDERED_OUTPUT"),
+  "actual Marble Draw must honor map draw rules"
 );
 
 for (const forbidden of [
