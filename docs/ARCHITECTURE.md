@@ -27,7 +27,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Broadcast Tool**
-   - Viewer Draw: Random/Number 구현, Marble Physics 계획
+   - Viewer Draw: Random/Number + Marble Map Maker/Preview Physics V0 구현, Production Marble Physics 계획
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
    - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 UI/연출을 재사용한다.
    - Marble Physics Draw는 Goldberg Machine / Marble Machine 컨셉의 물리 추첨으로 확장한다.
@@ -49,6 +49,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 - `/admin/games/drawing-guess/room.html?roomId=...`: Drawing Guess 운영/Private Drawer View
 - `/games/drawing-guess/?roomId=XXXXXX`: Drawing Guess 고정 OBS Overlay
 - `/admin/tools/viewer-draw/`: Viewer Draw 운영
+- `/admin/tools/viewer-draw/map-maker/`: Marble Machine Map Maker + Physics Preview
 - `/tools/viewer-draw/?drawCode=XXXXXX`: Viewer Draw 공개 Overlay
 - `/admin/games/yacht/`: Yacht 룸 생성 (계획)
 - `/admin/games/yacht/room.html?roomId=...`: Yacht 룸 운영 (계획)
@@ -149,3 +150,20 @@ Machine Designer에서 다음을 설계할 수 있는 방향을 목표로 한다
 - Machine별 drawRule
 
 Sound/Visual 설정은 물리 결과와 분리하며, 실제 물리 구조 변경만 추첨 공정성 경계에 영향을 주도록 설계한다.
+
+
+## Viewer Draw Machine Map / Physics Boundary
+
+Marble Machine은 고정 Stage 코드가 아니라 데이터 기반 `MachineMapDefinition`을 실행한다.
+
+~~~text
+Map Maker
+   ↓
+viewer-draw-machine-map/v0
+   ├─ DB persistence / revision / hash
+   ├─ Preview Physics Engine
+   └─ future Production Physics Adapter
+~~~
+
+Preview Engine과 Production Draw Authority는 같은 MapDefinition 계약을 공유하지만 서로 같은 엔진이라고 가정하지 않는다.
+Production Adapter가 추가될 때 공식 맵에 대해 Preview/Production 경로의 geometry 해석 일치성을 별도 검증한다.
