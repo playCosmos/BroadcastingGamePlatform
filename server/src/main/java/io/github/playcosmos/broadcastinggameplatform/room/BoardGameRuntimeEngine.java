@@ -151,8 +151,8 @@ public final class BoardGameRuntimeEngine {
         String manualEventId = "manual-turn-" + UUID.randomUUID();
         var donation = new DonationEvent(
             provider,
-            "operator",
             normalizedSoopId,
+            "operator",
             displayName,
             balloonTrigger,
             "manual",
