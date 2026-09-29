@@ -425,7 +425,11 @@
     const index = definition.components.findIndex((c) => c.id === selectedId);
     if (index < 0) return;
     pushUndo();
-    const removedId = definition.components[index].id;
+    const removed = definition.components[index];
+    const removedId = removed.id;
+    const removedOutputKey = removed.type === "OUTPUT"
+      ? String(removed.properties?.outputKey || "")
+      : "";
     definition.components.splice(index, 1);
     for (const component of definition.components) {
       if (
@@ -433,6 +437,14 @@
         && component.properties?.linkedComponentId === removedId
       ) {
         component.properties.linkedComponentId = "";
+      }
+      if (
+        removedOutputKey
+        && component.type === "OUTPUT"
+        && component.properties?.conditionOutputKey === removedOutputKey
+      ) {
+        component.properties.conditionOutputKey = "";
+        component.properties.conditionType = "ALWAYS";
       }
     }
     selectedId = null;
@@ -463,6 +475,10 @@
     const rule = Engine.resolvedDrawRule(definition);
     $("drawRuleType").value = rule.type;
     $("drawRuleWinnerCount").value = rule.winnerCount;
+    const runPolicy = Engine.resolvedRunPolicy(definition);
+    $("runTimeoutSeconds").value = runPolicy.timeoutSeconds;
+    $("qualificationMinWinners").value = runPolicy.qualificationMinWinners;
+    $("qualificationMaxNudges").value = runPolicy.qualificationMaxNudges;
     $("mapIdLabel").textContent = mapId || "NEW";
     $("mapRevision").textContent = mapRevision ?? "-";
     $("mapHash").textContent = mapHash ? mapHash.slice(0, 16) + "…" : "-";
@@ -524,6 +540,27 @@
     $("propOutputRank").value = Math.trunc(num(c.properties?.outputRank, 1));
     $("propOutputCapacity").value = Math.trunc(num(c.properties?.outputCapacity, 1));
     $("propOutputWeight").value = num(c.properties?.outputWeight, 1);
+    $("propOutputPriority").value = Math.trunc(num(c.properties?.outputPriority, 0));
+    $("propConditionType").value = String(c.properties?.conditionType || "ALWAYS").toUpperCase();
+    const conditionSelect = $("propConditionOutputKey");
+    conditionSelect.replaceChildren();
+    const noCondition = document.createElement("option");
+    noCondition.value = "";
+    noCondition.textContent = "None";
+    conditionSelect.appendChild(noCondition);
+    if (c.type === "OUTPUT") {
+      for (const output of definition.components) {
+        if (output.type !== "OUTPUT" || output.id === c.id) continue;
+        const key = String(output.properties?.outputKey || "").trim();
+        if (!key) continue;
+        const option = document.createElement("option");
+        option.value = key;
+        option.textContent = key;
+        conditionSelect.appendChild(option);
+      }
+    }
+    conditionSelect.value = String(c.properties?.conditionOutputKey || "");
+    $("propConditionClaims").value = Math.trunc(num(c.properties?.conditionClaims, 1));
     $("propSlotKey").value = String(c.properties?.slotKey || "SLOT1");
     $("propSlotCapacity").value = Math.trunc(num(c.properties?.slotCapacity, 1));
     $("propEliminationKey").value = String(c.properties?.eliminationKey || "OUT");
@@ -663,6 +700,13 @@
       c.properties.outputRank = clamp(Math.trunc(num($("propOutputRank").value, 1)), 1, 64);
       c.properties.outputCapacity = clamp(Math.trunc(num($("propOutputCapacity").value, 1)), 1, 64);
       c.properties.outputWeight = clamp(num($("propOutputWeight").value, 1), .01, 100);
+      c.properties.outputPriority = clamp(Math.trunc(num($("propOutputPriority").value, 0)), -100, 100);
+      c.properties.conditionType = $("propConditionType").value;
+      c.properties.conditionOutputKey = $("propConditionOutputKey").value || "";
+      c.properties.conditionClaims = clamp(Math.trunc(num($("propConditionClaims").value, 1)), 1, 64);
+      if (!["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(c.properties.conditionType)) {
+        c.properties.conditionOutputKey = "";
+      }
     }
     if (c.type === "SLOT") {
       c.properties.slotKey = $("propSlotKey").value.trim() || "SLOT1";
@@ -699,7 +743,8 @@
       "SLOT_COLLECTION",
       "LAST_SURVIVOR",
       "CASCADE_SELECTION",
-      "RANDOM_OUTPUT_BUCKET"
+      "RANDOM_OUTPUT_BUCKET",
+      "CONDITIONAL_OUTPUT"
     ]);
     const selectedRule = $("drawRuleType").value;
     definition.drawRule = {
@@ -710,6 +755,30 @@
         Math.trunc(num($("drawRuleWinnerCount").value, 0)),
         0,
         64
+      )
+    };
+    syncMapControls();
+    validateClient(false);
+  }
+
+  function updateRunPolicy() {
+    if (previewRunning) return;
+    pushUndo();
+    definition.runPolicy = {
+      timeoutSeconds: clamp(
+        num($("runTimeoutSeconds").value, 0),
+        0,
+        1800
+      ),
+      qualificationMinWinners: clamp(
+        Math.trunc(num($("qualificationMinWinners").value, 0)),
+        0,
+        64
+      ),
+      qualificationMaxNudges: clamp(
+        Math.trunc(num($("qualificationMaxNudges").value, 0)),
+        0,
+        1000
       )
     };
     syncMapControls();
@@ -1050,6 +1119,7 @@
    "propLaunchPower","propAxisAngle","propTravelMin","propTravelMax",
    "propElevatorSpeed","propMotorForce","propStartDirection",
    "propOutputKey","propOutputRank","propOutputCapacity","propOutputWeight",
+   "propOutputPriority","propConditionType","propConditionOutputKey","propConditionClaims",
    "propSlotKey","propSlotCapacity","propEliminationKey",
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
    "propBoost","propMarbleRadius"]
@@ -1059,6 +1129,8 @@
     .forEach((id) => $(id).addEventListener("change", updateWorld));
   ["drawRuleType","drawRuleWinnerCount"]
     .forEach((id) => $(id).addEventListener("change", updateDrawRule));
+  ["runTimeoutSeconds","qualificationMinWinners","qualificationMaxNudges"]
+    .forEach((id) => $(id).addEventListener("change", updateRunPolicy));
 
   $("mapName").addEventListener("change", () => {
     if (previewRunning) return;
