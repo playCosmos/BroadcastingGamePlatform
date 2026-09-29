@@ -73,9 +73,14 @@ $Readme = @"
 Broadcasting Game Platform Server
 =================================
 
-현재 제공 게임
---------------
+현재 제공 게임 / 도구
+--------------------
 - 보드게임
+- Drawing Guess
+- Viewer Draw Random / Number
+- Viewer Draw Marble Map Maker V0
+- Viewer Draw Physics Preview Engine V0
+- Viewer Draw JBox2D Production Physics V0
 
 플랫폼 역할
 -----------
@@ -86,6 +91,8 @@ Broadcasting Game Platform Server
 - 플랫폼 API
 - SOOP 채팅/후원 Provider
 - 공용 Event Bus
+- Marble Machine Map 저장/리비전/hash
+- 서버 권위 JBox2D 물리 시뮬레이션
 - 추후 CHZZK Provider 확장
 
 접속 주소
