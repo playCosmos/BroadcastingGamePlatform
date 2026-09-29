@@ -576,19 +576,27 @@
         }
         if(mode==="AFTER_SENSOR_CLAIMS"){
           const tag=String(p.conditionSensorTag||"").trim();
-          return outputs
+          const external=(def.components||[]).some(sensor=>
+            sensor.type!=="OUTPUT"
+            && ["FINISH","SLOT","ELIMINATION"].includes(sensor.type)
+            && String(sensor.properties?.sensorTag||"").trim()===tag
+          );
+          if(external) return [];
+          const producers=outputs
             .filter(o=>String(o.properties?.sensorTag||"").trim()===tag)
             .map(o=>String(o.properties?.outputKey||""));
+          return producers.length===1 ? producers : [];
         }
         if(mode==="AFTER_BRANCH_STATE"){
           const key=String(p.conditionBranchKey||"").trim();
           const value=String(p.conditionBranchValue||"ON").trim();
-          return outputs
+          const producers=outputs
             .filter(o=>
               String(o.properties?.branchSetKey||"").trim()===key
               && String(o.properties?.branchSetValue||"ON").trim()===value
             )
             .map(o=>String(o.properties?.outputKey||""));
+          return producers.length===1 ? producers : [];
         }
         return [];
       };
