@@ -62,7 +62,11 @@ const goldbergTypes = [
   "PENDULUM",
   "SEESAW",
   "FUNNEL",
-  "SPLITTER"
+  "SPLITTER",
+  "HINGE",
+  "GEAR",
+  "PADDLE",
+  "LAUNCHER"
 ];
 
 for (const [index, type] of goldbergTypes.entries()) {
@@ -106,6 +110,19 @@ requireCondition(
     0
   ).length === 2,
   "splitter must expand to two collision rails"
+);
+requireCondition(
+  Engine.componentShapes(
+    Engine.componentDefaults("GEAR", 300, 300),
+    0
+  ).length === 2,
+  "gear rotor must expand to crossed collision bars"
+);
+const gear = Engine.componentDefaults("GEAR", 300, 300);
+requireCondition(
+  Engine.motionRotation(gear, 1)
+    !== Engine.motionRotation(gear, 0),
+  "gear preview rotation must advance with simulation time"
 );
 
 const invalid = structuredClone(definition);
