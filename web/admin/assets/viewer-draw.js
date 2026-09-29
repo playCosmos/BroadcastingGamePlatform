@@ -1,7 +1,10 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
-  let mode = "RANDOM";
+  const requestedMode = String(
+    new URLSearchParams(window.location.search).get("mode") || "RANDOM"
+  ).toUpperCase();
+  let mode = requestedMode === "NUMBER" ? "NUMBER" : "RANDOM";
   let activeSession = null;
   const numberView = new window.ViewerDrawNumberPresentation(
     $("numberCanvas"),
@@ -17,7 +20,25 @@
     $("numberSettings").hidden = mode !== "NUMBER";
     $("randomStage").hidden = mode !== "RANDOM";
     $("numberStage").hidden = mode !== "NUMBER";
-    $("stageTitle").textContent = mode === "RANDOM" ? "시청자 랜덤 추첨" : "번호 추첨";
+    $("stageTitle").textContent =
+      mode === "RANDOM" ? "시청자 뽑기" : "숫자 뽑기";
+    const url = new URL(window.location.href);
+    url.searchParams.set("mode", mode);
+    window.history.replaceState(null, "", url);
+    document.title = mode === "RANDOM"
+      ? "방송 게임 플랫폼 · 시청자 뽑기"
+      : "방송 게임 플랫폼 · 숫자 뽑기";
+    const pageTitle = $("drawPageTitle");
+    const pageLead = $("drawPageLead");
+    if (pageTitle) {
+      pageTitle.textContent =
+        mode === "RANDOM" ? "시청자 뽑기" : "숫자 뽑기";
+    }
+    if (pageLead) {
+      pageLead.textContent = mode === "RANDOM"
+        ? "참가자 목록에서 원하는 인원만큼 당첨자를 뽑습니다."
+        : "1~999 범위에서 최대 7개의 번호를 중복 없이 뽑습니다.";
+    }
     if (mode === "NUMBER") {
       numberView.clear(
         Math.max(1, Math.min(7, Number($("drawCount").value) || 7)),
@@ -212,7 +233,7 @@
     if (mode === "NUMBER") resetDraw();
   });
 
-  setMode("RANDOM");
+  setMode(mode);
   refreshHistory().catch((error) => {
     $("drawStatus").textContent = "기록 조회 실패: " + error.message;
   });
