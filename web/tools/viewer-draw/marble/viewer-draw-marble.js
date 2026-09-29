@@ -291,6 +291,12 @@
         slotClaims: structuredClone(
           auditState?.slotClaims || []
         ),
+        sensorClaims: structuredClone(
+          auditState?.sensorClaims || []
+        ),
+        branchStates: structuredClone(
+          auditState?.branchStates || []
+        ),
         selectedOutputKey:
           auditState?.selectedOutputKey || null
       }
