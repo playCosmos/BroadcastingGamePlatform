@@ -487,8 +487,13 @@ Map Maker의 DB 저장 기능은 **맵 제작 편의 기능**이다.
    - 우측 Hopper/Funnel 안에 Marble이 대기한다.
    - 좁은 입구에서 3~7개씩 랜덤 묶음으로 짧게 연속 분출한다.
    - 분출 간격은 UI에서 조정할 수 있다.
-   - Launcher는 대체로 위쪽을 향하되 각 Marble마다 발사 각도와 힘에 랜덤 편차를 준다.
-   - 따라서 진행 방향은 일치하지만 첫 궤적은 예측하기 어렵다.
+   - BURST 자체는 방향을 고정하지 않는다.
+   - 실제 발사 방향은 해당 맵의 Launcher `launchDirectionDegrees`가 결정한다.
+   - 기준은 화면 좌표계로 `0°=오른쪽`, `90°=아래`, `-90°=위`다.
+   - Launcher마다 `launchSpreadDegrees`와 `launchPowerVariance`를 설정할 수 있다.
+   - 지정 방향을 중심으로 각 Marble의 발사 각도와 힘에 랜덤 편차를 준다.
+   - 따라서 전체 진행 방향은 맵 제작자가 정하지만 개별 첫 궤적은 예측하기 어렵다.
+   - Retro Cadet 기본맵은 `launchDirectionDegrees=-90`으로 위쪽을 향한다.
 
 출력:
 
