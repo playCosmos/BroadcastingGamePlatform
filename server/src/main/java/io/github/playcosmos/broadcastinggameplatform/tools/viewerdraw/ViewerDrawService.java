@@ -80,11 +80,18 @@ public final class ViewerDrawService {
         int winnerCount
     ) {}
 
+    public record MachineRunPolicy(
+        double timeoutSeconds,
+        int qualificationMinWinners,
+        int qualificationMaxNudges
+    ) {}
+
     public record MachineMapDefinition(
         String schemaVersion,
         String name,
         MachineWorld world,
         MachineDrawRule drawRule,
+        MachineRunPolicy runPolicy,
         List<MachineComponent> components
     ) {
         public MachineMapDefinition(
@@ -98,6 +105,24 @@ public final class ViewerDrawService {
                 name,
                 world,
                 new MachineDrawRule("RACE_FINISH", 0),
+                new MachineRunPolicy(0, 0, 0),
+                components
+            );
+        }
+
+        public MachineMapDefinition(
+            String schemaVersion,
+            String name,
+            MachineWorld world,
+            MachineDrawRule drawRule,
+            List<MachineComponent> components
+        ) {
+            this(
+                schemaVersion,
+                name,
+                world,
+                drawRule,
+                new MachineRunPolicy(0, 0, 0),
                 components
             );
         }
@@ -415,7 +440,8 @@ public final class ViewerDrawService {
                 "SLOT_COLLECTION",
                 "LAST_SURVIVOR",
                 "CASCADE_SELECTION",
-                "RANDOM_OUTPUT_BUCKET"
+                "RANDOM_OUTPUT_BUCKET",
+                "CONDITIONAL_OUTPUT"
             ).contains(drawRuleType)
         ) {
             throw new IllegalArgumentException(
@@ -425,6 +451,39 @@ public final class ViewerDrawService {
         if (drawRuleWinnerCount < 0 || drawRuleWinnerCount > 64) {
             throw new IllegalArgumentException(
                 "drawRule winnerCount must be within 0..64"
+            );
+        }
+
+        MachineRunPolicy rawRunPolicy = raw.runPolicy();
+        double timeoutSeconds = rawRunPolicy == null
+            ? 0
+            : rawRunPolicy.timeoutSeconds();
+        int qualificationMinWinners = rawRunPolicy == null
+            ? 0
+            : rawRunPolicy.qualificationMinWinners();
+        int qualificationMaxNudges = rawRunPolicy == null
+            ? 0
+            : rawRunPolicy.qualificationMaxNudges();
+        requireFinite(timeoutSeconds, "runPolicy.timeoutSeconds");
+        if (timeoutSeconds < 0 || timeoutSeconds > 1800) {
+            throw new IllegalArgumentException(
+                "runPolicy timeoutSeconds must be within 0..1800"
+            );
+        }
+        if (
+            qualificationMinWinners < 0
+            || qualificationMinWinners > 64
+        ) {
+            throw new IllegalArgumentException(
+                "qualificationMinWinners must be within 0..64"
+            );
+        }
+        if (
+            qualificationMaxNudges < 0
+            || qualificationMaxNudges > 1000
+        ) {
+            throw new IllegalArgumentException(
+                "qualificationMaxNudges must be within 0..1000"
             );
         }
 
@@ -726,6 +785,21 @@ public final class ViewerDrawService {
                     "outputWeight",
                     1
                 );
+                int outputPriority = (int) numberProperty(
+                    properties,
+                    "outputPriority",
+                    0
+                );
+                String conditionType = stringProperty(
+                    properties,
+                    "conditionType",
+                    "ALWAYS"
+                ).trim().toUpperCase(Locale.ROOT);
+                int conditionClaims = (int) numberProperty(
+                    properties,
+                    "conditionClaims",
+                    1
+                );
                 if (outputKey.isBlank() || outputKey.length() > 32) {
                     throw new IllegalArgumentException(
                         id + " outputKey must be 1..32 characters"
@@ -758,6 +832,28 @@ public final class ViewerDrawService {
                 if (outputWeight <= 0 || outputWeight > 100) {
                     throw new IllegalArgumentException(
                         id + " outputWeight must be > 0 and <= 100"
+                    );
+                }
+                if (outputPriority < -100 || outputPriority > 100) {
+                    throw new IllegalArgumentException(
+                        id + " outputPriority must be within -100..100"
+                    );
+                }
+                if (
+                    !java.util.Set.of(
+                        "ALWAYS",
+                        "AFTER_ANY_CLAIM",
+                        "AFTER_OUTPUT_CLAIMS",
+                        "AFTER_OUTPUT_FULL"
+                    ).contains(conditionType)
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " conditionType is invalid"
+                    );
+                }
+                if (conditionClaims < 1 || conditionClaims > 64) {
+                    throw new IllegalArgumentException(
+                        id + " conditionClaims must be within 1..64"
                     );
                 }
                 outputCapacities.add(outputCapacity);
@@ -922,6 +1018,113 @@ public final class ViewerDrawService {
             }
         }
 
+        var outputsByKey =
+            new java.util.LinkedHashMap<String, MachineComponent>();
+        for (MachineComponent component : normalizedComponents) {
+            if (!"OUTPUT".equals(component.type())) continue;
+            String key = stringProperty(
+                component.properties(),
+                "outputKey",
+                ""
+            ).trim();
+            outputsByKey.put(key, component);
+        }
+
+        for (MachineComponent component : outputsByKey.values()) {
+            String mode = stringProperty(
+                component.properties(),
+                "conditionType",
+                "ALWAYS"
+            ).trim().toUpperCase(Locale.ROOT);
+            if (
+                !"AFTER_OUTPUT_CLAIMS".equals(mode)
+                && !"AFTER_OUTPUT_FULL".equals(mode)
+            ) {
+                continue;
+            }
+            String targetKey = stringProperty(
+                component.properties(),
+                "conditionOutputKey",
+                ""
+            ).trim();
+            String ownKey = stringProperty(
+                component.properties(),
+                "outputKey",
+                ""
+            ).trim();
+            if (
+                targetKey.isBlank()
+                || !outputsByKey.containsKey(targetKey)
+            ) {
+                throw new IllegalArgumentException(
+                    component.id()
+                        + " conditional output target does not exist"
+                );
+            }
+            if (ownKey.equals(targetKey)) {
+                throw new IllegalArgumentException(
+                    component.id()
+                        + " conditional output cannot reference itself"
+                );
+            }
+            if ("AFTER_OUTPUT_CLAIMS".equals(mode)) {
+                int threshold = (int) numberProperty(
+                    component.properties(),
+                    "conditionClaims",
+                    1
+                );
+                int capacity = (int) numberProperty(
+                    outputsByKey.get(targetKey).properties(),
+                    "outputCapacity",
+                    1
+                );
+                if (threshold > capacity) {
+                    throw new IllegalArgumentException(
+                        component.id()
+                            + " conditionClaims exceeds target capacity"
+                    );
+                }
+            }
+        }
+
+        if ("CONDITIONAL_OUTPUT".equals(drawRuleType)) {
+            if (outputCount < 1) {
+                throw new IllegalArgumentException(
+                    "CONDITIONAL_OUTPUT requires at least one OUTPUT"
+                );
+            }
+            boolean hasAlways = outputsByKey.values().stream().anyMatch(
+                component -> "ALWAYS".equals(
+                    stringProperty(
+                        component.properties(),
+                        "conditionType",
+                        "ALWAYS"
+                    ).trim().toUpperCase(Locale.ROOT)
+                )
+            );
+            if (!hasAlways) {
+                throw new IllegalArgumentException(
+                    "CONDITIONAL_OUTPUT requires at least one ALWAYS output"
+                );
+            }
+            var visiting = new java.util.LinkedHashSet<String>();
+            var visited = new java.util.LinkedHashSet<String>();
+            for (String key : outputsByKey.keySet()) {
+                if (
+                    hasConditionalOutputCycle(
+                        key,
+                        outputsByKey,
+                        visiting,
+                        visited
+                    )
+                ) {
+                    throw new IllegalArgumentException(
+                        "conditional output dependency contains a cycle"
+                    );
+                }
+            }
+        }
+
         if (spawnCount < 1) {
             throw new IllegalArgumentException(
                 "machine map requires at least one SPAWN"
@@ -999,6 +1202,16 @@ public final class ViewerDrawService {
                 );
             }
         }
+        if ("CONDITIONAL_OUTPUT".equals(drawRuleType)) {
+            int winners = drawRuleWinnerCount == 0
+                ? totalOutputCapacity
+                : drawRuleWinnerCount;
+            if (winners < 1 || winners > totalOutputCapacity) {
+                throw new IllegalArgumentException(
+                    "CONDITIONAL_OUTPUT winnerCount exceeds total output capacity"
+                );
+            }
+        }
         if ("RANDOM_OUTPUT_BUCKET".equals(drawRuleType)) {
             int winners = drawRuleWinnerCount == 0
                 ? 1
@@ -1035,8 +1248,58 @@ public final class ViewerDrawService {
                 drawRuleType,
                 drawRuleWinnerCount
             ),
+            new MachineRunPolicy(
+                timeoutSeconds,
+                qualificationMinWinners,
+                qualificationMaxNudges
+            ),
             List.copyOf(normalizedComponents)
         );
+    }
+
+    private static boolean hasConditionalOutputCycle(
+        String key,
+        Map<String, MachineComponent> outputsByKey,
+        java.util.Set<String> visiting,
+        java.util.Set<String> visited
+    ) {
+        if (visiting.contains(key)) return true;
+        if (visited.contains(key)) return false;
+
+        visiting.add(key);
+        MachineComponent component = outputsByKey.get(key);
+        if (component != null) {
+            String mode = stringProperty(
+                component.properties(),
+                "conditionType",
+                "ALWAYS"
+            ).trim().toUpperCase(Locale.ROOT);
+            if (
+                "AFTER_OUTPUT_CLAIMS".equals(mode)
+                || "AFTER_OUTPUT_FULL".equals(mode)
+            ) {
+                String next = stringProperty(
+                    component.properties(),
+                    "conditionOutputKey",
+                    ""
+                ).trim();
+                if (
+                    !next.isBlank()
+                    && outputsByKey.containsKey(next)
+                    && hasConditionalOutputCycle(
+                        next,
+                        outputsByKey,
+                        visiting,
+                        visited
+                    )
+                ) {
+                    return true;
+                }
+            }
+        }
+        visiting.remove(key);
+        visited.add(key);
+        return false;
     }
 
     private static String stringProperty(
