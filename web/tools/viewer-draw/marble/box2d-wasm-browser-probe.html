@@ -204,6 +204,182 @@
       throw new Error("ordered output did not select one winner");
     }
 
+    const runSensorRule = (
+      name,
+      drawRule,
+      sensorComponents,
+      entryCount,
+      expectedWinners,
+      seed
+    ) => {
+      const sensorDefinition = {
+        schemaVersion: Engine.SCHEMA_VERSION,
+        name,
+        world: {
+          width: 800,
+          height: 600,
+          gravityX: 0,
+          gravityY: 12
+        },
+        drawRule,
+        components: [
+          {
+            ...Engine.componentDefaults("SPAWN", 400, 60),
+            properties: { marbleRadius: 10 }
+          },
+          ...sensorComponents
+        ]
+      };
+      const errors = Engine.validateDefinition(sensorDefinition);
+      if (errors.length) {
+        throw new Error(name + " validation failed: " + errors.join(" / "));
+      }
+      adapter.loadMap(sensorDefinition);
+      let sensorState = adapter.reset(
+        entries.slice(0, entryCount),
+        seed
+      );
+      for (
+        let step = 0;
+        step < 3600
+          && sensorState.rankedEntries.length < expectedWinners;
+        step += 1
+      ) {
+        sensorState = adapter.step(1 / 120);
+      }
+      if (sensorState.rankedEntries.length !== expectedWinners) {
+        throw new Error(
+          name + " winner mismatch: "
+            + sensorState.rankedEntries.length
+            + "/" + expectedWinners
+        );
+      }
+      return sensorState;
+    };
+
+    const slot = Engine.componentDefaults("SLOT", 400, 530);
+    slot.width = 460;
+    slot.height = 100;
+    slot.properties = {
+      slotKey: "A",
+      slotCapacity: 2,
+      soundMaterial: "wood",
+      instrument: "xylophone",
+      audioNote: 64,
+      audioGain: 1.2,
+      audioPan: -0.2
+    };
+    state = runSensorRule(
+      "Slot Collection Box2D Probe",
+      { type: "SLOT_COLLECTION", winnerCount: 2 },
+      [slot],
+      3,
+      2,
+      101
+    );
+    if (
+      state.slotClaims.length !== 1
+      || state.slotClaims[0].ids.length !== 2
+    ) {
+      throw new Error("slot claims were not persisted in runtime state");
+    }
+    if (!state.audioEvents.some(
+      (event) =>
+        event.kind === "slot"
+        && event.material === "wood"
+        && event.instrument === "xylophone"
+        && event.note === 64
+    )) {
+      throw new Error("slot audio profile did not reach audio event channel");
+    }
+
+    const elimination = Engine.componentDefaults(
+      "ELIMINATION",
+      400,
+      520
+    );
+    elimination.width = 600;
+    elimination.height = 130;
+    elimination.properties = {
+      eliminationKey: "PIT",
+      soundMaterial: "stone",
+      instrument: "drum",
+      audioNote: 40,
+      audioGain: 1,
+      audioPan: 0
+    };
+    state = runSensorRule(
+      "Last Survivor Box2D Probe",
+      { type: "LAST_SURVIVOR", winnerCount: 1 },
+      [elimination],
+      4,
+      1,
+      111
+    );
+    if (state.eliminationOrder.length !== 3) {
+      throw new Error(
+        "last survivor must eliminate exactly three marbles"
+      );
+    }
+
+    const cascadeOutput = Engine.componentDefaults(
+      "OUTPUT",
+      400,
+      530
+    );
+    cascadeOutput.width = 460;
+    cascadeOutput.height = 100;
+    cascadeOutput.properties = {
+      outputKey: "C",
+      outputRank: 1,
+      outputCapacity: 2,
+      outputWeight: 1
+    };
+    state = runSensorRule(
+      "Cascade Box2D Probe",
+      { type: "CASCADE_SELECTION", winnerCount: 2 },
+      [cascadeOutput],
+      3,
+      2,
+      121
+    );
+    if (
+      state.outputClaims.length !== 1
+      || state.outputClaims[0].value.length !== 2
+    ) {
+      throw new Error("cascade output capacity was not enforced");
+    }
+
+    const bucketA = Engine.componentDefaults("OUTPUT", 400, 530);
+    bucketA.width = 460;
+    bucketA.height = 100;
+    bucketA.properties = {
+      outputKey: "A",
+      outputRank: 1,
+      outputCapacity: 1,
+      outputWeight: 1
+    };
+    const bucketB = Engine.componentDefaults("OUTPUT", 400, 530);
+    bucketB.width = 460;
+    bucketB.height = 100;
+    bucketB.properties = {
+      outputKey: "B",
+      outputRank: 1,
+      outputCapacity: 1,
+      outputWeight: 3
+    };
+    state = runSensorRule(
+      "Random Bucket Box2D Probe",
+      { type: "RANDOM_OUTPUT_BUCKET", winnerCount: 1 },
+      [bucketA, bucketB],
+      3,
+      1,
+      131
+    );
+    if (!["A", "B"].includes(state.selectedOutputKey)) {
+      throw new Error("random output bucket was not seed-selected");
+    }
+
     document.body.dataset.status = "pass";
     document.body.textContent = "PASS";
   } catch (error) {
