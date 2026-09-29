@@ -23,6 +23,13 @@ function requireCondition(condition, message) {
   ).href;
   const assetBaseUrl = vendorDir + path.sep;
 
+  // box2d-wasm's generated ES module also detects Node and expects
+  // CommonJS globals in that branch. The production target is browser,
+  // but expose them here so CI can smoke-test the exact local WASM asset.
+  globalThis.__dirname = vendorDir;
+  globalThis.__filename = path.join(vendorDir, "Box2D.simd.js");
+  globalThis.require = require;
+
   const adapter = new Physics.Box2dWasmPhysicsAdapter({
     moduleUrl,
     assetBaseUrl
