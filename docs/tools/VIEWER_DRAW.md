@@ -1383,17 +1383,25 @@ lazygyu/roulette에서 특히 검토할 부분:
 - WASM 초기화 실패 시 실제 추첨 시작 차단
 - Map Maker → Browser Draw는 `sessionStorage`로 직접 맵 전달 가능
 
-### V4 — Marble Race Presentation — NEXT
+### V4 — Marble Race Presentation — PARTIAL IMPLEMENTED
+
+구현 완료:
 
 - Frozen Entry Set → Marble
 - winner range
-- Camera
-- RankRenderer
-- Minimap
-- FastForwarder
+- Camera 자동 추적/수동 Minimap 고정
+- 진행 중 Rank + 확정 Finish Rank
+- Minimap + viewport 표시
+- hold Fast Forward 2×
+- 5초 Stuck Watchdog
+- seed 연동 로컬 Box2D nudge recovery
+- 추첨 중 입력/맵/seed 설정 Freeze
+
+잔여:
+
 - finish slow motion
-- stuck watchdog / recovery
-- 결과 화면 / podium
+- 최종 podium / result presentation
+- Camera/Minimap 추가 튜닝
 
 ### V5 — Chat Entry Collection
 
@@ -1471,7 +1479,8 @@ Map Format
 → Map Validator / Simulation Tools
 → Browser Marble Draw Runtime V0 [IMPLEMENTED]
 → Box2D-WASM Browser Adapter [IMPLEMENTED]
-→ Camera / Rank / Minimap / Stuck Recovery
+→ Camera / Rank / Minimap / Fast Forward / Stuck Recovery [IMPLEMENTED]
+→ Finish Slow Motion / Podium
 → Goldberg / Marble Machine Components
 ~~~
 
