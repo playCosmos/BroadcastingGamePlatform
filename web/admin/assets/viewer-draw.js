@@ -22,6 +22,12 @@
     $("numberStage").hidden = mode !== "NUMBER";
     $("stageTitle").textContent =
       mode === "RANDOM" ? "시청자 뽑기" : "숫자 뽑기";
+    const url = new URL(window.location.href);
+    url.searchParams.set("mode", mode);
+    window.history.replaceState(null, "", url);
+    document.title = mode === "RANDOM"
+      ? "방송 게임 플랫폼 · 시청자 뽑기"
+      : "방송 게임 플랫폼 · 숫자 뽑기";
     const pageTitle = $("drawPageTitle");
     const pageLead = $("drawPageLead");
     if (pageTitle) {
