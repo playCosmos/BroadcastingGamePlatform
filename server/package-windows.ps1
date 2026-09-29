@@ -62,9 +62,16 @@ if (-not (Test-Path $Exe)) {
 # Never ship a live config.json. First launch creates it only when missing.
 Copy-Item (Join-Path $ServerRoot "config.example.json") (Join-Path $AppRoot "config.example.json") -Force
 
+$PrepareBrowserPhysics = Join-Path $ServerRoot "prepare-browser-physics.ps1"
+& $PrepareBrowserPhysics
+if ($LASTEXITCODE -ne 0) {
+    throw "Browser physics asset preparation failed with exit code $LASTEXITCODE"
+}
+
 $WebSource = Join-Path $RepoRoot "web"
 $WebRoot = Join-Path $AppRoot "web"
 Copy-Item $WebSource $WebRoot -Recurse -Force
+Copy-Item (Join-Path $RepoRoot "THIRD_PARTY_NOTICES.md") (Join-Path $AppRoot "THIRD_PARTY_NOTICES.md") -Force
 
 New-Item -ItemType Directory -Path (Join-Path $AppRoot "data") -Force | Out-Null
 
