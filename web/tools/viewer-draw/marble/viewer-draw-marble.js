@@ -187,6 +187,10 @@
       SEESAW: ["#6b6650", "#c5bb86"],
       FUNNEL: ["#356f71", "#73c9cb"],
       SPLITTER: ["#5e527d", "#a99bd3"],
+      HINGE: ["#47605b", "#8fc5b7"],
+      GEAR: ["#6d5730", "#dfbc6b"],
+      PADDLE: ["#7a4936", "#e8996f"],
+      LAUNCHER: ["#3e6675", "#78bdd5"],
       SPAWN: ["#1d6c8d", "#60c3e8"],
       FINISH: ["#327649", "#72cf90"]
     }[type] || ["#59636c", "#aab2b8"];
@@ -295,9 +299,15 @@
     );
 
     definition.components.forEach((component) => {
+      const runtimeComponent = state?.components?.find(
+        (item) => item.id === component.id
+      );
+      const renderComponent = runtimeComponent
+        ? { ...component, runtimeRotation: runtimeComponent.runtimeRotation }
+        : component;
       const shapes = Engine.componentShapes
-        ? Engine.componentShapes(component, state?.time || 0)
-        : [component];
+        ? Engine.componentShapes(renderComponent, state?.time || 0)
+        : [renderComponent];
       shapes.forEach((shape) => {
         drawComponent(
           ctx,
@@ -359,9 +369,15 @@
     minimapCtx.fillRect(0, 0, view.width, view.height);
 
     definition.components.forEach((component) => {
+      const runtimeComponent = state?.components?.find(
+        (item) => item.id === component.id
+      );
+      const renderComponent = runtimeComponent
+        ? { ...component, runtimeRotation: runtimeComponent.runtimeRotation }
+        : component;
       const shapes = Engine.componentShapes
-        ? Engine.componentShapes(component, state?.time || 0)
-        : [component];
+        ? Engine.componentShapes(renderComponent, state?.time || 0)
+        : [renderComponent];
       shapes.forEach((shape) => {
         drawComponent(
           minimapCtx,
