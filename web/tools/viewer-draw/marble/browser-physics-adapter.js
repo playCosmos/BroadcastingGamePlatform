@@ -1082,7 +1082,9 @@
         this.launchedCount = this.marbles.length;
         this.nextLaunchIndex = this.marbles.length;
       } else {
-        this.releaseQueuedMarbles();
+        this.nextLaunchIndex = 0;
+        this.nextLaunchAt = 0;
+        this.launchedCount = 0;
       }
 
       return this.snapshot();
