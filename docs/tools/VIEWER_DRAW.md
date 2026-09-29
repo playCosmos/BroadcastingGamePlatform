@@ -8,8 +8,9 @@
 - V1 Number Draw Migration: **IMPLEMENTED**
 - V2 Marble Map Maker V0: **IMPLEMENTED**
 - V2 Physics Preview Engine V0: **IMPLEMENTED**
-- V3 Chat Entry Collection: PLANNED
-- V4 Production Marble Physics / Draw Authority: PLANNED
+- V3 Production Physics Adapter V0 (JBox2D): **IMPLEMENTED**
+- V4 Marble Draw Session / Audit: PLANNED
+- V5 Chat Entry Collection: PLANNED
 
 플랫폼 분류: **Broadcast Tool / Interaction Module**
 
@@ -852,6 +853,88 @@ Preview Physics Engine
 다음 물리 단계에서는 같은 MapDefinition을 읽는 Production Physics Adapter를 구현하고 Preview와 결과 편차를 비교한다.
 
 
+### 13.6.3 Production Physics Adapter V0 — IMPLEMENTED
+
+실제 방송 추첨 Authority 후보는 브라우저 Preview와 분리해 서버 내부 JBox2D로 구현한다.
+
+~~~text
+MachineMapDefinition
+        ↓
+JBox2dMarblePhysicsAdapter
+        ↓
+Server-authoritative SimulationResult
+~~~
+
+엔진:
+
+- `org.jbox2d:jbox2d-library:2.2.1.1`
+- engine ID: `JBOX2D`
+- engine version: `2.2.1.1-v0`
+- fixed timestep: 1/120s
+- velocity iterations: 8
+- position iterations: 3
+- server JVM에서 실행
+- 브라우저/OBS frame rate와 결과 결정 분리
+
+V0 지원 컴포넌트:
+
+- Wall
+- Ramp
+- Peg
+- Bumper
+- Spawn
+- Finish
+
+지원 물리:
+
+- gravity
+- static rotated box collision
+- static circle collision
+- dynamic marble ↔ marble collision
+- restitution / friction
+- Bumper boost
+- world boundary
+- seeded initial Spawn distribution
+- Finish rank
+- timeout evidence
+
+Map Maker의 `JBox2D Production Test`는 저장된 map revision/hash를 기준으로 서버 Production Adapter를 실행한다.
+
+API:
+
+~~~text
+POST /api/v1/tools/viewer-draw/maps/{mapId}/simulate
+~~~
+
+결과에는 최소 다음이 포함된다.
+
+- mapId
+- mapRevision
+- mapHash
+- engineId / engineVersion
+- seed
+- marbleCount
+- fixed timestep
+- step count
+- simulated seconds
+- timedOut
+- finishOrder
+- final marble states
+
+Preview와 Production은 같은 MapDefinition과 seed를 사용하지만 솔버가 다르므로 동일한 finish order를 강제로 요구하지 않는다.
+Preview의 목적은 제작 피드백이고 Production Adapter의 목적은 최종 Authority다.
+
+아직 구현하지 않은 경계:
+
+- Frozen Viewer Entry → Marble assignment
+- Production run persistence/audit
+- public real-time Marble Overlay
+- stuck recovery / DNF policy
+- 실제 winnerCount 판정
+
+이 항목들은 다음 Marble Draw Session 단계에서 연결한다.
+
+
 장기적으로 Admin에 시각적 편집기를 제공한다.
 
 예상 경로:
@@ -1384,8 +1467,8 @@ Map Format
 → Map Maker V0
 → Physics Preview Engine V0
 → Map Validator / Simulation Tools
-→ Production Physics Adapter
-→ Marble Draw Session
+→ Production Physics Adapter V0 [IMPLEMENTED]
+→ Marble Draw Session / Audit
 → Goldberg / Marble Machine Components
 ~~~
 
