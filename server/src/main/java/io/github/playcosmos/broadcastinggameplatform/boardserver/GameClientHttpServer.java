@@ -937,6 +937,11 @@ public final class GameClientHttpServer implements AutoCloseable {
         Map<String, Object> config
     ) {}
 
+    private record ViewerDrawMapSaveRequest(
+        String mapId,
+        ViewerDrawService.MachineMapDefinition definition
+    ) {}
+
     private void viewerDrawApi(HttpExchange exchange) throws IOException {
         String path = exchange.getRequestURI().getPath();
         if (viewerDraw == null) {
@@ -986,6 +991,93 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange, 401, Map.of(
                 "error", "administrator authentication required"
             ));
+            return;
+        }
+
+        String mapsBase = "/api/v1/tools/viewer-draw/maps";
+        if (mapsBase.equals(path) || (mapsBase + "/").equals(path)) {
+            if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    sendJson(exchange, 200, Map.of(
+                        "maps", viewerDraw.recentMachineMaps(50)
+                    ));
+                } catch (Exception error) {
+                    sendJson(
+                        exchange,
+                        400,
+                        Map.of("error", safeMessage(error))
+                    );
+                }
+                return;
+            }
+
+            if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                try {
+                    var request = readJson(
+                        exchange,
+                        ViewerDrawMapSaveRequest.class
+                    );
+                    var saved = viewerDraw.saveMachineMap(
+                        request.mapId(),
+                        request.definition()
+                    );
+                    sendJson(exchange, 200, saved);
+                } catch (Exception error) {
+                    sendJson(
+                        exchange,
+                        400,
+                        Map.of("error", safeMessage(error))
+                    );
+                }
+                return;
+            }
+
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (path != null && path.startsWith(mapsBase + "/")) {
+            String mapId = path.substring((mapsBase + "/").length());
+            if (mapId.isBlank() || mapId.contains("/")) {
+                sendJson(exchange, 404, Map.of(
+                    "error", "machine map not found"
+                ));
+                return;
+            }
+
+            try {
+                if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    sendJson(
+                        exchange,
+                        200,
+                        viewerDraw.findMachineMap(mapId)
+                    );
+                    return;
+                }
+
+                if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod())) {
+                    viewerDraw.archiveMachineMap(mapId);
+                    exchange.sendResponseHeaders(204, -1);
+                    exchange.close();
+                    return;
+                }
+
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+            } catch (java.util.NoSuchElementException error) {
+                sendJson(
+                    exchange,
+                    404,
+                    Map.of("error", safeMessage(error))
+                );
+            } catch (Exception error) {
+                sendJson(
+                    exchange,
+                    400,
+                    Map.of("error", safeMessage(error))
+                );
+            }
             return;
         }
 
