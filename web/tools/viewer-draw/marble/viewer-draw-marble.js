@@ -777,10 +777,10 @@
   function marbleColor(marble) {
     const index = Math.max(
       0,
-      Number(String(marble.id).replace(/^m/, "")) - 1
+      Number(marble.entry?.itemIndex) || 0
     );
-    const total = Math.max(1, state?.totalCount || entries.length || 1);
-    return `hsl(${(index * 360 / total) % 360} 78% 68%)`;
+    const totalItems = Math.max(1, parseEntryItems().length || 1);
+    return `hsl(${(index * 360 / totalItems) % 360} 78% 68%)`;
   }
 
   function drawMarble(target, marble, view, {
@@ -875,8 +875,9 @@
     });
 
     if (state) {
+      const showLabels = state.marbles.length <= 120;
       for (const marble of state.marbles) {
-        drawMarble(ctx, marble, view);
+        drawMarble(ctx, marble, view, { label: showLabels });
       }
     }
 
@@ -1018,9 +1019,90 @@
     return [...finished, ...active, ...queued, ...eliminated, ...dnf];
   }
 
+  function renderSurvivorSummary(root) {
+    const groups = new Map();
+
+    for (const marble of state?.marbles || []) {
+      const entry = marble.entry || {};
+      const key = String(
+        entry.itemIndex ?? entry.displayName ?? marble.id
+      );
+      let group = groups.get(key);
+      if (!group) {
+        group = {
+          name: entry.displayName || marble.id,
+          total: 0,
+          queued: 0,
+          active: 0,
+          eliminated: 0,
+          dnf: 0,
+          winner: false
+        };
+        groups.set(key, group);
+      }
+
+      group.total += 1;
+      if (marble.finished && marble.rank === 1) {
+        group.winner = true;
+      } else if (marble.eliminated) {
+        group.eliminated += 1;
+      } else if (marble.dnf) {
+        group.dnf += 1;
+      } else if (marble.launched === false) {
+        group.queued += 1;
+      } else {
+        group.active += 1;
+      }
+    }
+
+    const ordered = [...groups.values()].sort((left, right) => {
+      if (left.winner !== right.winner) return left.winner ? -1 : 1;
+      return (
+        right.active + right.queued
+        - left.active - left.queued
+      );
+    });
+
+    for (const group of ordered) {
+      const row = document.createElement("div");
+      row.className = "rank-row";
+      if (group.winner) row.classList.add("winner");
+      else if (!group.active && !group.queued) {
+        row.classList.add("eliminated");
+      }
+
+      const rank = document.createElement("span");
+      rank.textContent = group.winner
+        ? "★"
+        : String(group.active + group.queued);
+
+      const name = document.createElement("strong");
+      name.textContent = group.name;
+
+      const status = document.createElement("small");
+      status.textContent = group.winner
+        ? "WINNER"
+        : (
+          "LIVE " + group.active
+          + " · QUEUE " + group.queued
+          + " · OUT " + group.eliminated
+        );
+
+      row.append(rank, name, status);
+      root.appendChild(row);
+    }
+  }
+
   function renderRanks() {
     const root = $("rankList");
     root.replaceChildren();
+
+    if (
+      Engine.resolvedDrawRule(definition).type === "LAST_SURVIVOR"
+    ) {
+      renderSurvivorSummary(root);
+      return;
+    }
 
     const winnerCount = winnerCountValue();
 
