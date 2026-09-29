@@ -27,7 +27,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
 5. **Broadcast Tool**
-   - Viewer Draw: Random/Number + Marble Map Maker/Preview Physics V0 구현, Production Marble Physics 계획
+   - Viewer Draw: Random/Number + Marble Map Maker/Preview Physics + JBox2D Production Physics V0 구현
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
    - Number Draw는 기존 playCosmos/Roulette의 번호 추첨 UI/연출을 재사용한다.
    - Marble Physics Draw는 Goldberg Machine / Marble Machine 컨셉의 물리 추첨으로 확장한다.
@@ -166,4 +166,21 @@ viewer-draw-machine-map/v0
 ~~~
 
 Preview Engine과 Production Draw Authority는 같은 MapDefinition 계약을 공유하지만 서로 같은 엔진이라고 가정하지 않는다.
-Production Adapter가 추가될 때 공식 맵에 대해 Preview/Production 경로의 geometry 해석 일치성을 별도 검증한다.
+
+현재 Production Adapter는 서버 JVM의 `JBox2dMarblePhysicsAdapter`다.
+
+~~~text
+Browser Map Maker
+   ├─ JS Preview Engine
+   └─ Save MapDefinition
+              ↓
+          Platform DB
+              ↓
+Server JBox2D Production Adapter
+              ↓
+      SimulationResult
+~~~
+
+Preview 순위와 Production 순위의 동일성은 요구하지 않는다.
+대신 component geometry, material property, Spawn/Finish 의미가 동일 MapDefinition으로 해석되는지를 검증한다.
+실제 Viewer Entry와 winner/audit 연결은 Marble Draw Session 계층에서 담당한다.
