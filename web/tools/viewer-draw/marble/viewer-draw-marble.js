@@ -993,19 +993,29 @@
     const active = state.marbles
       .filter(
         (marble) =>
-          !marble.finished && !marble.eliminated && !marble.dnf
+          !marble.finished
+          && !marble.eliminated
+          && !marble.dnf
+          && marble.launched !== false
       )
       .sort(
         (left, right) =>
           progressValue(right) - progressValue(left)
       );
+    const queued = state.marbles.filter(
+      (marble) =>
+        marble.launched === false
+        && !marble.finished
+        && !marble.eliminated
+        && !marble.dnf
+    );
     const eliminated = state.marbles.filter(
       (marble) => marble.eliminated
     );
     const dnf = state.marbles.filter(
       (marble) => marble.dnf
     );
-    return [...finished, ...active, ...eliminated, ...dnf];
+    return [...finished, ...active, ...queued, ...eliminated, ...dnf];
   }
 
   function renderRanks() {
@@ -1029,6 +1039,7 @@
             !candidate.finished
             && !candidate.eliminated
             && !candidate.dnf
+            && candidate.launched !== false
         );
         if (firstActive?.id === marble.id) row.classList.add("leader");
       }
@@ -1038,9 +1049,11 @@
         ? "×"
         : marble.dnf
           ? "DNF"
-          : marble.finished
-            ? "#" + marble.rank
-            : "~#" + (index + 1);
+          : marble.launched === false
+            ? "…"
+            : marble.finished
+              ? "#" + marble.rank
+              : "~#" + (index + 1);
 
       const name = document.createElement("strong");
       name.textContent =
@@ -1052,7 +1065,9 @@
         ? "ELIMINATED"
         : marble.dnf
           ? "DNF"
-          : marble.finished
+          : marble.launched === false
+            ? "QUEUED"
+            : marble.finished
             ? (
               ruleType === "RACE_FINISH"
                 ? "FINISH"
@@ -1203,7 +1218,10 @@
       const active = state.marbles
         .filter(
           (marble) =>
-            !marble.finished && !marble.eliminated && !marble.dnf
+            !marble.finished
+            && !marble.eliminated
+            && !marble.dnf
+            && marble.launched !== false
         )
         .sort(
           (left, right) =>
