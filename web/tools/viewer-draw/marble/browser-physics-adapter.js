@@ -799,7 +799,9 @@
     captureVelocities() {
       return new Map(
         this.marbles
-          .filter((marble) => !marble.finished)
+          .filter(
+            (marble) => !marble.finished && !marble.eliminated
+          )
           .map((marble) => {
             const velocity = marble.body.GetLinearVelocity();
             return [
@@ -1071,7 +1073,7 @@
       if (!this.launchers.length) return;
 
       for (const marble of this.marbles) {
-        if (marble.finished) continue;
+        if (marble.finished || marble.eliminated) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1163,7 +1165,7 @@
       );
 
       for (const marble of this.marbles) {
-        if (marble.finished) continue;
+        if (marble.finished || marble.eliminated) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1192,7 +1194,7 @@
       );
 
       for (const marble of this.marbles) {
-        if (marble.finished) continue;
+        if (marble.finished || marble.eliminated) continue;
         const position = marble.body.GetPosition();
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
@@ -1210,16 +1212,15 @@
           property(output.properties, "outputRank", 1)
         );
         this.outputClaims.set(rank, marble.id);
-        marble.finished = true;
-        marble.rank = rank;
-        marble.finishTime = this.time;
         this.finishOrder.push(marble.id);
         this.winnerOrder = [...this.outputClaims.entries()]
           .sort((left, right) => left[0] - right[0])
           .map(([, id]) => id);
-        this.queueSound("output", 0.9, output.id);
-        marble.body.SetLinearVelocity(
-          new this.Box2D.b2Vec2(0, 0)
+        this.captureMarble(
+          marble,
+          rank,
+          "output",
+          output
         );
       }
     }
