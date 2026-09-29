@@ -37,19 +37,23 @@
     const base=finiteOr(c.rotation,0);
     const t=Math.max(0,finiteOr(time,0));
     if(c.type==="ROTATOR"){
-      return base+finiteOr(p.angularSpeed,90)*t;
+      return base+clamp(finiteOr(p.angularSpeed,90),-720,720)*t;
     }
-    const period=Math.max(.25,finiteOr(p.period,c.type==="GATE"?3.6:3.2));
+    const period=clamp(
+      finiteOr(p.period,c.type==="GATE"?3.6:3.2),
+      .25,
+      30
+    );
     const phase=finiteOr(p.phase,0)*Math.PI*2;
     const wave=Math.sin((Math.PI*2*t/period)+phase);
     if(c.type==="GATE"){
-      return base+finiteOr(p.openAngle,78)*(.5+.5*wave);
+      return base+clamp(finiteOr(p.openAngle,78),0,160)*(.5+.5*wave);
     }
     if(c.type==="PENDULUM"){
-      return base+finiteOr(p.amplitude,42)*wave;
+      return base+clamp(finiteOr(p.amplitude,42),0,120)*wave;
     }
     if(c.type==="SEESAW"){
-      return base+finiteOr(p.amplitude,14)*wave;
+      return base+clamp(finiteOr(p.amplitude,14),0,120)*wave;
     }
     return base;
   }
@@ -62,7 +66,7 @@
     const p=c.properties||{};
     const w=Math.max(20,finiteOr(c.width,220));
     const h=Math.max(20,finiteOr(c.height,160));
-    const thickness=Math.max(4,finiteOr(p.thickness,14));
+    const thickness=clamp(finiteOr(p.thickness,14),4,80);
 
     if(c.type==="FUNNEL"){
       const gap=clamp(finiteOr(p.gap,48),8,Math.max(8,w*.8));
