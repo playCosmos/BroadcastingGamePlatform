@@ -3,6 +3,8 @@ package io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import io.github.playcosmos.broadcastinggameplatform.db.DatabaseAccess;
+import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.physics.JBox2dMarblePhysicsAdapter;
+import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.physics.MarblePhysicsAdapter;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -26,9 +28,21 @@ public final class ViewerDrawService {
     private static final int MAX_NUMBER_DRAW_COUNT = 7;
 
     private final DatabaseAccess database;
+    private final MarblePhysicsAdapter productionPhysics;
 
     public ViewerDrawService(DatabaseAccess database) {
+        this(
+            database,
+            new JBox2dMarblePhysicsAdapter()
+        );
+    }
+
+    public ViewerDrawService(
+        DatabaseAccess database,
+        MarblePhysicsAdapter productionPhysics
+    ) {
         this.database = database;
+        this.productionPhysics = productionPhysics;
     }
 
     public record DrawEntry(
@@ -92,6 +106,18 @@ public final class ViewerDrawService {
         String createdAt,
         String updatedAt,
         MachineMapDefinition definition
+    ) {}
+
+    public record ProductionSimulation(
+        String mapId,
+        int mapRevision,
+        String mapHash,
+        String engineId,
+        String engineVersion,
+        long seed,
+        int marbleCount,
+        double timeoutSeconds,
+        MarblePhysicsAdapter.SimulationResult result
     ) {}
 
     public MachineMap saveMachineMap(
@@ -232,6 +258,49 @@ public final class ViewerDrawService {
                 );
             }
         }
+    }
+
+    public ProductionSimulation simulateMachineMap(
+        String mapId,
+        long seed,
+        int marbleCount,
+        double timeoutSeconds
+    ) throws SQLException {
+        MachineMap map = findMachineMap(mapId);
+        if ("ARCHIVED".equals(map.status())) {
+            throw new IllegalStateException(
+                "archived machine map cannot be simulated"
+            );
+        }
+
+        MachineMapDefinition normalized =
+            normalizeMachineMap(map.definition());
+        var result = productionPhysics.simulate(
+            normalized,
+            seed,
+            marbleCount,
+            timeoutSeconds
+        );
+
+        return new ProductionSimulation(
+            map.mapId(),
+            map.revision(),
+            map.definitionHash(),
+            result.engineId(),
+            result.engineVersion(),
+            seed,
+            marbleCount,
+            timeoutSeconds,
+            result
+        );
+    }
+
+    public String productionPhysicsEngineId() {
+        return productionPhysics.engineId();
+    }
+
+    public String productionPhysicsEngineVersion() {
+        return productionPhysics.engineVersion();
     }
 
     public void archiveMachineMap(String mapId) throws SQLException {
