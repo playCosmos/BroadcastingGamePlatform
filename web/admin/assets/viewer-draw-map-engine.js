@@ -796,7 +796,7 @@
       const rng=seeded(seed);
       this.random=rng;
       const spawns=this.definition.components.filter(c=>c.type==="SPAWN");
-      const n=clamp(Math.floor(Number(count)||1),1,64);
+      const n=Math.max(1,Math.floor(Number(count)||1));
       this.marbles=[];
       this.finishOrder=[];
       this.outputClaims=new Map();
@@ -830,9 +830,9 @@
       for(let i=0;i<n;i++){
         const spawn=spawns[i%spawns.length];
         const r=clamp(Number(spawn.properties?.marbleRadius)||11,5,24);
-        const ring=Math.floor(i/spawns.length);
-        const angle=(i*2.399963229728653)+(rng()-.5)*.2;
-        const spread=(ring+1)*Math.min(r*1.5,18);
+        const localIndex=Math.floor(i/spawns.length);
+        const angle=(localIndex*2.399963229728653)+(rng()-.5)*.2;
+        const spread=Math.sqrt(localIndex+1)*Math.min(r*1.35,16);
         this.marbles.push({
           id:"m"+(i+1),
           x:spawn.x+Math.cos(angle)*spread,
