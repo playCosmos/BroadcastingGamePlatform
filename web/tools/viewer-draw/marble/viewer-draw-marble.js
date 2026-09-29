@@ -179,30 +179,45 @@
   }
 
   async function buildRunAudit(generation) {
-    const policy = Engine.resolvedRunPolicy(definition);
+    const auditDefinition = structuredClone(definition);
+    const auditEntries = structuredClone(entries);
+    const auditState = structuredClone(state);
+    const auditNudges = stuckNudges;
+    const auditStartedAt = runStartedAt;
+    const auditCompletedAt = new Date().toISOString();
+    const auditWallElapsedMs = Math.max(
+      0,
+      Math.round(performance.now() - runStartedPerformance)
+    );
+    const auditSeed = Math.trunc(Number($("seed").value) || 1);
+    const auditEngineId = adapter.engineId();
+
+    const policy = Engine.resolvedRunPolicy(auditDefinition);
     const requiredWinners =
       policy.qualificationMinWinners || winnerCountValue();
     const reasons = [];
-    if ((state?.rankedEntries?.length || 0) < requiredWinners) {
+    if ((auditState?.rankedEntries?.length || 0) < requiredWinners) {
       reasons.push("INSUFFICIENT_WINNERS");
     }
     if (
       policy.qualificationMaxNudges > 0
-      && stuckNudges > policy.qualificationMaxNudges
+      && auditNudges > policy.qualificationMaxNudges
     ) {
       reasons.push("NUDGE_LIMIT_EXCEEDED");
     }
 
     const [mapHash, entryHash] = await Promise.all([
-      sha256Hex(JSON.stringify(definition)),
-      sha256Hex(JSON.stringify(entries))
+      sha256Hex(JSON.stringify(auditDefinition)),
+      sha256Hex(JSON.stringify(auditEntries))
     ]);
     if (generation !== activeRunGeneration) return;
 
-    const dnfIds = new Set(state?.dnfOrder || []);
-    const eliminatedIds = new Set(state?.eliminationOrder || []);
+    const dnfIds = new Set(auditState?.dnfOrder || []);
+    const eliminatedIds = new Set(
+      auditState?.eliminationOrder || []
+    );
     const entryByMarble = new Map(
-      (state?.marbles || []).map((marble) => [
+      (auditState?.marbles || []).map((marble) => [
         marble.id,
         marble.entry
       ])
@@ -210,50 +225,55 @@
 
     lastAudit = {
       schemaVersion: "viewer-draw-run-audit/v0",
-      resultStatus: state?.timedOut ? "TIMEOUT" : "COMPLETED",
+      resultStatus: auditState?.timedOut
+        ? "TIMEOUT"
+        : "COMPLETED",
       qualification: {
-        status: reasons.length ? "NOT_QUALIFIED" : "QUALIFIED",
+        status: reasons.length
+          ? "NOT_QUALIFIED"
+          : "QUALIFIED",
         requiredWinners,
         maxNudges: policy.qualificationMaxNudges,
         reasons
       },
       engine: {
-        id: adapter.engineId(),
+        id: auditEngineId,
         fixedTimestepSeconds: 1 / 120
       },
       map: {
-        schemaVersion: definition.schemaVersion,
-        name: definition.name,
+        schemaVersion: auditDefinition.schemaVersion,
+        name: auditDefinition.name,
         definitionHash: mapHash,
-        drawRule: structuredClone(Engine.resolvedDrawRule(definition)),
+        drawRule: structuredClone(
+          Engine.resolvedDrawRule(auditDefinition)
+        ),
         runPolicy: structuredClone(policy)
       },
       run: {
-        seed: Math.trunc(Number($("seed").value) || 1),
-        startedAt: runStartedAt,
-        completedAt: new Date().toISOString(),
-        wallElapsedMs: Math.max(
-          0,
-          Math.round(performance.now() - runStartedPerformance)
-        ),
-        simulationSeconds: state?.time || 0,
-        stuckNudges,
-        timedOut: Boolean(state?.timedOut)
+        seed: auditSeed,
+        startedAt: auditStartedAt,
+        completedAt: auditCompletedAt,
+        wallElapsedMs: auditWallElapsedMs,
+        simulationSeconds: auditState?.time || 0,
+        stuckNudges: auditNudges,
+        timedOut: Boolean(auditState?.timedOut)
       },
       entries: {
-        count: entries.length,
+        count: auditEntries.length,
         snapshotHash: entryHash,
-        values: entries.map((entry) => ({
+        values: auditEntries.map((entry) => ({
           entryId: entry.entryId,
           displayName: entry.displayName
         }))
       },
       result: {
-        winners: (state?.rankedEntries || []).map((entry, index) => ({
-          rank: index + 1,
-          entryId: entry.entryId,
-          displayName: entry.displayName
-        })),
+        winners: (auditState?.rankedEntries || []).map(
+          (entry, index) => ({
+            rank: index + 1,
+            entryId: entry.entryId,
+            displayName: entry.displayName
+          })
+        ),
         dnf: [...dnfIds].map((id) => ({
           marbleId: id,
           entry: entryByMarble.get(id) || null
@@ -262,9 +282,14 @@
           marbleId: id,
           entry: entryByMarble.get(id) || null
         })),
-        outputClaims: structuredClone(state?.outputClaims || []),
-        slotClaims: structuredClone(state?.slotClaims || []),
-        selectedOutputKey: state?.selectedOutputKey || null
+        outputClaims: structuredClone(
+          auditState?.outputClaims || []
+        ),
+        slotClaims: structuredClone(
+          auditState?.slotClaims || []
+        ),
+        selectedOutputKey:
+          auditState?.selectedOutputKey || null
       }
     };
 
@@ -272,7 +297,10 @@
       lastAudit.qualification.status === "QUALIFIED";
     $("qualificationBadge").textContent =
       qualified ? "QUALIFIED" : "NOT QUALIFIED";
-    $("qualificationBadge").classList.toggle("active", qualified);
+    $("qualificationBadge").classList.toggle(
+      "active",
+      qualified
+    );
     $("exportAudit").disabled = false;
   }
 
@@ -567,14 +595,18 @@
     target.save();
     target.fillStyle = marble.eliminated
       ? "#5b6268"
-      : marble.finished
-        ? "#8ee0a6"
-        : marbleColor(marble);
+      : marble.dnf
+        ? "#7c5944"
+        : marble.finished
+          ? "#8ee0a6"
+          : marbleColor(marble);
     target.strokeStyle = marble.eliminated
       ? "#8b949b"
-      : marble.finished
-        ? "#d9ffe3"
-        : "#d4e1ea";
+      : marble.dnf
+        ? "#c19372"
+        : marble.finished
+          ? "#d9ffe3"
+          : "#d4e1ea";
     target.lineWidth = simplified ? 0.8 : 1.3;
     target.beginPath();
     target.arc(p.x, p.y, radius, 0, Math.PI * 2);
@@ -589,9 +621,11 @@
       target.textBaseline = "middle";
       const text = marble.eliminated
         ? "×"
-        : marble.finished
-          ? String(marble.rank)
-          : marble.entry?.displayName?.slice(0, 2) || marble.id;
+        : marble.dnf
+          ? "D"
+          : marble.finished
+            ? String(marble.rank)
+            : marble.entry?.displayName?.slice(0, 2) || marble.id;
       target.fillText(text, p.x, p.y);
     }
     target.restore();
@@ -788,7 +822,9 @@
       } else if (!marble.finished) {
         const firstActive = orderedMarbles().find(
           (candidate) =>
-            !candidate.finished && !candidate.eliminated
+            !candidate.finished
+            && !candidate.eliminated
+            && !candidate.dnf
         );
         if (firstActive?.id === marble.id) row.classList.add("leader");
       }
