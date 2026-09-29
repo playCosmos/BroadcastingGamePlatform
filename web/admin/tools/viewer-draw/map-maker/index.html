@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Viewer Draw · Marble Map Maker</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css">
+</head>
+<body>
+<main class="shell map-maker-shell">
+  <header class="hero compact map-maker-header">
+    <div>
+      <p class="eyebrow">VIEWER DRAW / MARBLE MACHINE</p>
+      <h1>Map Maker</h1>
+      <p class="lead">맵 정의와 Preview Physics Engine이 같은 JSON을 사용합니다.</p>
+    </div>
+    <div class="hero-actions">
+      <a class="secondary" href="/admin/tools/viewer-draw/">← 시청자 추첨</a>
+    </div>
+  </header>
+
+  <section class="map-topbar">
+    <label><span>맵 이름</span><input id="mapName" value="New Marble Machine" maxlength="80"></label>
+    <label><span>저장된 맵</span><select id="savedMaps"><option value="">새 맵</option></select></label>
+    <button id="loadMap" class="small-button">불러오기</button>
+    <button id="newMap" class="small-button">새 맵</button>
+    <button id="saveMap" class="primary-button">저장</button>
+    <button id="validateMap" class="small-button">검증</button>
+    <button id="exportMap" class="small-button">JSON 내보내기</button>
+    <button id="importMap" class="small-button">JSON 불러오기</button>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
+  </section>
+
+  <section class="map-maker-grid">
+    <aside class="maker-panel palette-panel">
+      <p class="panel-title">COMPONENT</p>
+      <button class="palette-item active" data-tool="SELECT">Select</button>
+      <button class="palette-item" data-tool="WALL">Wall</button>
+      <button class="palette-item" data-tool="RAMP">Ramp</button>
+      <button class="palette-item" data-tool="PEG">Peg</button>
+      <button class="palette-item" data-tool="BUMPER">Bumper</button>
+      <button class="palette-item" data-tool="SPAWN">Spawn</button>
+      <button class="palette-item" data-tool="FINISH">Finish</button>
+
+      <div class="panel-section">
+        <p class="panel-title">EDIT</p>
+        <div class="button-pair">
+          <button id="undo" class="small-button">Undo</button>
+          <button id="redo" class="small-button">Redo</button>
+        </div>
+        <div class="button-pair">
+          <button id="duplicate" class="small-button">복제</button>
+          <button id="deleteSelected" class="small-button danger">삭제</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <p class="panel-title">WORLD</p>
+        <label class="mini-field"><span>Width</span><input id="worldWidth" type="number" min="320" max="3840" value="1280"></label>
+        <label class="mini-field"><span>Height</span><input id="worldHeight" type="number" min="240" max="2160" value="720"></label>
+        <label class="mini-field"><span>Gravity X</span><input id="gravityX" type="number" min="-50" max="50" step=".5" value="0"></label>
+        <label class="mini-field"><span>Gravity Y</span><input id="gravityY" type="number" min="-50" max="50" step=".5" value="12"></label>
+        <label class="mini-field"><span>Grid</span><input id="gridSize" type="number" min="5" max="100" value="20"></label>
+        <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>Snap to grid</span></label>
+      </div>
+    </aside>
+
+    <section class="maker-stage">
+      <div class="stage-toolbar">
+        <div class="preview-controls">
+          <button id="previewToggle" class="primary-button">▶ Preview</button>
+          <button id="previewReset" class="small-button">Reset</button>
+          <label>Marbles <input id="marbleCount" type="number" min="1" max="64" value="16"></label>
+          <label>Seed <input id="previewSeed" type="number" value="1"></label>
+        </div>
+        <div class="stage-status">
+          <span id="modeStatus">EDIT</span>
+          <strong id="simStatus">0 / 0</strong>
+        </div>
+      </div>
+      <div class="map-canvas-wrap" id="mapCanvasWrap">
+        <canvas id="mapCanvas"></canvas>
+      </div>
+      <div class="map-validation" id="mapValidation">맵을 편집한 뒤 Preview로 즉시 테스트할 수 있습니다.</div>
+    </section>
+
+    <aside class="maker-panel inspector-panel">
+      <p class="panel-title">INSPECTOR</p>
+      <div id="emptyInspector" class="empty-inspector">컴포넌트를 선택하세요.</div>
+      <div id="componentInspector" hidden>
+        <div class="selected-type" id="selectedType">-</div>
+        <label class="mini-field"><span>X</span><input id="propX" type="number" step="1"></label>
+        <label class="mini-field"><span>Y</span><input id="propY" type="number" step="1"></label>
+        <label class="mini-field"><span>Rotation</span><input id="propRotation" type="number" step="1"></label>
+        <label class="mini-field dimension-field"><span>Width</span><input id="propWidth" type="number" min="0" step="1"></label>
+        <label class="mini-field dimension-field"><span>Height</span><input id="propHeight" type="number" min="0" step="1"></label>
+        <label class="mini-field radius-field"><span>Radius</span><input id="propRadius" type="number" min="0" step="1"></label>
+        <label class="mini-field physics-field"><span>Restitution</span><input id="propRestitution" type="number" min="0" max="1.4" step=".05"></label>
+        <label class="mini-field physics-field"><span>Friction</span><input id="propFriction" type="number" min="0" max=".5" step=".01"></label>
+        <label class="mini-field bumper-field"><span>Bumper Boost</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
+        <label class="mini-field spawn-field"><span>Marble Radius</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
+      </div>
+
+      <div class="panel-section map-meta">
+        <p class="panel-title">MAP</p>
+        <div><span>ID</span><strong id="mapIdLabel">NEW</strong></div>
+        <div><span>Revision</span><strong id="mapRevision">-</strong></div>
+        <div><span>Hash</span><strong id="mapHash">-</strong></div>
+      </div>
+    </aside>
+  </section>
+</main>
+<script src="/admin/assets/viewer-draw-map-engine.js"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js"></script>
+</body>
+</html>
