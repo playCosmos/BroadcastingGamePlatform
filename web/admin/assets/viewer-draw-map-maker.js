@@ -531,6 +531,26 @@
     }
   }
 
+  async function archiveMap() {
+    if (!mapId) {
+      setStatus("아직 저장되지 않은 맵입니다.", "error");
+      return;
+    }
+    stopPreview();
+    try {
+      await api(
+        "/api/v1/tools/viewer-draw/maps/" + encodeURIComponent(mapId),
+        { method: "DELETE" }
+      );
+      const archivedName = definition.name;
+      newMap();
+      await refreshSavedMaps();
+      setStatus(`${archivedName} 맵을 보관 처리했습니다.`, "ok");
+    } catch (error) {
+      setStatus("맵 보관 실패: " + error.message, "error");
+    }
+  }
+
   async function refreshSavedMaps() {
     const body = await api("/api/v1/tools/viewer-draw/maps");
     const select = $("savedMaps");
@@ -785,6 +805,7 @@
   $("deleteSelected").addEventListener("click", deleteSelected);
   $("newMap").addEventListener("click", newMap);
   $("saveMap").addEventListener("click", saveMap);
+  $("archiveMap").addEventListener("click", archiveMap);
   $("loadMap").addEventListener("click", loadMap);
   $("validateMap").addEventListener("click", () => validateClient());
   $("exportMap").addEventListener("click", exportMap);
