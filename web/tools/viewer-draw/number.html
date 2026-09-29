@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>숫자 뽑기 · BroadcastingGamePlatform</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/tools/viewer-draw/browser-draw.css">
+</head>
+<body data-draw-mode="NUMBER">
+  <main class="shell quick-draw">
+    <header class="hero compact">
+      <p class="eyebrow">BROWSER LOCAL / NUMBER DRAW</p>
+      <h1>숫자 뽑기</h1>
+      <p class="lead">서버 없이 현재 브라우저에서 바로 번호를 추첨합니다.</p>
+      <div class="hero-actions">
+        <a class="secondary" href="/">← 플랫폼 홈</a>
+        <a class="secondary" href="/tools/viewer-draw/viewer.html">시청자 뽑기 →</a>
+      </div>
+    </header>
+    <section class="quick-draw-grid">
+      <article class="quick-panel">
+        <h2>추첨 설정</h2>
+        <div class="quick-fields">
+          <label class="quick-field">
+            <span>최대 번호</span>
+            <input id="maxNumber" type="number" min="1" max="999" value="45">
+          </label>
+          <label class="quick-field">
+            <span>추첨 개수</span>
+            <input id="drawCount" type="number" min="1" max="7" value="7">
+          </label>
+        </div>
+        <div class="quick-actions">
+          <button id="runDraw" class="primary" type="button">숫자 뽑기</button>
+          <button id="copyResult" type="button">결과 복사</button>
+        </div>
+        <p class="quick-status" id="status">준비됨</p>
+        <div class="quick-note">
+          중복 없는 추첨이며 난수는 브라우저의 Web Crypto API를 사용합니다.
+          서버 API나 DB 연결은 사용하지 않습니다.
+        </div>
+      </article>
+      <article class="quick-stage">
+        <h2>결과</h2>
+        <div class="quick-result">
+          <div class="number-balls" id="numberResult">
+            <div class="quick-empty">추첨을 시작하세요.</div>
+          </div>
+        </div>
+      </article>
+    </section>
+  </main>
+  <script src="/tools/viewer-draw/browser-draw.js"></script>
+</body>
+</html>
