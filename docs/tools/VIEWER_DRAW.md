@@ -1348,85 +1348,86 @@ lazygyu/roulette에서 특히 검토할 부분:
 
 ### V0 — Viewer Draw Core — IMPLEMENTED
 
-- DrawEntry
-- EntrySource
-- Freeze
+- DrawEntry / EntrySource / Freeze
 - Random Draw
 - winner count
-- result/history
-- audit
+- result/history/audit
 
 ### V1 — Number Draw Migration — IMPLEMENTED
 
 - 기존 번호 추첨 코드 추출
-- 서버 권위 RNG
-- 기존 Reel animation 이식
+- 서버 RNG
+- Reel animation
 - sequential reveal
-- DB history
-- Overlay
+- DB history / Overlay
 
-### V2 — Chat Entry Collection
+### V2 — Marble Map / Preview — IMPLEMENTED
+
+- `viewer-draw-machine-map/v0`
+- Map Maker
+- Wall / Ramp / Peg / Bumper / Spawn / Finish
+- JSON import/export
+- optional DB save / revision history
+- Preview Physics Engine
+
+### V3 — Browser Box2D Marble Authority — IMPLEMENTED
+
+- lazygyu/roulette `IPhysics` 구조 계승
+- `BrowserPhysicsAdapter`
+- `Box2dWasmPhysicsAdapter`
+- `box2d-wasm@7.0.0`
+- 실제 추첨은 브라우저에서만 실행
+- 참가자와 맵은 추첨 시작 시 로컬 상태로 고정
+- 서버 physics API 없음
+- 서버 round-trip 없이 finish/rank/winner 결정
+- WASM 초기화 실패 시 실제 추첨 시작 차단
+- Map Maker → Browser Draw는 `sessionStorage`로 직접 맵 전달 가능
+
+### V4 — Marble Race Presentation — NEXT
+
+- Frozen Entry Set → Marble
+- winner range
+- Camera
+- RankRenderer
+- Minimap
+- FastForwarder
+- finish slow motion
+- stuck watchdog / recovery
+- 결과 화면 / podium
+
+### V5 — Chat Entry Collection
 
 - SOOP ChatMessageEvent
 - 참가 키워드
 - 중복 제거
 - 접수 시작/종료
 - participant counter
+- 추첨 시작 전 브라우저로 참가자 snapshot 전달
 - CHZZK 대응 인터페이스
 
-### V3 — Marble Physics Foundation
+### V6 — Goldberg / Machine Expansion
 
-- box2d-wasm 기반 구조 검토/이식
-- physics abstraction
-- TrackDefinition
-- Marble
-- collision
-- goal
-- rank
-- initial setup
-- stuck watchdog
+- Gate
+- Rotator
+- Pendulum
+- Seesaw
+- Funnel
+- Splitter
+- Sound / Web Audio
+- Machine draw rule
+- Slot / Elimination / Cascade / Multi-output
 
-### V4 — Marble Race Draw
+### V7 — Overlay / Audit / Qualification
 
-- FrozenEntrySet → Marble
-- winner range
-- race UI
-- camera
-- minimap
-- finish slow motion
-- result
-- audit
-
-### V5 — Overlay / Admin
-
-- Broadcast Tools 랜딩
-- Viewer Draw 관리 UI
-- Random/Number/Marble 모드 선택
-- OBS Overlay
-- 결과 기록
-- 재추첨 정책
-
-### V6 — Extended Modes
-
-- Wheel
-- Marble Royale
-- Grand Prix
-- saved participant set
-- game-room participant import
-
-### V7 — Qualification
-
+- OBS presentation
+- 로컬 Marble run audit export
+- optional post-run server history upload
 - 1/10/100/대량 참가자
-- duplicate chat
-- provider reconnect
-- freeze race condition
 - multi-winner
-- server restart
-- invalid/cancelled draw
 - stuck marble
 - race timeout
 - browser/OBS performance
-- audit/replay evidence
+- 페이지 로드 후 네트워크 차단 상태 추첨
 - Board/Yacht/Drawing Guess regression
 
 ---
@@ -1459,7 +1460,7 @@ lazygyu/roulette에서 특히 검토할 부분:
 - Race뿐 아니라 Slot/Elimination/Cascade/Multi-output 방식도 Machine draw rule로 지원한다
 
 
-## 21. Map Maker 우선 개발 순서 반영
+## 26. Map Maker 우선 개발 순서
 
 기존 Marble Physics 선행 계획을 다음처럼 변경한다.
 
@@ -1478,7 +1479,7 @@ Map Format
 Runtime이 MapDefinition을 소비하도록 하여 사용자 제작 맵이 기본 구조가 되도록 한다.
 
 
-## 22. Browser-Only Marble Draw 원칙
+## 27. Browser-Only Marble Draw 원칙
 
 Marble 추첨은 Platform Server의 가용성과 분리한다.
 
@@ -1523,7 +1524,7 @@ Camera / RankRenderer / Minimap / FastForwarder
 ~~~
 
 
-## 23. Box2D-WASM Browser Authority V0
+## 28. Box2D-WASM Browser Authority V0
 
 실제 Marble 추첨의 기본 물리 엔진은 `box2d-wasm@7.0.0`이다.
 
