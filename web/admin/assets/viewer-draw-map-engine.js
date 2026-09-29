@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "viewer-draw-machine-map/v0";
-  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH"]);
+  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER"]);
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
@@ -10,6 +10,77 @@
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
   };
+
+  function rotateLocal(c,x,y){
+    const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
+    return {
+      x:c.x+x*co-y*si,
+      y:c.y+x*si+y*co
+    };
+  }
+
+  function segmentRect(c,x1,y1,x2,y2,thickness){
+    const a=rotateLocal(c,x1,y1);
+    const b=rotateLocal(c,x2,y2);
+    return {
+      ...c,
+      x:(a.x+b.x)/2,
+      y:(a.y+b.y)/2,
+      rotation:Math.atan2(b.y-a.y,b.x-a.x)*180/Math.PI,
+      width:Math.max(1,Math.hypot(b.x-a.x,b.y-a.y)),
+      height:Math.max(2,thickness)
+    };
+  }
+
+  function motionRotation(c,time=0){
+    const p=c.properties||{};
+    const base=finiteOr(c.rotation,0);
+    const t=Math.max(0,finiteOr(time,0));
+    if(c.type==="ROTATOR"){
+      return base+finiteOr(p.angularSpeed,90)*t;
+    }
+    const period=Math.max(.25,finiteOr(p.period,c.type==="GATE"?3.6:3.2));
+    const phase=finiteOr(p.phase,0)*Math.PI*2;
+    const wave=Math.sin((Math.PI*2*t/period)+phase);
+    if(c.type==="GATE"){
+      return base+finiteOr(p.openAngle,78)*(.5+.5*wave);
+    }
+    if(c.type==="PENDULUM"){
+      return base+finiteOr(p.amplitude,42)*wave;
+    }
+    if(c.type==="SEESAW"){
+      return base+finiteOr(p.amplitude,14)*wave;
+    }
+    return base;
+  }
+
+  function componentShapes(c,time=0){
+    if(["GATE","ROTATOR","PENDULUM","SEESAW"].includes(c.type)){
+      return [{...c,rotation:motionRotation(c,time)}];
+    }
+
+    const p=c.properties||{};
+    const w=Math.max(20,finiteOr(c.width,220));
+    const h=Math.max(20,finiteOr(c.height,160));
+    const thickness=Math.max(4,finiteOr(p.thickness,14));
+
+    if(c.type==="FUNNEL"){
+      const gap=clamp(finiteOr(p.gap,48),8,Math.max(8,w*.8));
+      return [
+        segmentRect(c,-w/2,-h/2,-gap/2,h/2,thickness),
+        segmentRect(c,w/2,-h/2,gap/2,h/2,thickness)
+      ];
+    }
+
+    if(c.type==="SPLITTER"){
+      return [
+        segmentRect(c,0,-h/2,-w/2,h/2,thickness),
+        segmentRect(c,0,-h/2,w/2,h/2,thickness)
+      ];
+    }
+
+    return [c];
+  }
 
   function componentDefaults(type,x=640,y=360){
     const id=(root.crypto?.randomUUID?.() || ("c-"+Date.now()+"-"+Math.random())).replaceAll(".","-");
@@ -21,6 +92,12 @@
       case "BUMPER": return {...base,radius:24,properties:{restitution:0.95,friction:0.02,boost:1.15}};
       case "SPAWN": return {...base,radius:18,properties:{marbleRadius:11}};
       case "FINISH": return {...base,width:260,height:56,properties:{}};
+      case "GATE": return {...base,width:180,height:16,properties:{restitution:0.35,friction:0.05,openAngle:78,period:3.6,phase:0}};
+      case "ROTATOR": return {...base,width:190,height:16,properties:{restitution:0.42,friction:0.04,angularSpeed:90}};
+      case "PENDULUM": return {...base,width:18,height:190,properties:{restitution:0.4,friction:0.05,amplitude:42,period:3.2,phase:0}};
+      case "SEESAW": return {...base,width:230,height:16,properties:{restitution:0.34,friction:0.08,amplitude:14,period:4,phase:0}};
+      case "FUNNEL": return {...base,width:280,height:190,properties:{restitution:0.3,friction:0.06,gap:52,thickness:14}};
+      case "SPLITTER": return {...base,width:220,height:170,properties:{restitution:0.34,friction:0.05,thickness:14}};
       default: throw new Error("Unsupported component type: "+type);
     }
   }
@@ -159,8 +236,13 @@
 
         this.resolveWorldBounds(m,world);
         for(const c of this.definition.components){
-          if(c.type==="WALL"||c.type==="RAMP") this.resolveRect(m,c);
-          else if(c.type==="PEG"||c.type==="BUMPER") this.resolveCircle(m,c);
+          for(const shape of componentShapes(c,this.time)){
+            if(["WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER"].includes(c.type)){
+              this.resolveRect(m,shape);
+            }else if(c.type==="PEG"||c.type==="BUMPER"){
+              this.resolveCircle(m,shape);
+            }
+          }
         }
       }
 
@@ -308,6 +390,8 @@
     componentDefaults,
     defaultDefinition,
     validateDefinition,
+    componentShapes,
+    motionRotation,
     PreviewEngine
   };
 })(globalThis);
