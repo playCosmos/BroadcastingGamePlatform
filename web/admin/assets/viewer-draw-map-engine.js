@@ -328,7 +328,7 @@
     return {
       schemaVersion:SCHEMA_VERSION,
       name:"Retro Cadet Survivor V2",
-      world:{width:1280,height:900,gravityX:0,gravityY:12},
+      world:{width:1280,height:900,gravityX:0,gravityY:12,visualBackground:"#102758"},
       drawRule:{type:"LAST_SURVIVOR",winnerCount:1},
       runPolicy:{
         timeoutSeconds:0,
