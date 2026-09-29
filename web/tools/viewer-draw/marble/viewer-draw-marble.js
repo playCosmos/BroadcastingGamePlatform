@@ -1198,7 +1198,11 @@
     const seed = Math.trunc(Number($("seed").value) || 1);
 
     adapter.loadMap(frozenDefinition);
-    state = adapter.reset(frozenEntries, seed);
+    state = adapter.reset(
+      frozenEntries,
+      seed,
+      { winnerCount }
+    );
     entries = frozenEntries;
     definition = frozenDefinition;
 
@@ -1255,7 +1259,8 @@
     state = entries.length
       ? adapter.reset(
           entries,
-          Number($("seed").value) || 1
+          Number($("seed").value) || 1,
+          { winnerCount: winnerCountValue() }
         )
       : null;
 
