@@ -16,6 +16,22 @@
     const adapter = new Physics.Box2dWasmPhysicsAdapter();
     await adapter.init();
 
+    // From this point the actual draw must not depend on any backend/network.
+    const denyNetwork = () => {
+      throw new Error("network access attempted after physics initialization");
+    };
+    window.fetch = denyNetwork;
+    window.WebSocket = class {
+      constructor() {
+        denyNetwork();
+      }
+    };
+    const OriginalXHR = window.XMLHttpRequest;
+    if (OriginalXHR) {
+      OriginalXHR.prototype.open = denyNetwork;
+      OriginalXHR.prototype.send = denyNetwork;
+    }
+
     const definition = {
       schemaVersion: Engine.SCHEMA_VERSION,
       name: "Browser Box2D Probe",
