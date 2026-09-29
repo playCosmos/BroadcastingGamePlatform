@@ -535,76 +535,6 @@
     }
   }
 
-  async function productionTest() {
-    stopPreview();
-    definition.name = $("mapName").value.trim()
-      || "Untitled Marble Machine";
-    if (!validateClient()) return;
-
-    const button = $("productionTest");
-    const output = $("productionResult");
-    button.disabled = true;
-    output.hidden = false;
-    output.classList.remove("error");
-    output.textContent = "JBox2D Production Authority 실행 중...";
-
-    try {
-      const currentJson = JSON.stringify(definition);
-      if (!mapId || currentJson !== lastSavedJson) {
-        const saved = await saveMap();
-        if (!saved) {
-          throw new Error("production test 전에 맵 저장에 실패했습니다.");
-        }
-      }
-
-      const seed = Math.trunc(num($("previewSeed").value, 1));
-      const marbleCount = Math.trunc(
-        clamp(num($("marbleCount").value, 16), 1, 64)
-      );
-      const simulated = await api(
-        "/api/v1/tools/viewer-draw/maps/"
-          + encodeURIComponent(mapId)
-          + "/simulate",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            seed,
-            marbleCount,
-            timeoutSeconds: 60
-          })
-        }
-      );
-
-      const result = simulated.result;
-      const finishOrder = result.finishOrder || [];
-      const previewOrder = previewSnapshot?.finishOrder || [];
-
-      output.textContent = [
-        `PRODUCTION ENGINE  ${simulated.engineId} ${simulated.engineVersion}`,
-        `MAP                r${simulated.mapRevision} · ${simulated.mapHash.slice(0, 16)}…`,
-        `SEED / MARBLES     ${simulated.seed} / ${simulated.marbleCount}`,
-        `FIXED STEP         ${result.fixedTimeStepSeconds}s · ${result.stepCount} steps`,
-        `SIM TIME           ${Number(result.simulatedSeconds).toFixed(3)}s`,
-        `FINISH             ${finishOrder.length} / ${simulated.marbleCount}${result.timedOut ? " · TIMEOUT" : ""}`,
-        `PRODUCTION ORDER   ${finishOrder.length ? finishOrder.join(" → ") : "-"}`,
-        `PREVIEW ORDER      ${previewOrder.length ? previewOrder.join(" → ") : "(Preview 미완료/미실행)"}`,
-        "",
-        "Preview와 Production은 동일 MapDefinition/seed를 사용하지만 서로 다른 solver이므로 순위 일치를 강제하지 않습니다."
-      ].join("\n");
-
-      setStatus(
-        `Production Test 완료 · ${finishOrder.length}/${simulated.marbleCount} finish`,
-        result.timedOut ? "error" : "ok"
-      );
-    } catch (error) {
-      output.classList.add("error");
-      output.textContent = "Production Test 실패: " + error.message;
-      setStatus("Production Test 실패: " + error.message, "error");
-    } finally {
-      button.disabled = false;
-    }
-  }
-
   async function archiveMap() {
     if (!mapId) {
       setStatus("아직 저장되지 않은 맵입니다.", "error");
@@ -894,7 +824,6 @@
   });
   $("previewToggle").addEventListener("click", startPreview);
   $("previewReset").addEventListener("click", resetPreview);
-  $("productionTest").addEventListener("click", productionTest);
 
   window.addEventListener("keydown", (event) => {
     const target = event.target;
