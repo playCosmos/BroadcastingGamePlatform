@@ -2,7 +2,7 @@
   "use strict";
 
   const SCHEMA_VERSION = "viewer-draw-machine-map/v0";
-  const TYPES = new Set(["WALL","RAMP","PEG","BUMPER","SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT","SLOT","ELIMINATION"]);
+  const TYPES = new Set(["WALL","CURVE_WALL","RAMP","PEG","BUMPER","SPAWN","BURST_SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"]);
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
@@ -227,6 +227,30 @@
     }
 
     const p=c.properties||{};
+    if(c.type==="CURVE_WALL"){
+      const w=Math.max(40,finiteOr(c.width,260));
+      const h=Math.max(20,finiteOr(c.height,120));
+      const thickness=clamp(finiteOr(p.thickness,18),4,80);
+      const segments=clamp(Math.trunc(finiteOr(p.segments,16)),6,32);
+      const points=[];
+      for(let i=0;i<=segments;i++){
+        const t=i/segments;
+        const omt=1-t;
+        const x=omt*omt*(-w/2)+2*omt*t*0+t*t*(w/2);
+        const y=omt*omt*(h/2)+2*omt*t*(-h/2)+t*t*(h/2);
+        points.push({x,y});
+      }
+      return points.slice(0,-1).map((point,index)=>
+        segmentRect(
+          c,
+          point.x,
+          point.y,
+          points[index+1].x,
+          points[index+1].y,
+          thickness
+        )
+      );
+    }
     const w=Math.max(20,finiteOr(c.width,220));
     const h=Math.max(20,finiteOr(c.height,160));
     const thickness=clamp(finiteOr(p.thickness,14),4,80);
@@ -254,10 +278,22 @@
     const base={id,type,x,y,rotation:0,width:0,height:0,radius:0,properties:{}};
     switch(type){
       case "WALL": return {...base,width:260,height:18,properties:{restitution:0.35,friction:0.06}};
+      case "CURVE_WALL": return {...base,width:280,height:140,properties:{restitution:0.35,friction:0.06,thickness:18,segments:16}};
       case "RAMP": return {...base,width:320,height:18,rotation:12,properties:{restitution:0.3,friction:0.05}};
       case "PEG": return {...base,radius:13,properties:{restitution:0.55,friction:0.03}};
       case "BUMPER": return {...base,radius:24,properties:{restitution:0.95,friction:0.02,boost:1.15}};
-      case "SPAWN": return {...base,radius:18,properties:{marbleRadius:11}};
+      case "SPAWN": return {...base,radius:18,properties:{marbleRadius:11,spawnRole:"BUNCH"}};
+      case "BURST_SPAWN": return {...base,radius:26,properties:{
+        marbleRadius:11,
+        spawnRole:"BURST",
+        burstDirectionDegrees:-90,
+        burstSpreadDegrees:24,
+        burstPower:1.15,
+        burstPowerVariance:.22,
+        burstSizeMin:3,
+        burstSizeMax:7,
+        burstIntervalMs:90
+      }};
       case "FINISH": return {...base,width:260,height:56,properties:{sensorTag:""}};
       case "GATE": return {...base,width:180,height:16,properties:{restitution:0.35,friction:0.05,openAngle:78,period:3.6,phase:0}};
       case "ROTATOR": return {...base,width:190,height:16,properties:{restitution:0.42,friction:0.04,angularSpeed:90}};
@@ -275,6 +311,12 @@
         launchDirectionDegrees:-90,
         launchSpreadDegrees:18,
         launchPowerVariance:.22
+      }};
+      case "CONVEYOR": return {...base,width:280,height:28,properties:{
+        restitution:.12,
+        friction:.45,
+        beltSpeed:160,
+        beltGrip:.22
       }};
       case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
       case "OUTPUT": return {...base,width:180,height:60,properties:{
@@ -501,6 +543,27 @@
     };
   }
 
+  function emptyDefinition(){
+    return {
+      schemaVersion:SCHEMA_VERSION,
+      name:"새 마블 맵",
+      world:{
+        width:1280,
+        height:720,
+        gravityX:0,
+        gravityY:12,
+        visualBackground:"#0a1117"
+      },
+      drawRule:{type:"RACE_FINISH",winnerCount:0},
+      runPolicy:{
+        timeoutSeconds:0,
+        qualificationMinWinners:0,
+        qualificationMaxNudges:0
+      },
+      components:[]
+    };
+  }
+
   function validateDefinition(def){
     const errors=[];
     if(!def || def.schemaVersion!==SCHEMA_VERSION) errors.push("지원하지 않는 schemaVersion입니다.");
@@ -564,13 +627,13 @@
       }else if(x<0||x>w||y<0||y>h){
         errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
-      if(["WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
+      if(["WALL","CURVE_WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
           errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
         }
       }
-      if(["PEG","BUMPER","SPAWN"].includes(c?.type)){
+      if(["PEG","BUMPER","SPAWN","BURST_SPAWN"].includes(c?.type)){
         const radius=Number(c?.radius);
         if(!Number.isFinite(radius)||radius<3||radius>120){
           errors.push("원형 컴포넌트 radius는 3~120 범위여야 합니다.");
@@ -602,6 +665,27 @@
         const torque=finiteOr(p.motorTorque,c?.type==="GEAR"?35:30);
         if(speed<-720||speed>720) errors.push("motorSpeed는 -720~720 범위여야 합니다.");
         if(torque<0||torque>200) errors.push("motorTorque는 0~200 범위여야 합니다.");
+      }
+      if(c?.type==="BURST_SPAWN"){
+        const power=finiteOr(p.burstPower,1.15);
+        const direction=finiteOr(p.burstDirectionDegrees,-90);
+        const spread=finiteOr(p.burstSpreadDegrees,24);
+        const variance=finiteOr(p.burstPowerVariance,.22);
+        const min=Math.trunc(finiteOr(p.burstSizeMin,3));
+        const max=Math.trunc(finiteOr(p.burstSizeMax,7));
+        const interval=finiteOr(p.burstIntervalMs,90);
+        if(power<0||power>5) errors.push("Burst Spawn power는 0~5 범위여야 합니다.");
+        if(direction<-360||direction>360) errors.push("Burst Spawn direction은 -360~360° 범위여야 합니다.");
+        if(spread<0||spread>90) errors.push("Burst Spawn spread는 0~90° 범위여야 합니다.");
+        if(variance<0||variance>.75) errors.push("Burst Spawn power variance는 0~0.75 범위여야 합니다.");
+        if(min<1||max>32||min>max) errors.push("Burst Spawn 묶음 크기가 유효하지 않습니다.");
+        if(interval<0||interval>5000) errors.push("Burst Spawn interval은 0~5000ms 범위여야 합니다.");
+      }
+      if(c?.type==="CONVEYOR"){
+        const speed=finiteOr(p.beltSpeed,160);
+        const grip=finiteOr(p.beltGrip,.22);
+        if(speed<-1200||speed>1200) errors.push("Conveyor beltSpeed는 -1200~1200 px/s 범위여야 합니다.");
+        if(grip<0||grip>1) errors.push("Conveyor beltGrip은 0~1 범위여야 합니다.");
       }
       if(c?.type==="LAUNCHER"){
         const power=finiteOr(p.launchPower,1.2);
@@ -712,7 +796,7 @@
       if(gain<0||gain>2) errors.push("audioGain은 0~2 범위여야 합니다.");
       if(pan<-1||pan>1) errors.push("audioPan은 -1~1 범위여야 합니다.");
 
-      if(c?.type==="SPAWN") spawn++;
+      if(c?.type==="SPAWN"||c?.type==="BURST_SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
     }
 
@@ -929,7 +1013,9 @@
     reset(count=12,seed=this.seed){
       const rng=seeded(seed);
       this.random=rng;
-      const spawns=this.definition.components.filter(c=>c.type==="SPAWN");
+      const spawns=this.definition.components.filter(
+        c=>c.type==="SPAWN"||c.type==="BURST_SPAWN"
+      );
       const n=Math.max(1,Math.floor(Number(count)||1));
       this.marbles=[];
       this.finishOrder=[];
@@ -967,12 +1053,23 @@
         const localIndex=Math.floor(i/spawns.length);
         const angle=(localIndex*2.399963229728653)+(rng()-.5)*.2;
         const spread=Math.sqrt(localIndex+1)*Math.min(r*1.35,16);
+        let vx=(rng()-.5)*35;
+        let vy=(rng()-.5)*8;
+        if(spawn.type==="BURST_SPAWN"){
+          const jitter=(rng()*2-1)*clamp(finiteOr(spawn.properties?.burstSpreadDegrees,24),0,90);
+          const direction=degToRad(finiteOr(spawn.properties?.burstDirectionDegrees,-90)+jitter);
+          const variance=clamp(finiteOr(spawn.properties?.burstPowerVariance,.22),0,.75);
+          const power=clamp(finiteOr(spawn.properties?.burstPower,1.15),0,5)
+            *(1+(rng()*2-1)*variance);
+          vx=Math.cos(direction)*power*145;
+          vy=Math.sin(direction)*power*145;
+        }
         this.marbles.push({
           id:"m"+(i+1),
           x:spawn.x+Math.cos(angle)*spread,
           y:spawn.y+Math.sin(angle)*spread,
-          vx:(rng()-.5)*35,
-          vy:(rng()-.5)*8,
+          vx,
+          vy,
           radius:r,
           finished:false,
           eliminated:false,
@@ -1013,7 +1110,7 @@
         this.resolveWorldBounds(m,world);
         for(const c of this.definition.components){
           for(const shape of componentShapes(c,this.time)){
-            if(["WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","ELEVATOR"].includes(c.type)){
+            if(["WALL","CURVE_WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","CONVEYOR","ELEVATOR"].includes(c.type)){
               this.resolveRect(m,shape);
             }else if(c.type==="PEG"||c.type==="BUMPER"){
               this.resolveCircle(m,shape);
@@ -1024,6 +1121,7 @@
 
       this.resolveMarblePairs();
       this.applyLauncherBoosts();
+      this.applyConveyors(dt);
 
       this.detectTaggedSensors();
       this.detectResultSensors();
@@ -1315,6 +1413,38 @@
       }
     }
 
+    applyConveyors(dt){
+      const conveyors=this.definition.components.filter(c=>c.type==="CONVEYOR");
+      if(!conveyors.length) return;
+      for(const m of this.marbles){
+        if(m.finished||m.eliminated||m.dnf) continue;
+        for(const conveyor of conveyors){
+          const local=this.localPoint(m.x,m.y,conveyor);
+          const halfW=Math.max(1,conveyor.width/2);
+          const halfH=Math.max(1,conveyor.height/2);
+          if(
+            Math.abs(local.x)>halfW+m.radius
+            || Math.abs(Math.abs(local.y)-halfH)>m.radius+5
+          ) continue;
+          const a=degToRad(conveyor.rotation||0);
+          const tx=Math.cos(a),ty=Math.sin(a);
+          const target=clamp(finiteOr(conveyor.properties?.beltSpeed,160),-1200,1200);
+          const grip=clamp(finiteOr(conveyor.properties?.beltGrip,.22),0,1);
+          const current=m.vx*tx+m.vy*ty;
+          const maxChange=Math.max(20,Math.abs(target)*3)*dt;
+          const change=clamp((target-current)*grip,-maxChange,maxChange);
+          m.vx+=tx*change;
+          m.vy+=ty*change;
+        }
+      }
+    }
+
+    localPoint(x,y,c){
+      const a=-degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
+      const dx=x-c.x,dy=y-c.y;
+      return {x:dx*co-dy*si,y:dx*si+dy*co};
+    }
+
     applyLauncherBoosts(){
       const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
       if(!launchers.length) return;
@@ -1434,6 +1564,7 @@
     SCHEMA_VERSION,
     componentDefaults,
     defaultDefinition,
+    emptyDefinition,
     validateDefinition,
     componentShapes,
     motionRotation,
