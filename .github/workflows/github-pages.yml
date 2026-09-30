@@ -7,6 +7,7 @@ on:
       - "index.html"
       - "number.html"
       - "marble.html"
+      - "map-maker.html"
       - "web/**"
       - ".github/workflows/github-pages.yml"
   workflow_dispatch:
@@ -58,6 +59,7 @@ jobs:
           cp index.html _site/index.html
           cp number.html _site/number.html
           cp marble.html _site/marble.html
+          cp map-maker.html _site/map-maker.html
 
           cp -R web/assets _site/web/assets
           mkdir -p _site/web/admin
