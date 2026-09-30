@@ -1365,10 +1365,9 @@
       c.properties.gearRatio = ratio;
     }
     if (c.type === "LAUNCHER") {
-      c.properties.launchPower = clamp(
-        num($("propLaunchPower").value, 1.2),
+      c.properties.launchPower = Math.max(
         0,
-        5
+        num($("propLaunchPower").value, 1.2)
       );
       c.properties.launchDirectionDegrees = clamp(
         num($("propLaunchDirection").value, (c.rotation || 0) - 90),
