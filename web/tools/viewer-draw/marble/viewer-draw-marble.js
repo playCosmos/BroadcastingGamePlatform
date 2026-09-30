@@ -491,6 +491,7 @@
   function componentStyle(type) {
     return {
       WALL: ["#697680", "#a1abb2"],
+      CURVE_WALL: ["#566d7a", "#a8d4e8"],
       RAMP: ["#9b6937", "#e0a45c"],
       PEG: ["#c9d0d5", "#f1f4f6"],
       BUMPER: ["#8b3d45", "#dd7982"],
@@ -504,11 +505,13 @@
       GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
       LAUNCHER: ["#3e6675", "#78bdd5"],
+      CONVEYOR: ["#47565f", "#8fc6df"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
       OUTPUT: ["#3f744c", "#8bd3a1"],
       SLOT: ["#73503e", "#dda57e"],
       ELIMINATION: ["#713d50", "#df789d"],
       SPAWN: ["#1d6c8d", "#60c3e8"],
+      BURST_SPAWN: ["#784878", "#e092df"],
       FINISH: ["#327649", "#72cf90"]
     }[type] || ["#59636c", "#aab2b8"];
   }
@@ -533,7 +536,7 @@
     target.strokeStyle = stroke;
     target.lineWidth = simplified ? 0.8 : 1.2;
 
-    if (["PEG", "BUMPER", "SPAWN"].includes(component.type)) {
+    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(component.type)) {
       const radius = Math.max(
         simplified ? 1 : 2,
         component.radius * view.scale
@@ -542,6 +545,20 @@
       target.arc(0, 0, radius, 0, Math.PI * 2);
       target.fill();
       target.stroke();
+      if (component.type === "BURST_SPAWN" && !simplified) {
+        const direction =
+          (
+            Number(component.properties?.burstDirectionDegrees) || -90
+          ) * Math.PI / 180
+          - (component.rotation || 0) * Math.PI / 180;
+        target.beginPath();
+        target.moveTo(0, 0);
+        target.lineTo(
+          Math.cos(direction) * radius * .7,
+          Math.sin(direction) * radius * .7
+        );
+        target.stroke();
+      }
     } else if (component.type === "ELIMINATION") {
       const width = Math.max(
         simplified ? 2 : 8,
@@ -594,6 +611,31 @@
       );
       target.fillRect(-width / 2, -height / 2, width, height);
       target.strokeRect(-width / 2, -height / 2, width, height);
+      if (component.type === "CONVEYOR" && !simplified) {
+        target.strokeStyle = "#d8f2ff";
+        const arrow = Math.max(8, 18 * view.scale);
+        const speed = Number(component.properties?.beltSpeed) || 160;
+        const direction = speed >= 0 ? 1 : -1;
+        for (
+          let x = -width * .35;
+          x <= width * .35;
+          x += Math.max(24, 48 * view.scale)
+        ) {
+          target.beginPath();
+          target.moveTo(x - arrow * .35 * direction, 0);
+          target.lineTo(x + arrow * .35 * direction, 0);
+          target.lineTo(
+            x + arrow * .12 * direction,
+            -arrow * .22
+          );
+          target.moveTo(x + arrow * .35 * direction, 0);
+          target.lineTo(
+            x + arrow * .12 * direction,
+            arrow * .22
+          );
+          target.stroke();
+        }
+      }
       if (["FINISH","OUTPUT","SLOT"].includes(component.type)) {
         target.setLineDash([6, 4]);
         target.strokeRect(
