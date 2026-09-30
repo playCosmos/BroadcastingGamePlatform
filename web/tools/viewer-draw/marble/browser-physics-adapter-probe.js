@@ -80,22 +80,23 @@ goldbergDefinition.components.splice(
   1,
   0,
   ...[
+    "WALL",
+    "CURVE_WALL",
+    "CIRCLE",
     "GATE",
     "ROTATOR",
     "PENDULUM",
     "SEESAW",
-    "FUNNEL",
-    "SPLITTER",
     "HINGE",
     "GEAR",
     "PADDLE",
-    "LAUNCHER",
+    "CONVEYOR",
     "ELEVATOR",
     "OUTPUT",
     "SLOT",
     "ELIMINATION"
   ].map((type, index) =>
-    Engine.componentDefaults(type, 60 + index * 50, 300)
+    Engine.componentDefaults(type, 60 + index * 45, 300)
   )
 );
 requireCondition(
