@@ -82,7 +82,7 @@
     "propAudioGain",
     "propAudioPan"
   ];
-  const PHYSICS_ADVANCED = ["propRestitution", "propFriction"];
+  const PHYSICS_ADVANCED = ["propRestitution", "propFriction", "propBoost"];
   const RECT_BASIC = ["propX", "propY", "propWidth", "propHeight"];
   const RECT_ROT_BASIC = [...RECT_BASIC, "propRotation"];
   const CIRCLE_BASIC = ["propX", "propY", "propRadius"];
@@ -96,16 +96,8 @@
       basic: [...RECT_ROT_BASIC, "propThickness"],
       advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
     },
-    RAMP: {
-      basic: [...RECT_ROT_BASIC],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    PEG: {
+    CIRCLE: {
       basic: [...CIRCLE_BASIC],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    BUMPER: {
-      basic: [...CIRCLE_BASIC, "propBoost"],
       advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
     },
     SPAWN: {
@@ -162,21 +154,6 @@
       ],
       advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
     },
-    FUNNEL: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propGap",
-        "propThickness"
-      ],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    SPLITTER: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propThickness"
-      ],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
     HINGE: {
       basic: [
         ...RECT_ROT_BASIC,
@@ -216,19 +193,6 @@
         ...AUDIO_FIELDS
       ]
     },
-    LAUNCHER: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propLaunchPower",
-        "propLaunchDirection"
-      ],
-      advanced: [
-        "propLaunchSpread",
-        "propLaunchVariance",
-        ...PHYSICS_ADVANCED,
-        ...AUDIO_FIELDS
-      ]
-    },
     CONVEYOR: {
       basic: [
         ...RECT_ROT_BASIC,
@@ -236,7 +200,7 @@
       ],
       advanced: [
         "propBeltGrip",
-        "propRestitution",
+        ...PHYSICS_ADVANCED,
         ...AUDIO_FIELDS
       ]
     },
@@ -728,19 +692,14 @@
     return {
       WALL: ["#6f7c87", "#a6b0b8"],
       CURVE_WALL: ["#566d7a", "#a8d4e8"],
-      RAMP: ["#a36e36", "#e0a45c"],
-      PEG: ["#d0d6db", "#f5f7f8"],
-      BUMPER: ["#8f3d46", "#e17a84"],
+      CIRCLE: ["#d0d6db", "#f5f7f8"],
       GATE: ["#6d4e9a", "#b995ee"],
       ROTATOR: ["#875b2f", "#f0b36a"],
       PENDULUM: ["#496b8f", "#82b6e9"],
       SEESAW: ["#6b6650", "#c5bb86"],
-      FUNNEL: ["#356f71", "#73c9cb"],
-      SPLITTER: ["#5e527d", "#a99bd3"],
       HINGE: ["#47605b", "#8fc5b7"],
       GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
-      LAUNCHER: ["#3e6675", "#78bdd5"],
       CONVEYOR: ["#47565f", "#8fc6df"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
       OUTPUT: ["#3f744c", "#8bd3a1"],
@@ -766,7 +725,7 @@
     ctx.strokeStyle = selected ? "#ffffff" : stroke;
     ctx.lineWidth = selected ? 2.5 : 1.2;
 
-    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
+    if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       const r = Math.max(2, c.radius * view.scale);
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
@@ -853,7 +812,7 @@
   }
 
   function componentBoundsScreen(c, view) {
-    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
+    if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       const p = toScreen(c.x, c.y, view);
       const r = c.radius * view.scale;
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
@@ -868,7 +827,7 @@
   }
 
   function isCircularComponent(c) {
-    return ["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type);
+    return ["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type);
   }
 
   function rotationHandleScreen(c, view) {
@@ -1019,19 +978,14 @@
     return {
       WALL: "벽",
       CURVE_WALL: "곡선 벽",
-      RAMP: "경사로",
-      PEG: "핀",
-      BUMPER: "범퍼",
+      CIRCLE: "원형 구조체",
       GATE: "게이트",
       ROTATOR: "회전판",
       PENDULUM: "진자",
       SEESAW: "시소",
-      FUNNEL: "깔때기",
-      SPLITTER: "분기대",
       HINGE: "힌지 / 피벗",
       GEAR: "기어 로터",
       PADDLE: "패들",
-      LAUNCHER: "발사대",
       CONVEYOR: "컨베이어",
       ELEVATOR: "엘리베이터",
       SPAWN: "뭉침 스포너",
@@ -1203,7 +1157,7 @@
   function hitTest(x, y) {
     for (let i = definition.components.length - 1; i >= 0; i--) {
       const c = definition.components[i];
-      if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
+      if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
         const p = localPointFor(c, x, y);
@@ -1239,7 +1193,16 @@
 
   function addComponent(type, x, y) {
     pushUndo();
-    const c = Engine.componentDefaults(type, snap(x), snap(y));
+    const presetName = type === "PRESET_PEG"
+      ? "PEG"
+      : type === "PRESET_BUMPER"
+        ? "BUMPER"
+        : type === "PRESET_LAUNCH_WALL"
+          ? "LAUNCH_WALL"
+          : null;
+    const c = presetName
+      ? Engine.createPreset(presetName, snap(x), snap(y))
+      : Engine.componentDefaults(type, snap(x), snap(y));
     if (type === "OUTPUT") {
       const count = definition.components.filter(
         (component) => component.type === "OUTPUT"
@@ -1351,13 +1314,12 @@
     $("propWidth").value = c.width || 0;
     $("propHeight").value = c.height || 0;
     $("propRadius").value = c.radius || 0;
-    $("propRestitution").value = num(c.properties?.restitution, c.type === "BUMPER" ? .95 : .35);
+    $("propRestitution").value = num(c.properties?.restitution, .35);
     $("propFriction").value = num(c.properties?.friction, .05);
     $("propAngularSpeed").value = num(c.properties?.angularSpeed, 90);
     $("propPeriod").value = num(c.properties?.period, c.type === "GATE" ? 3.6 : 3.2);
     $("propAmplitude").value = num(c.properties?.amplitude, c.type === "SEESAW" ? 14 : 42);
     $("propOpenAngle").value = num(c.properties?.openAngle, 78);
-    $("propGap").value = num(c.properties?.gap, 52);
     $("propThickness").value = num(c.properties?.thickness, 14);
     $("propPivotRatio").value = num(c.properties?.pivotRatio, c.type === "PADDLE" ? -.48 : 0);
     $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
@@ -1384,13 +1346,6 @@
     }
     linkedSelect.value = String(c.properties?.linkedComponentId || "");
     $("propGearRatio").value = num(c.properties?.gearRatio, -1);
-    $("propLaunchPower").value = num(c.properties?.launchPower, 1.2);
-    $("propLaunchDirection").value = num(
-      c.properties?.launchDirectionDegrees,
-      (c.rotation || 0) - 90
-    );
-    $("propLaunchSpread").value = num(c.properties?.launchSpreadDegrees, 18);
-    $("propLaunchVariance").value = num(c.properties?.launchPowerVariance, .22);
     $("propBurstPower").value = num(c.properties?.burstPower, 1.15);
     $("propBurstDirection").value = num(c.properties?.burstDirectionDegrees, -90);
     $("propBurstSpread").value = num(c.properties?.burstSpreadDegrees, 24);
@@ -1463,7 +1418,7 @@
     $("propAudioNote").value = Math.trunc(num(c.properties?.audioNote, 60));
     $("propAudioGain").value = num(c.properties?.audioGain, 1);
     $("propAudioPan").value = num(c.properties?.audioPan, 0);
-    $("propBoost").value = num(c.properties?.boost, 1.15);
+    $("propBoost").value = num(c.properties?.boost, 0);
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     applyInspectorSchema(c);
@@ -1477,11 +1432,11 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "CURVE_WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
+    if (["WALL", "CURVE_WALL", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "HINGE", "GEAR", "PADDLE", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
       c.width = Math.max(1, num($("propWidth").value, c.width));
       c.height = Math.max(1, num($("propHeight").value, c.height));
     }
-    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
+    if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       c.radius = Math.max(1, num($("propRadius").value, c.radius));
     }
 
@@ -1489,16 +1444,27 @@
     const oldOutputKey = c.type === "OUTPUT"
       ? String(c.properties.outputKey || "")
       : "";
-    if (["WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR"].includes(c.type)) {
-      c.properties.restitution = clamp(num($("propRestitution").value, .35), 0, 1.4);
-      c.properties.friction = clamp(num($("propFriction").value, .05), 0, .5);
+    if (Engine.isCollider(c)) {
+      c.properties.restitution = clamp(
+        num($("propRestitution").value, .35),
+        0,
+        1.4
+      );
+      c.properties.friction = clamp(
+        num($("propFriction").value, .05),
+        0,
+        .5
+      );
+      c.properties.boost = Math.max(
+        0,
+        num($("propBoost").value, 0)
+      );
     }
     if (c.type === "ROTATOR") c.properties.angularSpeed = clamp(num($("propAngularSpeed").value, 90), -720, 720);
     if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) c.properties.period = clamp(num($("propPeriod").value, 3.2), .25, 30);
     if (["PENDULUM", "SEESAW"].includes(c.type)) c.properties.amplitude = clamp(num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42), 0, 120);
     if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
-    if (c.type === "FUNNEL") c.properties.gap = clamp(num($("propGap").value, 52), 8, Math.max(8, c.width * .8));
-    if (["CURVE_WALL", "FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, c.type === "CURVE_WALL" ? 18 : 14), 4, 80);
+    if (c.type === "CURVE_WALL") c.properties.thickness = clamp(num($("propThickness").value, 18), 4, 80);
     if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = clamp(num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0), -.5, .5);
     if (c.type === "HINGE") {
       c.properties.lowerAngle = clamp(num($("propLowerAngle").value, -70), -180, 180);
@@ -1517,27 +1483,6 @@
       let ratio = clamp(num($("propGearRatio").value, -1), -20, 20);
       if (Math.abs(ratio) < .01) ratio = -1;
       c.properties.gearRatio = ratio;
-    }
-    if (c.type === "LAUNCHER") {
-      c.properties.launchPower = Math.max(
-        0,
-        num($("propLaunchPower").value, 1.2)
-      );
-      c.properties.launchDirectionDegrees = clamp(
-        num($("propLaunchDirection").value, (c.rotation || 0) - 90),
-        -360,
-        360
-      );
-      c.properties.launchSpreadDegrees = clamp(
-        num($("propLaunchSpread").value, 18),
-        0,
-        55
-      );
-      c.properties.launchPowerVariance = clamp(
-        num($("propLaunchVariance").value, .22),
-        0,
-        .75
-      );
     }
     if (c.type === "BURST_SPAWN") {
       c.properties.marbleRadius = clamp(
@@ -1673,14 +1618,13 @@
     if (c.type === "ELIMINATION") {
       c.properties.eliminationKey = $("propEliminationKey").value.trim() || "OUT";
     }
-    if (!["SPAWN","BURST_SPAWN"].includes(c.type)) {
+    if (Engine.isCollider(c)) {
       c.properties.soundMaterial = $("propSoundMaterial").value;
       c.properties.instrument = $("propInstrument").value;
       c.properties.audioNote = clamp(Math.trunc(num($("propAudioNote").value, 60)), 24, 108);
       c.properties.audioGain = clamp(num($("propAudioGain").value, 1), 0, 2);
       c.properties.audioPan = clamp(num($("propAudioPan").value, 0), -1, 1);
     }
-    if (c.type === "BUMPER") c.properties.boost = clamp(num($("propBoost").value, 1.15), 0, 3);
     if (c.type === "SPAWN") c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
 
     undoStack.push(before);
@@ -1928,7 +1872,7 @@
     mapId = loaded.mapId;
     mapRevision = loaded.revision;
     mapHash = loaded.definitionHash;
-    definition = clone(loaded.definition);
+    definition = Engine.migrateDefinition(loaded.definition);
     lastSavedJson = JSON.stringify(definition);
     selectedId = null;
     undoStack = [];
@@ -1991,9 +1935,10 @@
     stopPreview();
     try {
       const parsed = JSON.parse(await file.text());
-      const errors = Engine.validateDefinition(parsed);
+      const migrated = Engine.migrateDefinition(parsed);
+      const errors = Engine.validateDefinition(migrated);
       if (errors.length) throw new Error(errors.join(" · "));
-      definition = clone(parsed);
+      definition = migrated;
       mapId = null;
       mapRevision = null;
       mapHash = null;
