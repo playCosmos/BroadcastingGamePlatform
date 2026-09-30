@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Marble Map Maker · Browser</title>
+  <link rel="stylesheet" href="./web/assets/platform.css">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css">
+</head>
+<body>
+<main class="shell map-maker-shell">
+  <header class="hero compact map-maker-header">
+    <div>
+      <p class="eyebrow">VIEWER DRAW / MARBLE MACHINE / BROWSER LOCAL</p>
+      <h1>Map Maker</h1>
+      <p class="lead">브라우저에서 맵을 제작·저장·Preview하고 현재 맵을 Marble Draw로 바로 테스트합니다.</p>
+    </div>
+    <div class="hero-actions">
+      <a class="secondary" href="./">← 플랫폼 홈</a>
+      <a id="openMarbleDraw" class="secondary" href="./marble.html">현재 맵으로 Marble Draw →</a>
+    </div>
+  </header>
+
+  <section class="map-topbar">
+    <label><span>맵 이름</span><input id="mapName" value="New Marble Machine" maxlength="80"></label>
+    <label><span>저장된 맵</span><select id="savedMaps"><option value="">새 맵</option></select></label>
+    <button id="loadMap" class="small-button">불러오기</button>
+    <button id="newMap" class="small-button">새 맵</button>
+    <button id="saveMap" class="primary-button">저장</button>
+    <button id="archiveMap" class="small-button danger">로컬 삭제</button>
+    <button id="validateMap" class="small-button">검증</button>
+    <button id="exportMap" class="small-button">JSON 내보내기</button>
+    <button id="importMap" class="small-button">JSON 불러오기</button>
+    <input id="importFile" type="file" accept="application/json,.json" hidden>
+  </section>
+
+  <section class="map-maker-grid">
+    <aside class="maker-panel palette-panel">
+      <p class="panel-title">COMPONENT</p>
+      <button class="palette-item active" data-tool="SELECT">Select</button>
+      <button class="palette-item" data-tool="WALL">Wall</button>
+      <button class="palette-item" data-tool="RAMP">Ramp</button>
+      <button class="palette-item" data-tool="PEG">Peg</button>
+      <button class="palette-item" data-tool="BUMPER">Bumper</button>
+      <button class="palette-item" data-tool="GATE">Gate</button>
+      <button class="palette-item" data-tool="ROTATOR">Rotator</button>
+      <button class="palette-item" data-tool="PENDULUM">Pendulum</button>
+      <button class="palette-item" data-tool="SEESAW">Seesaw</button>
+      <button class="palette-item" data-tool="FUNNEL">Funnel</button>
+      <button class="palette-item" data-tool="SPLITTER">Splitter</button>
+      <button class="palette-item" data-tool="HINGE">Hinge / Pivot</button>
+      <button class="palette-item" data-tool="GEAR">Gear Rotor</button>
+      <button class="palette-item" data-tool="PADDLE">Paddle</button>
+      <button class="palette-item" data-tool="LAUNCHER">Launcher</button>
+      <button class="palette-item" data-tool="ELEVATOR">Elevator</button>
+      <button class="palette-item" data-tool="SPAWN">Spawn</button>
+      <button class="palette-item" data-tool="FINISH">Finish</button>
+      <button class="palette-item" data-tool="OUTPUT">Output</button>
+      <button class="palette-item" data-tool="SLOT">Slot</button>
+      <button class="palette-item" data-tool="ELIMINATION">Elimination</button>
+
+      <div class="panel-section">
+        <p class="panel-title">EDIT</p>
+        <div class="button-pair">
+          <button id="undo" class="small-button">Undo</button>
+          <button id="redo" class="small-button">Redo</button>
+        </div>
+        <div class="button-pair">
+          <button id="duplicate" class="small-button">복제</button>
+          <button id="deleteSelected" class="small-button danger">삭제</button>
+        </div>
+      </div>
+
+      <div class="panel-section">
+        <p class="panel-title">WORLD</p>
+        <label class="mini-field"><span>Width</span><input id="worldWidth" type="number" min="320" max="3840" value="1280"></label>
+        <label class="mini-field"><span>Height</span><input id="worldHeight" type="number" min="240" max="2160" value="720"></label>
+        <label class="mini-field"><span>Gravity X</span><input id="gravityX" type="number" min="-50" max="50" step=".5" value="0"></label>
+        <label class="mini-field"><span>Gravity Y</span><input id="gravityY" type="number" min="-50" max="50" step=".5" value="12"></label>
+        <label class="mini-field"><span>Grid</span><input id="gridSize" type="number" min="5" max="100" value="20"></label>
+        <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>Snap to grid</span></label>
+      </div>
+
+      <div class="panel-section">
+        <p class="panel-title">DRAW RULE</p>
+        <label class="mini-field"><span>Type</span>
+          <select id="drawRuleType">
+            <option value="RACE_FINISH">Race Finish</option>
+            <option value="ORDERED_OUTPUT">Ordered Output</option>
+            <option value="SLOT_COLLECTION">Slot Collection</option>
+            <option value="LAST_SURVIVOR">Last Survivor</option>
+            <option value="CASCADE_SELECTION">Cascade Selection</option>
+            <option value="RANDOM_OUTPUT_BUCKET">Random Output Bucket</option>
+            <option value="CONDITIONAL_OUTPUT">Conditional Output</option>
+          </select>
+        </label>
+        <label class="mini-field"><span>Winner Count</span><input id="drawRuleWinnerCount" type="number" min="0" max="64" value="0"></label>
+      </div>
+
+      <div class="panel-section">
+        <p class="panel-title">RUN POLICY</p>
+        <label class="mini-field"><span>Timeout s (0=off)</span><input id="runTimeoutSeconds" type="number" min="0" max="1800" step="1" value="0"></label>
+        <label class="mini-field"><span>Qualify Min Winners</span><input id="qualificationMinWinners" type="number" min="0" max="64" step="1" value="0"></label>
+        <label class="mini-field"><span>Max Nudges (0=off)</span><input id="qualificationMaxNudges" type="number" min="0" max="1000" step="1" value="0"></label>
+      </div>
+    </aside>
+
+    <section class="maker-stage">
+      <div class="stage-toolbar">
+        <div class="preview-controls">
+          <button id="previewToggle" class="primary-button">▶ Preview</button>
+          <button id="previewReset" class="small-button">Reset</button>
+          <label>Marbles <input id="marbleCount" type="number" min="1" value="16"></label>
+          <label>Seed <input id="previewSeed" type="number" value="1"></label>
+        </div>
+        <div class="stage-status">
+          <span id="modeStatus">EDIT</span>
+          <strong id="simStatus">0 / 0</strong>
+        </div>
+      </div>
+      <div class="map-canvas-wrap" id="mapCanvasWrap">
+        <canvas id="mapCanvas"></canvas>
+      </div>
+      <div class="map-validation" id="mapValidation">맵을 편집한 뒤 Preview로 즉시 테스트할 수 있습니다.</div>
+    </section>
+
+    <aside class="maker-panel inspector-panel">
+      <p class="panel-title">INSPECTOR</p>
+      <div id="emptyInspector" class="empty-inspector">컴포넌트를 선택하세요.</div>
+      <div id="componentInspector" hidden>
+        <div class="selected-type" id="selectedType">-</div>
+        <label class="mini-field"><span>X</span><input id="propX" type="number" step="1"></label>
+        <label class="mini-field"><span>Y</span><input id="propY" type="number" step="1"></label>
+        <label class="mini-field"><span>Rotation</span><input id="propRotation" type="number" step="1"></label>
+        <label class="mini-field dimension-field"><span>Width</span><input id="propWidth" type="number" min="0" step="1"></label>
+        <label class="mini-field dimension-field"><span>Height</span><input id="propHeight" type="number" min="0" step="1"></label>
+        <label class="mini-field radius-field"><span>Radius</span><input id="propRadius" type="number" min="0" step="1"></label>
+        <label class="mini-field physics-field"><span>Restitution</span><input id="propRestitution" type="number" min="0" max="1.4" step=".05"></label>
+        <label class="mini-field physics-field"><span>Friction</span><input id="propFriction" type="number" min="0" max=".5" step=".01"></label>
+        <label class="mini-field rotator-field"><span>Angular °/s</span><input id="propAngularSpeed" type="number" min="-720" max="720" step="5"></label>
+        <label class="mini-field motion-period-field"><span>Period s</span><input id="propPeriod" type="number" min=".25" max="30" step=".1"></label>
+        <label class="mini-field swing-field"><span>Amplitude °</span><input id="propAmplitude" type="number" min="0" max="120" step="1"></label>
+        <label class="mini-field gate-field"><span>Open Angle °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
+        <label class="mini-field funnel-field"><span>Funnel Gap</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
+        <label class="mini-field thickness-field"><span>Rail Thickness</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
+        <label class="mini-field pivot-field"><span>Pivot Ratio</span><input id="propPivotRatio" type="number" min="-.5" max=".5" step=".01"></label>
+        <label class="mini-field hinge-field"><span>Lower Angle °</span><input id="propLowerAngle" type="number" min="-180" max="180" step="1"></label>
+        <label class="mini-field hinge-field"><span>Upper Angle °</span><input id="propUpperAngle" type="number" min="-180" max="180" step="1"></label>
+        <label class="mini-field hinge-field"><span>Joint Friction</span><input id="propJointFriction" type="number" min="0" max="50" step=".1"></label>
+        <label class="mini-field motor-field"><span>Motor °/s</span><input id="propMotorSpeed" type="number" min="-720" max="720" step="5"></label>
+        <label class="mini-field motor-field"><span>Motor Torque</span><input id="propMotorTorque" type="number" min="0" max="200" step="1"></label>
+        <label class="mini-field gear-link-field"><span>Linked Joint</span><select id="propLinkedComponentId"><option value="">None</option></select></label>
+        <label class="mini-field gear-link-field"><span>Gear Ratio</span><input id="propGearRatio" type="number" min="-20" max="20" step=".05"></label>
+        <div class="button-pair gear-link-field">
+          <button id="gearLinkNearest" class="small-button" type="button">Nearest Joint</button>
+          <button id="gearLinkClear" class="small-button" type="button">Clear Link</button>
+        </div>
+        <label class="mini-field launcher-field"><span>Launch Power</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
+        <label class="mini-field launcher-field"><span>Direction °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field launcher-field"><span>Spread ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
+        <label class="mini-field launcher-field"><span>Power Variance</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
+        <label class="mini-field elevator-field"><span>Axis Angle °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field elevator-field"><span>Travel Min px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
+        <label class="mini-field elevator-field"><span>Travel Max px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
+        <label class="mini-field elevator-field"><span>Motor px/s</span><input id="propElevatorSpeed" type="number" min="1" max="600" step="1"></label>
+        <label class="mini-field elevator-field"><span>Motor Force</span><input id="propMotorForce" type="number" min="0" max="500" step="1"></label>
+        <label class="mini-field elevator-field"><span>Start Direction</span><select id="propStartDirection"><option value="1">+</option><option value="-1">−</option></select></label>
+        <label class="mini-field output-field"><span>Output Key</span><input id="propOutputKey" maxlength="32"></label>
+        <label class="mini-field output-field"><span>Output Rank</span><input id="propOutputRank" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field"><span>Output Capacity</span><input id="propOutputCapacity" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field"><span>Output Weight</span><input id="propOutputWeight" type="number" min=".01" max="100" step=".05"></label>
+        <label class="mini-field output-field"><span>Output Priority</span><input id="propOutputPriority" type="number" min="-100" max="100" step="1"></label>
+        <label class="mini-field sensor-tag-field"><span>Sensor Tag</span><input id="propSensorTag" maxlength="32" placeholder="optional"></label>
+        <label class="mini-field output-field"><span>Condition</span>
+          <select id="propConditionType">
+            <option value="ALWAYS">Always</option>
+            <option value="AFTER_ANY_CLAIM">After Any Claim</option>
+            <option value="AFTER_OUTPUT_CLAIMS">After Output Claims</option>
+            <option value="AFTER_OUTPUT_FULL">After Output Full</option>
+            <option value="AFTER_SECONDS">After Seconds</option>
+            <option value="AFTER_SENSOR_CLAIMS">After Sensor Claims</option>
+            <option value="AFTER_BRANCH_STATE">After Branch State</option>
+          </select>
+        </label>
+        <label class="mini-field output-field condition-output-ref-field"><span>Condition Output</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-claims-field"><span>Condition Claims</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field condition-time-field"><span>Condition Seconds</span><input id="propConditionSeconds" type="number" min=".01" max="1800" step=".1"></label>
+        <label class="mini-field output-field condition-sensor-field"><span>Condition Sensor</span><select id="propConditionSensorTag"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-branch-field"><span>Branch Key</span><input id="propConditionBranchKey" maxlength="32"></label>
+        <label class="mini-field output-field condition-branch-field"><span>Branch Value</span><input id="propConditionBranchValue" maxlength="32"></label>
+        <label class="mini-field output-field"><span>Set Branch Key</span><input id="propBranchSetKey" maxlength="32" placeholder="optional"></label>
+        <label class="mini-field output-field"><span>Set Branch Value</span><input id="propBranchSetValue" maxlength="32" value="ON"></label>
+        <label class="mini-field slot-field"><span>Slot Key</span><input id="propSlotKey" maxlength="32"></label>
+        <label class="mini-field slot-field"><span>Slot Capacity</span><input id="propSlotCapacity" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field elimination-field"><span>Elimination Key</span><input id="propEliminationKey" maxlength="32"></label>
+        <label class="mini-field audio-field"><span>Sound Material</span>
+          <select id="propSoundMaterial">
+            <option value="metal">Metal</option>
+            <option value="wood">Wood</option>
+            <option value="glass">Glass</option>
+            <option value="rubber">Rubber</option>
+            <option value="plastic">Plastic</option>
+            <option value="stone">Stone</option>
+          </select>
+        </label>
+        <label class="mini-field audio-field"><span>Instrument</span>
+          <select id="propInstrument">
+            <option value="none">Material Only</option>
+            <option value="bell">Bell</option>
+            <option value="chime">Chime</option>
+            <option value="xylophone">Xylophone</option>
+            <option value="drum">Drum</option>
+            <option value="click">Click</option>
+          </select>
+        </label>
+        <label class="mini-field audio-field"><span>MIDI Note</span><input id="propAudioNote" type="number" min="24" max="108" step="1"></label>
+        <label class="mini-field audio-field"><span>Audio Gain</span><input id="propAudioGain" type="number" min="0" max="2" step=".05"></label>
+        <label class="mini-field audio-field"><span>Audio Pan</span><input id="propAudioPan" type="number" min="-1" max="1" step=".05"></label>
+        <label class="mini-field bumper-field"><span>Bumper Boost</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
+        <label class="mini-field spawn-field"><span>Marble Radius</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
+      </div>
+
+      <div class="panel-section map-meta">
+        <p class="panel-title">MAP</p>
+        <div><span>ID</span><strong id="mapIdLabel">LOCAL NEW</strong></div>
+        <div><span>Revision</span><strong id="mapRevision">-</strong></div>
+        <div><span>Hash</span><strong id="mapHash">-</strong></div>
+      </div>
+    </aside>
+  </section>
+</main>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20260930-2"></script>
+<script>window.VIEWER_DRAW_MAP_MAKER_LOCAL = true;</script>\n<script src="./web/admin/assets/viewer-draw-map-maker.js?v=20260930-2"></script>
+</body>
+</html>
