@@ -2203,15 +2203,13 @@
 
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
    "propRestitution","propFriction","propAngularSpeed","propPeriod",
-   "propAmplitude","propOpenAngle","propGap","propThickness",
+   "propAmplitude","propOpenAngle","propThickness",
    "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
    "propMotorSpeed","propMotorTorque","propLinkedComponentId","propGearRatio",
-   "propLaunchPower","propLaunchDirection","propLaunchSpread","propLaunchVariance",
    "propBurstPower","propBurstDirection","propBurstSpread","propBurstVariance",
    "propBurstSizeMin","propBurstSizeMax","propBurstInterval",
    "propBeltSpeed","propBeltGrip",
-   "propAxisAngle","propTravelMin","propTravelMax",
-   "propElevatorSpeed","propMotorForce","propStartDirection",
+   "propAxisAngle","propTravelDistance","propElevatorSpeed",
    "propOutputKey","propOutputRank","propOutputCapacity","propOutputWeight",
    "propOutputPriority","propSensorTag","propConditionType","propConditionOutputKey",
    "propConditionClaims","propConditionSeconds","propConditionSensorTag",
@@ -2220,7 +2218,10 @@
    "propSlotKey","propSlotCapacity","propEliminationKey",
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
    "propBoost","propMarbleRadius"]
-    .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
+    .forEach((id) => {
+      const input = $(id);
+      if (input) input.addEventListener("change", updateSelectedFromInspector);
+    });
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
     .forEach((id) => $(id).addEventListener("change", updateWorld));
