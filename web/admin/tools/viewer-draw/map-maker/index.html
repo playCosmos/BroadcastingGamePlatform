@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20260930-13">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20261001-1">
 </head>
 <body>
 <main class="shell map-maker-shell">
@@ -179,12 +179,9 @@
         <label class="mini-field"><span>묶음 간격 ms</span><input id="propBurstInterval" type="number" min="0" max="5000" step="10"></label>
         <label class="mini-field"><span>벨트 속도 px/s</span><input id="propBeltSpeed" type="number" min="-1200" max="1200" step="10"></label>
         <label class="mini-field"><span>벨트 마찰 전달</span><input id="propBeltGrip" type="number" min="0" max="1" step=".05"></label>
-        <label class="mini-field"><span>축 각도 °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
-        <label class="mini-field"><span>이동 최소 px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
-        <label class="mini-field"><span>이동 최대 px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
-        <label class="mini-field"><span>모터 속도 px/s</span><input id="propElevatorSpeed" type="number" min="1" max="600" step="1"></label>
-        <label class="mini-field"><span>모터 힘</span><input id="propMotorForce" type="number" min="0" max="500" step="1"></label>
-        <label class="mini-field"><span>시작 방향</span><select id="propStartDirection"><option value="1">+</option><option value="-1">−</option></select></label>
+        <label class="mini-field"><span>이동 방향 °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field"><span>이동 거리 px</span><input id="propTravelDistance" type="number" min="1" max="2400" step="10"></label>
+        <label class="mini-field"><span>이동 속도 px/s</span><input id="propElevatorSpeed" type="number" min="1" max="600" step="1"></label>
         <label class="mini-field"><span>출력 키</span><input id="propOutputKey" maxlength="32"></label>
         <label class="mini-field"><span>출력 순위</span><input id="propOutputRank" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field"><span>출력 용량</span><input id="propOutputCapacity" type="number" min="1" max="64" step="1"></label>
@@ -249,7 +246,7 @@
     </aside>
   </section>
 </main>
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20260930-13"></script>
-<script src="/admin/assets/viewer-draw-map-maker.js?v=20260930-13"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20261001-1"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js?v=20261001-1"></script>
 </body>
 </html>
