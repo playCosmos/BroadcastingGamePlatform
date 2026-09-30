@@ -12,9 +12,9 @@
 <main class="shell map-maker-shell">
   <header class="hero compact map-maker-header">
     <div>
-      <p class="eyebrow">VIEWER DRAW / MARBLE MACHINE</p>
-      <h1>Map Maker</h1>
-      <p class="lead">맵 정의와 Preview Physics Engine이 같은 JSON을 사용합니다.</p>
+      <p class="eyebrow">시청자 추첨 / 마블 머신</p>
+      <h1>맵 메이커</h1>
+      <p class="lead">맵 편집과 물리 미리보기가 같은 JSON 정의를 사용합니다.</p>
     </div>
     <div class="hero-actions">
       <a class="secondary" href="/admin/tools/viewer-draw/">← 시청자 추첨</a>
@@ -37,34 +37,34 @@
 
   <section class="map-maker-grid">
     <aside class="maker-panel palette-panel">
-      <p class="panel-title">COMPONENT</p>
-      <button class="palette-item active" data-tool="SELECT">Select</button>
-      <button class="palette-item" data-tool="WALL">Wall</button>
-      <button class="palette-item" data-tool="RAMP">Ramp</button>
-      <button class="palette-item" data-tool="PEG">Peg</button>
-      <button class="palette-item" data-tool="BUMPER">Bumper</button>
-      <button class="palette-item" data-tool="GATE">Gate</button>
-      <button class="palette-item" data-tool="ROTATOR">Rotator</button>
-      <button class="palette-item" data-tool="PENDULUM">Pendulum</button>
-      <button class="palette-item" data-tool="SEESAW">Seesaw</button>
-      <button class="palette-item" data-tool="FUNNEL">Funnel</button>
-      <button class="palette-item" data-tool="SPLITTER">Splitter</button>
-      <button class="palette-item" data-tool="HINGE">Hinge / Pivot</button>
-      <button class="palette-item" data-tool="GEAR">Gear Rotor</button>
-      <button class="palette-item" data-tool="PADDLE">Paddle</button>
-      <button class="palette-item" data-tool="LAUNCHER">Launcher</button>
-      <button class="palette-item" data-tool="ELEVATOR">Elevator</button>
-      <button class="palette-item" data-tool="SPAWN">Spawn</button>
-      <button class="palette-item" data-tool="FINISH">Finish</button>
-      <button class="palette-item" data-tool="OUTPUT">Output</button>
-      <button class="palette-item" data-tool="SLOT">Slot</button>
-      <button class="palette-item" data-tool="ELIMINATION">Elimination</button>
+      <p class="panel-title">도구</p>
+      <button class="palette-item active" data-tool="SELECT" data-tooltip="오브젝트를 선택하고 이동·회전·크기를 편집합니다.">선택</button>
+      <button class="palette-item" data-tool="WALL" data-tooltip="구슬의 이동을 막는 고정 벽을 배치합니다.">벽</button>
+      <button class="palette-item" data-tool="RAMP" data-tooltip="구슬의 흐름을 유도하는 경사면을 배치합니다.">경사로</button>
+      <button class="palette-item" data-tool="PEG" data-tooltip="구슬이 부딪혀 방향이 바뀌는 작은 핀을 배치합니다.">핀</button>
+      <button class="palette-item" data-tool="BUMPER" data-tooltip="충돌한 구슬을 강하게 튕겨내는 범퍼입니다.">범퍼</button>
+      <button class="palette-item" data-tool="GATE" data-tooltip="구슬의 통과를 제어하는 회전형 게이트입니다.">게이트</button>
+      <button class="palette-item" data-tool="ROTATOR" data-tooltip="계속 회전하며 구슬을 밀어내는 장애물입니다.">회전판</button>
+      <button class="palette-item" data-tool="PENDULUM" data-tooltip="좌우로 흔들리며 구슬과 충돌하는 진자입니다.">진자</button>
+      <button class="palette-item" data-tool="SEESAW" data-tooltip="중심축을 기준으로 기울어지는 시소 장애물입니다.">시소</button>
+      <button class="palette-item" data-tool="FUNNEL" data-tooltip="여러 구슬을 좁은 출구 쪽으로 모읍니다.">깔때기</button>
+      <button class="palette-item" data-tool="SPLITTER" data-tooltip="구슬의 진행 경로를 여러 방향으로 나눕니다.">분기대</button>
+      <button class="palette-item" data-tool="HINGE" data-tooltip="회전축을 가진 관절형 오브젝트를 만듭니다.">힌지 / 피벗</button>
+      <button class="palette-item" data-tool="GEAR" data-tooltip="다른 관절과 연결할 수 있는 회전 기어입니다.">기어 로터</button>
+      <button class="palette-item" data-tool="PADDLE" data-tooltip="한쪽 축을 중심으로 회전하는 패들입니다.">패들</button>
+      <button class="palette-item" data-tool="LAUNCHER" data-tooltip="지정한 방향과 세기로 구슬을 발사합니다.">발사대</button>
+      <button class="palette-item" data-tool="ELEVATOR" data-tooltip="지정한 축을 따라 왕복 이동하는 발판입니다.">엘리베이터</button>
+      <button class="palette-item" data-tool="SPAWN" data-tooltip="구슬이 생성되는 시작 위치입니다.">출발 지점</button>
+      <button class="palette-item" data-tool="FINISH" data-tooltip="레이스 완료를 판정하는 도착 영역입니다.">도착 지점</button>
+      <button class="palette-item" data-tool="OUTPUT" data-tooltip="순위나 조건에 따라 당첨 구슬을 받는 영역입니다.">출력 구역</button>
+      <button class="palette-item" data-tool="SLOT" data-tooltip="설정한 용량만큼 구슬을 수집하는 슬롯입니다.">슬롯</button>
+      <button class="palette-item" data-tool="ELIMINATION" data-tooltip="들어온 구슬을 탈락 처리하는 영역입니다.">탈락 구역</button>
 
       <div class="panel-section">
-        <p class="panel-title">EDIT</p>
+        <p class="panel-title">편집</p>
         <div class="button-pair">
-          <button id="undo" class="small-button">Undo</button>
-          <button id="redo" class="small-button">Redo</button>
+          <button id="undo" class="small-button">실행 취소</button>
+          <button id="redo" class="small-button">다시 실행</button>
         </div>
         <div class="button-pair">
           <button id="duplicate" class="small-button">복제</button>
@@ -73,49 +73,49 @@
       </div>
 
       <div class="panel-section">
-        <p class="panel-title">WORLD</p>
-        <label class="mini-field"><span>Width</span><input id="worldWidth" type="number" min="320" max="3840" value="1280"></label>
-        <label class="mini-field"><span>Height</span><input id="worldHeight" type="number" min="240" max="2160" value="720"></label>
-        <label class="mini-field"><span>Gravity X</span><input id="gravityX" type="number" min="-50" max="50" step=".5" value="0"></label>
-        <label class="mini-field"><span>Gravity Y</span><input id="gravityY" type="number" min="-50" max="50" step=".5" value="12"></label>
-        <label class="mini-field"><span>Grid</span><input id="gridSize" type="number" min="5" max="100" value="20"></label>
-        <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>Snap to grid</span></label>
+        <p class="panel-title">월드</p>
+        <label class="mini-field"><span>너비</span><input id="worldWidth" type="number" min="320" max="3840" value="1280"></label>
+        <label class="mini-field"><span>높이</span><input id="worldHeight" type="number" min="240" max="2160" value="720"></label>
+        <label class="mini-field"><span>X 중력</span><input id="gravityX" type="number" min="-50" max="50" step=".5" value="0"></label>
+        <label class="mini-field"><span>Y 중력</span><input id="gravityY" type="number" min="-50" max="50" step=".5" value="12"></label>
+        <label class="mini-field"><span>격자</span><input id="gridSize" type="number" min="5" max="100" value="20"></label>
+        <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>격자에 맞춤</span></label>
       </div>
 
       <div class="panel-section">
-        <p class="panel-title">DRAW RULE</p>
-        <label class="mini-field"><span>Type</span>
+        <p class="panel-title">추첨 규칙</p>
+        <label class="mini-field"><span>유형</span>
           <select id="drawRuleType">
-            <option value="RACE_FINISH">Race Finish</option>
-            <option value="ORDERED_OUTPUT">Ordered Output</option>
-            <option value="SLOT_COLLECTION">Slot Collection</option>
-            <option value="LAST_SURVIVOR">Last Survivor</option>
-            <option value="CASCADE_SELECTION">Cascade Selection</option>
-            <option value="RANDOM_OUTPUT_BUCKET">Random Output Bucket</option>
-            <option value="CONDITIONAL_OUTPUT">Conditional Output</option>
+            <option value="RACE_FINISH">도착 순서</option>
+            <option value="ORDERED_OUTPUT">순위별 출력</option>
+            <option value="SLOT_COLLECTION">슬롯 수집</option>
+            <option value="LAST_SURVIVOR">최후 생존</option>
+            <option value="CASCADE_SELECTION">연속 선택</option>
+            <option value="RANDOM_OUTPUT_BUCKET">랜덤 출력 버킷</option>
+            <option value="CONDITIONAL_OUTPUT">조건부 출력</option>
           </select>
         </label>
-        <label class="mini-field"><span>Winner Count</span><input id="drawRuleWinnerCount" type="number" min="0" max="64" value="0"></label>
+        <label class="mini-field"><span>당첨자 수</span><input id="drawRuleWinnerCount" type="number" min="0" max="64" value="0"></label>
       </div>
 
       <div class="panel-section">
-        <p class="panel-title">RUN POLICY</p>
-        <label class="mini-field"><span>Timeout s (0=off)</span><input id="runTimeoutSeconds" type="number" min="0" max="1800" step="1" value="0"></label>
-        <label class="mini-field"><span>Qualify Min Winners</span><input id="qualificationMinWinners" type="number" min="0" max="64" step="1" value="0"></label>
-        <label class="mini-field"><span>Max Nudges (0=off)</span><input id="qualificationMaxNudges" type="number" min="0" max="1000" step="1" value="0"></label>
+        <p class="panel-title">실행 정책</p>
+        <label class="mini-field"><span>제한 시간 초 (0=끔)</span><input id="runTimeoutSeconds" type="number" min="0" max="1800" step="1" value="0"></label>
+        <label class="mini-field"><span>최소 당첨 인원</span><input id="qualificationMinWinners" type="number" min="0" max="64" step="1" value="0"></label>
+        <label class="mini-field"><span>최대 보정 횟수 (0=끔)</span><input id="qualificationMaxNudges" type="number" min="0" max="1000" step="1" value="0"></label>
       </div>
     </aside>
 
     <section class="maker-stage">
       <div class="stage-toolbar">
         <div class="preview-controls">
-          <button id="previewToggle" class="primary-button">▶ Preview</button>
-          <button id="previewReset" class="small-button">Reset</button>
-          <label>Marbles <input id="marbleCount" type="number" min="1" value="16"></label>
-          <label>Seed <input id="previewSeed" type="number" value="1"></label>
+          <button id="previewToggle" class="primary-button">▶ 미리보기</button>
+          <button id="previewReset" class="small-button">초기화</button>
+          <label>구슬 수 <input id="marbleCount" type="number" min="1" value="16"></label>
+          <label>난수 시드 <input id="previewSeed" type="number" value="1"></label>
         </div>
         <div class="stage-status">
-          <span id="modeStatus">EDIT</span>
+          <span id="modeStatus">편집</span>
           <strong id="simStatus">0 / 0</strong>
         </div>
       </div>
@@ -126,111 +126,111 @@
     </section>
 
     <aside class="maker-panel inspector-panel">
-      <p class="panel-title">INSPECTOR</p>
+      <p class="panel-title">속성</p>
       <div id="emptyInspector" class="empty-inspector">컴포넌트를 선택하세요.</div>
       <div id="componentInspector" hidden>
         <div class="selected-type" id="selectedType">-</div>
         <label class="mini-field"><span>X</span><input id="propX" type="number" step="1"></label>
         <label class="mini-field"><span>Y</span><input id="propY" type="number" step="1"></label>
-        <label class="mini-field"><span>Rotation</span><input id="propRotation" type="number" step="1"></label>
-        <label class="mini-field dimension-field"><span>Width</span><input id="propWidth" type="number" min="0" step="1"></label>
-        <label class="mini-field dimension-field"><span>Height</span><input id="propHeight" type="number" min="0" step="1"></label>
-        <label class="mini-field radius-field"><span>Radius</span><input id="propRadius" type="number" min="0" step="1"></label>
-        <label class="mini-field physics-field"><span>Restitution</span><input id="propRestitution" type="number" min="0" max="1.4" step=".05"></label>
-        <label class="mini-field physics-field"><span>Friction</span><input id="propFriction" type="number" min="0" max=".5" step=".01"></label>
-        <label class="mini-field rotator-field"><span>Angular °/s</span><input id="propAngularSpeed" type="number" min="-720" max="720" step="5"></label>
-        <label class="mini-field motion-period-field"><span>Period s</span><input id="propPeriod" type="number" min=".25" max="30" step=".1"></label>
-        <label class="mini-field swing-field"><span>Amplitude °</span><input id="propAmplitude" type="number" min="0" max="120" step="1"></label>
-        <label class="mini-field gate-field"><span>Open Angle °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
-        <label class="mini-field funnel-field"><span>Funnel Gap</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
-        <label class="mini-field thickness-field"><span>Rail Thickness</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
-        <label class="mini-field pivot-field"><span>Pivot Ratio</span><input id="propPivotRatio" type="number" min="-.5" max=".5" step=".01"></label>
-        <label class="mini-field hinge-field"><span>Lower Angle °</span><input id="propLowerAngle" type="number" min="-180" max="180" step="1"></label>
-        <label class="mini-field hinge-field"><span>Upper Angle °</span><input id="propUpperAngle" type="number" min="-180" max="180" step="1"></label>
-        <label class="mini-field hinge-field"><span>Joint Friction</span><input id="propJointFriction" type="number" min="0" max="50" step=".1"></label>
-        <label class="mini-field motor-field"><span>Motor °/s</span><input id="propMotorSpeed" type="number" min="-720" max="720" step="5"></label>
-        <label class="mini-field motor-field"><span>Motor Torque</span><input id="propMotorTorque" type="number" min="0" max="200" step="1"></label>
-        <label class="mini-field gear-link-field"><span>Linked Joint</span><select id="propLinkedComponentId"><option value="">None</option></select></label>
-        <label class="mini-field gear-link-field"><span>Gear Ratio</span><input id="propGearRatio" type="number" min="-20" max="20" step=".05"></label>
+        <label class="mini-field"><span>회전각</span><input id="propRotation" type="number" step="1"></label>
+        <label class="mini-field dimension-field"><span>너비</span><input id="propWidth" type="number" min="0" step="1"></label>
+        <label class="mini-field dimension-field"><span>높이</span><input id="propHeight" type="number" min="0" step="1"></label>
+        <label class="mini-field radius-field"><span>반지름</span><input id="propRadius" type="number" min="0" step="1"></label>
+        <label class="mini-field physics-field"><span>탄성</span><input id="propRestitution" type="number" min="0" max="1.4" step=".05"></label>
+        <label class="mini-field physics-field"><span>마찰</span><input id="propFriction" type="number" min="0" max=".5" step=".01"></label>
+        <label class="mini-field rotator-field"><span>회전 속도 °/s</span><input id="propAngularSpeed" type="number" min="-720" max="720" step="5"></label>
+        <label class="mini-field motion-period-field"><span>주기 초</span><input id="propPeriod" type="number" min=".25" max="30" step=".1"></label>
+        <label class="mini-field swing-field"><span>진폭 °</span><input id="propAmplitude" type="number" min="0" max="120" step="1"></label>
+        <label class="mini-field gate-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
+        <label class="mini-field funnel-field"><span>깔때기 간격</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
+        <label class="mini-field thickness-field"><span>레일 두께</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
+        <label class="mini-field pivot-field"><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" min="-.5" max=".5" step=".01"></label>
+        <label class="mini-field hinge-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" min="-180" max="180" step="1"></label>
+        <label class="mini-field hinge-field"><span>최대 각도 °</span><input id="propUpperAngle" type="number" min="-180" max="180" step="1"></label>
+        <label class="mini-field hinge-field"><span>관절 마찰</span><input id="propJointFriction" type="number" min="0" max="50" step=".1"></label>
+        <label class="mini-field motor-field"><span>모터 속도 °/s</span><input id="propMotorSpeed" type="number" min="-720" max="720" step="5"></label>
+        <label class="mini-field motor-field"><span>모터 토크</span><input id="propMotorTorque" type="number" min="0" max="200" step="1"></label>
+        <label class="mini-field gear-link-field"><span>연결 관절</span><select id="propLinkedComponentId"><option value="">없음</option></select></label>
+        <label class="mini-field gear-link-field"><span>기어비</span><input id="propGearRatio" type="number" min="-20" max="20" step=".05"></label>
         <div class="button-pair gear-link-field">
-          <button id="gearLinkNearest" class="small-button" type="button">Nearest Joint</button>
-          <button id="gearLinkClear" class="small-button" type="button">Clear Link</button>
+          <button id="gearLinkNearest" class="small-button" type="button">가장 가까운 관절</button>
+          <button id="gearLinkClear" class="small-button" type="button">연결 해제</button>
         </div>
-        <label class="mini-field launcher-field"><span>Launch Power</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
-        <label class="mini-field launcher-field"><span>Direction °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
-        <label class="mini-field launcher-field"><span>Spread ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
-        <label class="mini-field launcher-field"><span>Power Variance</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
-        <label class="mini-field elevator-field"><span>Axis Angle °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
-        <label class="mini-field elevator-field"><span>Travel Min px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
-        <label class="mini-field elevator-field"><span>Travel Max px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
-        <label class="mini-field elevator-field"><span>Motor px/s</span><input id="propElevatorSpeed" type="number" min="1" max="600" step="1"></label>
-        <label class="mini-field elevator-field"><span>Motor Force</span><input id="propMotorForce" type="number" min="0" max="500" step="1"></label>
-        <label class="mini-field elevator-field"><span>Start Direction</span><select id="propStartDirection"><option value="1">+</option><option value="-1">−</option></select></label>
-        <label class="mini-field output-field"><span>Output Key</span><input id="propOutputKey" maxlength="32"></label>
-        <label class="mini-field output-field"><span>Output Rank</span><input id="propOutputRank" type="number" min="1" max="64" step="1"></label>
-        <label class="mini-field output-field"><span>Output Capacity</span><input id="propOutputCapacity" type="number" min="1" max="64" step="1"></label>
-        <label class="mini-field output-field"><span>Output Weight</span><input id="propOutputWeight" type="number" min=".01" max="100" step=".05"></label>
-        <label class="mini-field output-field"><span>Output Priority</span><input id="propOutputPriority" type="number" min="-100" max="100" step="1"></label>
-        <label class="mini-field sensor-tag-field"><span>Sensor Tag</span><input id="propSensorTag" maxlength="32" placeholder="optional"></label>
-        <label class="mini-field output-field"><span>Condition</span>
+        <label class="mini-field launcher-field"><span>발사 세기</span><input id="propLaunchPower" type="number" min="0" max="5" step=".05"></label>
+        <label class="mini-field launcher-field"><span>발사 방향 °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field launcher-field"><span>분산 ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
+        <label class="mini-field launcher-field"><span>세기 편차</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
+        <label class="mini-field elevator-field"><span>축 각도 °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field elevator-field"><span>이동 최소 px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
+        <label class="mini-field elevator-field"><span>이동 최대 px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
+        <label class="mini-field elevator-field"><span>모터 속도 px/s</span><input id="propElevatorSpeed" type="number" min="1" max="600" step="1"></label>
+        <label class="mini-field elevator-field"><span>모터 힘</span><input id="propMotorForce" type="number" min="0" max="500" step="1"></label>
+        <label class="mini-field elevator-field"><span>시작 방향</span><select id="propStartDirection"><option value="1">+</option><option value="-1">−</option></select></label>
+        <label class="mini-field output-field"><span>출력 키</span><input id="propOutputKey" maxlength="32"></label>
+        <label class="mini-field output-field"><span>출력 순위</span><input id="propOutputRank" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field"><span>출력 용량</span><input id="propOutputCapacity" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field"><span>출력 가중치</span><input id="propOutputWeight" type="number" min=".01" max="100" step=".05"></label>
+        <label class="mini-field output-field"><span>출력 우선순위</span><input id="propOutputPriority" type="number" min="-100" max="100" step="1"></label>
+        <label class="mini-field sensor-tag-field"><span>센서 태그</span><input id="propSensorTag" maxlength="32" placeholder="optional"></label>
+        <label class="mini-field output-field"><span>조건</span>
           <select id="propConditionType">
-            <option value="ALWAYS">Always</option>
-            <option value="AFTER_ANY_CLAIM">After Any Claim</option>
-            <option value="AFTER_OUTPUT_CLAIMS">After Output Claims</option>
-            <option value="AFTER_OUTPUT_FULL">After Output Full</option>
-            <option value="AFTER_SECONDS">After Seconds</option>
-            <option value="AFTER_SENSOR_CLAIMS">After Sensor Claims</option>
-            <option value="AFTER_BRANCH_STATE">After Branch State</option>
+            <option value="ALWAYS">항상</option>
+            <option value="AFTER_ANY_CLAIM">아무 당첨 이후</option>
+            <option value="AFTER_OUTPUT_CLAIMS">출력 당첨 수 충족 후</option>
+            <option value="AFTER_OUTPUT_FULL">출력 가득 참 이후</option>
+            <option value="AFTER_SECONDS">지정 시간 이후</option>
+            <option value="AFTER_SENSOR_CLAIMS">센서 감지 수 충족 후</option>
+            <option value="AFTER_BRANCH_STATE">분기 상태 충족 후</option>
           </select>
         </label>
-        <label class="mini-field output-field condition-output-ref-field"><span>Condition Output</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
-        <label class="mini-field output-field condition-claims-field"><span>Condition Claims</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
-        <label class="mini-field output-field condition-time-field"><span>Condition Seconds</span><input id="propConditionSeconds" type="number" min=".01" max="1800" step=".1"></label>
-        <label class="mini-field output-field condition-sensor-field"><span>Condition Sensor</span><select id="propConditionSensorTag"><option value="">None</option></select></label>
-        <label class="mini-field output-field condition-branch-field"><span>Branch Key</span><input id="propConditionBranchKey" maxlength="32"></label>
-        <label class="mini-field output-field condition-branch-field"><span>Branch Value</span><input id="propConditionBranchValue" maxlength="32"></label>
-        <label class="mini-field output-field"><span>Set Branch Key</span><input id="propBranchSetKey" maxlength="32" placeholder="optional"></label>
-        <label class="mini-field output-field"><span>Set Branch Value</span><input id="propBranchSetValue" maxlength="32" value="ON"></label>
-        <label class="mini-field slot-field"><span>Slot Key</span><input id="propSlotKey" maxlength="32"></label>
-        <label class="mini-field slot-field"><span>Slot Capacity</span><input id="propSlotCapacity" type="number" min="1" max="64" step="1"></label>
-        <label class="mini-field elimination-field"><span>Elimination Key</span><input id="propEliminationKey" maxlength="32"></label>
-        <label class="mini-field audio-field"><span>Sound Material</span>
+        <label class="mini-field output-field condition-output-ref-field"><span>조건 출력</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-claims-field"><span>조건 당첨 수</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field output-field condition-time-field"><span>조건 시간 초</span><input id="propConditionSeconds" type="number" min=".01" max="1800" step=".1"></label>
+        <label class="mini-field output-field condition-sensor-field"><span>조건 센서</span><select id="propConditionSensorTag"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-branch-field"><span>분기 키</span><input id="propConditionBranchKey" maxlength="32"></label>
+        <label class="mini-field output-field condition-branch-field"><span>분기 값</span><input id="propConditionBranchValue" maxlength="32"></label>
+        <label class="mini-field output-field"><span>설정할 분기 키</span><input id="propBranchSetKey" maxlength="32" placeholder="optional"></label>
+        <label class="mini-field output-field"><span>설정할 분기 값</span><input id="propBranchSetValue" maxlength="32" value="ON"></label>
+        <label class="mini-field slot-field"><span>슬롯 키</span><input id="propSlotKey" maxlength="32"></label>
+        <label class="mini-field slot-field"><span>슬롯 용량</span><input id="propSlotCapacity" type="number" min="1" max="64" step="1"></label>
+        <label class="mini-field elimination-field"><span>탈락 키</span><input id="propEliminationKey" maxlength="32"></label>
+        <label class="mini-field audio-field"><span>충돌 재질음</span>
           <select id="propSoundMaterial">
-            <option value="metal">Metal</option>
-            <option value="wood">Wood</option>
-            <option value="glass">Glass</option>
-            <option value="rubber">Rubber</option>
-            <option value="plastic">Plastic</option>
-            <option value="stone">Stone</option>
+            <option value="metal">금속</option>
+            <option value="wood">나무</option>
+            <option value="glass">유리</option>
+            <option value="rubber">고무</option>
+            <option value="plastic">플라스틱</option>
+            <option value="stone">돌</option>
           </select>
         </label>
-        <label class="mini-field audio-field"><span>Instrument</span>
+        <label class="mini-field audio-field"><span>악기</span>
           <select id="propInstrument">
-            <option value="none">Material Only</option>
-            <option value="bell">Bell</option>
-            <option value="chime">Chime</option>
-            <option value="xylophone">Xylophone</option>
-            <option value="drum">Drum</option>
-            <option value="click">Click</option>
+            <option value="none">재질음만</option>
+            <option value="bell">벨</option>
+            <option value="chime">차임</option>
+            <option value="xylophone">실로폰</option>
+            <option value="drum">드럼</option>
+            <option value="click">클릭</option>
           </select>
         </label>
-        <label class="mini-field audio-field"><span>MIDI Note</span><input id="propAudioNote" type="number" min="24" max="108" step="1"></label>
-        <label class="mini-field audio-field"><span>Audio Gain</span><input id="propAudioGain" type="number" min="0" max="2" step=".05"></label>
-        <label class="mini-field audio-field"><span>Audio Pan</span><input id="propAudioPan" type="number" min="-1" max="1" step=".05"></label>
-        <label class="mini-field bumper-field"><span>Bumper Boost</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
-        <label class="mini-field spawn-field"><span>Marble Radius</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
+        <label class="mini-field audio-field"><span>MIDI 음정</span><input id="propAudioNote" type="number" min="24" max="108" step="1"></label>
+        <label class="mini-field audio-field"><span>오디오 게인</span><input id="propAudioGain" type="number" min="0" max="2" step=".05"></label>
+        <label class="mini-field audio-field"><span>오디오 팬</span><input id="propAudioPan" type="number" min="-1" max="1" step=".05"></label>
+        <label class="mini-field bumper-field"><span>범퍼 반발력</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
+        <label class="mini-field spawn-field"><span>구슬 반지름</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
       </div>
 
       <div class="panel-section map-meta">
-        <p class="panel-title">MAP</p>
-        <div><span>ID</span><strong id="mapIdLabel">NEW</strong></div>
-        <div><span>Revision</span><strong id="mapRevision">-</strong></div>
-        <div><span>Hash</span><strong id="mapHash">-</strong></div>
+        <p class="panel-title">맵 정보</p>
+        <div><span>ID</span><strong id="mapIdLabel">신규</strong></div>
+        <div><span>리비전</span><strong id="mapRevision">-</strong></div>
+        <div><span>해시</span><strong id="mapHash">-</strong></div>
       </div>
     </aside>
   </section>
 </main>
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20260930-1"></script>
-<script src="/admin/assets/viewer-draw-map-maker.js?v=20260930-1"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20260930-2"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js?v=20260930-2"></script>
 </body>
 </html>
