@@ -1185,10 +1185,9 @@
           0,
           .75
         );
-        const power = clamp(
-          marble.burstPower ?? 1.15,
+        const power = Math.max(
           0,
-          5
+          Number(marble.burstPower ?? 1.15) || 0
         ) * (
           1 + (this.random() * 2 - 1) * variance
         );
@@ -1377,10 +1376,9 @@
           nextContacts.add(launcher.id);
           if (marble.launcherContacts.has(launcher.id)) continue;
 
-          const power = clamp(
-            property(launcher.properties, "launchPower", 1.2),
+          const power = Math.max(
             0,
-            5
+            property(launcher.properties, "launchPower", 1.2)
           );
           if (power <= 0) continue;
 
