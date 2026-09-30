@@ -57,16 +57,17 @@ requireCondition(
 );
 
 const goldbergTypes = [
+  "WALL",
+  "CURVE_WALL",
+  "CIRCLE",
   "GATE",
   "ROTATOR",
   "PENDULUM",
   "SEESAW",
-  "FUNNEL",
-  "SPLITTER",
   "HINGE",
   "GEAR",
   "PADDLE",
-  "LAUNCHER",
+  "CONVEYOR",
   "ELEVATOR",
   "OUTPUT",
   "SLOT",
@@ -101,19 +102,63 @@ requireCondition(
   "pendulum motion must oscillate with simulation time"
 );
 
+const pegPreset = Engine.createPreset("PEG", 300, 300);
+const bumperPreset = Engine.createPreset("BUMPER", 300, 300);
+const launchWallPreset = Engine.createPreset("LAUNCH_WALL", 300, 300);
 requireCondition(
-  Engine.componentShapes(
-    Engine.componentDefaults("FUNNEL", 300, 300),
-    0
-  ).length === 2,
-  "funnel must expand to two collision rails"
+  pegPreset.type === "CIRCLE"
+    && bumperPreset.type === "CIRCLE"
+    && pegPreset.properties.boost === 0
+    && bumperPreset.properties.boost > 0,
+  "pin and bumper must be value presets of the same circle collider"
 );
 requireCondition(
-  Engine.componentShapes(
-    Engine.componentDefaults("SPLITTER", 300, 300),
-    0
-  ).length === 2,
-  "splitter must expand to two collision rails"
+  launchWallPreset.type === "WALL"
+    && launchWallPreset.properties.boost > 0,
+  "launcher must be a boosted wall preset"
+);
+
+const legacyDefinition = {
+  schemaVersion: Engine.LEGACY_SCHEMA_VERSION,
+  name: "Legacy Migration Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  components: [
+    { ...Engine.componentDefaults("SPAWN", 100, 80) },
+    {
+      id: "legacy-ramp",
+      type: "RAMP",
+      x: 200, y: 200, rotation: 15,
+      width: 240, height: 18, radius: 0,
+      properties: { restitution: .3, friction: .05 }
+    },
+    {
+      id: "legacy-funnel",
+      type: "FUNNEL",
+      x: 400, y: 250, rotation: 0,
+      width: 220, height: 140, radius: 0,
+      properties: { restitution: .3, friction: .06, gap: 48, thickness: 14 }
+    },
+    {
+      id: "legacy-launcher",
+      type: "LAUNCHER",
+      x: 600, y: 350, rotation: 0,
+      width: 140, height: 22, radius: 0,
+      properties: { restitution: .4, friction: .05, launchPower: 2 }
+    },
+    { ...Engine.componentDefaults("FINISH", 400, 540) }
+  ]
+};
+const migratedDefinition = Engine.migrateDefinition(legacyDefinition);
+requireCondition(
+  migratedDefinition.schemaVersion === Engine.SCHEMA_VERSION
+    && !migratedDefinition.components.some((component) =>
+      ["RAMP","FUNNEL","SPLITTER","LAUNCHER","PEG","BUMPER"]
+        .includes(component.type)
+    )
+    && migratedDefinition.components.filter(
+      (component) => component.type === "WALL"
+    ).length >= 4,
+  "legacy obstacles must migrate to current wall/circle colliders"
 );
 requireCondition(
   Engine.componentShapes(
