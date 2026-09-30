@@ -1161,12 +1161,75 @@
     render();
   }
 
+  function closePaletteGroups(except = null) {
+    document.querySelectorAll(".palette-group").forEach((group) => {
+      if (group === except) return;
+      group.classList.remove("open");
+      const trigger = group.querySelector(".palette-group-trigger");
+      if (trigger) trigger.setAttribute("aria-expanded", "false");
+    });
+  }
+
+  function syncPaletteGroupState() {
+    document.querySelectorAll(".palette-group").forEach((group) => {
+      const containsActiveTool = Array.from(
+        group.querySelectorAll("[data-tool]")
+      ).some((button) => button.dataset.tool === tool);
+      group.classList.toggle("group-active", containsActiveTool);
+    });
+  }
+
+  function setupPaletteGroups() {
+    document.querySelectorAll(".palette-group").forEach((group) => {
+      const trigger = group.querySelector(".palette-group-trigger");
+      const flyout = group.querySelector(".palette-flyout");
+      if (!trigger || !flyout) return;
+
+      trigger.setAttribute("aria-haspopup", "menu");
+      trigger.addEventListener("click", () => {
+        const nextOpen = !group.classList.contains("open");
+        closePaletteGroups(group);
+        group.classList.toggle("open", nextOpen);
+        trigger.setAttribute(
+          "aria-expanded",
+          nextOpen ? "true" : "false"
+        );
+      });
+
+      trigger.addEventListener("keydown", (event) => {
+        if (!["ArrowRight", "ArrowDown"].includes(event.key)) return;
+        closePaletteGroups(group);
+        group.classList.add("open");
+        trigger.setAttribute("aria-expanded", "true");
+        const first = flyout.querySelector("[data-tool]");
+        if (first) first.focus();
+        event.preventDefault();
+      });
+
+      group.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" || event.key === "ArrowLeft") {
+          group.classList.remove("open");
+          trigger.setAttribute("aria-expanded", "false");
+          trigger.focus();
+          event.preventDefault();
+        }
+      });
+    });
+
+    document.addEventListener("pointerdown", (event) => {
+      if (!event.target.closest(".palette-group")) {
+        closePaletteGroups();
+      }
+    });
+  }
+
   function setTool(next) {
     tool = next;
     setHoverControl(null);
     document.querySelectorAll("[data-tool]").forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === tool);
     });
+    syncPaletteGroupState();
     canvas.style.cursor = previewRunning
       ? "default"
       : tool === "SELECT" ? "default" : "crosshair";
@@ -2106,8 +2169,14 @@
   });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
+  setupPaletteGroups();
+
   document.querySelectorAll("[data-tool]").forEach((button) => {
-    button.addEventListener("click", () => setTool(button.dataset.tool));
+    button.addEventListener("click", () => {
+      setTool(button.dataset.tool);
+      closePaletteGroups();
+      button.blur();
+    });
   });
 
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
