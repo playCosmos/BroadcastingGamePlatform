@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20260930-10">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20260930-11">
 </head>
 <body>
 <main class="shell map-maker-shell">
@@ -153,6 +153,7 @@
         <label class="mini-field gate-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
         <label class="mini-field funnel-field"><span>깔때기 간격</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
         <label class="mini-field thickness-field"><span>레일 두께</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
+        <label class="mini-field curve-wall-field"><span>곡선 세그먼트</span><input id="propCurveSegments" type="number" min="6" max="32" step="1"></label>
         <label class="mini-field pivot-field"><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" min="-.5" max=".5" step=".01"></label>
         <label class="mini-field hinge-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" min="-180" max="180" step="1"></label>
         <label class="mini-field hinge-field"><span>최대 각도 °</span><input id="propUpperAngle" type="number" min="-180" max="180" step="1"></label>
@@ -248,7 +249,7 @@
     </aside>
   </section>
 </main>
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20260930-7"></script>
-<script src="/admin/assets/viewer-draw-map-maker.js?v=20260930-10"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20260930-11"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js?v=20260930-11"></script>
 </body>
 </html>
