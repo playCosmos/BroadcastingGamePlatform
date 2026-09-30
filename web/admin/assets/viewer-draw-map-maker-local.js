@@ -72,6 +72,73 @@
     return Number.isFinite(n) ? n : fallback;
   };
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  let advancedSettingsVisible = false;
+  const ADVANCED_SETTING_IDS = [
+    "propRestitution",
+    "propFriction",
+    "propPivotRatio",
+    "propJointFriction",
+    "propMotorTorque",
+    "propLinkedComponentId",
+    "propGearRatio",
+    "propLaunchSpread",
+    "propLaunchVariance",
+    "propBurstSpread",
+    "propBurstVariance",
+    "propBurstSizeMin",
+    "propBurstSizeMax",
+    "propBurstInterval",
+    "propBeltGrip",
+    "propMotorForce",
+    "propStartDirection",
+    "propOutputWeight",
+    "propOutputPriority",
+    "propSensorTag",
+    "propConditionType",
+    "propConditionOutputKey",
+    "propConditionClaims",
+    "propConditionSeconds",
+    "propConditionSensorTag",
+    "propConditionBranchKey",
+    "propConditionBranchValue",
+    "propBranchSetKey",
+    "propBranchSetValue",
+    "propSoundMaterial",
+    "propInstrument",
+    "propAudioNote",
+    "propAudioGain",
+    "propAudioPan"
+  ];
+
+  function syncAdvancedSettings() {
+    document.querySelectorAll(".advanced-setting-field").forEach((field) => {
+      field.classList.toggle(
+        "advanced-setting-collapsed",
+        !advancedSettingsVisible
+      );
+    });
+    const button = $("advancedSettingsToggle");
+    if (button) {
+      button.textContent = advancedSettingsVisible
+        ? "고급 설정 숨기기"
+        : "고급 설정 보기";
+      button.setAttribute(
+        "aria-expanded",
+        advancedSettingsVisible ? "true" : "false"
+      );
+    }
+  }
+
+  function setupAdvancedSettings() {
+    for (const id of ADVANCED_SETTING_IDS) {
+      const input = $(id);
+      const field = input?.closest(".mini-field");
+      field?.classList.add("advanced-setting-field");
+    }
+    const gearButtons = $("gearLinkNearest")?.closest(".button-pair");
+    gearButtons?.classList.add("advanced-setting-field");
+    syncAdvancedSettings();
+  }
 
   function setStatus(message, kind = "") {
     const root = $("mapValidation");
@@ -1345,10 +1412,9 @@
         24
       );
       c.properties.spawnRole = "BURST";
-      c.properties.burstPower = clamp(
-        num($("propBurstPower").value, 1.15),
+      c.properties.burstPower = Math.max(
         0,
-        5
+        num($("propBurstPower").value, 1.15)
       );
       c.properties.burstDirectionDegrees = clamp(
         num($("propBurstDirection").value, -90),
@@ -2093,6 +2159,10 @@
   });
   $("previewToggle").addEventListener("click", startPreview);
   $("previewReset").addEventListener("click", resetPreview);
+  $("advancedSettingsToggle").addEventListener("click", () => {
+    advancedSettingsVisible = !advancedSettingsVisible;
+    syncAdvancedSettings();
+  });
   $("zoomOut").addEventListener("click", () => setEditorZoom(editorZoom / 1.2));
   $("zoomIn").addEventListener("click", () => setEditorZoom(editorZoom * 1.2));
   $("zoomReset").addEventListener("click", resetEditorView);
@@ -2146,6 +2216,7 @@
     resizeTimer = setTimeout(render, 20);
   }).observe(wrap);
 
+  setupAdvancedSettings();
   syncMapControls();
   syncInspector();
   updateZoomLabel();
