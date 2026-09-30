@@ -90,12 +90,11 @@
       <section class="button-stack">
         <button id="startDraw" class="primary-button" type="button">추첨 시작</button>
         <button id="resetDraw" type="button">초기화</button>
-        <button id="exportAudit" type="button" disabled>Audit JSON 내보내기</button>
 
       </section>
 
       <p class="runtime-note">
-        이 추첨 경로는 서버 API를 호출하지 않습니다. 페이지 로드 이후 플랫폼 서버가 중단되어도 현재 추첨은 계속 진행됩니다.
+        맵·물리·추첨 결과는 현재 브라우저에서만 처리됩니다.
       </p>
     </aside>
 
@@ -108,7 +107,6 @@
         <div class="stage-tools">
           <span id="launchStatus" class="stage-tool">LAUNCH 0/0</span>
           <span id="stuckCount">NUDGE 0</span>
-          <span id="qualificationBadge" class="stage-tool">QUALIFY -</span>
           <span id="timeoutBadge" class="stage-tool" hidden>TIMEOUT</span>
           <span id="slowMotionBadge" class="slow-motion-badge" hidden>SLOW 0.35×</span>
           <button id="muteAudio" type="button" class="stage-tool" aria-pressed="false">🔊 사운드</button>
@@ -145,6 +143,6 @@
 <script src="./web/admin/assets/viewer-draw-map-engine.js?v=20260930-1"></script>
 <script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
 <script src="./web/tools/viewer-draw/marble/browser-physics-adapter.js?v=20260929-3"></script>
-<script src="./web/tools/viewer-draw/marble/viewer-draw-marble.js?v=20260930-1"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-marble.js?v=20260930-2"></script>
 </body>
 </html>
