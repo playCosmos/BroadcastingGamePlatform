@@ -1492,6 +1492,23 @@
     validateClient(false);
   }
 
+  function adjustLauncherPower(delta) {
+    const c = currentComponent();
+    if (!c || c.type !== "LAUNCHER" || previewRunning) return;
+    const before = clone(definition);
+    c.properties = c.properties || {};
+    const current = Number(c.properties.launchPower);
+    const base = Number.isFinite(current) ? current : 1.2;
+    const next = Math.max(0, Math.round((base + delta) * 100) / 100);
+    c.properties.launchPower = next;
+    $("propLaunchPower").value = String(next);
+    undoStack.push(before);
+    if (undoStack.length > 100) undoStack.shift();
+    redoStack = [];
+    updateEditButtons();
+    validateClient(false);
+  }
+
   function setGearLink(targetId) {
     const c = currentComponent();
     if (!c || c.type !== "GEAR" || previewRunning) return;
@@ -2063,6 +2080,8 @@
   $("deleteSelected").addEventListener("click", deleteSelected);
   $("gearLinkNearest").addEventListener("click", linkGearToNearestJoint);
   $("gearLinkClear").addEventListener("click", () => setGearLink(""));
+  $("launchPowerDown").addEventListener("click", () => adjustLauncherPower(-0.05));
+  $("launchPowerUp").addEventListener("click", () => adjustLauncherPower(0.05));
   $("newMap").addEventListener("click", newMap);
   $("saveMap").addEventListener("click", saveMap);
   $("archiveMap").addEventListener("click", archiveMap);
