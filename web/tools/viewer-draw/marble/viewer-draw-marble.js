@@ -27,10 +27,6 @@
   let fastForwardActive = false;
   let finishSlowMotion = false;
   let stuckNudges = 0;
-  let lastAudit = null;
-  let activeRunGeneration = 0;
-  let runStartedAt = null;
-  let runStartedPerformance = 0;
 
   const FINISH_SLOW_RATE = 0.35;
   let stuckState = new Map();
@@ -205,180 +201,6 @@
       if (!connectVoice(source, gain, panner)) continue;
       source.start(now);
     }
-  }
-
-  async function sha256Hex(value) {
-    const bytes = new TextEncoder().encode(value);
-    const digest = await crypto.subtle.digest("SHA-256", bytes);
-    return [...new Uint8Array(digest)]
-      .map((byte) => byte.toString(16).padStart(2, "0"))
-      .join("");
-  }
-
-  function clearAudit() {
-    lastAudit = null;
-    $("exportAudit").disabled = true;
-    $("qualificationBadge").textContent = "QUALIFY -";
-    $("qualificationBadge").classList.remove("active");
-    window.dispatchEvent(
-      new CustomEvent("viewer-draw-audit-cleared")
-    );
-  }
-
-  async function buildRunAudit(generation) {
-    const auditDefinition = structuredClone(definition);
-    const auditEntries = structuredClone(entries);
-    const auditState = structuredClone(state);
-    const auditNudges = stuckNudges;
-    const auditStartedAt = runStartedAt;
-    const auditCompletedAt = new Date().toISOString();
-    const auditWallElapsedMs = Math.max(
-      0,
-      Math.round(performance.now() - runStartedPerformance)
-    );
-    const auditSeed = Math.trunc(Number($("seed").value) || 1);
-    const auditEngineId = adapter.engineId();
-
-    const policy = Engine.resolvedRunPolicy(auditDefinition);
-    const requiredWinners =
-      policy.qualificationMinWinners || winnerCountValue();
-    const reasons = [];
-    if ((auditState?.rankedEntries?.length || 0) < requiredWinners) {
-      reasons.push("INSUFFICIENT_WINNERS");
-    }
-    if (
-      policy.qualificationMaxNudges > 0
-      && auditNudges > policy.qualificationMaxNudges
-    ) {
-      reasons.push("NUDGE_LIMIT_EXCEEDED");
-    }
-
-    const [mapHash, entryHash] = await Promise.all([
-      sha256Hex(JSON.stringify(auditDefinition)),
-      sha256Hex(JSON.stringify(auditEntries))
-    ]);
-    if (generation !== activeRunGeneration) return;
-
-    const dnfIds = new Set(auditState?.dnfOrder || []);
-    const eliminatedIds = new Set(
-      auditState?.eliminationOrder || []
-    );
-    const entryByMarble = new Map(
-      (auditState?.marbles || []).map((marble) => [
-        marble.id,
-        marble.entry
-      ])
-    );
-
-    lastAudit = {
-      schemaVersion: "viewer-draw-run-audit/v0",
-      resultStatus: auditState?.timedOut
-        ? "TIMEOUT"
-        : "COMPLETED",
-      qualification: {
-        status: reasons.length
-          ? "NOT_QUALIFIED"
-          : "QUALIFIED",
-        requiredWinners,
-        maxNudges: policy.qualificationMaxNudges,
-        reasons
-      },
-      engine: {
-        id: auditEngineId,
-        fixedTimestepSeconds: 1 / 120
-      },
-      map: {
-        schemaVersion: auditDefinition.schemaVersion,
-        name: auditDefinition.name,
-        definitionHash: mapHash,
-        drawRule: structuredClone(
-          Engine.resolvedDrawRule(auditDefinition)
-        ),
-        runPolicy: structuredClone(policy)
-      },
-      run: {
-        seed: auditSeed,
-        launchMode: launchModeValue(),
-        launchIntervalMs: launchIntervalValue(),
-        startedAt: auditStartedAt,
-        completedAt: auditCompletedAt,
-        wallElapsedMs: auditWallElapsedMs,
-        simulationSeconds: auditState?.time || 0,
-        stuckNudges: auditNudges,
-        timedOut: Boolean(auditState?.timedOut)
-      },
-      entries: {
-        count: auditEntries.length,
-        snapshotHash: entryHash,
-        values: auditEntries.map((entry) => ({
-          entryId: entry.entryId,
-          displayName: entry.displayName
-        }))
-      },
-      result: {
-        winners: (auditState?.rankedEntries || []).map(
-          (entry, index) => ({
-            rank: index + 1,
-            entryId: entry.entryId,
-            displayName: entry.displayName
-          })
-        ),
-        dnf: [...dnfIds].map((id) => ({
-          marbleId: id,
-          entry: entryByMarble.get(id) || null
-        })),
-        eliminated: [...eliminatedIds].map((id) => ({
-          marbleId: id,
-          entry: entryByMarble.get(id) || null
-        })),
-        outputClaims: structuredClone(
-          auditState?.outputClaims || []
-        ),
-        slotClaims: structuredClone(
-          auditState?.slotClaims || []
-        ),
-        sensorClaims: structuredClone(
-          auditState?.sensorClaims || []
-        ),
-        branchStates: structuredClone(
-          auditState?.branchStates || []
-        ),
-        selectedOutputKey:
-          auditState?.selectedOutputKey || null
-      }
-    };
-
-    const qualified =
-      lastAudit.qualification.status === "QUALIFIED";
-    $("qualificationBadge").textContent =
-      qualified ? "QUALIFIED" : "NOT QUALIFIED";
-    $("qualificationBadge").classList.toggle(
-      "active",
-      qualified
-    );
-    $("exportAudit").disabled = false;
-    window.dispatchEvent(
-      new CustomEvent("viewer-draw-audit-ready", {
-        detail: structuredClone(lastAudit)
-      })
-    );
-  }
-
-  function exportAudit() {
-    if (!lastAudit) return;
-    const blob = new Blob(
-      [JSON.stringify(lastAudit, null, 2)],
-      { type: "application/json" }
-    );
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.download =
-      "viewer-draw-audit-"
-      + new Date().toISOString().replaceAll(":", "-")
-      + ".json";
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
   }
 
   const camera = {
@@ -570,7 +392,6 @@
     }
     definition = structuredClone(next);
     adapter.loadMap(definition);
-    clearAudit();
     const rule = Engine.resolvedDrawRule(definition);
     if (rule.type !== "RACE_FINISH") {
       let target = rule.winnerCount;
@@ -1494,7 +1315,6 @@
     }
     $("winnerBanner").hidden = false;
     cancelAnimationFrame(frameId);
-    void buildRunAudit(activeRunGeneration);
   }
 
   function tick(now) {
@@ -1521,14 +1341,6 @@
     $("launchStatus").textContent =
       "LAUNCH " + (state.launchedCount || 0)
       + "/" + (state.totalCount || entries.length);
-    const policy = Engine.resolvedRunPolicy(definition);
-    const qualifyTarget =
-      policy.qualificationMinWinners || winnerCountValue();
-    $("qualificationBadge").textContent =
-      "QUALIFY "
-      + state.rankedEntries.length
-      + "/"
-      + qualifyTarget;
     $("timeoutBadge").hidden = !state.timedOut;
     renderRanks();
     render();
@@ -1553,10 +1365,6 @@
 
     const winnerCount = winnerCountValue();
     $("winnerCount").value = String(winnerCount);
-    clearAudit();
-    activeRunGeneration += 1;
-    runStartedAt = new Date().toISOString();
-    runStartedPerformance = performance.now();
     await ensureAudioReady();
 
     // Freeze everything needed for result determination in browser memory.
@@ -1595,11 +1403,6 @@
       + "/" + (state.totalCount || entries.length);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "RUNNING";
-    $("qualificationBadge").textContent =
-      "QUALIFY 0/" + (
-        Engine.resolvedRunPolicy(definition).qualificationMinWinners
-        || winnerCount
-      );
     $("timeoutBadge").hidden = true;
     $("slowMotionBadge").hidden = true;
     $("podiumList").replaceChildren();
@@ -1648,9 +1451,6 @@
       + "/" + (state?.totalCount || entries.length);
     $("stuckCount").textContent = "NUDGE 0";
     $("drawState").textContent = "READY";
-    $("qualificationBadge").textContent = lastAudit
-      ? $("qualificationBadge").textContent
-      : "QUALIFY -";
     $("timeoutBadge").hidden = true;
     $("progress").textContent = `0 / ${entries.length}`;
     $("elapsed").textContent = "0.0s";
@@ -1702,8 +1502,7 @@
     }
     updateEntryCount();
     if (!running) {
-      clearAudit();
-      $("drawState").textContent = "READY · INPUT CHANGED";
+        $("drawState").textContent = "READY · INPUT CHANGED";
       $("winnerBanner").hidden = true;
     }
   });
@@ -1716,13 +1515,11 @@
     remove.closest(".entry-row")?.remove();
     updateEntryCount();
     refreshEntryRemoveButtons();
-    clearAudit();
   });
 
   $("addEntry").addEventListener("click", () => {
     if (running) return;
     addEntryRow("", 1);
-    clearAudit();
     $("drawState").textContent = "READY · INPUT CHANGED";
     $("winnerBanner").hidden = true;
   });
@@ -1731,8 +1528,7 @@
     (input) => input.addEventListener("change", () => {
       updateLaunchControls();
       if (!running) {
-        clearAudit();
-        $("drawState").textContent = "READY · START STYLE CHANGED";
+            $("drawState").textContent = "READY · START STYLE CHANGED";
       }
     })
   );
@@ -1751,7 +1547,6 @@
 
   $("startDraw").addEventListener("click", startDraw);
   $("resetDraw").addEventListener("click", resetDraw);
-  $("exportAudit").addEventListener("click", exportAudit);
   $("cameraAuto").addEventListener("click", () => {
     camera.locked = false;
     updateCameraLabel();
