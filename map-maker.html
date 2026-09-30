@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="./web/assets/platform.css">
-  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-refactor2">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-ui1">
 </head>
 <body data-storage-mode="local">
 <main class="shell map-maker-shell">
@@ -39,26 +39,97 @@
     <aside class="maker-panel palette-panel">
       <p class="panel-title">도구</p>
       <button class="palette-item active" data-tool="SELECT" data-tooltip="오브젝트를 선택하고 이동·회전·크기를 편집합니다.">선택</button>
-      <button class="palette-item" data-tool="WALL" data-tooltip="구슬의 이동을 막는 고정 벽을 배치합니다.">벽</button>
-      <button class="palette-item" data-tool="CURVE_WALL" data-tooltip="폭과 높이로 곡률을 조절하는 곡선 벽을 배치합니다.">곡선 벽</button>
-      <button class="palette-item" data-tool="PRESET_PEG" data-tooltip="원형 충돌체의 핀 프리셋입니다. Boost 기본값은 0입니다.">핀</button>
-      <button class="palette-item" data-tool="PRESET_BUMPER" data-tooltip="원형 충돌체의 범퍼 프리셋입니다. 핀과 같은 구조에 높은 Boost 기본값을 사용합니다.">범퍼</button>
-      <button class="palette-item" data-tool="GATE" data-tooltip="구슬의 통과를 제어하는 회전형 게이트입니다.">게이트</button>
-      <button class="palette-item" data-tool="ROTATOR" data-tooltip="계속 회전하며 구슬을 밀어내는 장애물입니다.">회전판</button>
-      <button class="palette-item" data-tool="PENDULUM" data-tooltip="좌우로 흔들리며 구슬과 충돌하는 진자입니다.">진자</button>
-      <button class="palette-item" data-tool="SEESAW" data-tooltip="중심축을 기준으로 기울어지는 시소 장애물입니다.">시소</button>
-      <button class="palette-item" data-tool="HINGE" data-tooltip="회전축을 가진 관절형 오브젝트를 만듭니다.">힌지 / 피벗</button>
-      <button class="palette-item" data-tool="GEAR" data-tooltip="다른 관절과 연결할 수 있는 회전 기어입니다.">기어 로터</button>
-      <button class="palette-item" data-tool="PADDLE" data-tooltip="한쪽 축을 중심으로 회전하는 패들입니다.">패들</button>
-      <button class="palette-item" data-tool="PRESET_LAUNCH_WALL" data-tooltip="벽 프리셋입니다. 일반 벽과 같은 구조에 높은 Boost 기본값을 사용합니다.">발사벽</button>
-      <button class="palette-item" data-tool="CONVEYOR" data-tooltip="벨트 회전 속도와 마찰로 구슬을 한 방향으로 운반합니다.">컨베이어</button>
-      <button class="palette-item" data-tool="ELEVATOR" data-tooltip="지정한 축을 따라 왕복 이동하는 발판입니다.">엘리베이터</button>
-      <button class="palette-item" data-tool="SPAWN" data-tooltip="구슬이 한곳에 뭉쳐 생성되는 기본 출발 지점입니다.">뭉침 스포너</button>
-      <button class="palette-item" data-tool="BURST_SPAWN" data-tooltip="지정한 방향으로 여러 구슬을 묶음 단위로 우르르 발사합니다.">버스트 스포너</button>
-      <button class="palette-item" data-tool="FINISH" data-tooltip="레이스 완료를 판정하는 도착 영역입니다.">도착 지점</button>
-      <button class="palette-item" data-tool="OUTPUT" data-tooltip="순위나 조건에 따라 당첨 구슬을 받는 영역입니다.">출력 구역</button>
-      <button class="palette-item" data-tool="SLOT" data-tooltip="설정한 용량만큼 구슬을 수집하는 슬롯입니다.">슬롯</button>
-      <button class="palette-item" data-tool="ELIMINATION" data-tooltip="들어온 구슬을 탈락 처리하는 영역입니다.">탈락 구역</button>
+
+      <div class="palette-group" data-palette-group="linear">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>직선 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout" role="menu">
+          <p class="palette-flyout-title">WALL 프리셋</p>
+          <button class="palette-item palette-preset" data-tool="WALL" role="menuitem" data-tooltip="기본 직선 충돌체입니다. Boost 기본값은 0입니다.">
+            <span>일반 벽</span><small>기본</small>
+          </button>
+          <button class="palette-item palette-preset" data-tool="PRESET_LAUNCH_WALL" role="menuitem" data-tooltip="일반 벽과 같은 WALL이며 Boost 기본값만 높습니다.">
+            <span>발사벽</span><small>Boost 프리셋</small>
+          </button>
+        </div>
+      </div>
+
+      <div class="palette-group" data-palette-group="curve">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>곡선 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout" role="menu">
+          <p class="palette-flyout-title">CURVE WALL</p>
+          <button class="palette-item palette-preset" data-tool="CURVE_WALL" role="menuitem" data-tooltip="폭과 높이로 곡률을 조절하는 곡선 충돌체입니다.">
+            <span>곡선 벽</span><small>기본</small>
+          </button>
+        </div>
+      </div>
+
+      <div class="palette-group" data-palette-group="circle">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>원형 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout" role="menu">
+          <p class="palette-flyout-title">CIRCLE 프리셋</p>
+          <button class="palette-item palette-preset" data-tool="PRESET_PEG" role="menuitem" data-tooltip="CIRCLE 기반 작은 충돌체입니다. Boost 기본값은 0입니다.">
+            <span>핀</span><small>기본</small>
+          </button>
+          <button class="palette-item palette-preset" data-tool="PRESET_BUMPER" role="menuitem" data-tooltip="핀과 같은 CIRCLE이며 높은 탄성과 Boost 기본값을 사용합니다.">
+            <span>범퍼</span><small>Boost 프리셋</small>
+          </button>
+        </div>
+      </div>
+
+      <div class="palette-group" data-palette-group="motion">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>회전·관절 장치</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout palette-flyout-wide" role="menu">
+          <p class="palette-flyout-title">독립 동작 장치</p>
+          <button class="palette-item" data-tool="GATE" role="menuitem">게이트</button>
+          <button class="palette-item" data-tool="ROTATOR" role="menuitem">회전판</button>
+          <button class="palette-item" data-tool="PENDULUM" role="menuitem">진자</button>
+          <button class="palette-item" data-tool="SEESAW" role="menuitem">시소</button>
+          <button class="palette-item" data-tool="HINGE" role="menuitem">힌지 / 피벗</button>
+          <button class="palette-item" data-tool="GEAR" role="menuitem">기어 로터</button>
+          <button class="palette-item" data-tool="PADDLE" role="menuitem">패들</button>
+        </div>
+      </div>
+
+      <div class="palette-group" data-palette-group="transport">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>이송 장치</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout" role="menu">
+          <p class="palette-flyout-title">서로 다른 동작</p>
+          <button class="palette-item" data-tool="CONVEYOR" role="menuitem" data-tooltip="표면 방향 속도를 전달하는 고정 벨트 장치입니다.">컨베이어</button>
+          <button class="palette-item" data-tool="ELEVATOR" role="menuitem" data-tooltip="플랫폼 자체가 지정 축을 따라 왕복 이동합니다.">엘리베이터</button>
+        </div>
+      </div>
+
+      <div class="palette-group" data-palette-group="spawn">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>생성 장치</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout" role="menu">
+          <button class="palette-item" data-tool="SPAWN" role="menuitem">뭉침 스포너</button>
+          <button class="palette-item" data-tool="BURST_SPAWN" role="menuitem">버스트 스포너</button>
+        </div>
+      </div>
+
+      <div class="palette-group" data-palette-group="result">
+        <button class="palette-group-trigger" type="button" aria-expanded="false">
+          <span>판정·출력</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+        </button>
+        <div class="palette-flyout" role="menu">
+          <button class="palette-item" data-tool="FINISH" role="menuitem">도착 지점</button>
+          <button class="palette-item" data-tool="OUTPUT" role="menuitem">출력 구역</button>
+          <button class="palette-item" data-tool="SLOT" role="menuitem">슬롯</button>
+          <button class="palette-item" data-tool="ELIMINATION" role="menuitem">탈락 구역</button>
+        </div>
+      </div>
 
       <div class="panel-section">
         <p class="panel-title">편집</p>
@@ -238,6 +309,6 @@
   </section>
 </main>
 <script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261001-refactor2"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-refactor2"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-ui1"></script>
 </body>
 </html>
