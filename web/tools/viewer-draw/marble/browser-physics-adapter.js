@@ -1287,17 +1287,55 @@
       };
     }
 
+    runtimeColliderComponent(component) {
+      const runtimeItem =
+        this.movingComponents.find(
+          (item) => item.component.id === component.id
+        )
+        || this.reactiveComponents.find(
+          (item) => item.component.id === component.id
+        );
+      if (!runtimeItem?.body) return component;
+
+      const position = runtimeItem.body.GetPosition();
+      const rotation =
+        runtimeItem.body.GetAngle() * 180 / Math.PI;
+      return {
+        ...component,
+        x: position.x * PIXELS_PER_METER,
+        y: position.y * PIXELS_PER_METER,
+        rotation,
+        runtimeRotation: rotation
+      };
+    }
+
     boostContact(x, y, radius, component) {
-      if (component.type === "CIRCLE") {
-        return this.circleBoostContact(x, y, radius, component);
+      const runtimeComponent =
+        this.runtimeColliderComponent(component);
+
+      if (runtimeComponent.type === "CIRCLE") {
+        return this.circleBoostContact(
+          x,
+          y,
+          radius,
+          runtimeComponent
+        );
       }
-      const shapes = root.ViewerDrawMapEngine.componentShapes(
-        component,
-        this.time
-      );
+
+      const shapes = runtimeComponent.type === "ELEVATOR"
+        ? [runtimeComponent]
+        : root.ViewerDrawMapEngine.componentShapes(
+            runtimeComponent,
+            this.time
+          );
       let best = null;
       for (const shape of shapes) {
-        const contact = this.rectBoostContact(x, y, radius, shape);
+        const contact = this.rectBoostContact(
+          x,
+          y,
+          radius,
+          shape
+        );
         if (!contact) continue;
         if (!best || contact.distance < best.distance) {
           best = contact;
@@ -1415,17 +1453,6 @@
     }
 
 
-    pointInRectExpanded(x, y, component, pad = 0) {
-      const angle = (component.rotation || 0) * Math.PI / 180;
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
-      const dx = x - component.x;
-      const dy = y - component.y;
-      const localX = dx * cos + dy * sin;
-      const localY = -dx * sin + dy * cos;
-      return Math.abs(localX) <= component.width / 2 + pad
-        && Math.abs(localY) <= component.height / 2 + pad;
-    }
 
     detectTaggedSensors() {
       const sensors = this.definition.components.filter(
