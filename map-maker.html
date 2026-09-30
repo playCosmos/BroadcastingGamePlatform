@@ -40,6 +40,7 @@
       <p class="panel-title">도구</p>
       <button class="palette-item active" data-tool="SELECT" data-tooltip="오브젝트를 선택하고 이동·회전·크기를 편집합니다.">선택</button>
       <button class="palette-item" data-tool="WALL" data-tooltip="구슬의 이동을 막는 고정 벽을 배치합니다.">벽</button>
+      <button class="palette-item" data-tool="CURVE_WALL" data-tooltip="폭과 높이로 곡률을 조절하는 곡선 벽을 배치합니다.">곡선 벽</button>
       <button class="palette-item" data-tool="RAMP" data-tooltip="구슬의 흐름을 유도하는 경사면을 배치합니다.">경사로</button>
       <button class="palette-item" data-tool="PEG" data-tooltip="구슬이 부딪혀 방향이 바뀌는 작은 핀을 배치합니다.">핀</button>
       <button class="palette-item" data-tool="BUMPER" data-tooltip="충돌한 구슬을 강하게 튕겨내는 범퍼입니다.">범퍼</button>
@@ -53,8 +54,10 @@
       <button class="palette-item" data-tool="GEAR" data-tooltip="다른 관절과 연결할 수 있는 회전 기어입니다.">기어 로터</button>
       <button class="palette-item" data-tool="PADDLE" data-tooltip="한쪽 축을 중심으로 회전하는 패들입니다.">패들</button>
       <button class="palette-item" data-tool="LAUNCHER" data-tooltip="지정한 방향과 세기로 구슬을 발사합니다.">발사대</button>
+      <button class="palette-item" data-tool="CONVEYOR" data-tooltip="벨트 회전 속도와 마찰로 구슬을 한 방향으로 운반합니다.">컨베이어</button>
       <button class="palette-item" data-tool="ELEVATOR" data-tooltip="지정한 축을 따라 왕복 이동하는 발판입니다.">엘리베이터</button>
-      <button class="palette-item" data-tool="SPAWN" data-tooltip="구슬이 생성되는 시작 위치입니다.">출발 지점</button>
+      <button class="palette-item" data-tool="SPAWN" data-tooltip="구슬이 한곳에 뭉쳐 생성되는 기본 출발 지점입니다.">뭉침 스포너</button>
+      <button class="palette-item" data-tool="BURST_SPAWN" data-tooltip="지정한 방향으로 여러 구슬을 묶음 단위로 우르르 발사합니다.">버스트 스포너</button>
       <button class="palette-item" data-tool="FINISH" data-tooltip="레이스 완료를 판정하는 도착 영역입니다.">도착 지점</button>
       <button class="palette-item" data-tool="OUTPUT" data-tooltip="순위나 조건에 따라 당첨 구슬을 받는 영역입니다.">출력 구역</button>
       <button class="palette-item" data-tool="SLOT" data-tooltip="설정한 용량만큼 구슬을 수집하는 슬롯입니다.">슬롯</button>
@@ -113,6 +116,11 @@
           <button id="previewReset" class="small-button">초기화</button>
           <label>구슬 수 <input id="marbleCount" type="number" min="1" value="16"></label>
           <label>난수 시드 <input id="previewSeed" type="number" value="1"></label>
+          <div class="editor-zoom-controls" aria-label="맵 확대 축소">
+            <button id="zoomOut" class="small-button" type="button" title="축소">−</button>
+            <button id="zoomReset" class="small-button" type="button" title="100%로 초기화"><span id="zoomLabel">100%</span></button>
+            <button id="zoomIn" class="small-button" type="button" title="확대">+</button>
+          </div>
         </div>
         <div class="stage-status">
           <span id="modeStatus">편집</span>
@@ -160,6 +168,15 @@
         <label class="mini-field launcher-field"><span>발사 방향 °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field launcher-field"><span>분산 ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
         <label class="mini-field launcher-field"><span>세기 편차</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
+        <label class="mini-field burst-spawn-field"><span>버스트 세기</span><input id="propBurstPower" type="number" min="0" max="5" step=".05"></label>
+        <label class="mini-field burst-spawn-field"><span>버스트 방향 °</span><input id="propBurstDirection" type="number" min="-360" max="360" step="1"></label>
+        <label class="mini-field burst-spawn-field"><span>버스트 분산 ±°</span><input id="propBurstSpread" type="number" min="0" max="90" step="1"></label>
+        <label class="mini-field burst-spawn-field"><span>버스트 세기 편차</span><input id="propBurstVariance" type="number" min="0" max=".75" step=".01"></label>
+        <label class="mini-field burst-spawn-field"><span>묶음 최소</span><input id="propBurstSizeMin" type="number" min="1" max="32" step="1"></label>
+        <label class="mini-field burst-spawn-field"><span>묶음 최대</span><input id="propBurstSizeMax" type="number" min="1" max="32" step="1"></label>
+        <label class="mini-field burst-spawn-field"><span>묶음 간격 ms</span><input id="propBurstInterval" type="number" min="0" max="5000" step="10"></label>
+        <label class="mini-field conveyor-field"><span>벨트 속도 px/s</span><input id="propBeltSpeed" type="number" min="-1200" max="1200" step="10"></label>
+        <label class="mini-field conveyor-field"><span>벨트 마찰 전달</span><input id="propBeltGrip" type="number" min="0" max="1" step=".05"></label>
         <label class="mini-field elevator-field"><span>축 각도 °</span><input id="propAxisAngle" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field elevator-field"><span>이동 최소 px</span><input id="propTravelMin" type="number" min="-1200" max="1200" step="1"></label>
         <label class="mini-field elevator-field"><span>이동 최대 px</span><input id="propTravelMax" type="number" min="-1200" max="1200" step="1"></label>
@@ -230,7 +247,7 @@
     </aside>
   </section>
 </main>
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20260930-2"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20260930-3"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20260930-4"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20260930-4"></script>
 </body>
 </html>
