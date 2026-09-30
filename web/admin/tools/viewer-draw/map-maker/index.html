@@ -4,9 +4,9 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>Viewer Draw · Marble Map Maker</title>
+  <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20260930-2">
 </head>
 <body>
 <main class="shell map-maker-shell">
@@ -122,7 +122,7 @@
       <div class="map-canvas-wrap" id="mapCanvasWrap">
         <canvas id="mapCanvas"></canvas>
       </div>
-      <div class="map-validation" id="mapValidation">맵을 편집한 뒤 Preview로 즉시 테스트할 수 있습니다.</div>
+      <div class="map-validation" id="mapValidation">맵을 편집한 뒤 미리보기로 즉시 테스트할 수 있습니다.</div>
     </section>
 
     <aside class="maker-panel inspector-panel">
@@ -183,10 +183,10 @@
             <option value="AFTER_BRANCH_STATE">분기 상태 충족 후</option>
           </select>
         </label>
-        <label class="mini-field output-field condition-output-ref-field"><span>조건 출력</span><select id="propConditionOutputKey"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-output-ref-field"><span>조건 출력</span><select id="propConditionOutputKey"><option value="">없음</option></select></label>
         <label class="mini-field output-field condition-claims-field"><span>조건 당첨 수</span><input id="propConditionClaims" type="number" min="1" max="64" step="1"></label>
         <label class="mini-field output-field condition-time-field"><span>조건 시간 초</span><input id="propConditionSeconds" type="number" min=".01" max="1800" step=".1"></label>
-        <label class="mini-field output-field condition-sensor-field"><span>조건 센서</span><select id="propConditionSensorTag"><option value="">None</option></select></label>
+        <label class="mini-field output-field condition-sensor-field"><span>조건 센서</span><select id="propConditionSensorTag"><option value="">없음</option></select></label>
         <label class="mini-field output-field condition-branch-field"><span>분기 키</span><input id="propConditionBranchKey" maxlength="32"></label>
         <label class="mini-field output-field condition-branch-field"><span>분기 값</span><input id="propConditionBranchValue" maxlength="32"></label>
         <label class="mini-field output-field"><span>설정할 분기 키</span><input id="propBranchSetKey" maxlength="32" placeholder="optional"></label>
