@@ -2131,9 +2131,6 @@
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
    "propBoost","propMarbleRadius"]
     .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
-  ["propLaunchPower","propBurstPower"].forEach((id) => {
-    $(id).addEventListener("input", updateSelectedFromInspector);
-  });
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
     .forEach((id) => $(id).addEventListener("change", updateWorld));
