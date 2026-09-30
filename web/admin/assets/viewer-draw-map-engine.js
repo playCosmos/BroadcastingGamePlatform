@@ -1,8 +1,25 @@
 ((root) => {
   "use strict";
 
-  const SCHEMA_VERSION = "viewer-draw-machine-map/v0";
-  const TYPES = new Set(["WALL","CURVE_WALL","RAMP","PEG","BUMPER","SPAWN","BURST_SPAWN","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"]);
+  const LEGACY_SCHEMA_VERSION = "viewer-draw-machine-map/v0";
+  const SCHEMA_VERSION = "viewer-draw-machine-map/v1";
+  const TYPES = new Set([
+    "WALL","CURVE_WALL","CIRCLE",
+    "SPAWN","BURST_SPAWN","FINISH",
+    "GATE","ROTATOR","PENDULUM","SEESAW",
+    "HINGE","GEAR","PADDLE",
+    "CONVEYOR","ELEVATOR",
+    "OUTPUT","SLOT","ELIMINATION"
+  ]);
+  const RECT_COLLIDER_TYPES = new Set([
+    "WALL","GATE","ROTATOR","PENDULUM","SEESAW",
+    "HINGE","GEAR","PADDLE","CONVEYOR","ELEVATOR"
+  ]);
+  const COLLIDER_TYPES = new Set([
+    ...RECT_COLLIDER_TYPES,
+    "CURVE_WALL",
+    "CIRCLE"
+  ]);
 
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
@@ -10,6 +27,28 @@
     const n = Number(value);
     return Number.isFinite(n) ? n : fallback;
   };
+  const colliderProperties = (
+    overrides = {},
+    defaults = {restitution:.35, friction:.05}
+  ) => ({
+    restitution:finiteOr(
+      overrides.restitution,
+      finiteOr(defaults.restitution,.35)
+    ),
+    friction:finiteOr(
+      overrides.friction,
+      finiteOr(defaults.friction,.05)
+    ),
+    boost:Math.max(0,finiteOr(overrides.boost,0)),
+    ...overrides
+  });
+  const isCollider = (component) =>
+    Boolean(component && COLLIDER_TYPES.has(component.type));
+  const isRectCollider = (component) =>
+    Boolean(component && (
+      RECT_COLLIDER_TYPES.has(component.type)
+      || component.type === "CURVE_WALL"
+    ));
 
   function resolvedDrawRule(def){
     const raw=def?.drawRule||{};
@@ -251,25 +290,27 @@
         )
       );
     }
-    const w=Math.max(20,finiteOr(c.width,220));
-    const h=Math.max(20,finiteOr(c.height,160));
-    const thickness=clamp(finiteOr(p.thickness,14),4,80);
+    return [c];
+  }
 
-    if(c.type==="FUNNEL"){
+  function legacyCompoundShapes(c){
+    const p=c?.properties||{};
+    const w=Math.max(20,finiteOr(c?.width,220));
+    const h=Math.max(20,finiteOr(c?.height,160));
+    const thickness=clamp(finiteOr(p.thickness,14),4,80);
+    if(c?.type==="FUNNEL"){
       const gap=clamp(finiteOr(p.gap,48),8,Math.max(8,w*.8));
       return [
         segmentRect(c,-w/2,-h/2,-gap/2,h/2,thickness),
         segmentRect(c,w/2,-h/2,gap/2,h/2,thickness)
       ];
     }
-
-    if(c.type==="SPLITTER"){
+    if(c?.type==="SPLITTER"){
       return [
         segmentRect(c,0,-h/2,-w/2,h/2,thickness),
         segmentRect(c,0,-h/2,w/2,h/2,thickness)
       ];
     }
-
     return [c];
   }
 
@@ -277,11 +318,26 @@
     const id=(root.crypto?.randomUUID?.() || ("c-"+Date.now()+"-"+Math.random())).replaceAll(".","-");
     const base={id,type,x,y,rotation:0,width:0,height:0,radius:0,properties:{}};
     switch(type){
-      case "WALL": return {...base,width:260,height:18,properties:{restitution:0.35,friction:0.06}};
-      case "CURVE_WALL": return {...base,width:280,height:140,properties:{restitution:0.35,friction:0.06,thickness:18,segments:16}};
-      case "RAMP": return {...base,width:320,height:18,rotation:12,properties:{restitution:0.3,friction:0.05}};
-      case "PEG": return {...base,radius:13,properties:{restitution:0.55,friction:0.03}};
-      case "BUMPER": return {...base,radius:24,properties:{restitution:0.95,friction:0.02,boost:1.15}};
+      case "WALL": return {
+        ...base,
+        width:260,
+        height:18,
+        properties:colliderProperties({}, {restitution:.35,friction:.06})
+      };
+      case "CURVE_WALL": return {
+        ...base,
+        width:280,
+        height:140,
+        properties:colliderProperties(
+          {thickness:18,segments:16},
+          {restitution:.35,friction:.06}
+        )
+      };
+      case "CIRCLE": return {
+        ...base,
+        radius:13,
+        properties:colliderProperties({}, {restitution:.55,friction:.03})
+      };
       case "SPAWN": return {...base,radius:18,properties:{marbleRadius:11,spawnRole:"BUNCH"}};
       case "BURST_SPAWN": return {...base,radius:26,properties:{
         marbleRadius:11,
@@ -295,30 +351,42 @@
         burstIntervalMs:90
       }};
       case "FINISH": return {...base,width:260,height:56,properties:{sensorTag:""}};
-      case "GATE": return {...base,width:180,height:16,properties:{restitution:0.35,friction:0.05,openAngle:78,period:3.6,phase:0}};
-      case "ROTATOR": return {...base,width:190,height:16,properties:{restitution:0.42,friction:0.04,angularSpeed:90}};
-      case "PENDULUM": return {...base,width:18,height:190,properties:{restitution:0.4,friction:0.05,amplitude:42,period:3.2,phase:0}};
-      case "SEESAW": return {...base,width:230,height:16,properties:{restitution:0.34,friction:0.08,amplitude:14,period:4,phase:0}};
-      case "FUNNEL": return {...base,width:280,height:190,properties:{restitution:0.3,friction:0.06,gap:52,thickness:14}};
-      case "SPLITTER": return {...base,width:220,height:170,properties:{restitution:0.34,friction:0.05,thickness:14}};
-      case "HINGE": return {...base,width:220,height:16,properties:{restitution:0.34,friction:0.08,pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2}};
-      case "GEAR": return {...base,width:170,height:18,properties:{restitution:0.4,friction:0.06,motorSpeed:120,motorTorque:35,linkedComponentId:"",gearRatio:-1}};
-      case "PADDLE": return {...base,width:180,height:18,properties:{restitution:0.45,friction:0.06,pivotRatio:-0.48,motorSpeed:180,motorTorque:30}};
-      case "LAUNCHER": return {...base,width:140,height:22,properties:{
-        restitution:0.4,
-        friction:0.05,
-        launchPower:1.2,
-        launchDirectionDegrees:-90,
-        launchSpreadDegrees:18,
-        launchPowerVariance:.22
-      }};
-      case "CONVEYOR": return {...base,width:280,height:28,properties:{
-        restitution:.12,
-        friction:.45,
-        beltSpeed:160,
-        beltGrip:.22
-      }};
-      case "ELEVATOR": return {...base,width:180,height:20,properties:{restitution:0.34,friction:0.08,axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1}};
+      case "GATE": return {...base,width:180,height:16,properties:colliderProperties(
+        {openAngle:78,period:3.6,phase:0},
+        {restitution:.35,friction:.05}
+      )};
+      case "ROTATOR": return {...base,width:190,height:16,properties:colliderProperties(
+        {angularSpeed:90},
+        {restitution:.42,friction:.04}
+      )};
+      case "PENDULUM": return {...base,width:18,height:190,properties:colliderProperties(
+        {amplitude:42,period:3.2,phase:0},
+        {restitution:.4,friction:.05}
+      )};
+      case "SEESAW": return {...base,width:230,height:16,properties:colliderProperties(
+        {amplitude:14,period:4,phase:0},
+        {restitution:.34,friction:.08}
+      )};
+      case "HINGE": return {...base,width:220,height:16,properties:colliderProperties(
+        {pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2},
+        {restitution:.34,friction:.08}
+      )};
+      case "GEAR": return {...base,width:170,height:18,properties:colliderProperties(
+        {motorSpeed:120,motorTorque:35,linkedComponentId:"",gearRatio:-1},
+        {restitution:.4,friction:.06}
+      )};
+      case "PADDLE": return {...base,width:180,height:18,properties:colliderProperties(
+        {pivotRatio:-.48,motorSpeed:180,motorTorque:30},
+        {restitution:.45,friction:.06}
+      )};
+      case "CONVEYOR": return {...base,width:280,height:28,properties:colliderProperties(
+        {beltSpeed:160,beltGrip:.22},
+        {restitution:.12,friction:.45}
+      )};
+      case "ELEVATOR": return {...base,width:180,height:20,properties:colliderProperties(
+        {axisAngle:-90,travelMin:-120,travelMax:120,motorSpeed:90,motorForce:45,startDirection:1},
+        {restitution:.34,friction:.08}
+      )};
       case "OUTPUT": return {...base,width:180,height:60,properties:{
         outputKey:"OUT1",outputRank:1,outputCapacity:1,outputWeight:1,
         outputPriority:0,sensorTag:"",
@@ -331,6 +399,166 @@
       case "ELIMINATION": return {...base,width:180,height:70,properties:{eliminationKey:"OUT",sensorTag:""}};
       default: throw new Error("Unsupported component type: "+type);
     }
+  }
+
+  function createPreset(name,x=640,y=360){
+    const preset=String(name||"").toUpperCase();
+    if(preset==="WALL") return componentDefaults("WALL",x,y);
+    if(preset==="PEG"){
+      const c=componentDefaults("CIRCLE",x,y);
+      c.radius=13;
+      c.properties=colliderProperties(
+        {
+          restitution:.55,
+          friction:.03,
+          boost:0,
+          visualFill:"#d0d6db",
+          visualStroke:"#f5f7f8"
+        },
+        {restitution:.55,friction:.03}
+      );
+      return c;
+    }
+    if(preset==="BUMPER"){
+      const c=componentDefaults("CIRCLE",x,y);
+      c.radius=24;
+      c.properties=colliderProperties(
+        {
+          restitution:.95,
+          friction:.02,
+          boost:1.15,
+          visualFill:"#8f3d46",
+          visualStroke:"#e17a84"
+        },
+        {restitution:.95,friction:.02}
+      );
+      return c;
+    }
+    if(preset==="LAUNCH_WALL"){
+      const c=componentDefaults("WALL",x,y);
+      c.width=140;
+      c.height=22;
+      c.properties=colliderProperties(
+        {
+          restitution:.4,
+          friction:.05,
+          boost:1.35,
+          visualFill:"#3e6675",
+          visualStroke:"#78bdd5"
+        },
+        {restitution:.4,friction:.05}
+      );
+      return c;
+    }
+    return componentDefaults(preset,x,y);
+  }
+
+  function migratedColliderProperties(properties,defaults={}){
+    return colliderProperties({...properties},defaults);
+  }
+
+  function migrateDefinition(input){
+    const source=structuredClone(input||{});
+    const version=String(source.schemaVersion||"");
+    if(version!==LEGACY_SCHEMA_VERSION && version!==SCHEMA_VERSION){
+      return source;
+    }
+
+    const migrated=[];
+    for(const original of Array.isArray(source.components)?source.components:[]){
+      if(!original) continue;
+      const c=structuredClone(original);
+      c.properties=c.properties||{};
+
+      if(c.type==="RAMP"){
+        c.type="WALL";
+        c.properties=migratedColliderProperties(
+          c.properties,
+          {restitution:.3,friction:.05}
+        );
+        migrated.push(c);
+        continue;
+      }
+
+      if(c.type==="PEG"||c.type==="BUMPER"){
+        const bumper=c.type==="BUMPER";
+        c.type="CIRCLE";
+        c.properties=migratedColliderProperties(
+          {
+            ...c.properties,
+            boost:finiteOr(
+              c.properties.boost,
+              bumper ? 1.15 : 0
+            )
+          },
+          {
+            restitution:bumper ? .95 : .55,
+            friction:bumper ? .02 : .03
+          }
+        );
+        migrated.push(c);
+        continue;
+      }
+
+      if(c.type==="LAUNCHER"){
+        const power=Math.max(0,finiteOr(c.properties.launchPower,1.2));
+        const {
+          launchPower,
+          launchDirectionDegrees,
+          launchSpreadDegrees,
+          launchPowerVariance,
+          ...remaining
+        }=c.properties;
+        c.type="WALL";
+        c.properties=migratedColliderProperties(
+          {
+            ...remaining,
+            boost:Math.max(
+              0,
+              finiteOr(remaining.boost,power*1.125)
+            )
+          },
+          {restitution:.4,friction:.05}
+        );
+        migrated.push(c);
+        continue;
+      }
+
+      if(c.type==="FUNNEL"||c.type==="SPLITTER"){
+        const shapes=legacyCompoundShapes(c);
+        shapes.forEach((shape,index)=>{
+          const {
+            gap,
+            thickness,
+            ...remaining
+          }=(shape.properties||{});
+          migrated.push({
+            ...shape,
+            id:String(c.id||"legacy")+"-wall-"+(index+1),
+            type:"WALL",
+            properties:migratedColliderProperties(
+              remaining,
+              {
+                restitution:c.type==="FUNNEL" ? .3 : .34,
+                friction:c.type==="FUNNEL" ? .06 : .05
+              }
+            )
+          });
+        });
+        continue;
+      }
+
+      if(isCollider(c)){
+        c.properties=migratedColliderProperties(c.properties);
+      }
+      migrated.push(c);
+    }
+
+    return {
+      ...source,
+      schemaVersion:SCHEMA_VERSION,
+      components:migrated
+    };
   }
 
   function defaultDefinition(){
@@ -368,7 +596,7 @@
       const angle = index / 16 * Math.PI * 2;
       return styled(
         {
-          ...componentDefaults(
+          ...createPreset(
             "PEG",
             545 + Math.cos(angle) * 112,
             520 + Math.sin(angle) * 112
@@ -409,21 +637,13 @@
           marbleRadius:11,
           spawnRole:"LAUNCHER"
         }},
+        rail(1018,615,1061,765,"#1c4059","#65bfe9",12),
+        rail(1162,615,1119,765,"#1c4059","#65bfe9",12),
         styled(
-          {...componentDefaults("FUNNEL",1090,690),width:144,height:150,rotation:0,properties:{
-            restitution:.3,friction:.045,gap:58,thickness:12,
-            soundMaterial:"metal",instrument:"none",audioNote:58,audioGain:.72,audioPan:.75
-          }},
-          "#1c4059","#65bfe9"
-        ),
-        styled(
-          {...componentDefaults("LAUNCHER",1090,838),width:132,height:24,rotation:0,properties:{
+          {...createPreset("LAUNCH_WALL",1090,838),width:132,height:24,rotation:0,properties:{
             restitution:.5,
             friction:.025,
-            launchPower:4.0,
-            launchDirectionDegrees:-90,
-            launchSpreadDegrees:8,
-            launchPowerVariance:.16,
+            boost:4.5,
             soundMaterial:"metal",instrument:"click",audioNote:60,audioGain:1,audioPan:.75
           }},
           "#335f72","#8bd8f5"
@@ -458,57 +678,57 @@
         rail(910,204,850,182,"#5d4028","#ca9158"),
 
         // Top bumper cluster.
-        styled({...componentDefaults("BUMPER",425,225),radius:35,properties:{
+        styled({...createPreset("BUMPER",425,225),radius:35,properties:{
           restitution:1.04,friction:.02,boost:1.38,
           soundMaterial:"metal",instrument:"bell",audioNote:67,audioGain:1.08,audioPan:-.3
         }},"#e7e3d6","#fff9d7"),
-        styled({...componentDefaults("BUMPER",555,195),radius:37,properties:{
+        styled({...createPreset("BUMPER",555,195),radius:37,properties:{
           restitution:1.06,friction:.02,boost:1.42,
           soundMaterial:"metal",instrument:"bell",audioNote:72,audioGain:1.12,audioPan:0
         }},"#e7e3d6","#fff9d7"),
-        styled({...componentDefaults("BUMPER",685,230),radius:35,properties:{
+        styled({...createPreset("BUMPER",685,230),radius:35,properties:{
           restitution:1.04,friction:.02,boost:1.38,
           soundMaterial:"metal",instrument:"bell",audioNote:76,audioGain:1.08,audioPan:.3
         }},"#e7e3d6","#fff9d7"),
 
         // Left purple ramp / wormhole-like lane.
-        styled({...componentDefaults("RAMP",205,285),width:245,height:24,rotation:55,properties:{
+        styled({...componentDefaults("WALL",205,285),width:245,height:24,rotation:55,properties:{
           restitution:.46,friction:.045,
           soundMaterial:"plastic",instrument:"none",audioNote:58,audioGain:.65,audioPan:-.7
         }},"#5d3d99","#b28cff"),
-        styled({...componentDefaults("RAMP",250,415),width:245,height:24,rotation:72,properties:{
+        styled({...componentDefaults("WALL",250,415),width:245,height:24,rotation:72,properties:{
           restitution:.46,friction:.045,
           soundMaterial:"plastic",instrument:"none",audioNote:58,audioGain:.65,audioPan:-.62
         }},"#6540a6","#c09bff"),
-        styled({...componentDefaults("RAMP",330,525),width:210,height:24,rotation:28,properties:{
+        styled({...componentDefaults("WALL",330,525),width:210,height:24,rotation:28,properties:{
           restitution:.48,friction:.045,
           soundMaterial:"plastic",instrument:"none",audioNote:60,audioGain:.65,audioPan:-.5
         }},"#6b44ab","#c6a0ff"),
 
         // Midfield guides.
-        styled({...componentDefaults("PEG",340,340),radius:13,properties:{restitution:.62,friction:.03}},"#f0d450","#fff2a1"),
-        styled({...componentDefaults("PEG",775,345),radius:13,properties:{restitution:.62,friction:.03}},"#e45d69","#ffb0b6"),
-        styled({...componentDefaults("PEG",850,430),radius:13,properties:{restitution:.62,friction:.03}},"#f0d450","#fff2a1"),
-        styled({...componentDefaults("RAMP",840,305),width:205,height:18,rotation:-58},"#7b2f3f","#dc6a7b"),
-        styled({...componentDefaults("RAMP",845,535),width:215,height:18,rotation:53},"#7b2f3f","#dc6a7b"),
+        styled({...createPreset("PEG",340,340),radius:13,properties:{restitution:.62,friction:.03}},"#f0d450","#fff2a1"),
+        styled({...createPreset("PEG",775,345),radius:13,properties:{restitution:.62,friction:.03}},"#e45d69","#ffb0b6"),
+        styled({...createPreset("PEG",850,430),radius:13,properties:{restitution:.62,friction:.03}},"#f0d450","#fff2a1"),
+        styled({...componentDefaults("WALL",840,305),width:205,height:18,rotation:-58},"#7b2f3f","#dc6a7b"),
+        styled({...componentDefaults("WALL",845,535),width:215,height:18,rotation:53},"#7b2f3f","#dc6a7b"),
 
         // Central reactor ring.
         ...Array.from({length:16},(_,index)=>reactorPeg(index)),
-        styled({...componentDefaults("BUMPER",545,520),radius:52,properties:{
+        styled({...createPreset("BUMPER",545,520),radius:52,properties:{
           restitution:.9,friction:.02,boost:1.12,
           soundMaterial:"metal",instrument:"chime",audioNote:64,audioGain:.85,audioPan:-.05
         }},"#238eae","#72dcf5"),
-        styled({...componentDefaults("BUMPER",545,520),radius:24,properties:{
+        styled({...createPreset("BUMPER",545,520),radius:24,properties:{
           restitution:.82,friction:.025,boost:1.03,
           soundMaterial:"glass",instrument:"bell",audioNote:76,audioGain:.6,audioPan:-.05
         }},"#42b9d4","#b0f5ff"),
 
         // Lower triangular sling guides.
-        styled({...componentDefaults("RAMP",300,675),width:220,height:22,rotation:54,properties:{
+        styled({...componentDefaults("WALL",300,675),width:220,height:22,rotation:54,properties:{
           restitution:.76,friction:.035,
           soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.8,audioPan:-.55
         }},"#7a3150","#e379a1"),
-        styled({...componentDefaults("RAMP",790,675),width:220,height:22,rotation:-54,properties:{
+        styled({...componentDefaults("WALL",790,675),width:220,height:22,rotation:-54,properties:{
           restitution:.76,friction:.035,
           soundMaterial:"rubber",instrument:"none",audioNote:55,audioGain:.8,audioPan:.5
         }},"#7a3150","#e379a1"),
@@ -530,8 +750,8 @@
         }},"#6941a9","#c49cff"),
 
         // Drain guides and center drain.
-        styled({...componentDefaults("RAMP",310,850),width:265,height:18,rotation:10},"#62432b","#c98c54"),
-        styled({...componentDefaults("RAMP",780,850),width:265,height:18,rotation:-10},"#62432b","#c98c54"),
+        styled({...componentDefaults("WALL",310,850),width:265,height:18,rotation:10},"#62432b","#c98c54"),
+        styled({...componentDefaults("WALL",780,850),width:265,height:18,rotation:-10},"#62432b","#c98c54"),
         styled({...componentDefaults("ELIMINATION",545,866),width:160,height:58,properties:{
           eliminationKey:"CENTER_DRAIN",
           sensorTag:"CENTER_DRAIN",
@@ -627,13 +847,13 @@
       }else if(x<0||x>w||y<0||y>h){
         errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
-      if(["WALL","CURVE_WALL","RAMP","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
+      if(["WALL","CURVE_WALL","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","HINGE","GEAR","PADDLE","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
           errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
         }
       }
-      if(["PEG","BUMPER","SPAWN","BURST_SPAWN"].includes(c?.type)){
+      if(["CIRCLE","SPAWN","BURST_SPAWN"].includes(c?.type)){
         const radius=Number(c?.radius);
         if(!Number.isFinite(radius)||radius<3||radius>120){
           errors.push("원형 컴포넌트 radius는 3~120 범위여야 합니다.");
@@ -643,6 +863,12 @@
         errors.push("FINISH 크기는 최소 10×10이어야 합니다.");
       }
       const p=c?.properties||{};
+      if(isCollider(c)){
+        const boost=finiteOr(p.boost,0);
+        if(!Number.isFinite(boost)||boost<0){
+          errors.push("Collider boost는 0 이상의 유한 숫자여야 합니다.");
+        }
+      }
       if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const sensorTag=String(p.sensorTag||"").trim();
         if(sensorTag.length>32){
@@ -686,19 +912,6 @@
         const grip=finiteOr(p.beltGrip,.22);
         if(speed<-1200||speed>1200) errors.push("Conveyor beltSpeed는 -1200~1200 px/s 범위여야 합니다.");
         if(grip<0||grip>1) errors.push("Conveyor beltGrip은 0~1 범위여야 합니다.");
-      }
-      if(c?.type==="LAUNCHER"){
-        const power=finiteOr(p.launchPower,1.2);
-        const direction=finiteOr(
-          p.launchDirectionDegrees,
-          finiteOr(c.rotation,0)-90
-        );
-        const spread=finiteOr(p.launchSpreadDegrees,18);
-        const variance=finiteOr(p.launchPowerVariance,.22);
-        if(!Number.isFinite(power)||power<0) errors.push("Launcher launchPower는 0 이상의 유한 숫자여야 합니다.");
-        if(direction<-360||direction>360) errors.push("Launcher direction은 -360~360° 범위여야 합니다.");
-        if(spread<0||spread>55) errors.push("Launcher spread는 0~55° 범위여야 합니다.");
-        if(variance<0||variance>.75) errors.push("Launcher power variance는 0~0.75 범위여야 합니다.");
       }
       if(c?.type==="GEAR"){
         const linked=String(p.linkedComponentId||"").trim();
@@ -993,9 +1206,10 @@
     }
 
     setDefinition(definition){
-      const errors=validateDefinition(definition);
+      const migrated=migrateDefinition(definition);
+      const errors=validateDefinition(migrated);
       if(errors.length) throw new Error(errors.join(" "));
-      this.definition=structuredClone(definition);
+      this.definition=structuredClone(migrated);
       this.marbles=[];
       this.finishOrder=[];
       this.outputClaims=new Map();
@@ -1076,7 +1290,7 @@
           dnf:false,
           rank:0,
           finishTime:null,
-          launcherContacts:new Set()
+          boostContacts:new Set()
         });
       }
       return this.snapshot();
@@ -1108,19 +1322,20 @@
         m.y+=m.vy*dt;
 
         this.resolveWorldBounds(m,world);
+        const nextBoostContacts=new Set();
         for(const c of this.definition.components){
           for(const shape of componentShapes(c,this.time)){
-            if(["WALL","CURVE_WALL","RAMP","GATE","ROTATOR","PENDULUM","SEESAW","FUNNEL","SPLITTER","HINGE","GEAR","PADDLE","LAUNCHER","CONVEYOR","ELEVATOR"].includes(c.type)){
-              this.resolveRect(m,shape);
-            }else if(c.type==="PEG"||c.type==="BUMPER"){
-              this.resolveCircle(m,shape);
+            if(isRectCollider(c)){
+              this.resolveRect(m,shape,nextBoostContacts);
+            }else if(c.type==="CIRCLE"){
+              this.resolveCircle(m,shape,nextBoostContacts);
             }
           }
         }
+        m.boostContacts=nextBoostContacts;
       }
 
       this.resolveMarblePairs();
-      this.applyLauncherBoosts();
       this.applyConveyors(dt);
 
       this.detectTaggedSensors();
@@ -1348,7 +1563,7 @@
       if(m.y>w.height-m.radius){m.y=w.height-m.radius;if(m.vy>0)m.vy=-m.vy*e;}
     }
 
-    resolveRect(m,c){
+    resolveRect(m,c,nextBoostContacts=null){
       const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
       const dx=m.x-c.x,dy=m.y-c.y;
       const lx=dx*co+dy*si, ly=-dx*si+dy*co;
@@ -1381,9 +1596,17 @@
         m.vx-=vt*friction*tx;
         m.vy-=vt*friction*ty;
       }
+      const boost=Math.max(0,finiteOr(c.properties?.boost,0));
+      if(boost>0&&nextBoostContacts){
+        nextBoostContacts.add(c.id);
+        if(!m.boostContacts?.has(c.id)){
+          m.vx+=wx*boost*70;
+          m.vy+=wy*boost*70;
+        }
+      }
     }
 
-    resolveCircle(m,c){
+    resolveCircle(m,c,nextBoostContacts=null){
       let dx=m.x-c.x,dy=m.y-c.y;
       let dist=Math.hypot(dx,dy);
       const target=m.radius+Math.max(1,c.radius);
@@ -1396,20 +1619,20 @@
       const vn=m.vx*nx+m.vy*ny;
       if(vn<0){
         const restitution=clamp(
-          finiteOr(
-            c.properties?.restitution,
-            c.type==="BUMPER" ? .95 : .55
-          ),
+          finiteOr(c.properties?.restitution,.55),
           0,
           1.4
         );
         m.vx-=(1+restitution)*vn*nx;
         m.vy-=(1+restitution)*vn*ny;
       }
-      if(c.type==="BUMPER"){
-        const boost=clamp(finiteOr(c.properties?.boost,1.15),0,3);
-        m.vx+=nx*boost*70;
-        m.vy+=ny*boost*70;
+      const boost=Math.max(0,finiteOr(c.properties?.boost,0));
+      if(boost>0&&nextBoostContacts){
+        nextBoostContacts.add(c.id);
+        if(!m.boostContacts?.has(c.id)){
+          m.vx+=nx*boost*70;
+          m.vy+=ny*boost*70;
+        }
       }
     }
 
@@ -1445,42 +1668,6 @@
       return {x:dx*co-dy*si,y:dx*si+dy*co};
     }
 
-    applyLauncherBoosts(){
-      const launchers=this.definition.components.filter(c=>c.type==="LAUNCHER");
-      if(!launchers.length) return;
-      for(const m of this.marbles){
-        if(m.finished||m.eliminated||m.dnf) continue;
-        const next=new Set();
-        for(const launcher of launchers){
-          if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
-          next.add(launcher.id);
-          if(m.launcherContacts.has(launcher.id)) continue;
-          const power=Math.max(0,finiteOr(launcher.properties?.launchPower,1.2));
-          const direction=finiteOr(
-            launcher.properties?.launchDirectionDegrees,
-            (launcher.rotation||0)-90
-          );
-          const spread=clamp(
-            finiteOr(launcher.properties?.launchSpreadDegrees,18),
-            0,
-            55
-          );
-          const variance=clamp(
-            finiteOr(launcher.properties?.launchPowerVariance,.22),
-            0,
-            .75
-          );
-          const angle=degToRad(
-            direction+(this.random()*2-1)*spread
-          );
-          const randomizedPower=
-            power*(1+(this.random()*2-1)*variance);
-          m.vx+=Math.cos(angle)*randomizedPower*145;
-          m.vy+=Math.sin(angle)*randomizedPower*145;
-        }
-        m.launcherContacts=next;
-      }
-    }
 
     pointInRectExpanded(x,y,c,pad=0){
       const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
@@ -1561,8 +1748,13 @@
   }
 
   root.ViewerDrawMapEngine={
+    LEGACY_SCHEMA_VERSION,
     SCHEMA_VERSION,
     componentDefaults,
+    createPreset,
+    migrateDefinition,
+    isCollider,
+    isRectCollider,
     defaultDefinition,
     emptyDefinition,
     validateDefinition,
