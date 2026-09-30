@@ -10,7 +10,7 @@
 .palette-flyout{position:absolute;left:calc(100% + 8px);top:0;display:none;min-width:205px;padding:8px;border:1px solid #33495a;border-radius:10px;background:#081118;box-shadow:0 14px 34px rgba(0,0,0,.48);z-index:80}
 .palette-flyout::before{content:"";position:absolute;right:100%;top:0;width:10px;height:100%}
 .palette-flyout-wide{min-width:220px}
-.palette-group.open>.palette-flyout,.palette-group:focus-within>.palette-flyout{display:block}
+.palette-group.open>.palette-flyout{display:block}
 .palette-flyout-title{margin:1px 3px 7px;color:#627888;font:900 8px ui-monospace,monospace;letter-spacing:.11em;text-transform:uppercase}
 .palette-flyout .palette-item{margin-bottom:4px}
 .palette-flyout .palette-item:last-child{margin-bottom:0}
@@ -25,6 +25,6 @@
   .palette-group-trigger{height:100%}
   .palette-flyout{position:static;grid-column:1/-1;min-width:0;width:100%;margin-top:5px;box-shadow:none}
   .palette-flyout::before{display:none}
-  .palette-group:not(.open):not(:focus-within)>.palette-flyout{display:none}
-  .palette-group.open>.palette-flyout,.palette-group:focus-within>.palette-flyout{display:block}
+  .palette-group:not(.open)>.palette-flyout{display:none}
+  .palette-group.open>.palette-flyout{display:block}
 }
