@@ -25,7 +25,7 @@
 - Game Module: Board (현재)
 - Game Module: Yacht (계획, Yahtzee 계열)
 - Game Module: Drawing Guess (Classic Guess D0~D6 구현)
-- Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V0 + Browser Box2D-WASM Marble Draw V0 구현)
+- Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw 구현)
 - 추가 게임/방송 도구: 독립 모듈로 확장
 
 보드게임은 플랫폼의 첫 게임일 뿐이며, SOOP 연결 코드나 플랫폼 인증/HTTP/API 생명주기를 게임 모듈 안에 중복 구현하지 않습니다.
@@ -53,7 +53,7 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 ## 구현 현황
 
 - Board: AVAILABLE
-- Viewer Draw: Core + Number Draw + Marble Map Maker + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
+- Viewer Draw: Core + Number Draw + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
 - Yacht: PLANNED
 - CHZZK Provider: PLANNED
