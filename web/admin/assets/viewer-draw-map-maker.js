@@ -15,6 +15,7 @@
   let selectedId = null;
   let tool = "SELECT";
   let drag = null;
+  let hoverControl = null;
   let undoStack = [];
   let redoStack = [];
   let previewEngine = null;
@@ -135,13 +136,17 @@
     };
   }
 
-  function toWorld(clientX, clientY) {
+  function toWorld(clientX, clientY, clampToWorld = true) {
     const rect = canvas.getBoundingClientRect();
     const view = fit();
-    return {
-      x: clamp((clientX - rect.left - view.ox) / view.scale, 0, definition.world.width),
-      y: clamp((clientY - rect.top - view.oy) / view.scale, 0, definition.world.height)
-    };
+    const x = (clientX - rect.left - view.ox) / view.scale;
+    const y = (clientY - rect.top - view.oy) / view.scale;
+    return clampToWorld
+      ? {
+          x: clamp(x, 0, definition.world.width),
+          y: clamp(y, 0, definition.world.height)
+        }
+      : { x, y };
   }
 
   function drawGrid(view) {
@@ -450,18 +455,6 @@
       }
     }
 
-    if (selected) {
-      ctx.setLineDash([4, 4]);
-      ctx.strokeStyle = "#d7f0ff";
-      const box = componentBoundsScreen(c, view);
-      ctx.rotate(-(c.rotation || 0) * Math.PI / 180);
-      ctx.strokeRect(
-        box.left - p.x - 5,
-        box.top - p.y - 5,
-        box.width + 10,
-        box.height + 10
-      );
-    }
     ctx.restore();
   }
 
@@ -478,6 +471,67 @@
     const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a));
     const bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
     return { left: p.x - bw / 2, top: p.y - bh / 2, width: bw, height: bh };
+  }
+
+  function isCircularComponent(c) {
+    return ["PEG", "BUMPER", "SPAWN"].includes(c.type);
+  }
+
+  function rotationHandleScreen(c, view) {
+    const center = toScreen(c.x, c.y, view);
+    const radial = isCircularComponent(c)
+      ? Math.max(2, c.radius * view.scale)
+      : Math.max(2, c.height * view.scale / 2);
+    const localY = -(radial + 34);
+    const a = (c.rotation || 0) * Math.PI / 180;
+    return {
+      x: center.x - localY * Math.sin(a),
+      y: center.y + localY * Math.cos(a)
+    };
+  }
+
+  function drawSelectionOverlay(c, view) {
+    const p = toScreen(c.x, c.y, view);
+    const circular = isCircularComponent(c);
+    const resizeHover = hoverControl?.kind === "resize";
+    const rotateHover = hoverControl?.kind === "rotate";
+
+    ctx.save();
+    ctx.translate(p.x, p.y);
+    ctx.rotate((c.rotation || 0) * Math.PI / 180);
+    ctx.strokeStyle = resizeHover ? "#ffffff" : "#d7f0ff";
+    ctx.lineWidth = resizeHover ? 2.4 : 1.6;
+    ctx.setLineDash([4, 4]);
+
+    if (circular) {
+      const r = Math.max(2, c.radius * view.scale);
+      ctx.beginPath();
+      ctx.arc(0, 0, r, 0, Math.PI * 2);
+      ctx.stroke();
+    } else {
+      const w = Math.max(2, c.width * view.scale);
+      const h = Math.max(2, c.height * view.scale);
+      ctx.strokeRect(-w / 2, -h / 2, w, h);
+    }
+
+    ctx.setLineDash([]);
+    const radial = circular
+      ? Math.max(2, c.radius * view.scale)
+      : Math.max(2, c.height * view.scale / 2);
+    const borderY = -(radial + 3);
+    const handleY = -(radial + 34);
+    ctx.strokeStyle = rotateHover ? "#ffffff" : "#9ed5ff";
+    ctx.fillStyle = rotateHover ? "#ffffff" : "#17364b";
+    ctx.lineWidth = 1.8;
+    ctx.beginPath();
+    ctx.moveTo(0, borderY);
+    ctx.lineTo(0, handleY + 7);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.arc(0, handleY, 7, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    ctx.restore();
   }
 
   function drawMarbles(view) {
@@ -533,6 +587,10 @@
         drawComponent({ ...shape, id: c.id, type: c.type }, view);
       }
     }
+    const selected = currentComponent();
+    if (selected && !previewRunning) {
+      drawSelectionOverlay(selected, view);
+    }
     drawMarbles(view);
 
     ctx.save();
@@ -554,6 +612,188 @@
       x: dx * Math.cos(a) - dy * Math.sin(a),
       y: dx * Math.sin(a) + dy * Math.cos(a)
     };
+  }
+
+  function componentTypeLabel(type) {
+    return {
+      WALL: "벽",
+      RAMP: "경사로",
+      PEG: "핀",
+      BUMPER: "범퍼",
+      GATE: "게이트",
+      ROTATOR: "회전판",
+      PENDULUM: "진자",
+      SEESAW: "시소",
+      FUNNEL: "깔때기",
+      SPLITTER: "분기대",
+      HINGE: "힌지 / 피벗",
+      GEAR: "기어 로터",
+      PADDLE: "패들",
+      LAUNCHER: "발사대",
+      ELEVATOR: "엘리베이터",
+      SPAWN: "출발 지점",
+      FINISH: "도착 지점",
+      OUTPUT: "출력 구역",
+      SLOT: "슬롯",
+      ELIMINATION: "탈락 구역"
+    }[type] || type;
+  }
+
+  function selectionControlAt(clientX, clientY) {
+    const c = currentComponent();
+    if (!c || previewRunning || tool !== "SELECT") return null;
+
+    const view = fit();
+    const rect = canvas.getBoundingClientRect();
+    const sx = clientX - rect.left;
+    const sy = clientY - rect.top;
+    const rotate = rotationHandleScreen(c, view);
+    if (Math.hypot(sx - rotate.x, sy - rotate.y) <= 11) {
+      return { kind: "rotate" };
+    }
+
+    const p = toWorld(clientX, clientY, false);
+    const tolerance = 7 / Math.max(view.scale, .0001);
+
+    if (isCircularComponent(c)) {
+      const distance = Math.hypot(p.x - c.x, p.y - c.y);
+      if (Math.abs(distance - c.radius) <= tolerance) {
+        return { kind: "resize", edge: "radius" };
+      }
+      return null;
+    }
+
+    const local = localPointFor(c, p.x, p.y);
+    const halfW = Math.max(1, c.width / 2);
+    const halfH = Math.max(1, c.height / 2);
+    const insideX = Math.abs(local.x) <= halfW + tolerance;
+    const insideY = Math.abs(local.y) <= halfH + tolerance;
+    if (!insideX || !insideY) return null;
+
+    const nearLeft = Math.abs(local.x + halfW) <= tolerance;
+    const nearRight = Math.abs(local.x - halfW) <= tolerance;
+    const nearTop = Math.abs(local.y + halfH) <= tolerance;
+    const nearBottom = Math.abs(local.y - halfH) <= tolerance;
+
+    const horizontal = nearLeft ? "left" : nearRight ? "right" : "";
+    const vertical = nearTop ? "top" : nearBottom ? "bottom" : "";
+    if (horizontal && vertical) {
+      return { kind: "resize", edge: vertical + "-" + horizontal };
+    }
+    if (horizontal) return { kind: "resize", edge: horizontal };
+    if (vertical) return { kind: "resize", edge: vertical };
+    return null;
+  }
+
+  function resizeCursor(control, c) {
+    if (!control) return "default";
+    if (control.kind === "rotate") return "grab";
+    if (control.edge === "radius") return "nwse-resize";
+
+    let axis = 0;
+    if (control.edge === "top" || control.edge === "bottom") {
+      axis = 90;
+    } else if (control.edge.includes("-")) {
+      axis = control.edge === "top-left" || control.edge === "bottom-right"
+        ? 45
+        : 135;
+    }
+    const angle = (((c.rotation || 0) + axis) % 180 + 180) % 180;
+    const snapped = Math.round(angle / 45) % 4;
+    return ["ew-resize", "nwse-resize", "ns-resize", "nesw-resize"][snapped];
+  }
+
+  function setHoverControl(next) {
+    const before = hoverControl
+      ? hoverControl.kind + ":" + (hoverControl.edge || "")
+      : "";
+    const after = next
+      ? next.kind + ":" + (next.edge || "")
+      : "";
+    hoverControl = next;
+    if (before !== after) render();
+  }
+
+  function updatePointerCursor(event) {
+    if (previewRunning) {
+      canvas.style.cursor = "default";
+      return;
+    }
+    if (tool !== "SELECT") {
+      setHoverControl(null);
+      canvas.style.cursor = "crosshair";
+      return;
+    }
+    const control = selectionControlAt(event.clientX, event.clientY);
+    setHoverControl(control);
+    if (control) {
+      canvas.style.cursor = resizeCursor(control, currentComponent());
+      return;
+    }
+    const p = toWorld(event.clientX, event.clientY);
+    canvas.style.cursor = hitTest(p.x, p.y) ? "move" : "default";
+  }
+
+  function applyResizeDrag(c, state, p) {
+    const original = state.original;
+    if (state.edge === "radius") {
+      const nextRadius = Math.max(
+        4,
+        Math.hypot(p.x - original.x, p.y - original.y)
+      );
+      c.radius = $("snapGrid").checked
+        ? Math.max(4, snap(nextRadius))
+        : nextRadius;
+      return;
+    }
+
+    const local = localPointFor(original, p.x, p.y);
+    const minSize = 6;
+    let left = -Math.max(minSize, original.width) / 2;
+    let right = Math.max(minSize, original.width) / 2;
+    let top = -Math.max(minSize, original.height) / 2;
+    let bottom = Math.max(minSize, original.height) / 2;
+
+    if (state.edge.includes("left")) {
+      left = Math.min(local.x, right - minSize);
+    }
+    if (state.edge.includes("right")) {
+      right = Math.max(local.x, left + minSize);
+    }
+    if (state.edge.includes("top")) {
+      top = Math.min(local.y, bottom - minSize);
+    }
+    if (state.edge.includes("bottom")) {
+      bottom = Math.max(local.y, top + minSize);
+    }
+
+    let width = right - left;
+    let height = bottom - top;
+    if ($("snapGrid").checked) {
+      if (state.edge.includes("left") || state.edge.includes("right")) {
+        width = Math.max(minSize, snap(width));
+        if (state.edge.includes("left")) left = right - width;
+        else right = left + width;
+      }
+      if (state.edge.includes("top") || state.edge.includes("bottom")) {
+        height = Math.max(minSize, snap(height));
+        if (state.edge.includes("top")) top = bottom - height;
+        else bottom = top + height;
+      }
+    }
+
+    const localCenterX = (left + right) / 2;
+    const localCenterY = (top + bottom) / 2;
+    const a = (original.rotation || 0) * Math.PI / 180;
+    const worldCenterX =
+      original.x + localCenterX * Math.cos(a) - localCenterY * Math.sin(a);
+    const worldCenterY =
+      original.y + localCenterX * Math.sin(a) + localCenterY * Math.cos(a);
+
+    c.x = clamp(worldCenterX, 0, definition.world.width);
+    c.y = clamp(worldCenterY, 0, definition.world.height);
+    c.width = width;
+    c.height = height;
   }
 
   function hitTest(x, y) {
@@ -584,6 +824,7 @@
 
   function setTool(next) {
     tool = next;
+    setHoverControl(null);
     document.querySelectorAll("[data-tool]").forEach((button) => {
       button.classList.toggle("active", button.dataset.tool === tool);
     });
@@ -679,7 +920,7 @@
     $("runTimeoutSeconds").value = runPolicy.timeoutSeconds;
     $("qualificationMinWinners").value = runPolicy.qualificationMinWinners;
     $("qualificationMaxNudges").value = runPolicy.qualificationMaxNudges;
-    $("mapIdLabel").textContent = mapId || "NEW";
+    $("mapIdLabel").textContent = mapId || "신규";
     $("mapRevision").textContent = mapRevision ?? "-";
     $("mapHash").textContent = mapHash ? mapHash.slice(0, 16) + "…" : "-";
   }
@@ -690,7 +931,8 @@
     $("componentInspector").hidden = !c;
     if (!c) return;
 
-    $("selectedType").textContent = c.type + " · " + c.id.slice(0, 8);
+    $("selectedType").textContent =
+      componentTypeLabel(c.type) + " · " + c.id.slice(0, 8);
     $("propX").value = Math.round(c.x * 100) / 100;
     $("propY").value = Math.round(c.y * 100) / 100;
     $("propRotation").value = c.rotation || 0;
@@ -715,7 +957,7 @@
     linkedSelect.replaceChildren();
     const none = document.createElement("option");
     none.value = "";
-    none.textContent = "None";
+    none.textContent = "없음";
     linkedSelect.appendChild(none);
     for (const target of definition.components) {
       if (
@@ -724,7 +966,8 @@
       ) continue;
       const option = document.createElement("option");
       option.value = target.id;
-      option.textContent = target.type + " · " + target.id.slice(0, 8);
+      option.textContent =
+        componentTypeLabel(target.type) + " · " + target.id.slice(0, 8);
       linkedSelect.appendChild(option);
     }
     linkedSelect.value = String(c.properties?.linkedComponentId || "");
@@ -752,7 +995,7 @@
     conditionSelect.replaceChildren();
     const noCondition = document.createElement("option");
     noCondition.value = "";
-    noCondition.textContent = "None";
+    noCondition.textContent = "없음";
     conditionSelect.appendChild(noCondition);
     if (c.type === "OUTPUT") {
       for (const output of definition.components) {
@@ -773,7 +1016,7 @@
     sensorSelect.replaceChildren();
     const noSensor = document.createElement("option");
     noSensor.value = "";
-    noSensor.textContent = "None";
+    noSensor.textContent = "없음";
     sensorSelect.appendChild(noSensor);
     const tags = [...new Set(
       definition.components
@@ -1343,14 +1586,14 @@
       );
       previewRunning = true;
       previewLastTime = performance.now();
-      $("previewToggle").textContent = "■ Stop";
-      $("modeStatus").textContent = "SIMULATE";
+      $("previewToggle").textContent = "■ 정지";
+      $("modeStatus").textContent = "시뮬레이션";
       setTool("SELECT");
       updateEditButtons();
       previewFrame = requestAnimationFrame(previewTick);
       render();
     } catch (error) {
-      setStatus("Preview 시작 실패: " + error.message, "error");
+      setStatus("미리보기 시작 실패: " + error.message, "error");
     }
   }
 
@@ -1370,8 +1613,8 @@
     previewRunning = false;
     cancelAnimationFrame(previewFrame);
     previewFrame = 0;
-    $("previewToggle").textContent = "▶ Preview";
-    $("modeStatus").textContent = "EDIT";
+    $("previewToggle").textContent = "▶ 미리보기";
+    $("modeStatus").textContent = "편집";
     canvas.style.cursor = tool === "SELECT" ? "default" : "crosshair";
     updateEditButtons();
   }
@@ -1395,10 +1638,35 @@
 
   canvas.addEventListener("pointerdown", (event) => {
     if (previewRunning) return;
-    const p = toWorld(event.clientX, event.clientY);
 
+    const p = toWorld(event.clientX, event.clientY);
     if (tool !== "SELECT") {
       addComponent(tool, p.x, p.y);
+      event.preventDefault();
+      return;
+    }
+
+    const control = selectionControlAt(event.clientX, event.clientY);
+    const selected = currentComponent();
+    if (control && selected) {
+      const raw = toWorld(event.clientX, event.clientY, false);
+      drag = {
+        mode: control.kind,
+        edge: control.edge || "",
+        pointerId: event.pointerId,
+        before: clone(definition),
+        original: clone(selected),
+        startAngle: Math.atan2(
+          raw.y - selected.y,
+          raw.x - selected.x
+        ) * 180 / Math.PI,
+        moved: false
+      };
+      setHoverControl(control);
+      canvas.style.cursor = control.kind === "rotate"
+        ? "grabbing"
+        : resizeCursor(control, selected);
+      canvas.setPointerCapture?.(event.pointerId);
       event.preventDefault();
       return;
     }
@@ -1407,25 +1675,80 @@
     select(hit?.id || null);
     if (hit) {
       drag = {
+        mode: "move",
         pointerId: event.pointerId,
         before: clone(definition),
         offsetX: p.x - hit.x,
         offsetY: p.y - hit.y,
         moved: false
       };
+      canvas.style.cursor = "grabbing";
       canvas.setPointerCapture?.(event.pointerId);
+    } else {
+      setHoverControl(null);
+      canvas.style.cursor = "default";
     }
     event.preventDefault();
   });
 
   canvas.addEventListener("pointermove", (event) => {
-    if (!drag || drag.pointerId !== event.pointerId || previewRunning) return;
+    if (previewRunning) return;
+    if (!drag || drag.pointerId !== event.pointerId) {
+      updatePointerCursor(event);
+      return;
+    }
+
     const c = currentComponent();
     if (!c) return;
-    const p = toWorld(event.clientX, event.clientY);
-    c.x = clamp(snap(p.x - drag.offsetX), 0, definition.world.width);
-    c.y = clamp(snap(p.y - drag.offsetY), 0, definition.world.height);
-    drag.moved = true;
+
+    if (drag.mode === "move") {
+      const p = toWorld(event.clientX, event.clientY);
+      const nextX = clamp(
+        snap(p.x - drag.offsetX),
+        0,
+        definition.world.width
+      );
+      const nextY = clamp(
+        snap(p.y - drag.offsetY),
+        0,
+        definition.world.height
+      );
+      drag.moved ||= nextX !== c.x || nextY !== c.y;
+      c.x = nextX;
+      c.y = nextY;
+      canvas.style.cursor = "grabbing";
+    } else if (drag.mode === "rotate") {
+      const p = toWorld(event.clientX, event.clientY, false);
+      const angle = Math.atan2(
+        p.y - drag.original.y,
+        p.x - drag.original.x
+      ) * 180 / Math.PI;
+      let next = (drag.original.rotation || 0)
+        + angle
+        - drag.startAngle;
+      if (event.shiftKey) next = Math.round(next / 15) * 15;
+      next = ((next + 180) % 360 + 360) % 360 - 180;
+      drag.moved ||= Math.abs(next - (c.rotation || 0)) > .001;
+      c.rotation = next;
+      setHoverControl({ kind: "rotate" });
+      canvas.style.cursor = "grabbing";
+    } else if (drag.mode === "resize") {
+      const p = toWorld(event.clientX, event.clientY, false);
+      const beforeSize = isCircularComponent(c)
+        ? c.radius
+        : c.width + ":" + c.height + ":" + c.x + ":" + c.y;
+      applyResizeDrag(c, drag, p);
+      const afterSize = isCircularComponent(c)
+        ? c.radius
+        : c.width + ":" + c.height + ":" + c.x + ":" + c.y;
+      drag.moved ||= beforeSize !== afterSize;
+      setHoverControl({ kind: "resize", edge: drag.edge });
+      canvas.style.cursor = resizeCursor(
+        { kind: "resize", edge: drag.edge },
+        c
+      );
+    }
+
     syncInspector();
     render();
     event.preventDefault();
@@ -1440,6 +1763,8 @@
     }
     try { canvas.releasePointerCapture?.(event.pointerId); } catch {}
     drag = null;
+    setHoverControl(null);
+    canvas.style.cursor = tool === "SELECT" ? "default" : "crosshair";
     updateEditButtons();
     validateClient(false);
     event.preventDefault();
@@ -1447,6 +1772,12 @@
 
   canvas.addEventListener("pointerup", finishDrag);
   canvas.addEventListener("pointercancel", finishDrag);
+  canvas.addEventListener("pointerleave", () => {
+    if (!drag) {
+      setHoverControl(null);
+      canvas.style.cursor = tool === "SELECT" ? "default" : "crosshair";
+    }
+  });
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
   document.querySelectorAll("[data-tool]").forEach((button) => {
