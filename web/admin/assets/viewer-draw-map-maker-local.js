@@ -94,7 +94,7 @@
     },
     CURVE_WALL: {
       basic: [...RECT_ROT_BASIC, "propThickness"],
-      advanced: ["propCurveSegments", ...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
     },
     RAMP: {
       basic: [...RECT_ROT_BASIC],
@@ -244,16 +244,10 @@
       basic: [
         ...RECT_ROT_BASIC,
         "propAxisAngle",
-        "propTravelMin",
-        "propTravelMax",
+        "propTravelDistance",
         "propElevatorSpeed"
       ],
-      advanced: [
-        "propMotorForce",
-        "propStartDirection",
-        ...PHYSICS_ADVANCED,
-        ...AUDIO_FIELDS
-      ]
+      advanced: [...PHYSICS_ADVANCED]
     },
     OUTPUT: {
       basic: [
@@ -980,7 +974,7 @@
     drawGrid(view);
     drawDependencies(view);
     for (const c of definition.components) {
-      const shapes = Engine.componentShapes
+      const shapes = previewRunning && Engine.componentShapes
         ? Engine.componentShapes(c, previewSnapshot?.time || 0)
         : [c];
       for (const shape of shapes) {
@@ -1358,9 +1352,6 @@
     $("propOpenAngle").value = num(c.properties?.openAngle, 78);
     $("propGap").value = num(c.properties?.gap, 52);
     $("propThickness").value = num(c.properties?.thickness, 14);
-    $("propCurveSegments").value = Math.trunc(
-      num(c.properties?.segments, 16)
-    );
     $("propPivotRatio").value = num(c.properties?.pivotRatio, c.type === "PADDLE" ? -.48 : 0);
     $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
     $("propUpperAngle").value = num(c.properties?.upperAngle, 70);
@@ -1403,11 +1394,11 @@
     $("propBeltSpeed").value = num(c.properties?.beltSpeed, 160);
     $("propBeltGrip").value = num(c.properties?.beltGrip, .22);
     $("propAxisAngle").value = num(c.properties?.axisAngle, -90);
-    $("propTravelMin").value = num(c.properties?.travelMin, -120);
-    $("propTravelMax").value = num(c.properties?.travelMax, 120);
+    $("propTravelDistance").value = Math.max(
+      1,
+      num(c.properties?.travelMax, 120) - num(c.properties?.travelMin, -120)
+    );
     $("propElevatorSpeed").value = num(c.properties?.motorSpeed, 90);
-    $("propMotorForce").value = num(c.properties?.motorForce, 45);
-    $("propStartDirection").value = String(num(c.properties?.startDirection, 1) < 0 ? -1 : 1);
     $("propOutputKey").value = String(c.properties?.outputKey || "OUT1");
     $("propOutputRank").value = Math.trunc(num(c.properties?.outputRank, 1));
     $("propOutputCapacity").value = Math.trunc(num(c.properties?.outputCapacity, 1));
@@ -1501,13 +1492,6 @@
     if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
     if (c.type === "FUNNEL") c.properties.gap = clamp(num($("propGap").value, 52), 8, Math.max(8, c.width * .8));
     if (["CURVE_WALL", "FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, c.type === "CURVE_WALL" ? 18 : 14), 4, 80);
-    if (c.type === "CURVE_WALL") {
-      c.properties.segments = clamp(
-        Math.trunc(num($("propCurveSegments").value, 16)),
-        6,
-        32
-      );
-    }
     if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = clamp(num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0), -.5, .5);
     if (c.type === "HINGE") {
       c.properties.lowerAngle = clamp(num($("propLowerAngle").value, -70), -180, 180);
@@ -1606,15 +1590,35 @@
       );
     }
     if (c.type === "ELEVATOR") {
-      c.properties.axisAngle = clamp(num($("propAxisAngle").value, -90), -360, 360);
-      c.properties.travelMin = clamp(num($("propTravelMin").value, -120), -1200, 1200);
-      c.properties.travelMax = clamp(num($("propTravelMax").value, 120), -1200, 1200);
-      if (c.properties.travelMin >= c.properties.travelMax) {
-        c.properties.travelMax = Math.min(1200, c.properties.travelMin + 1);
-      }
-      c.properties.motorSpeed = clamp(num($("propElevatorSpeed").value, 90), 1, 600);
-      c.properties.motorForce = clamp(num($("propMotorForce").value, 45), 0, 500);
-      c.properties.startDirection = Number($("propStartDirection").value) < 0 ? -1 : 1;
+      c.properties.axisAngle = clamp(
+        num($("propAxisAngle").value, -90),
+        -360,
+        360
+      );
+      const oldMin = num(c.properties.travelMin, -120);
+      const oldMax = num(c.properties.travelMax, 120);
+      const midpoint = clamp((oldMin + oldMax) / 2, -1199.5, 1199.5);
+      const requestedDistance = clamp(
+        num($("propTravelDistance").value, oldMax - oldMin || 240),
+        1,
+        2400
+      );
+      const maxHalf = Math.min(1200 - midpoint, midpoint + 1200);
+      const half = Math.min(requestedDistance / 2, Math.max(.5, maxHalf));
+      c.properties.travelMin = midpoint - half;
+      c.properties.travelMax = midpoint + half;
+      c.properties.motorSpeed = clamp(
+        num($("propElevatorSpeed").value, 90),
+        1,
+        600
+      );
+      c.properties.motorForce = clamp(
+        num(c.properties.motorForce, 45),
+        0,
+        500
+      );
+      c.properties.startDirection =
+        num(c.properties.startDirection, 1) < 0 ? -1 : 1;
     }
     if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)) {
       c.properties.sensorTag = $("propSensorTag").value.trim().slice(0, 32);
