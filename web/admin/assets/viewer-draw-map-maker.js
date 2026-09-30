@@ -1394,7 +1394,7 @@
     if (c.type === "ELIMINATION") {
       c.properties.eliminationKey = $("propEliminationKey").value.trim() || "OUT";
     }
-    if (c.type !== "SPAWN") {
+    if (!["SPAWN","BURST_SPAWN"].includes(c.type)) {
       c.properties.soundMaterial = $("propSoundMaterial").value;
       c.properties.instrument = $("propInstrument").value;
       c.properties.audioNote = clamp(Math.trunc(num($("propAudioNote").value, 60)), 24, 108);
