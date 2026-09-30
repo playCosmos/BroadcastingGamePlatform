@@ -16,6 +16,9 @@
   let tool = "SELECT";
   let drag = null;
   let hoverControl = null;
+  let editorZoom = 1;
+  let editorPanX = 0;
+  let editorPanY = 0;
   let undoStack = [];
   let redoStack = [];
   let previewEngine = null;
@@ -117,15 +120,19 @@
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
     const world = definition.world;
-    const scale = Math.min(rect.width / world.width, rect.height / world.height);
+    const baseScale = Math.min(
+      rect.width / world.width,
+      rect.height / world.height
+    );
+    const scale = baseScale * editorZoom;
     const viewWidth = world.width * scale;
     const viewHeight = world.height * scale;
     return {
       width: rect.width,
       height: rect.height,
       scale,
-      ox: (rect.width - viewWidth) / 2,
-      oy: (rect.height - viewHeight) / 2
+      ox: (rect.width - viewWidth) / 2 + editorPanX,
+      oy: (rect.height - viewHeight) / 2 + editorPanY
     };
   }
 
@@ -147,6 +154,42 @@
           y: clamp(y, 0, definition.world.height)
         }
       : { x, y };
+  }
+
+  function updateZoomLabel() {
+    const label = $("zoomLabel");
+    if (label) label.textContent = Math.round(editorZoom * 100) + "%";
+  }
+
+  function setEditorZoom(nextZoom, clientX = null, clientY = null) {
+    const rect = canvas.getBoundingClientRect();
+    const oldView = fit();
+    const sx = clientX == null ? rect.width / 2 : clientX - rect.left;
+    const sy = clientY == null ? rect.height / 2 : clientY - rect.top;
+    const worldX = (sx - oldView.ox) / oldView.scale;
+    const worldY = (sy - oldView.oy) / oldView.scale;
+    editorZoom = clamp(nextZoom, .35, 4);
+    const baseScale = Math.min(
+      rect.width / definition.world.width,
+      rect.height / definition.world.height
+    );
+    const nextScale = baseScale * editorZoom;
+    const centeredOx =
+      (rect.width - definition.world.width * nextScale) / 2;
+    const centeredOy =
+      (rect.height - definition.world.height * nextScale) / 2;
+    editorPanX = sx - centeredOx - worldX * nextScale;
+    editorPanY = sy - centeredOy - worldY * nextScale;
+    updateZoomLabel();
+    render();
+  }
+
+  function resetEditorView() {
+    editorZoom = 1;
+    editorPanX = 0;
+    editorPanY = 0;
+    updateZoomLabel();
+    render();
   }
 
   function drawGrid(view) {
@@ -374,6 +417,7 @@
   function componentStyle(type) {
     return {
       WALL: ["#6f7c87", "#a6b0b8"],
+      CURVE_WALL: ["#566d7a", "#a8d4e8"],
       RAMP: ["#a36e36", "#e0a45c"],
       PEG: ["#d0d6db", "#f5f7f8"],
       BUMPER: ["#8f3d46", "#e17a84"],
@@ -387,11 +431,13 @@
       GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
       LAUNCHER: ["#3e6675", "#78bdd5"],
+      CONVEYOR: ["#47565f", "#8fc6df"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
       OUTPUT: ["#3f744c", "#8bd3a1"],
       SLOT: ["#73503e", "#dda57e"],
       ELIMINATION: ["#713d50", "#df789d"],
       SPAWN: ["#216e8f", "#62c3e7"],
+      BURST_SPAWN: ["#784878", "#e092df"],
       FINISH: ["#367c4d", "#74d191"]
     }[type] || ["#59636c", "#aab2b8"];
   }
@@ -410,7 +456,7 @@
     ctx.strokeStyle = selected ? "#ffffff" : stroke;
     ctx.lineWidth = selected ? 2.5 : 1.2;
 
-    if (["PEG", "BUMPER", "SPAWN"].includes(c.type)) {
+    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       const r = Math.max(2, c.radius * view.scale);
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
@@ -424,6 +470,18 @@
         ctx.moveTo(0, -r * .5);
         ctx.lineTo(0, r * .5);
         ctx.stroke();
+      } else if (c.type === "BURST_SPAWN") {
+        const direction = num(
+          c.properties?.burstDirectionDegrees,
+          -90
+        ) * Math.PI / 180 - (c.rotation || 0) * Math.PI / 180;
+        ctx.beginPath();
+        ctx.moveTo(0, 0);
+        ctx.lineTo(
+          Math.cos(direction) * r * .72,
+          Math.sin(direction) * r * .72
+        );
+        ctx.stroke();
       }
     } else {
       const w = Math.max(2, c.width * view.scale);
@@ -435,6 +493,32 @@
         ctx.setLineDash([7, 5]);
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
+      }
+      if (c.type === "CONVEYOR") {
+        ctx.strokeStyle = "#d8f2ff";
+        ctx.lineWidth = Math.max(1, 1.3 * view.scale);
+        const arrow = Math.max(8, 18 * view.scale);
+        const speed = num(c.properties?.beltSpeed, 160);
+        const direction = speed >= 0 ? 1 : -1;
+        for (
+          let x = -w * .35;
+          x <= w * .35;
+          x += Math.max(24, 48 * view.scale)
+        ) {
+          ctx.beginPath();
+          ctx.moveTo(x - arrow * .35 * direction, 0);
+          ctx.lineTo(x + arrow * .35 * direction, 0);
+          ctx.lineTo(
+            x + arrow * .12 * direction,
+            -arrow * .22
+          );
+          ctx.moveTo(x + arrow * .35 * direction, 0);
+          ctx.lineTo(
+            x + arrow * .12 * direction,
+            arrow * .22
+          );
+          ctx.stroke();
+        }
       }
       if (["HINGE","GEAR","PADDLE"].includes(c.type)) {
         const pivotRatio = c.type === "PADDLE"
@@ -459,7 +543,7 @@
   }
 
   function componentBoundsScreen(c, view) {
-    if (["PEG", "BUMPER", "SPAWN"].includes(c.type)) {
+    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       const p = toScreen(c.x, c.y, view);
       const r = c.radius * view.scale;
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
@@ -474,7 +558,7 @@
   }
 
   function isCircularComponent(c) {
-    return ["PEG", "BUMPER", "SPAWN"].includes(c.type);
+    return ["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type);
   }
 
   function rotationHandleScreen(c, view) {
@@ -617,6 +701,7 @@
   function componentTypeLabel(type) {
     return {
       WALL: "벽",
+      CURVE_WALL: "곡선 벽",
       RAMP: "경사로",
       PEG: "핀",
       BUMPER: "범퍼",
@@ -630,8 +715,10 @@
       GEAR: "기어 로터",
       PADDLE: "패들",
       LAUNCHER: "발사대",
+      CONVEYOR: "컨베이어",
       ELEVATOR: "엘리베이터",
-      SPAWN: "출발 지점",
+      SPAWN: "뭉침 스포너",
+      BURST_SPAWN: "버스트 스포너",
       FINISH: "도착 지점",
       OUTPUT: "출력 구역",
       SLOT: "슬롯",
@@ -799,7 +886,7 @@
   function hitTest(x, y) {
     for (let i = definition.components.length - 1; i >= 0; i--) {
       const c = definition.components[i];
-      if (["PEG", "BUMPER", "SPAWN"].includes(c.type)) {
+      if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
         const p = localPointFor(c, x, y);
@@ -979,6 +1066,15 @@
     );
     $("propLaunchSpread").value = num(c.properties?.launchSpreadDegrees, 18);
     $("propLaunchVariance").value = num(c.properties?.launchPowerVariance, .22);
+    $("propBurstPower").value = num(c.properties?.burstPower, 1.15);
+    $("propBurstDirection").value = num(c.properties?.burstDirectionDegrees, -90);
+    $("propBurstSpread").value = num(c.properties?.burstSpreadDegrees, 24);
+    $("propBurstVariance").value = num(c.properties?.burstPowerVariance, .22);
+    $("propBurstSizeMin").value = Math.trunc(num(c.properties?.burstSizeMin, 3));
+    $("propBurstSizeMax").value = Math.trunc(num(c.properties?.burstSizeMax, 7));
+    $("propBurstInterval").value = Math.trunc(num(c.properties?.burstIntervalMs, 90));
+    $("propBeltSpeed").value = num(c.properties?.beltSpeed, 160);
+    $("propBeltGrip").value = num(c.properties?.beltGrip, .22);
     $("propAxisAngle").value = num(c.properties?.axisAngle, -90);
     $("propTravelMin").value = num(c.properties?.travelMin, -120);
     $("propTravelMax").value = num(c.properties?.travelMax, 120);
@@ -1046,13 +1142,13 @@
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     document.querySelectorAll(".dimension-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type);
+      el.hidden = !["WALL", "CURVE_WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type);
     });
     document.querySelectorAll(".radius-field").forEach((el) => {
-      el.hidden = !["PEG", "BUMPER", "SPAWN"].includes(c.type);
+      el.hidden = !["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type);
     });
     document.querySelectorAll(".physics-field").forEach((el) => {
-      el.hidden = !["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR"].includes(c.type);
+      el.hidden = !["WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR"].includes(c.type);
     });
     document.querySelectorAll(".rotator-field").forEach((el) => {
       el.hidden = c.type !== "ROTATOR";
@@ -1070,7 +1166,7 @@
       el.hidden = c.type !== "FUNNEL";
     });
     document.querySelectorAll(".thickness-field").forEach((el) => {
-      el.hidden = !["FUNNEL", "SPLITTER"].includes(c.type);
+      el.hidden = !["CURVE_WALL", "FUNNEL", "SPLITTER"].includes(c.type);
     });
     document.querySelectorAll(".pivot-field").forEach((el) => {
       el.hidden = !["HINGE", "PADDLE"].includes(c.type);
@@ -1086,6 +1182,12 @@
     });
     document.querySelectorAll(".launcher-field").forEach((el) => {
       el.hidden = c.type !== "LAUNCHER";
+    });
+    document.querySelectorAll(".burst-spawn-field").forEach((el) => {
+      el.hidden = c.type !== "BURST_SPAWN";
+    });
+    document.querySelectorAll(".conveyor-field").forEach((el) => {
+      el.hidden = c.type !== "CONVEYOR";
     });
     document.querySelectorAll(".elevator-field").forEach((el) => {
       el.hidden = c.type !== "ELEVATOR";
@@ -1136,13 +1238,13 @@
       el.hidden = c.type !== "ELIMINATION";
     });
     document.querySelectorAll(".audio-field").forEach((el) => {
-      el.hidden = c.type === "SPAWN";
+      el.hidden = ["SPAWN","BURST_SPAWN"].includes(c.type);
     });
     document.querySelectorAll(".bumper-field").forEach((el) => {
       el.hidden = c.type !== "BUMPER";
     });
     document.querySelectorAll(".spawn-field").forEach((el) => {
-      el.hidden = c.type !== "SPAWN";
+      el.hidden = !["SPAWN","BURST_SPAWN"].includes(c.type);
     });
   }
 
@@ -1154,11 +1256,11 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
+    if (["WALL", "CURVE_WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
       c.width = Math.max(1, num($("propWidth").value, c.width));
       c.height = Math.max(1, num($("propHeight").value, c.height));
     }
-    if (["PEG", "BUMPER", "SPAWN"].includes(c.type)) {
+    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       c.radius = Math.max(1, num($("propRadius").value, c.radius));
     }
 
@@ -1166,7 +1268,7 @@
     const oldOutputKey = c.type === "OUTPUT"
       ? String(c.properties.outputKey || "")
       : "";
-    if (["WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "ELEVATOR"].includes(c.type)) {
+    if (["WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR"].includes(c.type)) {
       c.properties.restitution = clamp(num($("propRestitution").value, .35), 0, 1.4);
       c.properties.friction = clamp(num($("propFriction").value, .05), 0, .5);
     }
@@ -1175,7 +1277,7 @@
     if (["PENDULUM", "SEESAW"].includes(c.type)) c.properties.amplitude = clamp(num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42), 0, 120);
     if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
     if (c.type === "FUNNEL") c.properties.gap = clamp(num($("propGap").value, 52), 8, Math.max(8, c.width * .8));
-    if (["FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, 14), 4, 80);
+    if (["CURVE_WALL", "FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, c.type === "CURVE_WALL" ? 18 : 14), 4, 80);
     if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = clamp(num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0), -.5, .5);
     if (c.type === "HINGE") {
       c.properties.lowerAngle = clamp(num($("propLowerAngle").value, -70), -180, 180);
@@ -1216,6 +1318,24 @@
         0,
         .75
       );
+    }
+    if (c.type === "BURST_SPAWN") {
+      c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
+      c.properties.spawnRole = "BURST";
+      c.properties.burstPower = clamp(num($("propBurstPower").value, 1.15), 0, 5);
+      c.properties.burstDirectionDegrees = clamp(num($("propBurstDirection").value, -90), -360, 360);
+      c.properties.burstSpreadDegrees = clamp(num($("propBurstSpread").value, 24), 0, 90);
+      c.properties.burstPowerVariance = clamp(num($("propBurstVariance").value, .22), 0, .75);
+      let burstMin = clamp(Math.trunc(num($("propBurstSizeMin").value, 3)), 1, 32);
+      let burstMax = clamp(Math.trunc(num($("propBurstSizeMax").value, 7)), 1, 32);
+      if (burstMin > burstMax) [burstMin, burstMax] = [burstMax, burstMin];
+      c.properties.burstSizeMin = burstMin;
+      c.properties.burstSizeMax = burstMax;
+      c.properties.burstIntervalMs = clamp(num($("propBurstInterval").value, 90), 0, 5000);
+    }
+    if (c.type === "CONVEYOR") {
+      c.properties.beltSpeed = clamp(num($("propBeltSpeed").value, 160), -1200, 1200);
+      c.properties.beltGrip = clamp(num($("propBeltGrip").value, .22), 0, 1);
     }
     if (c.type === "ELEVATOR") {
       c.properties.axisAngle = clamp(num($("propAxisAngle").value, -90), -360, 360);
@@ -1514,7 +1634,16 @@
 
   function newMap() {
     stopPreview();
-    definition = Engine.defaultDefinition();
+    previewEngine = null;
+    previewSnapshot = null;
+    $("simStatus").textContent = "0 / 0";
+    definition = Engine.emptyDefinition
+      ? Engine.emptyDefinition()
+      : { ...Engine.defaultDefinition(), components: [] };
+    editorZoom = 1;
+    editorPanX = 0;
+    editorPanY = 0;
+    updateZoomLabel();
     mapId = null;
     mapRevision = null;
     mapHash = null;
@@ -1522,11 +1651,13 @@
     selectedId = null;
     undoStack = [];
     redoStack = [];
+    setHoverControl(null);
+    if ($("savedMaps")) $("savedMaps").value = "";
     syncMapControls();
     syncInspector();
     updateEditButtons();
     render();
-    setStatus("새 맵을 만들었습니다.");
+    setStatus("빈 새 맵으로 초기화했습니다.");
   }
 
   function exportMap() {
@@ -1639,6 +1770,22 @@
   canvas.addEventListener("pointerdown", (event) => {
     if (previewRunning) return;
 
+    if (event.button === 1) {
+      drag = {
+        mode: "pan",
+        pointerId: event.pointerId,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        startPanX: editorPanX,
+        startPanY: editorPanY,
+        moved: false
+      };
+      canvas.style.cursor = "grabbing";
+      canvas.setPointerCapture?.(event.pointerId);
+      event.preventDefault();
+      return;
+    }
+
     const p = toWorld(event.clientX, event.clientY);
     if (tool !== "SELECT") {
       addComponent(tool, p.x, p.y);
@@ -1695,6 +1842,16 @@
     if (previewRunning) return;
     if (!drag || drag.pointerId !== event.pointerId) {
       updatePointerCursor(event);
+      return;
+    }
+
+    if (drag.mode === "pan") {
+      editorPanX = drag.startPanX + event.clientX - drag.startClientX;
+      editorPanY = drag.startPanY + event.clientY - drag.startClientY;
+      drag.moved = true;
+      canvas.style.cursor = "grabbing";
+      render();
+      event.preventDefault();
       return;
     }
 
@@ -1756,7 +1913,7 @@
 
   function finishDrag(event) {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    if (drag.moved) {
+    if (drag.moved && drag.mode !== "pan") {
       undoStack.push(drag.before);
       if (undoStack.length > 100) undoStack.shift();
       redoStack = [];
@@ -1790,6 +1947,9 @@
    "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
    "propMotorSpeed","propMotorTorque","propLinkedComponentId","propGearRatio",
    "propLaunchPower","propLaunchDirection","propLaunchSpread","propLaunchVariance",
+   "propBurstPower","propBurstDirection","propBurstSpread","propBurstVariance",
+   "propBurstSizeMin","propBurstSizeMax","propBurstInterval",
+   "propBeltSpeed","propBeltGrip",
    "propAxisAngle","propTravelMin","propTravelMax",
    "propElevatorSpeed","propMotorForce","propStartDirection",
    "propOutputKey","propOutputRank","propOutputCapacity","propOutputWeight",
@@ -1838,6 +1998,15 @@
   });
   $("previewToggle").addEventListener("click", startPreview);
   $("previewReset").addEventListener("click", resetPreview);
+  $("zoomOut").addEventListener("click", () => setEditorZoom(editorZoom / 1.2));
+  $("zoomIn").addEventListener("click", () => setEditorZoom(editorZoom * 1.2));
+  $("zoomReset").addEventListener("click", resetEditorView);
+  canvas.addEventListener("wheel", (event) => {
+    if (Math.abs(event.deltaY) < 1) return;
+    const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+    setEditorZoom(editorZoom * factor, event.clientX, event.clientY);
+    event.preventDefault();
+  }, { passive: false });
   $("openMarbleDraw").addEventListener("click", (event) => {
     event.preventDefault();
     definition.name = $("mapName").value.trim() || definition.name;
@@ -1884,6 +2053,7 @@
 
   syncMapControls();
   syncInspector();
+  updateZoomLabel();
   updateEditButtons();
   setTool("SELECT");
   render();
