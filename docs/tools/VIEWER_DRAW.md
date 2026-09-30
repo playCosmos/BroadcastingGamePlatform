@@ -629,64 +629,68 @@ collision
 
 ## 13.2 Machine Component 모델
 
-Machine Designer는 데이터 기반 컴포넌트를 배치하는 방식으로 계획한다.
+현재 Map Maker의 신규 저장 포맷은 `viewer-draw-machine-map/v1`이다.
+
+핵심 원칙은 **형태가 같고 물리 처리도 같으며 기본값만 다른 항목만 프리셋으로 제공**하는 것이다. 형태가 같더라도 행동 알고리즘이 다른 Conveyor와 Elevator는 별도 컴포넌트로 유지한다.
 
 ~~~text
-MachineComponent
-├─ id
-├─ type
-├─ transform
-├─ physicsShape
-├─ physicsMaterial
-├─ motion
-├─ trigger
-├─ audioProfile
-├─ visualProfile
-└─ drawRole
+Collider 공통
+├─ restitution
+├─ friction
+├─ boost = 0
+└─ collision audio profile
+
+WALL
+└─ 직선/사각 충돌체
+
+CURVE_WALL
+└─ 곡선 충돌체
+   └─ 내부 collision segment 수는 엔진이 관리
+
+CIRCLE
+└─ 원형 충돌체
+   ├─ Pin preset
+   └─ Bumper preset
+
+동적/특수 컴포넌트
+├─ GATE
+├─ ROTATOR
+├─ PENDULUM
+├─ SEESAW
+├─ HINGE
+├─ GEAR
+├─ PADDLE
+├─ CONVEYOR
+└─ ELEVATOR
+
+생성/센서
+├─ SPAWN
+├─ BURST_SPAWN
+├─ FINISH
+├─ OUTPUT
+├─ SLOT
+└─ ELIMINATION
 ~~~
 
-### 기본 물리 컴포넌트
+### 프리셋과 제거된 레거시 타입
 
-- Ramp
-- Rail
-- Wall
-- Peg
-- Bumper
-- Funnel
-- Spiral
-- Gate
-- Splitter
-- Seesaw
-- Pendulum
-- Rotator
-- Gear
-- Paddle
-- Elevator
-- Launcher
-- Dropper
-- Collector
-- Finish Gate
-- Elimination Pit
+- `RAMP`는 삭제했다. 기존 RAMP는 회전값을 유지한 `WALL`로 migration한다.
+- `PEG`와 `BUMPER`는 삭제했다. 신규 맵에서는 둘 다 `CIRCLE`이며 프리셋 기본값만 다르다.
+  - Pin preset: 작은 radius, `boost=0`
+  - Bumper preset: 큰 radius, 높은 restitution, `boost>0`
+- `LAUNCHER`는 삭제했다. 신규 팔레트의 **발사벽**은 `WALL`에 높은 `boost` 값을 적용한 프리셋이다.
+- `FUNNEL`과 `SPLITTER`는 삭제했다. 레거시 맵을 읽을 때 두 개의 명시적인 `WALL`로 분해한다.
+- `boost`는 특정 Bumper/Launcher 전용 기능이 아니라 모든 Collider의 공통 속성이다.
+- `boost=0`이면 추가 impulse가 없고, `boost>0`이면 충돌 법선 방향으로 추가 impulse를 적용한다.
 
-### Marble Machine / 악기 컴포넌트
+`CONVEYOR`와 `ELEVATOR`는 사각형 모양이 같아도 기능을 합치지 않는다.
 
-- Bell
-- Chime
-- Xylophone Bar
-- Metal Plate
-- Wood Block
-- Drum Pad
-- String Pluck Trigger
-- Clicker
-- Rattle
-- Resonator
+- Conveyor: 본체는 고정되고 접촉한 Marble에 표면 방향 속도를 전달한다.
+- Elevator: 플랫폼 본체가 지정 축을 따라 실제로 이동한다.
 
-악기 컴포넌트도 실제 충돌체가 될 수 있다.
-
-단, **소리만 발생하는 장식 Trigger**와 **실제로 Marble 궤적을 바꾸는 Physics Component**는 명확하게 구분한다.
+렌더링, Preview 충돌, Browser Box2D 및 Inspector는 v1 component type과 공통 Collider 속성을 기준으로 처리한다.
 
 ---
-
 ## 13.3 Sound Design
 
 웹 클라이언트에서는 **Web Audio API**를 우선 사용한다.
@@ -828,7 +832,7 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 
 ## 13.6 Machine Designer
 
-### 13.6.1 현재 구현된 Map Maker V0
+### 13.6.1 현재 구현된 Map Maker V1
 
 관리 경로:
 
@@ -836,57 +840,53 @@ OBS에서 장시간 사용할 수 있도록 메모리 누수와 AudioNode 누적
 /admin/tools/viewer-draw/map-maker/
 ~~~
 
-현재 구현:
+현재 신규 팔레트:
 
 - Wall
-- Ramp
-- Peg
-- Bumper
+- Launch Wall preset (`WALL + boost`)
+- Curve Wall
+- Pin preset (`CIRCLE`)
+- Bumper preset (`CIRCLE + boost`)
 - Gate
 - Rotator
 - Pendulum
 - Seesaw
-- Funnel
-- Splitter
 - Hinge / Pivot
 - Gear Rotor
 - Paddle
-- Launcher
+- Conveyor
 - Elevator
 - Spawn
+- Burst Spawn
 - Finish
 - Output
 - Slot
 - Elimination
+
+`Ramp`, `Funnel`, `Splitter`, 독립 `Launcher`, 독립 `Peg/Bumper` 타입은 신규 팔레트와 v1 타입 집합에 존재하지 않는다.
+
+편집 기능:
+
 - Canvas 배치/선택/드래그
 - Grid / Snap
-- Inspector 기반 위치/회전/크기/반발/마찰/Boost 수정
+- 타입별 Inspector schema
+- 공통 Collider 설정: restitution / friction / boost / collision audio
 - Undo / Redo
 - Duplicate / Delete
 - World 크기/중력 설정
-- DB 저장/불러오기
-- revision 자동 증가
-- SHA-256 definition hash
+- DB 또는 브라우저 localStorage 저장
 - JSON import/export
-- Archive
 - 즉시 Physics Preview
 
 맵 포맷:
 
 ~~~text
-viewer-draw-machine-map/v0
+viewer-draw-machine-map/v1
 MachineMapDefinition
 ├─ name
 ├─ world
-│  ├─ width / height
-│  └─ gravityX / gravityY
 ├─ drawRule
-│  ├─ type
-│  └─ winnerCount
 ├─ runPolicy
-│  ├─ timeoutSeconds
-│  ├─ qualificationMinWinners
-│  └─ qualificationMaxNudges
 └─ components[]
    ├─ id
    ├─ type
@@ -895,31 +895,10 @@ MachineMapDefinition
    └─ properties
 ~~~
 
-서버와 브라우저 모두 동일 포맷을 검증한다.
+브라우저는 v0 JSON을 읽을 때 `migrateDefinition()`으로 v1으로 변환한다. 서버는 기존 저장 데이터 호환을 위해 v0와 v1을 모두 검증할 수 있지만 신규 Map Maker 저장은 v1을 사용한다.
 
-DB:
-
-~~~text
-viewer_draw_machine_map
-- map_id
-- name
-- revision
-- status
-- schema_version
-- definition_json
-- definition_hash
-- created_at
-- updated_at
-~~~
-
-물리 구조가 바뀌고 다시 저장되면 revision과 definition hash가 변경된다.
-
-각 저장 revision은 `viewer_draw_machine_map_revision`에 immutable snapshot으로 별도 보존한다.
-
-이 revision history는 Map Maker의 제작 이력 관리용이다.
-실제 브라우저 Marble Draw는 서버 revision 조회가 없어도 JSON 맵 파일만으로 실행할 수 있다.
-
-### 13.6.2 Physics Preview Engine V0
+DB revision/history 구조는 유지하며, 기존 맵을 편집 후 저장하면 migration된 v1 정의가 새 revision으로 저장된다.
+### 13.6.2 Physics Preview Engine V1
 
 Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니라 실제 간이 물리 시뮬레이션이다.
 
@@ -928,13 +907,12 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - fixed timestep 1/120s
 - gravity
 - world boundary
-- marble ↔ rotated Wall/Ramp collision
-- marble ↔ Peg/Bumper circle collision
+- marble ↔ WALL / CURVE_WALL collision
+- marble ↔ CIRCLE collision
 - Gate / Rotator / Pendulum / Seesaw time-driven collision
-- Funnel / Splitter composite rail collision
 - Hinge / Pivot preview collision
 - Gear / Paddle motor preview collision
-- Launcher one-shot contact impulse preview
+- 모든 Collider의 공통 `boost` contact impulse preview
 - Elevator 왕복 경로 근사 Preview
 - Ordered Output sensor / output rank Preview
 - Slot Collection sensor / capacity Preview
@@ -946,7 +924,7 @@ Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니
 - marble ↔ marble collision
 - restitution
 - friction
-- Bumper boost
+- Collider boost
 - Spawn
 - Finish sensor
 - Finish rank
