@@ -674,7 +674,7 @@
         const min=Math.trunc(finiteOr(p.burstSizeMin,3));
         const max=Math.trunc(finiteOr(p.burstSizeMax,7));
         const interval=finiteOr(p.burstIntervalMs,90);
-        if(power<0||power>5) errors.push("Burst Spawn power는 0~5 범위여야 합니다.");
+        if(!Number.isFinite(power)||power<0) errors.push("Burst Spawn power는 0 이상의 유한 숫자여야 합니다.");
         if(direction<-360||direction>360) errors.push("Burst Spawn direction은 -360~360° 범위여야 합니다.");
         if(spread<0||spread>90) errors.push("Burst Spawn spread는 0~90° 범위여야 합니다.");
         if(variance<0||variance>.75) errors.push("Burst Spawn power variance는 0~0.75 범위여야 합니다.");
@@ -695,7 +695,7 @@
         );
         const spread=finiteOr(p.launchSpreadDegrees,18);
         const variance=finiteOr(p.launchPowerVariance,.22);
-        if(power<0||power>5) errors.push("Launcher launchPower는 0~5 범위여야 합니다.");
+        if(!Number.isFinite(power)||power<0) errors.push("Launcher launchPower는 0 이상의 유한 숫자여야 합니다.");
         if(direction<-360||direction>360) errors.push("Launcher direction은 -360~360° 범위여야 합니다.");
         if(spread<0||spread>55) errors.push("Launcher spread는 0~55° 범위여야 합니다.");
         if(variance<0||variance>.75) errors.push("Launcher power variance는 0~0.75 범위여야 합니다.");
@@ -1059,7 +1059,7 @@
           const jitter=(rng()*2-1)*clamp(finiteOr(spawn.properties?.burstSpreadDegrees,24),0,90);
           const direction=degToRad(finiteOr(spawn.properties?.burstDirectionDegrees,-90)+jitter);
           const variance=clamp(finiteOr(spawn.properties?.burstPowerVariance,.22),0,.75);
-          const power=clamp(finiteOr(spawn.properties?.burstPower,1.15),0,5)
+          const power=Math.max(0,finiteOr(spawn.properties?.burstPower,1.15))
             *(1+(rng()*2-1)*variance);
           vx=Math.cos(direction)*power*145;
           vy=Math.sin(direction)*power*145;
@@ -1455,7 +1455,7 @@
           if(!this.pointInRectExpanded(m.x,m.y,launcher,m.radius+2)) continue;
           next.add(launcher.id);
           if(m.launcherContacts.has(launcher.id)) continue;
-          const power=clamp(finiteOr(launcher.properties?.launchPower,1.2),0,5);
+          const power=Math.max(0,finiteOr(launcher.properties?.launchPower,1.2));
           const direction=finiteOr(
             launcher.properties?.launchDirectionDegrees,
             (launcher.rotation||0)-90
