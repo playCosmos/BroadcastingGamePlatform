@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20261001-2">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20261001-refactor1">
 </head>
 <body>
 <main class="shell map-maker-shell">
@@ -41,19 +41,16 @@
       <button class="palette-item active" data-tool="SELECT" data-tooltip="오브젝트를 선택하고 이동·회전·크기를 편집합니다.">선택</button>
       <button class="palette-item" data-tool="WALL" data-tooltip="구슬의 이동을 막는 고정 벽을 배치합니다.">벽</button>
       <button class="palette-item" data-tool="CURVE_WALL" data-tooltip="폭과 높이로 곡률을 조절하는 곡선 벽을 배치합니다.">곡선 벽</button>
-      <button class="palette-item" data-tool="RAMP" data-tooltip="구슬의 흐름을 유도하는 경사면을 배치합니다.">경사로</button>
-      <button class="palette-item" data-tool="PEG" data-tooltip="구슬이 부딪혀 방향이 바뀌는 작은 핀을 배치합니다.">핀</button>
-      <button class="palette-item" data-tool="BUMPER" data-tooltip="충돌한 구슬을 강하게 튕겨내는 범퍼입니다.">범퍼</button>
+      <button class="palette-item" data-tool="PRESET_PEG" data-tooltip="원형 충돌체의 핀 프리셋입니다. Boost 기본값은 0입니다.">핀</button>
+      <button class="palette-item" data-tool="PRESET_BUMPER" data-tooltip="원형 충돌체의 범퍼 프리셋입니다. 핀과 같은 구조에 높은 Boost 기본값을 사용합니다.">범퍼</button>
       <button class="palette-item" data-tool="GATE" data-tooltip="구슬의 통과를 제어하는 회전형 게이트입니다.">게이트</button>
       <button class="palette-item" data-tool="ROTATOR" data-tooltip="계속 회전하며 구슬을 밀어내는 장애물입니다.">회전판</button>
       <button class="palette-item" data-tool="PENDULUM" data-tooltip="좌우로 흔들리며 구슬과 충돌하는 진자입니다.">진자</button>
       <button class="palette-item" data-tool="SEESAW" data-tooltip="중심축을 기준으로 기울어지는 시소 장애물입니다.">시소</button>
-      <button class="palette-item" data-tool="FUNNEL" data-tooltip="여러 구슬을 좁은 출구 쪽으로 모읍니다.">깔때기</button>
-      <button class="palette-item" data-tool="SPLITTER" data-tooltip="구슬의 진행 경로를 여러 방향으로 나눕니다.">분기대</button>
       <button class="palette-item" data-tool="HINGE" data-tooltip="회전축을 가진 관절형 오브젝트를 만듭니다.">힌지 / 피벗</button>
       <button class="palette-item" data-tool="GEAR" data-tooltip="다른 관절과 연결할 수 있는 회전 기어입니다.">기어 로터</button>
       <button class="palette-item" data-tool="PADDLE" data-tooltip="한쪽 축을 중심으로 회전하는 패들입니다.">패들</button>
-      <button class="palette-item" data-tool="LAUNCHER" data-tooltip="지정한 방향과 세기로 구슬을 발사합니다.">발사대</button>
+      <button class="palette-item" data-tool="PRESET_LAUNCH_WALL" data-tooltip="벽 프리셋입니다. 일반 벽과 같은 구조에 높은 Boost 기본값을 사용합니다.">발사벽</button>
       <button class="palette-item" data-tool="CONVEYOR" data-tooltip="벨트 회전 속도와 마찰로 구슬을 한 방향으로 운반합니다.">컨베이어</button>
       <button class="palette-item" data-tool="ELEVATOR" data-tooltip="지정한 축을 따라 왕복 이동하는 발판입니다.">엘리베이터</button>
       <button class="palette-item" data-tool="SPAWN" data-tooltip="구슬이 한곳에 뭉쳐 생성되는 기본 출발 지점입니다.">뭉침 스포너</button>
@@ -151,7 +148,6 @@
         <label class="mini-field"><span>주기 초</span><input id="propPeriod" type="number" min=".25" max="30" step=".1"></label>
         <label class="mini-field"><span>진폭 °</span><input id="propAmplitude" type="number" min="0" max="120" step="1"></label>
         <label class="mini-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" min="0" max="160" step="1"></label>
-        <label class="mini-field"><span>깔때기 간격</span><input id="propGap" type="number" min="8" max="800" step="1"></label>
         <label class="mini-field"><span>레일 두께</span><input id="propThickness" type="number" min="4" max="80" step="1"></label>
         <label class="mini-field"><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" min="-.5" max=".5" step=".01"></label>
         <label class="mini-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" min="-180" max="180" step="1"></label>
@@ -165,10 +161,6 @@
           <button id="gearLinkNearest" class="small-button" type="button">가장 가까운 관절</button>
           <button id="gearLinkClear" class="small-button" type="button">연결 해제</button>
         </div>
-        <label class="mini-field"><span>발사 세기</span><input id="propLaunchPower" type="number" min="0" step=".05"></label>
-        <label class="mini-field"><span>발사 방향 °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
-        <label class="mini-field"><span>분산 ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
-        <label class="mini-field"><span>세기 편차</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
         <label class="mini-field"><span>버스트 세기</span><input id="propBurstPower" type="number" min="0" step=".05"></label>
         <label class="mini-field"><span>버스트 방향 °</span><input id="propBurstDirection" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field"><span>버스트 분산 ±°</span><input id="propBurstSpread" type="number" min="0" max="90" step="1"></label>
@@ -232,7 +224,7 @@
         <label class="mini-field"><span>MIDI 음정</span><input id="propAudioNote" type="number" min="24" max="108" step="1"></label>
         <label class="mini-field"><span>오디오 게인</span><input id="propAudioGain" type="number" min="0" max="2" step=".05"></label>
         <label class="mini-field"><span>오디오 팬</span><input id="propAudioPan" type="number" min="-1" max="1" step=".05"></label>
-        <label class="mini-field"><span>범퍼 반발력</span><input id="propBoost" type="number" min="0" max="3" step=".05"></label>
+        <label class="mini-field"><span>추가 반발력</span><input id="propBoost" type="number" min="0" step=".05"></label>
         <label class="mini-field"><span>구슬 반지름</span><input id="propMarbleRadius" type="number" min="5" max="24" step="1"></label>
       </div>
 
@@ -245,7 +237,7 @@
     </aside>
   </section>
 </main>
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20261001-2"></script>
-<script src="/admin/assets/viewer-draw-map-maker.js?v=20261001-3"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20261001-refactor1"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js?v=20261001-refactor1"></script>
 </body>
 </html>
