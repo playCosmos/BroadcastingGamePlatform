@@ -107,11 +107,12 @@
 
     loadMap(definition) {
       const Engine = root.ViewerDrawMapEngine;
-      const errors = Engine.validateDefinition(definition);
+      const migrated = Engine.migrateDefinition(definition);
+      const errors = Engine.validateDefinition(migrated);
       if (errors.length) {
         throw new Error(errors.join(" · "));
       }
-      this.engine = new Engine.PreviewEngine(definition, {
+      this.engine = new Engine.PreviewEngine(migrated, {
         seed: this.seed
       });
     }
@@ -181,8 +182,7 @@
       this.dnfOrder = [];
       this.timedOut = false;
       this.selectedOutputKey = null;
-      this.bumpers = [];
-      this.launchers = [];
+      this.boostColliders = [];
       this.conveyors = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
@@ -222,11 +222,12 @@
 
     loadMap(definition) {
       this.ensureReady();
-      const errors = root.ViewerDrawMapEngine.validateDefinition(definition);
+      const migrated = root.ViewerDrawMapEngine.migrateDefinition(definition);
+      const errors = root.ViewerDrawMapEngine.validateDefinition(migrated);
       if (errors.length) {
         throw new Error(errors.join(" · "));
       }
-      this.definition = structuredClone(definition);
+      this.definition = structuredClone(migrated);
       this.createWorld();
     }
 
@@ -250,8 +251,7 @@
       this.dnfOrder = [];
       this.timedOut = false;
       this.selectedOutputKey = null;
-      this.bumpers = [];
-      this.launchers = [];
+      this.boostColliders = [];
       this.conveyors = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
@@ -269,7 +269,6 @@
       for (const component of this.definition.components) {
         switch (component.type) {
           case "WALL":
-          case "RAMP":
             this.createStaticBox(component);
             break;
           case "CURVE_WALL":
@@ -280,12 +279,8 @@
               this.createStaticBox(shape);
             }
             break;
-          case "PEG":
+          case "CIRCLE":
             this.createStaticCircle(component);
-            break;
-          case "BUMPER":
-            this.createStaticCircle(component);
-            this.bumpers.push(component);
             break;
           case "GATE":
           case "ROTATOR":
@@ -293,23 +288,10 @@
           case "SEESAW":
             this.createKinematicBox(component);
             break;
-          case "FUNNEL":
-          case "SPLITTER":
-            for (const shape of root.ViewerDrawMapEngine.componentShapes(
-              component,
-              0
-            )) {
-              this.createStaticBox(shape);
-            }
-            break;
           case "HINGE":
           case "GEAR":
           case "PADDLE":
             this.createRevoluteComponent(component);
-            break;
-          case "LAUNCHER":
-            this.createStaticBox(component);
-            this.launchers.push(component);
             break;
           case "CONVEYOR":
             this.createStaticBox(component);
@@ -322,6 +304,13 @@
           case "SLOT":
           case "ELIMINATION":
             break;
+        }
+
+        if (
+          root.ViewerDrawMapEngine.isCollider(component)
+          && Math.max(0, property(component.properties, "boost", 0)) > 0
+        ) {
+          this.boostColliders.push(component);
         }
       }
 
@@ -834,7 +823,7 @@
         const dx = x - component.x;
         const dy = y - component.y;
         const distance = Math.hypot(dx, dy);
-        const reach = ["PEG","BUMPER"].includes(component.type)
+        const reach = component.type === "CIRCLE"
           ? (component.radius || 0) + radius + 24
           : Math.hypot(
               component.width || 0,
@@ -923,7 +912,7 @@
           property(
             component.properties,
             "restitution",
-            component.type === "BUMPER" ? 0.95 : 0.55
+            0.55
           ),
           0,
           1.4
@@ -1092,8 +1081,7 @@
           dnf: false,
           rank: 0,
           finishTime: null,
-          bumperContacts: new Set(),
-          launcherContacts: new Set(),
+          boostContacts: new Set(),
           lastSoundTime: -Infinity,
           launched,
           launchIndex: index,
@@ -1230,8 +1218,7 @@
         this.world.Step(FIXED_DT, 6, 2);
         this.time += FIXED_DT;
         this.detectImpactSounds(beforeVelocities);
-        this.applyBumperBoosts();
-        this.applyLauncherBoosts();
+        this.applyColliderBoosts();
         this.applyConveyors();
         this.detectTaggedSensors();
         this.detectResults();
@@ -1242,8 +1229,88 @@
       return this.snapshot();
     }
 
-    applyBumperBoosts() {
+    circleBoostContact(x, y, radius, component) {
+      let dx = x - component.x;
+      let dy = y - component.y;
+      let distance = Math.hypot(dx, dy);
+      const contactDistance =
+        radius + Math.max(1, component.radius || 0) + 2;
+      if (distance > contactDistance) return null;
+      if (distance < 1e-6) {
+        dx = 1;
+        dy = 0;
+        distance = 1;
+      }
+      return {
+        nx: dx / distance,
+        ny: dy / distance,
+        distance
+      };
+    }
+
+    rectBoostContact(x, y, radius, component) {
+      const angle = (component.rotation || 0) * Math.PI / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const dx = x - component.x;
+      const dy = y - component.y;
+      const localX = dx * cos + dy * sin;
+      const localY = -dx * sin + dy * cos;
+      const halfW = Math.max(1, (component.width || 0) / 2);
+      const halfH = Math.max(1, (component.height || 0) / 2);
+      const closestX = clamp(localX, -halfW, halfW);
+      const closestY = clamp(localY, -halfH, halfH);
+      let nx = localX - closestX;
+      let ny = localY - closestY;
+      let distance = Math.hypot(nx, ny);
+      if (distance > radius + 2) return null;
+
+      if (distance < 1e-6) {
+        const px = halfW - Math.abs(localX);
+        const py = halfH - Math.abs(localY);
+        if (px < py) {
+          nx = localX >= 0 ? 1 : -1;
+          ny = 0;
+        } else {
+          nx = 0;
+          ny = localY >= 0 ? 1 : -1;
+        }
+        distance = 1;
+      } else {
+        nx /= distance;
+        ny /= distance;
+      }
+
+      return {
+        nx: nx * cos - ny * sin,
+        ny: nx * sin + ny * cos,
+        distance
+      };
+    }
+
+    boostContact(x, y, radius, component) {
+      if (component.type === "CIRCLE") {
+        return this.circleBoostContact(x, y, radius, component);
+      }
+      const shapes = root.ViewerDrawMapEngine.componentShapes(
+        component,
+        this.time
+      );
+      let best = null;
+      for (const shape of shapes) {
+        const contact = this.rectBoostContact(x, y, radius, shape);
+        if (!contact) continue;
+        if (!best || contact.distance < best.distance) {
+          best = contact;
+        }
+      }
+      return best;
+    }
+
+    applyColliderBoosts() {
+      if (!this.boostColliders.length) return;
       const B = this.Box2D;
+
       for (const marble of this.marbles) {
         if (marble.finished || marble.eliminated || marble.dnf) continue;
         const position = marble.body.GetPosition();
@@ -1251,45 +1318,41 @@
         const y = position.y * PIXELS_PER_METER;
         const nextContacts = new Set();
 
-        for (const bumper of this.bumpers) {
-          let dx = x - bumper.x;
-          let dy = y - bumper.y;
-          let distance = Math.hypot(dx, dy);
-          const contactDistance =
-            marble.radius + bumper.radius + 2;
-          if (distance > contactDistance) continue;
-
-          nextContacts.add(bumper.id);
-          if (marble.bumperContacts.has(bumper.id)) continue;
-          const boost = clamp(
-            property(bumper.properties, "boost", 1.15),
+        for (const component of this.boostColliders) {
+          const boost = Math.max(
             0,
-            3
+            property(component.properties, "boost", 0)
           );
           if (boost <= 0) continue;
 
-          this.queueSound(
-            "bumper",
-            clamp(boost / 3, 0.15, 1),
-            bumper.id
+          const contact = this.boostContact(
+            x,
+            y,
+            marble.radius,
+            component
           );
+          if (!contact) continue;
 
-          if (distance < 1e-6) {
-            dx = 1;
-            dy = 0;
-            distance = 1;
-          }
+          nextContacts.add(component.id);
+          if (marble.boostContacts.has(component.id)) continue;
+
+          this.queueSound(
+            "boost",
+            clamp(boost / 3, 0.15, 1),
+            component.id
+          );
 
           const impulseScale = boost * 0.16;
           marble.body.ApplyLinearImpulseToCenter(
             new B.b2Vec2(
-              (dx / distance) * impulseScale,
-              (dy / distance) * impulseScale
+              contact.nx * impulseScale,
+              contact.ny * impulseScale
             ),
             true
           );
         }
-        marble.bumperContacts = nextContacts;
+
+        marble.boostContacts = nextContacts;
       }
     }
 
@@ -1352,89 +1415,6 @@
       }
     }
 
-    applyLauncherBoosts() {
-      const B = this.Box2D;
-      if (!this.launchers.length) return;
-
-      for (const marble of this.marbles) {
-        if (marble.finished || marble.eliminated || marble.dnf) continue;
-        const position = marble.body.GetPosition();
-        const x = position.x * PIXELS_PER_METER;
-        const y = position.y * PIXELS_PER_METER;
-        const nextContacts = new Set();
-
-        for (const launcher of this.launchers) {
-          if (!this.pointInRectExpanded(
-            x,
-            y,
-            launcher,
-            marble.radius + 2
-          )) {
-            continue;
-          }
-
-          nextContacts.add(launcher.id);
-          if (marble.launcherContacts.has(launcher.id)) continue;
-
-          const power = Math.max(
-            0,
-            property(launcher.properties, "launchPower", 1.2)
-          );
-          if (power <= 0) continue;
-
-          this.queueSound(
-            "launcher",
-            clamp(power / 5, 0.15, 1),
-            launcher.id
-          );
-
-          const spreadDegrees = clamp(
-            property(
-              launcher.properties,
-              "launchSpreadDegrees",
-              18
-            ),
-            0,
-            55
-          );
-          const powerVariance = clamp(
-            property(
-              launcher.properties,
-              "launchPowerVariance",
-              0.22
-            ),
-            0,
-            0.75
-          );
-          const angleJitter =
-            (this.random() * 2 - 1) * spreadDegrees;
-          const configuredDirection = Number(
-            launcher.properties?.launchDirectionDegrees
-          );
-          const directionDegrees = Number.isFinite(configuredDirection)
-            ? configuredDirection
-            : ((launcher.rotation || 0) - 90);
-          const angle =
-            (directionDegrees + angleJitter)
-            * Math.PI / 180;
-          const randomizedPower =
-            power * (
-              1
-              + (this.random() * 2 - 1) * powerVariance
-            );
-          const impulse = randomizedPower * 0.18;
-          marble.body.ApplyLinearImpulseToCenter(
-            new B.b2Vec2(
-              Math.cos(angle) * impulse,
-              Math.sin(angle) * impulse
-            ),
-            true
-          );
-        }
-
-        marble.launcherContacts = nextContacts;
-      }
-    }
 
     pointInRectExpanded(x, y, component, pad = 0) {
       const angle = (component.rotation || 0) * Math.PI / 180;
