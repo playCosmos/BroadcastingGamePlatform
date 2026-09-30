@@ -661,9 +661,13 @@ public final class ViewerDrawService {
         String schemaVersion = raw.schemaVersion() == null
             ? ""
             : raw.schemaVersion().trim();
-        if (!"viewer-draw-machine-map/v0".equals(schemaVersion)) {
+        boolean legacySchema =
+            "viewer-draw-machine-map/v0".equals(schemaVersion);
+        boolean currentSchema =
+            "viewer-draw-machine-map/v1".equals(schemaVersion);
+        if (!legacySchema && !currentSchema) {
             throw new IllegalArgumentException(
-                "schemaVersion must be viewer-draw-machine-map/v0"
+                "schemaVersion must be viewer-draw-machine-map/v0 or v1"
             );
         }
 
@@ -768,13 +772,23 @@ public final class ViewerDrawService {
             );
         }
 
-        var allowedTypes = java.util.Set.of(
-            "WALL", "RAMP", "PEG", "BUMPER", "SPAWN", "FINISH",
-            "GATE", "ROTATOR", "PENDULUM", "SEESAW",
-            "FUNNEL", "SPLITTER", "HINGE", "GEAR",
-            "PADDLE", "LAUNCHER", "ELEVATOR", "OUTPUT",
-            "SLOT", "ELIMINATION"
-        );
+        var allowedTypes = legacySchema
+            ? java.util.Set.of(
+                "WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER",
+                "SPAWN", "BURST_SPAWN", "FINISH",
+                "GATE", "ROTATOR", "PENDULUM", "SEESAW",
+                "FUNNEL", "SPLITTER", "HINGE", "GEAR",
+                "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR",
+                "OUTPUT", "SLOT", "ELIMINATION"
+            )
+            : java.util.Set.of(
+                "WALL", "CURVE_WALL", "CIRCLE",
+                "SPAWN", "BURST_SPAWN", "FINISH",
+                "GATE", "ROTATOR", "PENDULUM", "SEESAW",
+                "HINGE", "GEAR", "PADDLE",
+                "CONVEYOR", "ELEVATOR",
+                "OUTPUT", "SLOT", "ELIMINATION"
+            );
         var ids = new java.util.LinkedHashSet<String>();
         var componentTypes = new java.util.LinkedHashMap<String, String>();
         var outputKeys = new java.util.LinkedHashSet<String>();
@@ -832,13 +846,15 @@ public final class ViewerDrawService {
 
             if (
                 (
-                    "WALL".equals(type) || "RAMP".equals(type)
+                    "WALL".equals(type) || "CURVE_WALL".equals(type)
+                    || "RAMP".equals(type)
                     || "GATE".equals(type) || "ROTATOR".equals(type)
                     || "PENDULUM".equals(type) || "SEESAW".equals(type)
                     || "FUNNEL".equals(type) || "SPLITTER".equals(type)
                     || "HINGE".equals(type) || "GEAR".equals(type)
                     || "PADDLE".equals(type) || "LAUNCHER".equals(type)
-                    || "ELEVATOR".equals(type) || "OUTPUT".equals(type)
+                    || "CONVEYOR".equals(type) || "ELEVATOR".equals(type)
+                    || "OUTPUT".equals(type)
                     || "SLOT".equals(type) || "ELIMINATION".equals(type)
                 )
                 && (
@@ -852,8 +868,9 @@ public final class ViewerDrawService {
             }
 
             if (
-                ("PEG".equals(type) || "BUMPER".equals(type)
-                    || "SPAWN".equals(type))
+                ("CIRCLE".equals(type)
+                    || "PEG".equals(type) || "BUMPER".equals(type)
+                    || "SPAWN".equals(type) || "BURST_SPAWN".equals(type))
                 && (
                     rawComponent.radius() < 3
                     || rawComponent.radius() > 120
@@ -965,15 +982,31 @@ public final class ViewerDrawService {
                     );
                 }
             }
-            if ("LAUNCHER".equals(type)) {
+            if (legacySchema && "LAUNCHER".equals(type)) {
                 double launchPower = numberProperty(
                     properties,
                     "launchPower",
                     1.2
                 );
-                if (launchPower < 0 || launchPower > 5) {
+                if (launchPower < 0 || !Double.isFinite(launchPower)) {
                     throw new IllegalArgumentException(
-                        id + " launchPower must be within 0..5"
+                        id + " launchPower must be non-negative"
+                    );
+                }
+            }
+
+            if (
+                java.util.Set.of(
+                    "WALL", "CURVE_WALL", "CIRCLE",
+                    "GATE", "ROTATOR", "PENDULUM", "SEESAW",
+                    "HINGE", "GEAR", "PADDLE",
+                    "CONVEYOR", "ELEVATOR"
+                ).contains(type)
+            ) {
+                double boost = numberProperty(properties, "boost", 0);
+                if (boost < 0 || !Double.isFinite(boost)) {
+                    throw new IllegalArgumentException(
+                        id + " boost must be non-negative"
                     );
                 }
             }
