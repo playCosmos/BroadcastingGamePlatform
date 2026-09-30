@@ -469,6 +469,12 @@
       if(!original) continue;
       const c=structuredClone(original);
       c.properties=c.properties||{};
+      if(
+        c.type==="SPAWN"
+        && String(c.properties.spawnRole||"").toUpperCase()==="LAUNCHER"
+      ){
+        c.properties.spawnRole="BURST";
+      }
 
       if(c.type==="RAMP"){
         c.type="WALL";
@@ -635,7 +641,7 @@
         }},
         {...componentDefaults("SPAWN",1090,735),radius:22,properties:{
           marbleRadius:11,
-          spawnRole:"LAUNCHER"
+          spawnRole:"BURST"
         }},
         rail(1018,615,1061,765,"#1c4059","#65bfe9",12),
         rail(1162,615,1119,765,"#1c4059","#65bfe9",12),
