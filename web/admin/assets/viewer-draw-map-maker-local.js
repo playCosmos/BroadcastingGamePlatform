@@ -974,8 +974,15 @@
     drawGrid(view);
     drawDependencies(view);
     for (const c of definition.components) {
-      const shapes = previewRunning && Engine.componentShapes
-        ? Engine.componentShapes(c, previewSnapshot?.time || 0)
+      const shapes = Engine.componentShapes
+        ? (
+            c.type === "ELEVATOR" && !previewRunning
+              ? [c]
+              : Engine.componentShapes(
+                  c,
+                  previewRunning ? (previewSnapshot?.time || 0) : 0
+                )
+          )
         : [c];
       for (const shape of shapes) {
         drawComponent({ ...shape, id: c.id, type: c.type }, view);
