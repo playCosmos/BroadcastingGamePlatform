@@ -35,6 +35,7 @@
   };
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   let advancedSettingsVisible = false;
+  let inspectorComponentId = null;
 
   const AUDIO_FIELDS = [
     "propSoundMaterial",
@@ -1312,7 +1313,15 @@
     const c = currentComponent();
     $("emptyInspector").hidden = Boolean(c);
     $("componentInspector").hidden = !c;
-    if (!c) return;
+    if (!c) {
+      inspectorComponentId = null;
+      advancedSettingsVisible = false;
+      return;
+    }
+    if (inspectorComponentId !== c.id) {
+      inspectorComponentId = c.id;
+      advancedSettingsVisible = false;
+    }
 
     $("selectedType").textContent =
       componentTypeLabel(c.type) + " · " + c.id.slice(0, 8);
