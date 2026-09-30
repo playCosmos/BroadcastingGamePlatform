@@ -73,6 +73,15 @@ Broadcasting Game Platform
 
 Viewer Draw는 게임 카탈로그가 아니라 Broadcast Tools 영역에 둔다.
 
+브라우저 공개 도구 원칙:
+
+- `number.html`, `marble.html`, `map-maker.html`은 서버 세션 없이 동작한다.
+- 브라우저 숫자 뽑기는 Web Crypto API에서 결과를 결정한다.
+- 브라우저 Marble 뽑기는 현재 브라우저의 Box2D simulation 결과를 사용한다.
+- 브라우저 도구는 Audit 생성/업로드, DB history, OBS 결과 공유 API를 사용하지 않는다.
+- Map Maker 저장은 `localStorage`와 JSON Import/Export를 사용한다.
+- 서버/Provider 연동 기능이 필요한 경우 별도 관리 경로에서만 구현한다.
+
 ---
 
 ## 3. 참가자 모델
@@ -294,20 +303,19 @@ playCosmos/Roulette의 기존 번호 추첨 구현을 재활용한다.
 - sequential reveal
 - result/history UI
 
-플랫폼 이식 시 변경:
+브라우저 공개 페이지 이식 원칙:
 
-- RNG 결과 결정은 서버 권위로 이동
-- localStorage 중심 기록은 플랫폼 DB/history로 이동
-- Lotto/Ticket 발권 도메인 제거
-- 기존 제품 branding 제거
-- Platform API / Admin Auth / Overlay 구조 적용
+- RNG 결과는 현재 브라우저의 Web Crypto API에서 결정한다.
+- 서버 API, DB history, Audit, Overlay 연결을 포함하지 않는다.
+- Lotto/Ticket 발권 도메인을 제거한다.
+- 기존 제품 branding을 제거한다.
+- 결과는 현재 페이지에 표시하고 필요하면 사용자가 복사한다.
 
 ~~~text
-기존 번호 추첨 UI/연출
-        +
-플랫폼 NumberDrawEngine
-        +
-Viewer Draw Audit/Overlay
+기존 번호 추첨 핵심 로직
+        ↓
+Browser Number Draw
+(Web Crypto / No Server)
 ~~~
 
 ---
@@ -1297,84 +1305,29 @@ MARBLE_GRAND_PRIX
 
 ---
 
-## 17. 추첨 기록 / Audit
+## 17. 브라우저 추첨 기록 정책
 
-모든 추첨 실행을 기록한다.
+공개 브라우저 도구에는 Audit 계층을 두지 않는다.
 
-DrawAuditRecord:
+대상:
 
-- drawId
-- mode
-- entrySource
-- frozenEntrySetHash
-- entryCount
-- winnerCount
-- result
-- createdAt
-- completedAt
-- modeSpecificData
+- `number.html`
+- `marble.html`
+- `map-maker.html`
 
-Random / Number:
+원칙:
 
-- RNG algorithm/version
-- server result
+- Audit JSON 생성 없음
+- SHA-256 참가자/맵 snapshot 해시 생성 없음
+- Audit 업로드/조회 없음
+- 플랫폼 DB history 저장 없음
+- OBS 결과 공유 API 없음
+- 브라우저 추첨 중 플랫폼 서버 round-trip 없음
 
-Marble:
+Marble 실행 중 필요한 상태는 Physics 결과와 화면 표시를 위해 현재 메모리에만 유지한다.
+Map Maker의 사용자 저장은 `localStorage`이며 JSON Import/Export를 지원한다.
 
-- simulation seed
-- map ID/version
-- physics version/config
-- final rank
-
-현재 Browser Marble Draw는 서버 업로드 없이 로컬 JSON Audit을 생성한다.
-
-~~~text
-viewer-draw-run-audit/v0
-├─ resultStatus: COMPLETED | TIMEOUT
-├─ qualification
-│  ├─ status: QUALIFIED | NOT_QUALIFIED
-│  ├─ requiredWinners
-│  ├─ maxNudges
-│  └─ reasons[]
-├─ engine
-│  ├─ id
-│  └─ fixedTimestepSeconds
-├─ map
-│  ├─ schemaVersion
-│  ├─ name
-│  ├─ definitionHash (SHA-256)
-│  ├─ drawRule
-│  └─ runPolicy
-├─ run
-│  ├─ seed
-│  ├─ startedAt / completedAt
-│  ├─ wallElapsedMs
-│  ├─ simulationSeconds
-│  ├─ stuckNudges
-│  └─ timedOut
-├─ entries
-│  ├─ count
-│  ├─ snapshotHash (SHA-256)
-│  └─ values[]
-└─ result
-   ├─ winners[]
-   ├─ dnf[]
-   ├─ eliminated[]
-   ├─ outputClaims
-   ├─ slotClaims
-   └─ selectedOutputKey
-~~~
-
-Qualification V1:
-
-- `qualificationMinWinners=0`: 현재 추첨 winner target을 기준으로 사용
-- `qualificationMaxNudges=0`: nudge 횟수 제한 비활성화
-- 미달 시 `INSUFFICIENT_WINNERS`
-- nudge 한도 초과 시 `NUDGE_LIMIT_EXCEEDED`
-
-Audit 생성/해시/내보내기는 브라우저 로컬에서 처리하며 물리 추첨 중 서버 round-trip을 요구하지 않는다.
-
-운영자는 이후 선택적으로 이 Audit을 플랫폼 이력에 업로드/보관할 수 있게 확장한다.
+서버형 운영 기록이 다시 필요해질 경우 공개 브라우저 도구에 섞지 않고 별도 Admin/Server 모듈로 분리한다.
 
 ---
 
@@ -1550,7 +1503,9 @@ lazygyu/roulette에서 특히 검토할 부분:
 ### V2 — Marble Map / Preview — IMPLEMENTED
 
 - `viewer-draw-machine-map/v0`
-- Map Maker
+- 서버 관리용 Map Maker
+- GitHub Pages용 `map-maker.html` Browser Local Map Maker
+- Browser Map Maker: localStorage 저장 / JSON Import·Export / Marble Draw handoff
 - Wall / Ramp / Peg / Bumper / Spawn / Finish
 - JSON import/export
 - optional DB save / revision history
