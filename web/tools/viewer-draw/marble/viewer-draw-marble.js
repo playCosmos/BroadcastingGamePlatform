@@ -383,14 +383,15 @@
   }
 
   function loadDefinition(next) {
-    const errors = Engine.validateDefinition(next);
+    const migrated = Engine.migrateDefinition(next);
+    const errors = Engine.validateDefinition(migrated);
     if (errors.length) {
       throw new Error(errors.join(" · "));
     }
     if (!adapter) {
       throw new Error("physics adapter is not initialized");
     }
-    definition = structuredClone(next);
+    definition = structuredClone(migrated);
     adapter.loadMap(definition);
     const rule = Engine.resolvedDrawRule(definition);
     if (rule.type !== "RACE_FINISH") {
@@ -492,19 +493,14 @@
     return {
       WALL: ["#697680", "#a1abb2"],
       CURVE_WALL: ["#566d7a", "#a8d4e8"],
-      RAMP: ["#9b6937", "#e0a45c"],
-      PEG: ["#c9d0d5", "#f1f4f6"],
-      BUMPER: ["#8b3d45", "#dd7982"],
+      CIRCLE: ["#c9d0d5", "#f1f4f6"],
       GATE: ["#6d4e9a", "#b995ee"],
       ROTATOR: ["#875b2f", "#f0b36a"],
       PENDULUM: ["#496b8f", "#82b6e9"],
       SEESAW: ["#6b6650", "#c5bb86"],
-      FUNNEL: ["#356f71", "#73c9cb"],
-      SPLITTER: ["#5e527d", "#a99bd3"],
       HINGE: ["#47605b", "#8fc5b7"],
       GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
-      LAUNCHER: ["#3e6675", "#78bdd5"],
       CONVEYOR: ["#47565f", "#8fc6df"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
       OUTPUT: ["#3f744c", "#8bd3a1"],
@@ -536,7 +532,7 @@
     target.strokeStyle = stroke;
     target.lineWidth = simplified ? 0.8 : 1.2;
 
-    if (["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(component.type)) {
+    if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(component.type)) {
       const radius = Math.max(
         simplified ? 1 : 2,
         component.radius * view.scale
