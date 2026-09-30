@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="./web/assets/platform.css">
-  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20260930-4">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20260930-5">
 </head>
 <body data-storage-mode="local">
 <main class="shell map-maker-shell">
@@ -138,6 +138,7 @@
       <div id="emptyInspector" class="empty-inspector">컴포넌트를 선택하세요.</div>
       <div id="componentInspector" hidden>
         <div class="selected-type" id="selectedType">-</div>
+        <button id="advancedSettingsToggle" class="small-button advanced-settings-toggle" type="button" aria-expanded="false">고급 설정 보기</button>
         <label class="mini-field"><span>X</span><input id="propX" type="number" step="1"></label>
         <label class="mini-field"><span>Y</span><input id="propY" type="number" step="1"></label>
         <label class="mini-field"><span>회전각</span><input id="propRotation" type="number" step="1"></label>
@@ -168,7 +169,7 @@
         <label class="mini-field launcher-field"><span>발사 방향 °</span><input id="propLaunchDirection" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field launcher-field"><span>분산 ±°</span><input id="propLaunchSpread" type="number" min="0" max="55" step="1"></label>
         <label class="mini-field launcher-field"><span>세기 편차</span><input id="propLaunchVariance" type="number" min="0" max=".75" step=".01"></label>
-        <label class="mini-field burst-spawn-field"><span>버스트 세기</span><input id="propBurstPower" type="number" min="0" max="5" step=".05"></label>
+        <label class="mini-field burst-spawn-field"><span>버스트 세기</span><input id="propBurstPower" type="number" min="0" step=".05"></label>
         <label class="mini-field burst-spawn-field"><span>버스트 방향 °</span><input id="propBurstDirection" type="number" min="-360" max="360" step="1"></label>
         <label class="mini-field burst-spawn-field"><span>버스트 분산 ±°</span><input id="propBurstSpread" type="number" min="0" max="90" step="1"></label>
         <label class="mini-field burst-spawn-field"><span>버스트 세기 편차</span><input id="propBurstVariance" type="number" min="0" max=".75" step=".01"></label>
@@ -247,7 +248,7 @@
     </aside>
   </section>
 </main>
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20260930-4"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20260930-4"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20260930-5"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20260930-5"></script>
 </body>
 </html>
