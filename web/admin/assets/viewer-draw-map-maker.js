@@ -35,71 +35,300 @@
   };
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
   let advancedSettingsVisible = false;
-  const ADVANCED_SETTING_IDS = [
-    "propRestitution",
-    "propFriction",
-    "propPivotRatio",
-    "propJointFriction",
-    "propMotorTorque",
-    "propLinkedComponentId",
-    "propGearRatio",
-    "propLaunchSpread",
-    "propLaunchVariance",
-    "propBurstSpread",
-    "propBurstVariance",
-    "propBurstSizeMin",
-    "propBurstSizeMax",
-    "propBurstInterval",
-    "propBeltGrip",
-    "propMotorForce",
-    "propStartDirection",
-    "propOutputWeight",
-    "propOutputPriority",
-    "propSensorTag",
-    "propConditionType",
-    "propConditionOutputKey",
-    "propConditionClaims",
-    "propConditionSeconds",
-    "propConditionSensorTag",
-    "propConditionBranchKey",
-    "propConditionBranchValue",
-    "propBranchSetKey",
-    "propBranchSetValue",
+
+  const AUDIO_FIELDS = [
     "propSoundMaterial",
     "propInstrument",
     "propAudioNote",
     "propAudioGain",
     "propAudioPan"
   ];
+  const PHYSICS_ADVANCED = ["propRestitution", "propFriction"];
+  const RECT_BASIC = ["propX", "propY", "propWidth", "propHeight"];
+  const RECT_ROT_BASIC = [...RECT_BASIC, "propRotation"];
+  const CIRCLE_BASIC = ["propX", "propY", "propRadius"];
 
-  function syncAdvancedSettings() {
-    document.querySelectorAll(".advanced-setting-field").forEach((field) => {
-      field.classList.toggle(
-        "advanced-setting-collapsed",
-        !advancedSettingsVisible
-      );
+  const INSPECTOR_SCHEMA = {
+    WALL: {
+      basic: [...RECT_ROT_BASIC],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    CURVE_WALL: {
+      basic: [...RECT_ROT_BASIC, "propThickness"],
+      advanced: ["propCurveSegments", ...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    RAMP: {
+      basic: [...RECT_ROT_BASIC],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    PEG: {
+      basic: [...CIRCLE_BASIC],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    BUMPER: {
+      basic: [...CIRCLE_BASIC, "propBoost"],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    SPAWN: {
+      basic: [...CIRCLE_BASIC, "propMarbleRadius"],
+      advanced: []
+    },
+    BURST_SPAWN: {
+      basic: [
+        ...CIRCLE_BASIC,
+        "propMarbleRadius",
+        "propBurstPower",
+        "propBurstDirection"
+      ],
+      advanced: [
+        "propBurstSpread",
+        "propBurstVariance",
+        "propBurstSizeMin",
+        "propBurstSizeMax",
+        "propBurstInterval"
+      ]
+    },
+    FINISH: {
+      basic: [...RECT_BASIC],
+      advanced: ["propSensorTag"]
+    },
+    GATE: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propOpenAngle",
+        "propPeriod"
+      ],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    ROTATOR: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propAngularSpeed"
+      ],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    PENDULUM: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propAmplitude",
+        "propPeriod"
+      ],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    SEESAW: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propAmplitude",
+        "propPeriod"
+      ],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    FUNNEL: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propGap",
+        "propThickness"
+      ],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    SPLITTER: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propThickness"
+      ],
+      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
+    },
+    HINGE: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propPivotRatio",
+        "propLowerAngle",
+        "propUpperAngle"
+      ],
+      advanced: [
+        "propJointFriction",
+        ...PHYSICS_ADVANCED,
+        ...AUDIO_FIELDS
+      ]
+    },
+    GEAR: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propMotorSpeed",
+        "propLinkedComponentId",
+        "propGearRatio",
+        "gearLinkActions"
+      ],
+      advanced: [
+        "propMotorTorque",
+        ...PHYSICS_ADVANCED,
+        ...AUDIO_FIELDS
+      ]
+    },
+    PADDLE: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propPivotRatio",
+        "propMotorSpeed"
+      ],
+      advanced: [
+        "propMotorTorque",
+        ...PHYSICS_ADVANCED,
+        ...AUDIO_FIELDS
+      ]
+    },
+    LAUNCHER: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propLaunchPower",
+        "propLaunchDirection"
+      ],
+      advanced: [
+        "propLaunchSpread",
+        "propLaunchVariance",
+        ...PHYSICS_ADVANCED,
+        ...AUDIO_FIELDS
+      ]
+    },
+    CONVEYOR: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propBeltSpeed"
+      ],
+      advanced: [
+        "propBeltGrip",
+        "propRestitution",
+        ...AUDIO_FIELDS
+      ]
+    },
+    ELEVATOR: {
+      basic: [
+        ...RECT_ROT_BASIC,
+        "propAxisAngle",
+        "propTravelMin",
+        "propTravelMax",
+        "propElevatorSpeed"
+      ],
+      advanced: [
+        "propMotorForce",
+        "propStartDirection",
+        ...PHYSICS_ADVANCED,
+        ...AUDIO_FIELDS
+      ]
+    },
+    OUTPUT: {
+      basic: [
+        ...RECT_BASIC,
+        "propOutputKey",
+        "propOutputRank",
+        "propOutputCapacity"
+      ],
+      advanced: [
+        "propOutputWeight",
+        "propOutputPriority",
+        "propSensorTag",
+        "propConditionType",
+        "propBranchSetKey",
+        "propBranchSetValue"
+      ]
+    },
+    SLOT: {
+      basic: [
+        ...RECT_BASIC,
+        "propSlotKey",
+        "propSlotCapacity"
+      ],
+      advanced: ["propSensorTag"]
+    },
+    ELIMINATION: {
+      basic: [
+        ...RECT_BASIC,
+        "propEliminationKey"
+      ],
+      advanced: ["propSensorTag"]
+    }
+  };
+
+  function inspectorFieldContainer(id) {
+    if (id === "gearLinkActions") {
+      return $("gearLinkNearest")?.closest(".button-pair") || null;
+    }
+    return $(id)?.closest(".mini-field") || null;
+  }
+
+  function conditionalOutputFields(component) {
+    if (component?.type !== "OUTPUT") return [];
+    const mode = String(
+      component.properties?.conditionType || "ALWAYS"
+    ).toUpperCase();
+    if (mode === "AFTER_ANY_CLAIM") {
+      return ["propConditionClaims"];
+    }
+    if (mode === "AFTER_OUTPUT_CLAIMS") {
+      return ["propConditionOutputKey", "propConditionClaims"];
+    }
+    if (mode === "AFTER_OUTPUT_FULL") {
+      return ["propConditionOutputKey"];
+    }
+    if (mode === "AFTER_SECONDS") {
+      return ["propConditionSeconds"];
+    }
+    if (mode === "AFTER_SENSOR_CLAIMS") {
+      return ["propConditionSensorTag", "propConditionClaims"];
+    }
+    if (mode === "AFTER_BRANCH_STATE") {
+      return ["propConditionBranchKey", "propConditionBranchValue"];
+    }
+    return [];
+  }
+
+  function applyInspectorSchema(component) {
+    const inspector = $("componentInspector");
+    if (!inspector) return;
+
+    inspector.querySelectorAll(".mini-field, .button-pair").forEach((field) => {
+      field.hidden = true;
     });
-    const button = $("advancedSettingsToggle");
-    if (button) {
-      button.textContent = advancedSettingsVisible
+
+    const schema = INSPECTOR_SCHEMA[component?.type];
+    const toggle = $("advancedSettingsToggle");
+    if (!schema) {
+      if (toggle) toggle.hidden = true;
+      return;
+    }
+
+    const basic = schema.basic || [];
+    const advanced = [
+      ...(schema.advanced || []),
+      ...conditionalOutputFields(component)
+    ];
+
+    for (const id of basic) {
+      const field = inspectorFieldContainer(id);
+      if (field) field.hidden = false;
+    }
+
+    if (advancedSettingsVisible) {
+      for (const id of advanced) {
+        const field = inspectorFieldContainer(id);
+        if (field) field.hidden = false;
+      }
+    }
+
+    if (toggle) {
+      toggle.hidden = advanced.length === 0;
+      toggle.textContent = advancedSettingsVisible
         ? "고급 설정 숨기기"
         : "고급 설정 보기";
-      button.setAttribute(
+      toggle.setAttribute(
         "aria-expanded",
         advancedSettingsVisible ? "true" : "false"
       );
     }
   }
 
-  function setupAdvancedSettings() {
-    for (const id of ADVANCED_SETTING_IDS) {
-      const input = $(id);
-      const field = input?.closest(".mini-field");
-      field?.classList.add("advanced-setting-field");
-    }
-    const gearButtons = $("gearLinkNearest")?.closest(".button-pair");
-    gearButtons?.classList.add("advanced-setting-field");
-    syncAdvancedSettings();
+  function syncAdvancedSettings() {
+    applyInspectorSchema(currentComponent());
   }
 
   function setStatus(message, kind = "") {
@@ -1101,6 +1330,9 @@
     $("propOpenAngle").value = num(c.properties?.openAngle, 78);
     $("propGap").value = num(c.properties?.gap, 52);
     $("propThickness").value = num(c.properties?.thickness, 14);
+    $("propCurveSegments").value = Math.trunc(
+      num(c.properties?.segments, 16)
+    );
     $("propPivotRatio").value = num(c.properties?.pivotRatio, c.type === "PADDLE" ? -.48 : 0);
     $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
     $("propUpperAngle").value = num(c.properties?.upperAngle, 70);
@@ -1208,111 +1440,7 @@
     $("propBoost").value = num(c.properties?.boost, 1.15);
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
-    document.querySelectorAll(".dimension-field").forEach((el) => {
-      el.hidden = !["WALL", "CURVE_WALL", "RAMP", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type);
-    });
-    document.querySelectorAll(".radius-field").forEach((el) => {
-      el.hidden = !["PEG", "BUMPER", "SPAWN", "BURST_SPAWN"].includes(c.type);
-    });
-    document.querySelectorAll(".physics-field").forEach((el) => {
-      el.hidden = !["WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE", "LAUNCHER", "CONVEYOR", "ELEVATOR"].includes(c.type);
-    });
-    document.querySelectorAll(".rotator-field").forEach((el) => {
-      el.hidden = c.type !== "ROTATOR";
-    });
-    document.querySelectorAll(".motion-period-field").forEach((el) => {
-      el.hidden = !["GATE", "PENDULUM", "SEESAW"].includes(c.type);
-    });
-    document.querySelectorAll(".swing-field").forEach((el) => {
-      el.hidden = !["PENDULUM", "SEESAW"].includes(c.type);
-    });
-    document.querySelectorAll(".gate-field").forEach((el) => {
-      el.hidden = c.type !== "GATE";
-    });
-    document.querySelectorAll(".funnel-field").forEach((el) => {
-      el.hidden = c.type !== "FUNNEL";
-    });
-    document.querySelectorAll(".thickness-field").forEach((el) => {
-      el.hidden = !["CURVE_WALL", "FUNNEL", "SPLITTER"].includes(c.type);
-    });
-    document.querySelectorAll(".pivot-field").forEach((el) => {
-      el.hidden = !["HINGE", "PADDLE"].includes(c.type);
-    });
-    document.querySelectorAll(".hinge-field").forEach((el) => {
-      el.hidden = c.type !== "HINGE";
-    });
-    document.querySelectorAll(".motor-field").forEach((el) => {
-      el.hidden = !["GEAR", "PADDLE"].includes(c.type);
-    });
-    document.querySelectorAll(".gear-link-field").forEach((el) => {
-      el.hidden = c.type !== "GEAR";
-    });
-    document.querySelectorAll(".launcher-field").forEach((el) => {
-      el.hidden = c.type !== "LAUNCHER";
-    });
-    document.querySelectorAll(".burst-spawn-field").forEach((el) => {
-      el.hidden = c.type !== "BURST_SPAWN";
-    });
-    document.querySelectorAll(".conveyor-field").forEach((el) => {
-      el.hidden = c.type !== "CONVEYOR";
-    });
-    document.querySelectorAll(".elevator-field").forEach((el) => {
-      el.hidden = c.type !== "ELEVATOR";
-    });
-    document.querySelectorAll(".output-field").forEach((el) => {
-      el.hidden = c.type !== "OUTPUT";
-    });
-    document.querySelectorAll(".sensor-tag-field").forEach((el) => {
-      el.hidden = !["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type);
-    });
-    const conditionMode = String(
-      c.properties?.conditionType || "ALWAYS"
-    ).toUpperCase();
-    document.querySelectorAll(".condition-output-ref-field").forEach((el) => {
-      el.hidden =
-        c.type !== "OUTPUT"
-        || !["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"]
-          .includes(conditionMode);
-    });
-    document.querySelectorAll(".condition-claims-field").forEach((el) => {
-      el.hidden =
-        c.type !== "OUTPUT"
-        || ![
-          "AFTER_ANY_CLAIM",
-          "AFTER_OUTPUT_CLAIMS",
-          "AFTER_SENSOR_CLAIMS"
-        ].includes(conditionMode);
-    });
-    document.querySelectorAll(".condition-time-field").forEach((el) => {
-      el.hidden =
-        c.type !== "OUTPUT"
-        || conditionMode !== "AFTER_SECONDS";
-    });
-    document.querySelectorAll(".condition-sensor-field").forEach((el) => {
-      el.hidden =
-        c.type !== "OUTPUT"
-        || conditionMode !== "AFTER_SENSOR_CLAIMS";
-    });
-    document.querySelectorAll(".condition-branch-field").forEach((el) => {
-      el.hidden =
-        c.type !== "OUTPUT"
-        || conditionMode !== "AFTER_BRANCH_STATE";
-    });
-    document.querySelectorAll(".slot-field").forEach((el) => {
-      el.hidden = c.type !== "SLOT";
-    });
-    document.querySelectorAll(".elimination-field").forEach((el) => {
-      el.hidden = c.type !== "ELIMINATION";
-    });
-    document.querySelectorAll(".audio-field").forEach((el) => {
-      el.hidden = ["SPAWN","BURST_SPAWN"].includes(c.type);
-    });
-    document.querySelectorAll(".bumper-field").forEach((el) => {
-      el.hidden = c.type !== "BUMPER";
-    });
-    document.querySelectorAll(".spawn-field").forEach((el) => {
-      el.hidden = !["SPAWN","BURST_SPAWN"].includes(c.type);
-    });
+    applyInspectorSchema(c);
   }
 
   function updateSelectedFromInspector() {
@@ -1345,6 +1473,13 @@
     if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
     if (c.type === "FUNNEL") c.properties.gap = clamp(num($("propGap").value, 52), 8, Math.max(8, c.width * .8));
     if (["CURVE_WALL", "FUNNEL", "SPLITTER"].includes(c.type)) c.properties.thickness = clamp(num($("propThickness").value, c.type === "CURVE_WALL" ? 18 : 14), 4, 80);
+    if (c.type === "CURVE_WALL") {
+      c.properties.segments = clamp(
+        Math.trunc(num($("propCurveSegments").value, 16)),
+        6,
+        32
+      );
+    }
     if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = clamp(num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0), -.5, .5);
     if (c.type === "HINGE") {
       c.properties.lowerAngle = clamp(num($("propLowerAngle").value, -70), -180, 180);
@@ -2124,7 +2259,6 @@
     resizeTimer = setTimeout(render, 20);
   }).observe(wrap);
 
-  setupAdvancedSettings();
   syncMapControls();
   syncInspector();
   updateZoomLabel();
