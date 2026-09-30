@@ -183,6 +183,7 @@
       this.selectedOutputKey = null;
       this.bumpers = [];
       this.launchers = [];
+      this.conveyors = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
       this.gearCouplings = [];
@@ -251,6 +252,7 @@
       this.selectedOutputKey = null;
       this.bumpers = [];
       this.launchers = [];
+      this.conveyors = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
       this.gearCouplings = [];
@@ -269,6 +271,14 @@
           case "WALL":
           case "RAMP":
             this.createStaticBox(component);
+            break;
+          case "CURVE_WALL":
+            for (const shape of root.ViewerDrawMapEngine.componentShapes(
+              component,
+              0
+            )) {
+              this.createStaticBox(shape);
+            }
             break;
           case "PEG":
             this.createStaticCircle(component);
@@ -300,6 +310,10 @@
           case "LAUNCHER":
             this.createStaticBox(component);
             this.launchers.push(component);
+            break;
+          case "CONVEYOR":
+            this.createStaticBox(component);
+            this.conveyors.push(component);
             break;
           case "ELEVATOR":
             this.createPrismaticComponent(component);
@@ -813,7 +827,7 @@
       let bestDistance = Infinity;
       for (const component of this.definition.components) {
         if ([
-          "SPAWN","FINISH","OUTPUT","SLOT","ELIMINATION"
+          "SPAWN","BURST_SPAWN","FINISH","OUTPUT","SLOT","ELIMINATION"
         ].includes(component.type)) {
           continue;
         }
@@ -994,15 +1008,25 @@
         }
       }
       const allSpawns = this.definition.components.filter(
-        (component) => component.type === "SPAWN"
-      );
-      const desiredRole =
-        this.launchMode === "BUNCH" ? "BUNCH" : "LAUNCHER";
-      const roleSpawns = allSpawns.filter(
         (component) =>
-          String(component.properties?.spawnRole || "")
-            .toUpperCase() === desiredRole
+          component.type === "SPAWN"
+          || component.type === "BURST_SPAWN"
       );
+      const roleSpawns = this.launchMode === "BUNCH"
+        ? allSpawns.filter(
+            (component) =>
+              component.type === "SPAWN"
+              && String(component.properties?.spawnRole || "BUNCH")
+                .toUpperCase() === "BUNCH"
+          )
+        : allSpawns.filter(
+            (component) =>
+              component.type === "BURST_SPAWN"
+              || String(component.properties?.spawnRole || "")
+                .toUpperCase() === "BURST"
+              || String(component.properties?.spawnRole || "")
+                .toUpperCase() === "LAUNCHER"
+          );
       const spawns = roleSpawns.length ? roleSpawns : allSpawns;
 
       this.marbles = this.entries.map((entry, index) => {
@@ -1074,7 +1098,39 @@
           launched,
           launchIndex: index,
           spawnX: x,
-          spawnY: y
+          spawnY: y,
+          burstDirectionDegrees: property(
+            spawn.properties,
+            "burstDirectionDegrees",
+            -90
+          ),
+          burstSpreadDegrees: property(
+            spawn.properties,
+            "burstSpreadDegrees",
+            24
+          ),
+          burstPower: property(
+            spawn.properties,
+            "burstPower",
+            1.15
+          ),
+          burstPowerVariance: property(
+            spawn.properties,
+            "burstPowerVariance",
+            .22
+          ),
+          burstSizeMin: Math.max(
+            1,
+            Math.trunc(property(spawn.properties, "burstSizeMin", 3))
+          ),
+          burstSizeMax: Math.max(
+            1,
+            Math.trunc(property(spawn.properties, "burstSizeMax", 7))
+          ),
+          burstIntervalMs: Math.max(
+            0,
+            property(spawn.properties, "burstIntervalMs", 90)
+          )
         };
       });
 
@@ -1100,19 +1156,47 @@
       }
 
       const remaining = this.marbles.length - this.nextLaunchIndex;
+      const leader = this.marbles[this.nextLaunchIndex];
+      const minSize = Math.max(1, Math.min(
+        leader.burstSizeMin || 3,
+        leader.burstSizeMax || 7
+      ));
+      const maxSize = Math.max(minSize, leader.burstSizeMax || 7);
       const burstSize = Math.min(
         remaining,
-        3 + Math.floor(this.random() * 5)
+        minSize + Math.floor(this.random() * (maxSize - minSize + 1))
       );
 
       for (let i = 0; i < burstSize; i += 1) {
         const marble = this.marbles[this.nextLaunchIndex];
         marble.body.SetEnabled(true);
         marble.body.SetAwake(true);
+        const spread = clamp(
+          marble.burstSpreadDegrees ?? 24,
+          0,
+          90
+        );
+        const direction = (
+          (marble.burstDirectionDegrees ?? -90)
+          + (this.random() * 2 - 1) * spread
+        ) * Math.PI / 180;
+        const variance = clamp(
+          marble.burstPowerVariance ?? .22,
+          0,
+          .75
+        );
+        const power = clamp(
+          marble.burstPower ?? 1.15,
+          0,
+          5
+        ) * (
+          1 + (this.random() * 2 - 1) * variance
+        );
+        const speed = power * 145 / PIXELS_PER_METER;
         marble.body.SetLinearVelocity(
           new this.Box2D.b2Vec2(
-            ((this.random() - 0.5) * 14) / PIXELS_PER_METER,
-            ((this.random() - 0.5) * 5) / PIXELS_PER_METER
+            Math.cos(direction) * speed,
+            Math.sin(direction) * speed
           )
         );
         marble.launched = true;
@@ -1121,9 +1205,14 @@
         this.launchedCount += 1;
       }
 
+      const intervalSeconds = Math.max(
+        0,
+        (leader?.burstIntervalMs ?? this.launchIntervalSeconds * 1000)
+          / 1000
+      );
       this.nextLaunchAt =
         this.time
-        + this.launchIntervalSeconds * (0.65 + this.random() * 0.7);
+        + intervalSeconds * (0.65 + this.random() * 0.7);
     }
 
     step(deltaSeconds) {
@@ -1144,6 +1233,7 @@
         this.detectImpactSounds(beforeVelocities);
         this.applyBumperBoosts();
         this.applyLauncherBoosts();
+        this.applyConveyors();
         this.detectTaggedSensors();
         this.detectResults();
         this.applyTimeout();
@@ -1201,6 +1291,65 @@
           );
         }
         marble.bumperContacts = nextContacts;
+      }
+    }
+
+    applyConveyors() {
+      if (!this.conveyors.length) return;
+      const B = this.Box2D;
+
+      for (const marble of this.marbles) {
+        if (
+          marble.finished
+          || marble.eliminated
+          || marble.dnf
+          || !marble.launched
+        ) {
+          continue;
+        }
+        const position = marble.body.GetPosition();
+        const x = position.x * PIXELS_PER_METER;
+        const y = position.y * PIXELS_PER_METER;
+
+        for (const conveyor of this.conveyors) {
+          const angle = (conveyor.rotation || 0) * Math.PI / 180;
+          const co = Math.cos(angle);
+          const si = Math.sin(angle);
+          const dx = x - conveyor.x;
+          const dy = y - conveyor.y;
+          const lx = dx * co + dy * si;
+          const ly = -dx * si + dy * co;
+          const halfW = Math.max(1, conveyor.width / 2);
+          const halfH = Math.max(1, conveyor.height / 2);
+          if (
+            Math.abs(lx) > halfW + marble.radius
+            || Math.abs(Math.abs(ly) - halfH) > marble.radius + 5
+          ) {
+            continue;
+          }
+
+          const velocity = marble.body.GetLinearVelocity();
+          const tx = co;
+          const ty = si;
+          const current = velocity.x * tx + velocity.y * ty;
+          const target = clamp(
+            property(conveyor.properties, "beltSpeed", 160),
+            -1200,
+            1200
+          ) / PIXELS_PER_METER;
+          const grip = clamp(
+            property(conveyor.properties, "beltGrip", .22),
+            0,
+            1
+          );
+          const delta = (target - current) * grip;
+          marble.body.SetLinearVelocity(
+            new B.b2Vec2(
+              velocity.x + tx * delta,
+              velocity.y + ty * delta
+            )
+          );
+        }
       }
     }
 
