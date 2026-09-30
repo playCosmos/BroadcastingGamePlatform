@@ -129,6 +129,16 @@
     }
   }
 
+  function normalizePowerInputs() {
+    for (const id of ["propLaunchPower", "propBurstPower"]) {
+      const input = $(id);
+      if (!input) continue;
+      input.removeAttribute("max");
+      input.min = "0";
+      input.step = "0.05";
+    }
+  }
+
   function setupAdvancedSettings() {
     for (const id of ADVANCED_SETTING_IDS) {
       const input = $(id);
@@ -2121,6 +2131,9 @@
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
    "propBoost","propMarbleRadius"]
     .forEach((id) => $(id).addEventListener("change", updateSelectedFromInspector));
+  ["propLaunchPower","propBurstPower"].forEach((id) => {
+    $(id).addEventListener("input", updateSelectedFromInspector);
+  });
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
     .forEach((id) => $(id).addEventListener("change", updateWorld));
@@ -2215,6 +2228,7 @@
     resizeTimer = setTimeout(render, 20);
   }).observe(wrap);
 
+  normalizePowerInputs();
   setupAdvancedSettings();
   syncMapControls();
   syncInspector();
