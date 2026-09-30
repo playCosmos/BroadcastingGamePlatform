@@ -1013,8 +1013,7 @@
               component.type === "BURST_SPAWN"
               || String(component.properties?.spawnRole || "")
                 .toUpperCase() === "BURST"
-              || String(component.properties?.spawnRole || "")
-                .toUpperCase() === "LAUNCHER"
+
           );
       const spawns = roleSpawns.length ? roleSpawns : allSpawns;
 
