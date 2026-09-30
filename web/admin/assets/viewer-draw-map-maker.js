@@ -2,6 +2,8 @@
   "use strict";
 
   const Engine = window.ViewerDrawMapEngine;
+  const LOCAL_MODE = window.VIEWER_DRAW_MAP_MAKER_LOCAL === true;
+  const LOCAL_STORAGE_KEY = "viewerDrawLocalMapsV1";
   const $ = (id) => document.getElementById(id);
   const canvas = $("mapCanvas");
   const wrap = $("mapCanvasWrap");
@@ -36,6 +38,29 @@
     root.textContent = message;
     root.classList.remove("error", "ok");
     if (kind) root.classList.add(kind);
+  }
+
+  function readLocalMaps() {
+    try {
+      const parsed = JSON.parse(
+        localStorage.getItem(LOCAL_STORAGE_KEY) || "[]"
+      );
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
+  }
+
+  function writeLocalMaps(maps) {
+    localStorage.setItem(
+      LOCAL_STORAGE_KEY,
+      JSON.stringify(maps)
+    );
+  }
+
+  function localMapId() {
+    return crypto.randomUUID?.()
+      || ("local-" + Date.now() + "-" + Math.random().toString(16).slice(2));
   }
 
   function api(path, options = {}) {
@@ -1168,6 +1193,52 @@
     if (!validateClient()) return null;
 
     $("saveMap").disabled = true;
+
+    if (LOCAL_MODE) {
+      try {
+        const maps = readLocalMaps();
+        const id = mapId || localMapId();
+        const existingIndex = maps.findIndex(
+          (item) => item.mapId === id
+        );
+        const revision = existingIndex >= 0
+          ? Math.max(1, Number(maps[existingIndex].revision) || 1) + 1
+          : 1;
+        const saved = {
+          mapId: id,
+          name: definition.name,
+          revision,
+          definitionHash: "LOCAL",
+          definition: clone(definition),
+          updatedAt: new Date().toISOString()
+        };
+        if (existingIndex >= 0) maps[existingIndex] = saved;
+        else maps.push(saved);
+        writeLocalMaps(maps);
+
+        mapId = saved.mapId;
+        mapRevision = saved.revision;
+        mapHash = saved.definitionHash;
+        lastSavedJson = JSON.stringify(definition);
+        undoStack = [];
+        redoStack = [];
+        syncMapControls();
+        updateEditButtons();
+        await refreshSavedMaps();
+        $("savedMaps").value = mapId;
+        setStatus(
+          `브라우저 저장 완료 · revision ${mapRevision}`,
+          "ok"
+        );
+        return saved;
+      } catch (error) {
+        setStatus("브라우저 저장 실패: " + error.message, "error");
+        return null;
+      } finally {
+        $("saveMap").disabled = false;
+      }
+    }
+
     setStatus("플랫폼 DB에 맵 저장 중...");
     try {
       const saved = await api("/api/v1/tools/viewer-draw/maps", {
@@ -1204,6 +1275,18 @@
       return;
     }
     stopPreview();
+
+    if (LOCAL_MODE) {
+      const archivedName = definition.name;
+      writeLocalMaps(
+        readLocalMaps().filter((item) => item.mapId !== mapId)
+      );
+      newMap();
+      await refreshSavedMaps();
+      setStatus(`${archivedName} 로컬 맵을 삭제했습니다.`, "ok");
+      return;
+    }
+
     try {
       await api(
         "/api/v1/tools/viewer-draw/maps/" + encodeURIComponent(mapId),
@@ -1219,6 +1302,31 @@
   }
 
   async function refreshSavedMaps() {
+    if (LOCAL_MODE) {
+      const select = $("savedMaps");
+      const selected = mapId || select.value;
+      select.replaceChildren();
+
+      const blank = document.createElement("option");
+      blank.value = "";
+      blank.textContent = "새 맵";
+      select.appendChild(blank);
+
+      const maps = readLocalMaps().sort(
+        (a, b) => String(b.updatedAt || "")
+          .localeCompare(String(a.updatedAt || ""))
+      );
+      for (const map of maps) {
+        const option = document.createElement("option");
+        option.value = map.mapId;
+        option.textContent =
+          `${map.name} · local r${map.revision}`;
+        select.appendChild(option);
+      }
+      select.value = selected || "";
+      return;
+    }
+
     const body = await api("/api/v1/tools/viewer-draw/maps");
     const select = $("savedMaps");
     const selected = mapId || select.value;
@@ -1246,6 +1354,35 @@
     }
 
     stopPreview();
+
+    if (LOCAL_MODE) {
+      const loaded = readLocalMaps().find(
+        (item) => item.mapId === id
+      );
+      if (!loaded) {
+        setStatus("로컬 저장 맵을 찾을 수 없습니다.", "error");
+        return;
+      }
+      mapId = loaded.mapId;
+      mapRevision = loaded.revision;
+      mapHash = loaded.definitionHash || "LOCAL";
+      definition = clone(loaded.definition);
+      lastSavedJson = JSON.stringify(definition);
+      selectedId = null;
+      undoStack = [];
+      redoStack = [];
+      syncMapControls();
+      syncInspector();
+      updateEditButtons();
+      render();
+      validateClient();
+      setStatus(
+        `${loaded.name} local r${loaded.revision} 불러옴`,
+        "ok"
+      );
+      return;
+    }
+
     try {
       const loaded = await api(
         "/api/v1/tools/viewer-draw/maps/" + encodeURIComponent(id)
@@ -1319,7 +1456,12 @@
       syncInspector();
       updateEditButtons();
       render();
-      setStatus("JSON 맵을 불러왔습니다. 저장하면 새 Map ID가 생성됩니다.", "ok");
+      setStatus(
+        LOCAL_MODE
+          ? "JSON 맵을 불러왔습니다. 저장하면 브라우저에 보관됩니다."
+          : "JSON 맵을 불러왔습니다. 저장하면 새 Map ID가 생성됩니다.",
+        "ok"
+      );
     } catch (error) {
       setStatus("JSON 불러오기 실패: " + error.message, "error");
     }
@@ -1515,7 +1657,9 @@
       "viewerDrawMarbleMapDefinition",
       JSON.stringify(definition)
     );
-    window.location.assign("/tools/viewer-draw/marble/");
+    window.location.assign(
+      LOCAL_MODE ? "./marble.html" : "/tools/viewer-draw/marble/"
+    );
   });
 
   window.addEventListener("keydown", (event) => {
@@ -1558,6 +1702,10 @@
   render();
   validateClient(false);
   refreshSavedMaps().catch((error) => {
-    setStatus("저장된 맵 목록 조회 실패: " + error.message, "error");
+    setStatus(
+      (LOCAL_MODE ? "로컬 맵 목록 조회 실패: " : "저장된 맵 목록 조회 실패: ")
+        + error.message,
+      "error"
+    );
   });
 })();
