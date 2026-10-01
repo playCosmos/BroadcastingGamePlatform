@@ -366,10 +366,12 @@
           ? trimmed.split("\t")
           : trimmed.split(",");
         const last = parts.at(-1)?.trim() || "";
-        const numericCount = /^\d+$/.test(last)
+        const hasCount =
+          parts.length > 1 && /^\d+$/.test(last);
+        const numericCount = hasCount
           ? Math.max(1, Math.trunc(Number(last)))
           : 1;
-        const nameParts = numericCount !== 1 || /^1$/.test(last)
+        const nameParts = hasCount
           ? parts.slice(0, -1)
           : parts;
         const displayName = nameParts.join(",").trim();
@@ -500,6 +502,8 @@
       input.disabled = locked;
     }
     $("addEntry").disabled = locked;
+    if ($("importEntrySet")) $("importEntrySet").disabled = locked;
+    if ($("exportEntrySet")) $("exportEntrySet").disabled = locked;
     refreshEntryRemoveButtons();
     updateLaunchControls();
     $("winnerCount").disabled =
