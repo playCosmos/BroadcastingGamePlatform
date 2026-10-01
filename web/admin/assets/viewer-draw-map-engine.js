@@ -280,9 +280,6 @@
   }
 
   function pivotedComponentShape(c,rotation){
-    if(Number.isFinite(Number(c?.runtimeRotation))){
-      return {...c,rotation};
-    }
     const local=componentPivotLocal(c);
     if(Math.abs(local.x)<1e-9&&Math.abs(local.y)<1e-9){
       return {...c,rotation};
