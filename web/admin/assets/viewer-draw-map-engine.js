@@ -927,8 +927,8 @@
 
       if(c.type==="CURVE_WALL"){
         c.properties=migratedColliderProperties({
-          curveMode:String(c.properties?.curveMode||"PARABOLA").toUpperCase(),
-          ...c.properties
+          ...c.properties,
+          curveMode:String(c.properties?.curveMode||"PARABOLA").toUpperCase()
         });
       }else if(isCollider(c)){
         c.properties=migratedColliderProperties(c.properties);
@@ -1259,6 +1259,20 @@
         if(restitution<0) errors.push("탄성은 0 이상이어야 합니다.");
         if(friction<0) errors.push("마찰은 0 이상이어야 합니다.");
         if(boost<0) errors.push("Boost는 0 이상이어야 합니다.");
+      }
+      if(c?.type==="CURVE_WALL"){
+        const curveMode=String(p.curveMode||"PARABOLA").toUpperCase();
+        if(!["PARABOLA","CIRCULAR_ARC"].includes(curveMode)){
+          errors.push("곡선 방식이 유효하지 않습니다.");
+        }
+        const thickness=Number(p.thickness ?? 18);
+        const segments=Number(p.segments ?? 16);
+        if(!Number.isFinite(thickness)||thickness<=0){
+          errors.push("곡선 두께는 0보다 커야 합니다.");
+        }
+        if(!Number.isInteger(segments)||segments<6||segments>32){
+          errors.push("곡선 세그먼트 수는 6~32 정수여야 합니다.");
+        }
       }
       if(c?.type==="ROTATIONAL_BODY"){
         const rawMode=String(
