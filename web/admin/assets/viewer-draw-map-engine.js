@@ -53,23 +53,19 @@
   function resolvedDrawRule(def){
     const raw=def?.drawRule||{};
     const type=String(raw.type||"RACE_FINISH").toUpperCase();
-    const winnerCount=Math.max(0,Math.trunc(finiteOr(raw.winnerCount,0)));
+    const winnerCount=Math.trunc(finiteOr(raw.winnerCount,0));
     return {type,winnerCount};
   }
 
   function resolvedRunPolicy(def){
     const raw=def?.runPolicy||{};
     return {
-      timeoutSeconds:clamp(finiteOr(raw.timeoutSeconds,0),0,1800),
-      qualificationMinWinners:clamp(
-        Math.trunc(finiteOr(raw.qualificationMinWinners,0)),
-        0,
-        64
+      timeoutSeconds:finiteOr(raw.timeoutSeconds,0),
+      qualificationMinWinners:Math.trunc(
+        finiteOr(raw.qualificationMinWinners,0)
       ),
-      qualificationMaxNudges:clamp(
-        Math.trunc(finiteOr(raw.qualificationMaxNudges,0)),
-        0,
-        1000
+      qualificationMaxNudges:Math.trunc(
+        finiteOr(raw.qualificationMaxNudges,0)
       )
     };
   }
@@ -1149,6 +1145,20 @@
     }
     if(Number.isFinite(gx)&&Number.isFinite(gy)&&(Math.abs(gx)>50||Math.abs(gy)>50)){
       warnings.push("중력 권장 범위는 -50~50입니다.");
+    }
+    const rule=resolvedDrawRule(def);
+    const policy=resolvedRunPolicy(def);
+    if(rule.winnerCount<0||rule.winnerCount>64){
+      warnings.push("당첨자 수 권장 범위는 0~64입니다.");
+    }
+    if(policy.timeoutSeconds<0||policy.timeoutSeconds>1800){
+      warnings.push("제한 시간 권장 범위는 0~1800초입니다.");
+    }
+    if(policy.qualificationMinWinners<0||policy.qualificationMinWinners>64){
+      warnings.push("최소 당첨 인원 권장 범위는 0~64입니다.");
+    }
+    if(policy.qualificationMaxNudges<0||policy.qualificationMaxNudges>1000){
+      warnings.push("최대 보정 횟수 권장 범위는 0~1000입니다.");
     }
     const comps=Array.isArray(def?.components)?def.components:[];
     if(comps.length>500){
