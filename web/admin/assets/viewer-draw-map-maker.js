@@ -1606,10 +1606,8 @@
       type: supportedRules.has(selectedRule)
         ? selectedRule
         : "RACE_FINISH",
-      winnerCount: clamp(
-        Math.trunc(num($("drawRuleWinnerCount").value, 0)),
-        0,
-        64
+      winnerCount: Math.trunc(
+        num($("drawRuleWinnerCount").value, 0)
       )
     };
     syncMapControls();
@@ -1620,20 +1618,12 @@
     if (previewRunning) return;
     pushUndo();
     definition.runPolicy = {
-      timeoutSeconds: clamp(
-        num($("runTimeoutSeconds").value, 0),
-        0,
-        1800
+      timeoutSeconds: num($("runTimeoutSeconds").value, 0),
+      qualificationMinWinners: Math.trunc(
+        num($("qualificationMinWinners").value, 0)
       ),
-      qualificationMinWinners: clamp(
-        Math.trunc(num($("qualificationMinWinners").value, 0)),
-        0,
-        64
-      ),
-      qualificationMaxNudges: clamp(
-        Math.trunc(num($("qualificationMaxNudges").value, 0)),
-        0,
-        1000
+      qualificationMaxNudges: Math.trunc(
+        num($("qualificationMaxNudges").value, 0)
       )
     };
     syncMapControls();
@@ -1644,15 +1634,10 @@
     if (previewRunning) return;
     pushUndo();
     definition.name = $("mapName").value.trim() || "Untitled Marble Machine";
-    definition.world.width = clamp(num($("worldWidth").value, 1280), 320, 3840);
-    definition.world.height = clamp(num($("worldHeight").value, 720), 240, 2160);
-    definition.world.gravityX = clamp(num($("gravityX").value, 0), -50, 50);
-    definition.world.gravityY = clamp(num($("gravityY").value, 12), -50, 50);
-
-    for (const c of definition.components) {
-      c.x = clamp(c.x, 0, definition.world.width);
-      c.y = clamp(c.y, 0, definition.world.height);
-    }
+    definition.world.width = num($("worldWidth").value, 1280);
+    definition.world.height = num($("worldHeight").value, 720);
+    definition.world.gravityX = num($("gravityX").value, 0);
+    definition.world.gravityY = num($("gravityY").value, 12);
     syncMapControls();
     syncInspector();
     render();
