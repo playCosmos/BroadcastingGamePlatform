@@ -107,6 +107,11 @@ requireCondition(
   "reactive hinge must carry joint limits in the map contract"
 );
 
+
+const physicsSource = fs.readFileSync(
+  path.join(__dirname, "browser-physics-adapter.js"),
+  "utf8"
+);
 requireCondition(
   physicsSource.includes("componentPivotWorld(component)")
     && physicsSource.includes("b2_kinematicBody"),
@@ -119,10 +124,6 @@ requireCondition(
   "hinge and paddle must use dynamic revolute bodies"
 );
 
-const physicsSource = fs.readFileSync(
-  path.join(__dirname, "browser-physics-adapter.js"),
-  "utf8"
-);
 const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
   "utf8"
