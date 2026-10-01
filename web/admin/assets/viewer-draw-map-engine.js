@@ -859,6 +859,8 @@
     const w=Number(def?.world?.width), h=Number(def?.world?.height);
     if(!Number.isFinite(w)||!Number.isFinite(h)){
       errors.push("World 크기는 유한 숫자여야 합니다.");
+    }else if(w<0||h<0){
+      errors.push("World 너비와 높이는 0 이상이어야 합니다.");
     }
     const gx=Number(def?.world?.gravityX), gy=Number(def?.world?.gravityY);
     if(!Number.isFinite(gx)||!Number.isFinite(gy)){
