@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="./web/assets/platform.css">
-  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-pivot2">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-pivot3">
 </head>
 <body data-storage-mode="local">
 <main class="shell map-maker-shell">
@@ -84,10 +84,10 @@
 
       <div class="palette-group" data-palette-group="kinematic-rotation">
         <button class="palette-group-trigger" type="button" aria-expanded="false">
-          <span>구동 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+          <span>궤적 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
         </button>
         <div class="palette-flyout palette-flyout-wide" role="menu">
-          <p class="palette-flyout-title">KINEMATIC ROTATION 프리셋</p>
+          <p class="palette-flyout-title">KINEMATIC ROTATION · 궤적 제어</p>
           <button class="palette-item palette-preset" data-tool="ROTATOR" role="menuitem" data-tooltip="중심축을 기준으로 일정 속도로 계속 회전합니다. 판 개수를 1~4개로 설정할 수 있습니다."><span>회전판</span><small>연속 회전</small></button>
           <button class="palette-item palette-preset" data-tool="GATE" role="menuitem" data-tooltip="지정된 각도 범위를 주기적으로 왕복하여 통로를 열고 닫습니다."><span>게이트</span><small>왕복 회전</small></button>
           <button class="palette-item palette-preset" data-tool="PENDULUM" role="menuitem" data-tooltip="기준축에서 좌우로 왕복 회전하며 구슬과 충돌하는 진자 프리셋입니다."><span>진자</span><small>왕복 회전</small></button>
@@ -97,12 +97,12 @@
 
       <div class="palette-group" data-palette-group="revolute-rotation">
         <button class="palette-group-trigger" type="button" aria-expanded="false">
-          <span>물리 관절 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+          <span>관절 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
         </button>
         <div class="palette-flyout palette-flyout-wide" role="menu">
-          <p class="palette-flyout-title">REVOLUTE JOINT 프리셋</p>
-          <button class="palette-item palette-preset" data-tool="HINGE" role="menuitem" data-tooltip="실제 회전 관절입니다. 구슬의 충돌 힘을 받아 회전하며 각도 범위와 관절 마찰을 설정합니다."><span>힌지 / 피벗</span><small>자유 관절</small></button>
-          <button class="palette-item palette-preset" data-tool="PADDLE" role="menuitem" data-tooltip="한쪽 회전축에 모터를 적용한 관절형 패들입니다."><span>패들</span><small>모터 관절</small></button>
+          <p class="palette-flyout-title">REVOLUTE JOINT · 물리 관절</p>
+          <button class="palette-item palette-preset" data-tool="HINGE" role="menuitem" data-tooltip="REVOLUTE JOINT의 수동 프리셋입니다. 모터 없이 구슬의 충돌력과 중력에 따라 회전합니다."><span>힌지 / 피벗</span><small>자유 관절</small></button>
+          <button class="palette-item palette-preset" data-tool="PADDLE" role="menuitem" data-tooltip="REVOLUTE JOINT에 모터를 켠 프리셋입니다. 스스로 회전하지만 충돌력도 받는 물리 관절입니다."><span>패들</span><small>모터 관절</small></button>
         </div>
       </div>
 
@@ -343,8 +343,8 @@
     </aside>
   </section>
 </main>
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261001-pivot2"></script>
-<script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-pivot2"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-pivot2"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261001-pivot3"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-pivot3"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-pivot3"></script>
 </body>
 </html>
