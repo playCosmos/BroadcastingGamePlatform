@@ -1451,9 +1451,21 @@
       const event = {
         material: $("propSoundMaterial").value,
         instrument: $("propInstrument").value,
-        note: num($("propAudioNote").value, 60),
-        gain: num($("propAudioGain").value, 1),
-        pan: num($("propAudioPan").value, 0)
+        note: clamp(
+          Math.trunc(num($("propAudioNote").value, 60)),
+          24,
+          108
+        ),
+        gain: clamp(
+          num($("propAudioGain").value, 1),
+          0,
+          2
+        ),
+        pan: clamp(
+          num($("propAudioPan").value, 0),
+          -1,
+          1
+        )
       };
       const sample = SoundBank.getSample(
         inspectorAudioContext,
@@ -1506,13 +1518,17 @@
 
     c.x = num($("propX").value, c.x);
     c.y = num($("propY").value, c.y);
-    c.rotation = num($("propRotation").value, c.rotation);
+    c.rotation = clamp(
+      num($("propRotation").value, c.rotation),
+      -360,
+      360
+    );
     if (["WALL", "CURVE_WALL", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "HINGE", "PADDLE", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
-      c.width = num($("propWidth").value, c.width);
-      c.height = num($("propHeight").value, c.height);
+      c.width = Math.max(0, num($("propWidth").value, c.width));
+      c.height = Math.max(0, num($("propHeight").value, c.height));
     }
     if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
-      c.radius = num($("propRadius").value, c.radius);
+      c.radius = Math.max(0, num($("propRadius").value, c.radius));
     }
 
     c.properties = c.properties || {};
@@ -1522,9 +1538,18 @@
       ? String(c.properties.outputKey || "")
       : "";
     if (Engine.isCollider(c)) {
-      c.properties.restitution = num($("propRestitution").value, .35);
-      c.properties.friction = num($("propFriction").value, .05);
-      c.properties.boost = num($("propBoost").value, 0);
+      c.properties.restitution = Math.max(
+        0,
+        num($("propRestitution").value, .35)
+      );
+      c.properties.friction = Math.max(
+        0,
+        num($("propFriction").value, .05)
+      );
+      c.properties.boost = Math.max(
+        0,
+        num($("propBoost").value, 0)
+      );
     }
     if (c.type === "ROTATOR") {
       c.properties.angularSpeed = num($("propAngularSpeed").value, 90);
@@ -1537,55 +1562,121 @@
       );
       $("propBladeCount").value = c.properties.bladeCount;
     }
-    if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) c.properties.period = num($("propPeriod").value, 3.2);
-    if (["PENDULUM", "SEESAW"].includes(c.type)) c.properties.amplitude = num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42);
-    if (c.type === "GATE") c.properties.openAngle = num($("propOpenAngle").value, 78);
-    if (c.type === "CURVE_WALL") c.properties.thickness = num($("propThickness").value, 18);
+    if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) {
+      c.properties.period = Math.max(
+        0,
+        num($("propPeriod").value, 3.2)
+      );
+    }
+    if (["PENDULUM", "SEESAW"].includes(c.type)) {
+      c.properties.amplitude = clamp(
+        num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42),
+        0,
+        360
+      );
+    }
+    if (c.type === "GATE") {
+      c.properties.openAngle = clamp(
+        num($("propOpenAngle").value, 78),
+        0,
+        360
+      );
+    }
+    if (c.type === "CURVE_WALL") {
+      c.properties.thickness = Math.max(
+        0,
+        num($("propThickness").value, 18)
+      );
+    }
     if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0);
     if (c.type === "HINGE") {
-      c.properties.lowerAngle = num($("propLowerAngle").value, -70);
-      c.properties.upperAngle = num($("propUpperAngle").value, 70);
-      c.properties.jointFriction = num($("propJointFriction").value, 1.2);
+      c.properties.lowerAngle = clamp(
+        num($("propLowerAngle").value, -70),
+        -360,
+        360
+      );
+      c.properties.upperAngle = clamp(
+        num($("propUpperAngle").value, 70),
+        -360,
+        360
+      );
+      c.properties.jointFriction = Math.max(
+        0,
+        num($("propJointFriction").value, 1.2)
+      );
     }
     if (c.type === "PADDLE") {
       c.properties.motorSpeed = num($("propMotorSpeed").value, 180);
-      c.properties.motorTorque = num($("propMotorTorque").value, 30);
+      c.properties.motorTorque = Math.max(
+        0,
+        num($("propMotorTorque").value, 30)
+      );
     }
     if (c.type === "BURST_SPAWN") {
-      c.properties.marbleRadius = num($("propMarbleRadius").value, 11);
+      c.properties.marbleRadius = Math.max(
+        0,
+        num($("propMarbleRadius").value, 11)
+      );
       c.properties.spawnRole = "BURST";
-      c.properties.burstPower = num($("propBurstPower").value, 1.15);
-      c.properties.burstDirectionDegrees = num($("propBurstDirection").value, -90);
-      c.properties.burstSpreadDegrees = num($("propBurstSpread").value, 24);
-      c.properties.burstPowerVariance = num($("propBurstVariance").value, .22);
+      c.properties.burstPower = Math.max(
+        0,
+        num($("propBurstPower").value, 1.15)
+      );
+      c.properties.burstDirectionDegrees = clamp(
+        num($("propBurstDirection").value, -90),
+        -360,
+        360
+      );
+      c.properties.burstSpreadDegrees = clamp(
+        num($("propBurstSpread").value, 24),
+        0,
+        360
+      );
+      c.properties.burstPowerVariance = Math.max(
+        0,
+        num($("propBurstVariance").value, .22)
+      );
       c.properties.burstSizeMin = Math.trunc(
         num($("propBurstSizeMin").value, 3)
       );
       c.properties.burstSizeMax = Math.trunc(
         num($("propBurstSizeMax").value, 7)
       );
-      c.properties.burstIntervalMs = num(
-        $("propBurstInterval").value,
-        90
+      c.properties.burstIntervalMs = Math.max(
+        0,
+        num($("propBurstInterval").value, 90)
       );
     }
     if (c.type === "CONVEYOR") {
       c.properties.beltSpeed = num($("propBeltSpeed").value, 160);
-      c.properties.beltGrip = num($("propBeltGrip").value, .22);
+      c.properties.beltGrip = Math.max(
+        0,
+        num($("propBeltGrip").value, .22)
+      );
     }
     if (c.type === "ELEVATOR") {
-      c.properties.axisAngle = num($("propAxisAngle").value, -90);
+      c.properties.axisAngle = clamp(
+        num($("propAxisAngle").value, -90),
+        -360,
+        360
+      );
       const oldMin = num(c.properties.travelMin, -120);
       const oldMax = num(c.properties.travelMax, 120);
       const midpoint = (oldMin + oldMax) / 2;
-      const requestedDistance = num(
-        $("propTravelDistance").value,
-        oldMax - oldMin || 240
+      const requestedDistance = Math.max(
+        0,
+        num(
+          $("propTravelDistance").value,
+          oldMax - oldMin || 240
+        )
       );
       const half = requestedDistance / 2;
       c.properties.travelMin = midpoint - half;
       c.properties.travelMax = midpoint + half;
-      c.properties.motorSpeed = num($("propElevatorSpeed").value, 90);
+      c.properties.motorSpeed = Math.max(
+        0,
+        num($("propElevatorSpeed").value, 90)
+      );
       c.properties.motorForce = num(c.properties.motorForce, 45);
       c.properties.startDirection = num(c.properties.startDirection, 1);
     }
@@ -1638,11 +1729,28 @@
     if (Engine.isCollider(c)) {
       c.properties.soundMaterial = $("propSoundMaterial").value;
       c.properties.instrument = $("propInstrument").value;
-      c.properties.audioNote = Math.trunc(num($("propAudioNote").value, 60));
-      c.properties.audioGain = num($("propAudioGain").value, 1);
-      c.properties.audioPan = num($("propAudioPan").value, 0);
+      c.properties.audioNote = clamp(
+        Math.trunc(num($("propAudioNote").value, 60)),
+        24,
+        108
+      );
+      c.properties.audioGain = clamp(
+        num($("propAudioGain").value, 1),
+        0,
+        2
+      );
+      c.properties.audioPan = clamp(
+        num($("propAudioPan").value, 0),
+        -1,
+        1
+      );
     }
-    if (c.type === "SPAWN") c.properties.marbleRadius = num($("propMarbleRadius").value, 11);
+    if (c.type === "SPAWN") {
+      c.properties.marbleRadius = Math.max(
+        0,
+        num($("propMarbleRadius").value, 11)
+      );
+    }
 
     undoStack.push(before);
     if (undoStack.length > 100) undoStack.shift();
