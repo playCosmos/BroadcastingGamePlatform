@@ -277,7 +277,7 @@
   function setStatus(message, kind = "") {
     const root = $("mapValidation");
     root.textContent = message;
-    root.classList.remove("error", "ok");
+    root.classList.remove("error", "warning", "ok");
     if (kind) root.classList.add(kind);
   }
 
@@ -1634,6 +1634,13 @@
     if (errors.length) {
       setStatus(errors.join(" · "), "error");
       return false;
+    }
+    const warnings = Engine.validateWarnings
+      ? Engine.validateWarnings(definition)
+      : [];
+    if (warnings.length) {
+      setStatus("경고 · " + warnings.join(" · "), "warning");
+      return true;
     }
     if (showSuccess) {
       setStatus(
