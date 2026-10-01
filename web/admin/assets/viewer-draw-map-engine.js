@@ -829,6 +829,16 @@
         continue;
       }
 
+      if(c.type==="ROTATIONAL_BODY"){
+        const defaults=componentDefaults("ROTATIONAL_BODY",c.x,c.y);
+        c.properties=migratedColliderProperties({
+          ...defaults.properties,
+          ...c.properties
+        });
+        migrated.push(c);
+        continue;
+      }
+
       if(c.type==="FUNNEL"||c.type==="SPLITTER"){
         const shapes=legacyCompoundShapes(c);
         shapes.forEach((shape,index)=>{
@@ -873,6 +883,13 @@
         ...(component.properties||{}),
         visualFill,
         visualStroke
+      }
+    });
+    const configured = (component, overrides) => ({
+      ...component,
+      properties:{
+        ...(component.properties||{}),
+        ...(overrides||{})
       }
     });
     const rail = (
@@ -1045,14 +1062,24 @@
         styled({...componentDefaults("WALL",840,735),width:245,height:15,rotation:-62},"#375b83","#7fb6e5"),
 
         // Flipper-like moving bars.
-        styled({...createPreset("SEESAW",420,805),width:185,height:24,rotation:-18,properties:{
-          restitution:.68,friction:.045,amplitude:12,period:2.3,phase:0,
-          soundMaterial:"rubber",instrument:"click",audioNote:55,audioGain:.82,audioPan:-.3
-        }},"#6941a9","#c49cff"),
-        styled({...createPreset("SEESAW",670,805),width:185,height:24,rotation:18,properties:{
-          restitution:.68,friction:.045,amplitude:12,period:2.3,phase:.5,
-          soundMaterial:"rubber",instrument:"click",audioNote:55,audioGain:.82,audioPan:.25
-        }},"#6941a9","#c49cff"),
+        styled(configured(
+          {...createPreset("SEESAW",420,805),width:185,height:24,rotation:-18},
+          {
+            restitution:.68,friction:.045,
+            startAngle:-12,endAngle:12,period:2.3,phase:0,
+            soundMaterial:"rubber",instrument:"click",
+            audioNote:55,audioGain:.82,audioPan:-.3
+          }
+        ),"#6941a9","#c49cff"),
+        styled(configured(
+          {...createPreset("SEESAW",670,805),width:185,height:24,rotation:18},
+          {
+            restitution:.68,friction:.045,
+            startAngle:-12,endAngle:12,period:2.3,phase:.5,
+            soundMaterial:"rubber",instrument:"click",
+            audioNote:55,audioGain:.82,audioPan:.25
+          }
+        ),"#6941a9","#c49cff"),
 
         // Drain guides and center drain.
         styled({...componentDefaults("WALL",310,850),width:265,height:18,rotation:10},"#62432b","#c98c54"),
