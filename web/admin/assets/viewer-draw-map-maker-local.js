@@ -134,7 +134,8 @@
     ROTATOR: {
       basic: [
         ...RECT_ROT_BASIC,
-        "propAngularSpeed"
+        "propAngularSpeed",
+        "propBladeCount"
       ],
       advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
     },
@@ -163,20 +164,6 @@
       ],
       advanced: [
         "propJointFriction",
-        ...PHYSICS_ADVANCED,
-        ...AUDIO_FIELDS
-      ]
-    },
-    GEAR: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propMotorSpeed",
-        "propLinkedComponentId",
-        "propGearRatio",
-        "gearLinkActions"
-      ],
-      advanced: [
-        "propMotorTorque",
         ...PHYSICS_ADVANCED,
         ...AUDIO_FIELDS
       ]
@@ -247,9 +234,6 @@
   };
 
   function inspectorFieldContainer(id) {
-    if (id === "gearLinkActions") {
-      return $("gearLinkNearest")?.closest(".button-pair") || null;
-    }
     return $(id)?.closest(".mini-field") || null;
   }
 
@@ -581,26 +565,6 @@
     );
 
     for (const component of definition.components) {
-      if (component.type === "GEAR") {
-        const target = byId.get(
-          String(component.properties?.linkedComponentId || "")
-        );
-        if (target) {
-          drawDependencyLine(
-            component,
-            target,
-            view,
-            {
-              color: "#dfbc6b",
-              dash: [],
-              label:
-                "gear ×"
-                + num(component.properties?.gearRatio, -1)
-            }
-          );
-        }
-      }
-
       if (component.type !== "OUTPUT") continue;
       const p = component.properties || {};
       const mode = String(
@@ -698,7 +662,6 @@
       PENDULUM: ["#496b8f", "#82b6e9"],
       SEESAW: ["#6b6650", "#c5bb86"],
       HINGE: ["#47605b", "#8fc5b7"],
-      GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
       CONVEYOR: ["#47565f", "#8fc6df"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
@@ -789,7 +752,7 @@
           ctx.stroke();
         }
       }
-      if (["HINGE","GEAR","PADDLE"].includes(c.type)) {
+      if (["HINGE","PADDLE"].includes(c.type)) {
         const pivotRatio = c.type === "PADDLE"
           ? num(c.properties?.pivotRatio, -.48)
           : c.type === "HINGE"
@@ -818,8 +781,8 @@
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
     }
     const p = toScreen(c.x, c.y, view);
-    const w = (c.type === "GEAR" ? Math.max(c.width, c.height) : c.width) * view.scale;
-    const h = (c.type === "GEAR" ? Math.max(c.width, c.height) : c.height) * view.scale;
+    const w = c.width * view.scale;
+    const h = c.height * view.scale;
     const a = (c.rotation || 0) * Math.PI / 180;
     const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a));
     const bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
@@ -984,7 +947,6 @@
       PENDULUM: "진자",
       SEESAW: "시소",
       HINGE: "힌지 / 피벗",
-      GEAR: "기어 로터",
       PADDLE: "패들",
       CONVEYOR: "컨베이어",
       ELEVATOR: "엘리베이터",
@@ -1161,12 +1123,9 @@
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
         const p = localPointFor(c, x, y);
-        if (c.type === "GEAR") {
-          const radius = Math.max(c.width, c.height) / 2 + 8;
-          if (Math.abs(p.x) <= radius && Math.abs(p.y) <= radius) return c;
-        } else if (
-          Math.abs(p.x) <= c.width / 2 + 8
-          && Math.abs(p.y) <= c.height / 2 + 8
+        if (
+          Math.abs(p.x) <= Math.abs(c.width) / 2 + 8
+          && Math.abs(p.y) <= Math.abs(c.height) / 2 + 8
         ) return c;
       }
     }
@@ -1304,12 +1263,6 @@
     definition.components.splice(index, 1);
     for (const component of definition.components) {
       if (
-        component.type === "GEAR"
-        && component.properties?.linkedComponentId === removedId
-      ) {
-        component.properties.linkedComponentId = "";
-      }
-      if (
         removedOutputKey
         && component.type === "OUTPUT"
         && component.properties?.conditionOutputKey === removedOutputKey
@@ -1380,6 +1333,9 @@
     $("propRestitution").value = num(c.properties?.restitution, .35);
     $("propFriction").value = num(c.properties?.friction, .05);
     $("propAngularSpeed").value = num(c.properties?.angularSpeed, 90);
+    $("propBladeCount").value = Math.trunc(
+      num(c.properties?.bladeCount, 1)
+    );
     $("propPeriod").value = num(c.properties?.period, c.type === "GATE" ? 3.6 : 3.2);
     $("propAmplitude").value = num(c.properties?.amplitude, c.type === "SEESAW" ? 14 : 42);
     $("propOpenAngle").value = num(c.properties?.openAngle, 78);
@@ -1388,27 +1344,8 @@
     $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
     $("propUpperAngle").value = num(c.properties?.upperAngle, 70);
     $("propJointFriction").value = num(c.properties?.jointFriction, 1.2);
-    $("propMotorSpeed").value = num(c.properties?.motorSpeed, c.type === "GEAR" ? 120 : 180);
-    $("propMotorTorque").value = num(c.properties?.motorTorque, c.type === "GEAR" ? 35 : 30);
-    const linkedSelect = $("propLinkedComponentId");
-    linkedSelect.replaceChildren();
-    const none = document.createElement("option");
-    none.value = "";
-    none.textContent = "없음";
-    linkedSelect.appendChild(none);
-    for (const target of definition.components) {
-      if (
-        target.id === c.id
-        || !["GEAR","HINGE","PADDLE","ELEVATOR"].includes(target.type)
-      ) continue;
-      const option = document.createElement("option");
-      option.value = target.id;
-      option.textContent =
-        componentTypeLabel(target.type) + " · " + target.id.slice(0, 8);
-      linkedSelect.appendChild(option);
-    }
-    linkedSelect.value = String(c.properties?.linkedComponentId || "");
-    $("propGearRatio").value = num(c.properties?.gearRatio, -1);
+    $("propMotorSpeed").value = num(c.properties?.motorSpeed, 180);
+    $("propMotorTorque").value = num(c.properties?.motorTorque, 30);
     $("propBurstPower").value = num(c.properties?.burstPower, 1.15);
     $("propBurstDirection").value = num(c.properties?.burstDirectionDegrees, -90);
     $("propBurstSpread").value = num(c.properties?.burstSpreadDegrees, 24);
@@ -1495,12 +1432,12 @@
     c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
     c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
     c.rotation = num($("propRotation").value, c.rotation);
-    if (["WALL", "CURVE_WALL", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "HINGE", "GEAR", "PADDLE", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
-      c.width = Math.max(1, num($("propWidth").value, c.width));
-      c.height = Math.max(1, num($("propHeight").value, c.height));
+    if (["WALL", "CURVE_WALL", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "HINGE", "PADDLE", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
+      c.width = num($("propWidth").value, c.width);
+      c.height = num($("propHeight").value, c.height);
     }
     if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
-      c.radius = Math.max(1, num($("propRadius").value, c.radius));
+      c.radius = num($("propRadius").value, c.radius);
     }
 
     c.properties = c.properties || {};
@@ -1508,71 +1445,42 @@
       ? String(c.properties.outputKey || "")
       : "";
     if (Engine.isCollider(c)) {
-      c.properties.restitution = clamp(
-        num($("propRestitution").value, .35),
-        0,
-        1.4
-      );
-      c.properties.friction = clamp(
-        num($("propFriction").value, .05),
-        0,
-        .5
-      );
-      c.properties.boost = Math.max(
-        0,
-        num($("propBoost").value, 0)
-      );
+      c.properties.restitution = num($("propRestitution").value, .35);
+      c.properties.friction = num($("propFriction").value, .05);
+      c.properties.boost = num($("propBoost").value, 0);
     }
-    if (c.type === "ROTATOR") c.properties.angularSpeed = clamp(num($("propAngularSpeed").value, 90), -720, 720);
-    if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) c.properties.period = clamp(num($("propPeriod").value, 3.2), .25, 30);
-    if (["PENDULUM", "SEESAW"].includes(c.type)) c.properties.amplitude = clamp(num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42), 0, 120);
-    if (c.type === "GATE") c.properties.openAngle = clamp(num($("propOpenAngle").value, 78), 0, 160);
-    if (c.type === "CURVE_WALL") c.properties.thickness = clamp(num($("propThickness").value, 18), 4, 80);
-    if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = clamp(num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0), -.5, .5);
+    if (c.type === "ROTATOR") {
+      c.properties.angularSpeed = num($("propAngularSpeed").value, 90);
+      c.properties.bladeCount = Math.max(
+        1,
+        Math.min(
+          4,
+          Math.trunc(num($("propBladeCount").value, 1))
+        )
+      );
+      $("propBladeCount").value = c.properties.bladeCount;
+    }
+    if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) c.properties.period = num($("propPeriod").value, 3.2);
+    if (["PENDULUM", "SEESAW"].includes(c.type)) c.properties.amplitude = num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42);
+    if (c.type === "GATE") c.properties.openAngle = num($("propOpenAngle").value, 78);
+    if (c.type === "CURVE_WALL") c.properties.thickness = num($("propThickness").value, 18);
+    if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0);
     if (c.type === "HINGE") {
-      c.properties.lowerAngle = clamp(num($("propLowerAngle").value, -70), -180, 180);
-      c.properties.upperAngle = clamp(num($("propUpperAngle").value, 70), -180, 180);
-      if (c.properties.lowerAngle > c.properties.upperAngle) {
-        [c.properties.lowerAngle, c.properties.upperAngle] = [c.properties.upperAngle, c.properties.lowerAngle];
-      }
-      c.properties.jointFriction = clamp(num($("propJointFriction").value, 1.2), 0, 50);
+      c.properties.lowerAngle = num($("propLowerAngle").value, -70);
+      c.properties.upperAngle = num($("propUpperAngle").value, 70);
+      c.properties.jointFriction = num($("propJointFriction").value, 1.2);
     }
-    if (["GEAR", "PADDLE"].includes(c.type)) {
-      c.properties.motorSpeed = clamp(num($("propMotorSpeed").value, c.type === "GEAR" ? 120 : 180), -720, 720);
-      c.properties.motorTorque = clamp(num($("propMotorTorque").value, c.type === "GEAR" ? 35 : 30), 0, 200);
-    }
-    if (c.type === "GEAR") {
-      c.properties.linkedComponentId = $("propLinkedComponentId").value || "";
-      let ratio = clamp(num($("propGearRatio").value, -1), -20, 20);
-      if (Math.abs(ratio) < .01) ratio = -1;
-      c.properties.gearRatio = ratio;
+    if (c.type === "PADDLE") {
+      c.properties.motorSpeed = num($("propMotorSpeed").value, 180);
+      c.properties.motorTorque = num($("propMotorTorque").value, 30);
     }
     if (c.type === "BURST_SPAWN") {
-      c.properties.marbleRadius = clamp(
-        num($("propMarbleRadius").value, 11),
-        5,
-        24
-      );
+      c.properties.marbleRadius = num($("propMarbleRadius").value, 11);
       c.properties.spawnRole = "BURST";
-      c.properties.burstPower = Math.max(
-        0,
-        num($("propBurstPower").value, 1.15)
-      );
-      c.properties.burstDirectionDegrees = clamp(
-        num($("propBurstDirection").value, -90),
-        -360,
-        360
-      );
-      c.properties.burstSpreadDegrees = clamp(
-        num($("propBurstSpread").value, 24),
-        0,
-        90
-      );
-      c.properties.burstPowerVariance = clamp(
-        num($("propBurstVariance").value, .22),
-        0,
-        .75
-      );
+      c.properties.burstPower = num($("propBurstPower").value, 1.15);
+      c.properties.burstDirectionDegrees = num($("propBurstDirection").value, -90);
+      c.properties.burstSpreadDegrees = num($("propBurstSpread").value, 24);
+      c.properties.burstPowerVariance = num($("propBurstVariance").value, .22);
       let burstMin = clamp(
         Math.trunc(num($("propBurstSizeMin").value, 3)),
         1,
@@ -1593,23 +1501,11 @@
       );
     }
     if (c.type === "CONVEYOR") {
-      c.properties.beltSpeed = clamp(
-        num($("propBeltSpeed").value, 160),
-        -1200,
-        1200
-      );
-      c.properties.beltGrip = clamp(
-        num($("propBeltGrip").value, .22),
-        0,
-        1
-      );
+      c.properties.beltSpeed = num($("propBeltSpeed").value, 160);
+      c.properties.beltGrip = num($("propBeltGrip").value, .22);
     }
     if (c.type === "ELEVATOR") {
-      c.properties.axisAngle = clamp(
-        num($("propAxisAngle").value, -90),
-        -360,
-        360
-      );
+      c.properties.axisAngle = num($("propAxisAngle").value, -90);
       const oldMin = num(c.properties.travelMin, -120);
       const oldMax = num(c.properties.travelMax, 120);
       const midpoint = clamp((oldMin + oldMax) / 2, -1199.5, 1199.5);
@@ -1622,11 +1518,7 @@
       const half = Math.min(requestedDistance / 2, Math.max(.5, maxHalf));
       c.properties.travelMin = midpoint - half;
       c.properties.travelMax = midpoint + half;
-      c.properties.motorSpeed = clamp(
-        num($("propElevatorSpeed").value, 90),
-        1,
-        600
-      );
+      c.properties.motorSpeed = num($("propElevatorSpeed").value, 90);
       c.properties.motorForce = clamp(
         num(c.properties.motorForce, 45),
         0,
@@ -1684,11 +1576,11 @@
     if (Engine.isCollider(c)) {
       c.properties.soundMaterial = $("propSoundMaterial").value;
       c.properties.instrument = $("propInstrument").value;
-      c.properties.audioNote = clamp(Math.trunc(num($("propAudioNote").value, 60)), 24, 108);
-      c.properties.audioGain = clamp(num($("propAudioGain").value, 1), 0, 2);
-      c.properties.audioPan = clamp(num($("propAudioPan").value, 0), -1, 1);
+      c.properties.audioNote = Math.trunc(num($("propAudioNote").value, 60));
+      c.properties.audioGain = num($("propAudioGain").value, 1);
+      c.properties.audioPan = num($("propAudioPan").value, 0);
     }
-    if (c.type === "SPAWN") c.properties.marbleRadius = clamp(num($("propMarbleRadius").value, 11), 5, 24);
+    if (c.type === "SPAWN") c.properties.marbleRadius = num($("propMarbleRadius").value, 11);
 
     undoStack.push(before);
     if (undoStack.length > 100) undoStack.shift();
@@ -1699,31 +1591,6 @@
     validateClient(false);
   }
 
-  function setGearLink(targetId) {
-    const c = currentComponent();
-    if (!c || c.type !== "GEAR" || previewRunning) return;
-    pushUndo();
-    c.properties = c.properties || {};
-    c.properties.linkedComponentId = targetId || "";
-    syncInspector();
-    render();
-    validateClient(false);
-  }
-
-  function linkGearToNearestJoint() {
-    const c = currentComponent();
-    if (!c || c.type !== "GEAR" || previewRunning) return;
-    const candidates = definition.components
-      .filter((target) =>
-        target.id !== c.id
-        && ["GEAR","HINGE","PADDLE","ELEVATOR"].includes(target.type)
-      )
-      .sort((a, b) =>
-        Math.hypot(a.x - c.x, a.y - c.y)
-        - Math.hypot(b.x - c.x, b.y - c.y)
-      );
-    setGearLink(candidates[0]?.id || "");
-  }
 
   function updateDrawRule() {
     if (previewRunning) return;
@@ -2271,10 +2138,10 @@
   });
 
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
-   "propRestitution","propFriction","propAngularSpeed","propPeriod",
+   "propRestitution","propFriction","propAngularSpeed","propBladeCount","propPeriod",
    "propAmplitude","propOpenAngle","propThickness",
    "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
-   "propMotorSpeed","propMotorTorque","propLinkedComponentId","propGearRatio",
+   "propMotorSpeed","propMotorTorque",
    "propBurstPower","propBurstDirection","propBurstSpread","propBurstVariance",
    "propBurstSizeMin","propBurstSizeMax","propBurstInterval",
    "propBeltSpeed","propBeltGrip",
@@ -2312,8 +2179,6 @@
   $("redo").addEventListener("click", redo);
   $("duplicate").addEventListener("click", duplicateSelected);
   $("deleteSelected").addEventListener("click", deleteSelected);
-  $("gearLinkNearest").addEventListener("click", linkGearToNearestJoint);
-  $("gearLinkClear").addEventListener("click", () => setGearLink(""));
   $("newMap").addEventListener("click", newMap);
   $("saveMap").addEventListener("click", saveMap);
   $("archiveMap").addEventListener("click", archiveMap);
