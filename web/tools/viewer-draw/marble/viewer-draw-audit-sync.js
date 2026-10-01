@@ -99,13 +99,11 @@
         winners: ranked.map((entry, index) => ({
           rank: index + 1,
           entryId: entry?.entryId || null,
-          provider: entry?.provider || null,
-          userId: entry?.userId || null,
           displayName: entry?.displayName || ""
         })),
         finishOrder: detail.state?.finishOrder || [],
         eliminationOrder: detail.state?.eliminationOrder || [],
-        dnfOrder: detail.state?.dnfOrder || [],
+        dnf: detail.state?.dnfOrder || [],
         outputClaims: detail.state?.outputClaims || [],
         slotClaims: detail.state?.slotClaims || [],
         sensorClaims: detail.state?.sensorClaims || [],
