@@ -1476,7 +1476,7 @@
       source.buffer = sample.buffer;
       source.playbackRate.value =
         Number.isFinite(rate) && rate > 0 ? rate : 1;
-      gain.gain.value = Math.max(0, event.gain) * .28;
+      gain.gain.value = event.gain * .28;
       source.connect(gain);
       if (panner) {
         panner.pan.value = Math.max(
