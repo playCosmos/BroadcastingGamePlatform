@@ -1139,6 +1139,88 @@
     };
   }
 
+  function validateWarnings(def){
+    const warnings=[];
+    const world=def?.world||{};
+    const w=Number(world.width),h=Number(world.height);
+    const gx=Number(world.gravityX),gy=Number(world.gravityY);
+    if(Number.isFinite(w)&&Number.isFinite(h)&&(w<320||w>3840||h<240||h>2160)){
+      warnings.push("World 권장 크기는 320~3840 × 240~2160입니다.");
+    }
+    if(Number.isFinite(gx)&&Number.isFinite(gy)&&(Math.abs(gx)>50||Math.abs(gy)>50)){
+      warnings.push("중력 권장 범위는 -50~50입니다.");
+    }
+    const comps=Array.isArray(def?.components)?def.components:[];
+    if(comps.length>500){
+      warnings.push("컴포넌트가 500개를 초과했습니다. 성능 저하 가능성이 있습니다.");
+    }
+    const warnRange=(prefix,p,key,min,max,label)=>{
+      if(p[key]===undefined) return;
+      const value=Number(p[key]);
+      if(Number.isFinite(value)&&(value<min||value>max)){
+        warnings.push(prefix+": "+label+" 권장 범위 "+min+"~"+max+" 밖입니다.");
+      }
+    };
+    for(const c of comps){
+      const p=c?.properties||{};
+      const prefix=(c?.type||"COMPONENT")+" "+String(c?.id||"").slice(0,8);
+      const x=Number(c?.x),y=Number(c?.y);
+      if(Number.isFinite(x)&&Number.isFinite(y)&&Number.isFinite(w)&&Number.isFinite(h)&&(x<0||x>w||y<0||y>h)){
+        warnings.push(prefix+": 기준점이 World 밖에 있습니다.");
+      }
+      if(Number.isFinite(c?.width)&&Number(c.width)<=0) warnings.push(prefix+": 너비가 0 이하입니다.");
+      if(Number.isFinite(c?.height)&&Number(c.height)<=0) warnings.push(prefix+": 높이가 0 이하입니다.");
+      if(["CIRCLE","SPAWN","BURST_SPAWN"].includes(c?.type)&&Number.isFinite(c?.radius)&&Number(c.radius)<=0){
+        warnings.push(prefix+": 반지름이 0 이하입니다.");
+      }
+      warnRange(prefix,p,"restitution",0,1.4,"탄성");
+      warnRange(prefix,p,"friction",0,.5,"마찰");
+      if(Number.isFinite(Number(p.boost))&&Number(p.boost)<0) warnings.push(prefix+": Boost가 음수입니다.");
+      warnRange(prefix,p,"angularSpeed",-720,720,"회전 속도");
+      warnRange(prefix,p,"period",.25,30,"주기");
+      warnRange(prefix,p,"amplitude",0,120,"진폭");
+      warnRange(prefix,p,"openAngle",0,160,"열림 각도");
+      warnRange(prefix,p,"pivotRatio",-.5,.5,"피벗 위치");
+      warnRange(prefix,p,"jointFriction",0,50,"관절 마찰");
+      warnRange(prefix,p,"motorSpeed",-720,720,"모터 속도");
+      warnRange(prefix,p,"motorTorque",0,200,"모터 토크");
+      warnRange(prefix,p,"burstDirectionDegrees",-360,360,"버스트 방향");
+      warnRange(prefix,p,"burstSpreadDegrees",0,90,"버스트 분산");
+      warnRange(prefix,p,"burstPowerVariance",0,.75,"버스트 세기 편차");
+      warnRange(prefix,p,"burstIntervalMs",0,5000,"버스트 간격");
+      warnRange(prefix,p,"beltSpeed",-1200,1200,"벨트 속도");
+      warnRange(prefix,p,"beltGrip",0,1,"벨트 마찰 전달");
+      warnRange(prefix,p,"axisAngle",-360,360,"이동 방향");
+      warnRange(prefix,p,"audioNote",24,108,"MIDI 음정");
+      warnRange(prefix,p,"audioGain",0,2,"오디오 게인");
+      warnRange(prefix,p,"audioPan",-1,1,"오디오 팬");
+      if(c?.type==="BURST_SPAWN"){
+        const min=Number(p.burstSizeMin),max=Number(p.burstSizeMax);
+        if(Number.isFinite(min)&&Number.isFinite(max)&&(min<1||max<1||min>32||max>32||min>max)){
+          warnings.push(prefix+": 버스트 묶음 크기 권장값은 1~32이며 최소≤최대입니다.");
+        }
+      }
+      if(c?.type==="ELEVATOR"){
+        const min=Number(p.travelMin),max=Number(p.travelMax);
+        if(Number.isFinite(min)&&Number.isFinite(max)&&min>=max){
+          warnings.push(prefix+": 엘리베이터 이동 시작/종료 위치가 뒤집히거나 같습니다.");
+        }
+      }
+      if(c?.type==="OUTPUT"){
+        if(String(p.outputKey||"").length>32) warnings.push(prefix+": 출력 키가 32자를 초과합니다.");
+        const rank=Number(p.outputRank),capacity=Number(p.outputCapacity),weight=Number(p.outputWeight);
+        if(Number.isFinite(rank)&&(rank<1||rank>64)) warnings.push(prefix+": 출력 순위 권장 범위는 1~64입니다.");
+        if(Number.isFinite(capacity)&&(capacity<1||capacity>64)) warnings.push(prefix+": 출력 용량 권장 범위는 1~64입니다.");
+        if(Number.isFinite(weight)&&(weight<=0||weight>100)) warnings.push(prefix+": 출력 가중치 권장 범위는 0 초과~100입니다.");
+      }
+      if(c?.type==="SLOT"){
+        const capacity=Number(p.slotCapacity);
+        if(Number.isFinite(capacity)&&(capacity<1||capacity>64)) warnings.push(prefix+": 슬롯 용량 권장 범위는 1~64입니다.");
+      }
+    }
+    return warnings;
+  }
+
   class PreviewEngine {
     constructor(definition,{seed=1}={}){
       this.fixedDt=1/120;
@@ -1702,6 +1784,7 @@
     defaultDefinition,
     emptyDefinition,
     validateDefinition,
+    validateWarnings,
     componentShapes,
     motionRotation,
     resolvedDrawRule,
