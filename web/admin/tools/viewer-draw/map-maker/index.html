@@ -84,7 +84,7 @@
 
       <div class="palette-group" data-palette-group="kinematic-rotation">
         <button class="palette-group-trigger" type="button" aria-expanded="false">
-          <span>동적 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+          <span>구동 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
         </button>
         <div class="palette-flyout palette-flyout-wide" role="menu">
           <p class="palette-flyout-title">KINEMATIC ROTATION 프리셋</p>
@@ -97,7 +97,7 @@
 
       <div class="palette-group" data-palette-group="revolute-rotation">
         <button class="palette-group-trigger" type="button" aria-expanded="false">
-          <span>관절 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+          <span>물리 관절 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
         </button>
         <div class="palette-flyout palette-flyout-wide" role="menu">
           <p class="palette-flyout-title">REVOLUTE JOINT 프리셋</p>
@@ -257,7 +257,7 @@
         <label class="mini-field"><span>진폭 °</span><input id="propAmplitude" type="number" step="1" min="0" max="360"></label>
         <label class="mini-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" step="1" min="0" max="360"></label>
         <label class="mini-field"><span>레일 두께</span><input id="propThickness" type="number" step="1" min="0"></label>
-        <label class="mini-field"><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" step=".01"></label>
+        <label class="mini-field" title="0은 중심입니다. -0.5는 회전축 방향의 시작 끝점, +0.5는 반대 끝점입니다. 진자는 세로축, 나머지는 가로축 기준입니다."><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" step=".01"></label>
         <label class="mini-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>최대 각도 °</span><input id="propUpperAngle" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>관절 마찰</span><input id="propJointFriction" type="number" step=".1" min="0"></label>
