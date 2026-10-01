@@ -260,16 +260,12 @@
       c?.properties?.pivotRatio,
       defaultPivotRatio(c?.type)
     );
-    if(c?.type==="PENDULUM"){
-      return {
-        x:0,
-        y:finiteOr(c?.height,0)*ratio
-      };
+    const width=finiteOr(c?.width,0);
+    const height=finiteOr(c?.height,0);
+    if(Math.abs(height)>Math.abs(width)){
+      return {x:0,y:height*ratio};
     }
-    return {
-      x:finiteOr(c?.width,0)*ratio,
-      y:0
-    };
+    return {x:width*ratio,y:0};
   }
 
   function componentPivotWorld(c){
