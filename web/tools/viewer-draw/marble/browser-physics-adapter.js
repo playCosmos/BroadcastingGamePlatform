@@ -739,12 +739,8 @@
         instrument: instruments.has(instrumentRaw)
           ? instrumentRaw
           : "none",
-        note: clamp(
-          Math.trunc(property(p, "audioNote", 60)),
-          24,
-          108
-        ),
-        gain: clamp(property(p, "audioGain", 1), 0, 2),
+        note: property(p, "audioNote", 60),
+        gain: property(p, "audioGain", 1),
         pan: clamp(property(p, "audioPan", 0), -1, 1)
       };
     }
