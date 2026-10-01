@@ -46,8 +46,33 @@
             </label>
             <div class="source-card">
               <span>Entry Source</span>
-              <strong>MANUAL_LIST</strong>
-              <small>채팅/후원 참가 접수는 옵션 기능으로 후속 추가</small>
+              <select id="entrySource">
+                <option value="MANUAL_LIST">직접 입력</option>
+                <option value="CHAT_KEYWORD">SOOP 채팅 키워드</option>
+              </select>
+              <div id="chatEntryControls" class="chat-entry-controls" hidden>
+                <label>
+                  <span>참가 키워드</span>
+                  <input id="chatKeyword" type="text" value="!참가" maxlength="80" placeholder="!참가">
+                </label>
+                <label>
+                  <span>채널 ID</span>
+                  <input id="chatChannelId" type="text" maxlength="120" placeholder="비우면 현재 SOOP 연결 채널">
+                </label>
+                <div class="chat-entry-actions">
+                  <button id="chatOpen" class="small-button" type="button">접수 시작</button>
+                  <button id="chatPause" class="small-button" type="button">일시정지</button>
+                  <button id="chatResume" class="small-button" type="button">재개</button>
+                  <button id="chatClose" class="small-button" type="button">접수 종료</button>
+                  <button id="chatClear" class="small-button" type="button">목록 초기화</button>
+                </div>
+                <div class="chat-entry-state">
+                  <strong id="soopProviderStatus">SOOP: 확인 중</strong>
+                  <span id="chatCollectionState">IDLE · 0명</span>
+                </div>
+                <button id="sendToMarble" class="small-button" type="button">현재 참가자를 Marble Draw로 전달</button>
+              </div>
+              <small id="entrySourceHelp">수동 입력만으로도 추첨이 완전히 동작합니다.</small>
             </div>
           </div>
         </section>
