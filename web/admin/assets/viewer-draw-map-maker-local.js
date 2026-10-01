@@ -54,6 +54,7 @@
   let mapHash = null;
   let lastSavedJson = null;
   let selectedId = null;
+  let selectedIds = new Set();
   let tool = "SELECT";
   let drag = null;
   let hoverControl = null;
@@ -534,8 +535,26 @@
     if (kind) root.classList.add(kind);
   }
 
+  function selectedComponents() {
+    return definition.components.filter((c) => selectedIds.has(c.id));
+  }
+
   function currentComponent() {
-    return definition.components.find((c) => c.id === selectedId) || null;
+    if (selectedIds.size !== 1) return null;
+    const id = selectedId && selectedIds.has(selectedId)
+      ? selectedId
+      : [...selectedIds][0];
+    return definition.components.find((c) => c.id === id) || null;
+  }
+
+  function normalizeSelection() {
+    const validIds = new Set(definition.components.map((c) => c.id));
+    selectedIds = new Set(
+      [...selectedIds].filter((id) => validIds.has(id))
+    );
+    if (!selectedId || !selectedIds.has(selectedId)) {
+      selectedId = selectedIds.size ? [...selectedIds][0] : null;
+    }
   }
 
   function pushUndo(snapshot = clone(definition)) {
@@ -548,7 +567,7 @@
   function updateEditButtons() {
     $("undo").disabled = undoStack.length === 0;
     $("redo").disabled = redoStack.length === 0;
-    const has = Boolean(currentComponent());
+    const has = selectedIds.size > 0;
     $("duplicate").disabled = !has || previewRunning;
     $("deleteSelected").disabled = !has || previewRunning;
   }
@@ -557,7 +576,7 @@
     if (!undoStack.length || previewRunning) return;
     redoStack.push(clone(definition));
     definition = undoStack.pop();
-    if (!currentComponent()) selectedId = null;
+    normalizeSelection();
     syncMapControls();
     syncInspector();
     render();
@@ -568,7 +587,7 @@
     if (!redoStack.length || previewRunning) return;
     undoStack.push(clone(definition));
     definition = redoStack.pop();
-    if (!currentComponent()) selectedId = null;
+    normalizeSelection();
     syncMapControls();
     syncInspector();
     render();
@@ -870,7 +889,7 @@
   function drawComponent(c, view) {
     const { fill, stroke } = Engine.componentVisualStyle(c);
     const p = toScreen(c.x, c.y, view);
-    const selected = c.id === selectedId && !previewRunning;
+    const selected = selectedIds.has(c.id) && !previewRunning;
 
     ctx.save();
     ctx.translate(p.x, p.y);
@@ -1065,6 +1084,70 @@
     ctx.restore();
   }
 
+  function drawMultiSelectionOverlay(components, view) {
+    if (components.length < 2) return;
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const component of components) {
+      const bounds = componentBoundsScreen(component, view);
+      left = Math.min(left, bounds.left);
+      top = Math.min(top, bounds.top);
+      right = Math.max(right, bounds.left + bounds.width);
+      bottom = Math.max(bottom, bounds.top + bounds.height);
+    }
+    if (!Number.isFinite(left)) return;
+    ctx.save();
+    ctx.strokeStyle = "#9ed5ff";
+    ctx.lineWidth = 1.6;
+    ctx.setLineDash([6, 4]);
+    ctx.strokeRect(
+      left - 5,
+      top - 5,
+      right - left + 10,
+      bottom - top + 10
+    );
+    ctx.restore();
+  }
+
+  function marqueeRectScreen(state) {
+    const rect = canvas.getBoundingClientRect();
+    const x1 = state.startClientX - rect.left;
+    const y1 = state.startClientY - rect.top;
+    const x2 = state.currentClientX - rect.left;
+    const y2 = state.currentClientY - rect.top;
+    return {
+      left: Math.min(x1, x2),
+      top: Math.min(y1, y2),
+      right: Math.max(x1, x2),
+      bottom: Math.max(y1, y2)
+    };
+  }
+
+  function drawMarqueeSelection(state) {
+    if (!state?.moved) return;
+    const box = marqueeRectScreen(state);
+    ctx.save();
+    ctx.fillStyle = "rgba(98,195,231,.10)";
+    ctx.strokeStyle = "#62c3e7";
+    ctx.lineWidth = 1.3;
+    ctx.setLineDash([5, 4]);
+    ctx.fillRect(
+      box.left,
+      box.top,
+      box.right - box.left,
+      box.bottom - box.top
+    );
+    ctx.strokeRect(
+      box.left,
+      box.top,
+      box.right - box.left,
+      box.bottom - box.top
+    );
+    ctx.restore();
+  }
+
   function drawMarbles(view) {
     if (!previewSnapshot) return;
     for (const marble of previewSnapshot.marbles) {
@@ -1138,11 +1221,18 @@
         drawComponent({ ...shape, id: c.id, type: c.type }, view);
       }
     }
-    const selected = currentComponent();
-    if (selected && !previewRunning) {
-      drawSelectionOverlay(selected, view);
+    const selected = selectedComponents();
+    if (!previewRunning) {
+      if (selected.length === 1) {
+        drawSelectionOverlay(selected[0], view);
+      } else if (selected.length > 1) {
+        drawMultiSelectionOverlay(selected, view);
+      }
     }
     drawMarbles(view);
+    if (drag?.mode === "marquee") {
+      drawMarqueeSelection(drag);
+    }
 
     ctx.save();
     ctx.strokeStyle = "rgba(143,176,199,.4)";
@@ -1372,11 +1462,36 @@
     return null;
   }
 
-  function select(id) {
-    selectedId = id;
+  function selectMany(ids, primaryId = null) {
+    const validIds = new Set(definition.components.map((c) => c.id));
+    const nextIds = [...new Set(ids || [])]
+      .filter((id) => validIds.has(id));
+    selectedIds = new Set(nextIds);
+    selectedId = primaryId && selectedIds.has(primaryId)
+      ? primaryId
+      : (nextIds[0] || null);
     syncInspector();
     updateEditButtons();
     render();
+  }
+
+  function select(id, { additive = false, toggle = false } = {}) {
+    if (!id) {
+      if (!additive) selectMany([]);
+      return;
+    }
+    if (toggle) {
+      const next = new Set(selectedIds);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      selectMany([...next], next.has(id) ? id : null);
+      return;
+    }
+    if (additive) {
+      selectMany([...selectedIds, id], id);
+      return;
+    }
+    selectMany([id], id);
   }
 
   function closePaletteGroups(except = null) {
@@ -1503,43 +1618,47 @@
   }
 
   function deleteSelected() {
-    if (!selectedId || previewRunning) return;
-    const index = definition.components.findIndex((c) => c.id === selectedId);
-    if (index < 0) return;
+    const selected = selectedComponents();
+    if (!selected.length || previewRunning) return;
     pushUndo();
-    const removed = definition.components[index];
-    const removedId = removed.id;
-    const removedOutputKey = removed.type === "OUTPUT"
-      ? String(removed.properties?.outputKey || "")
-      : "";
-    definition.components.splice(index, 1);
+    const removedIds = new Set(selected.map((c) => c.id));
+    const removedOutputKeys = new Set(
+      selected
+        .filter((c) => c.type === "OUTPUT")
+        .map((c) => String(c.properties?.outputKey || ""))
+        .filter(Boolean)
+    );
+    definition.components = definition.components.filter(
+      (component) => !removedIds.has(component.id)
+    );
     for (const component of definition.components) {
       if (
-        removedOutputKey
-        && component.type === "OUTPUT"
-        && component.properties?.conditionOutputKey === removedOutputKey
+        component.type === "OUTPUT"
+        && removedOutputKeys.has(
+          String(component.properties?.conditionOutputKey || "")
+        )
       ) {
         component.properties.conditionOutputKey = "";
         component.properties.conditionType = "ALWAYS";
       }
     }
-    selectedId = null;
-    syncInspector();
-    render();
-    updateEditButtons();
+    selectMany([]);
     validateClient(false);
   }
 
   function duplicateSelected() {
-    const c = currentComponent();
-    if (!c || previewRunning) return;
+    const selected = selectedComponents();
+    if (!selected.length || previewRunning) return;
     pushUndo();
-    const copy = clone(c);
-    copy.id = Engine.componentDefaults(copy.type).id;
-    copy.x = snap(clamp(copy.x + 30, 0, definition.world.width));
-    copy.y = snap(clamp(copy.y + 30, 0, definition.world.height));
-    definition.components.push(copy);
-    select(copy.id);
+    const copies = selected.map((component) => {
+      const copy = clone(component);
+      copy.id = Engine.componentDefaults(copy.type).id;
+      copy.x = snap(clamp(copy.x + 30, 0, definition.world.width));
+      copy.y = snap(clamp(copy.y + 30, 0, definition.world.height));
+      definition.components.push(copy);
+      return copy;
+    });
+    selectMany(copies.map((copy) => copy.id), copies.at(-1)?.id || null);
   }
 
   function syncMapControls() {
@@ -1562,9 +1681,13 @@
 
   function syncInspector() {
     const c = currentComponent();
+    const selectionCount = selectedIds.size;
     $("emptyInspector").hidden = Boolean(c);
     $("componentInspector").hidden = !c;
     if (!c) {
+      $("emptyInspector").textContent = selectionCount > 1
+        ? selectionCount + "개 오브젝트 선택됨 · 드래그로 함께 이동할 수 있습니다."
+        : "컴포넌트를 선택하세요.";
       inspectorComponentId = null;
       advancedSettingsVisible = false;
       return;
@@ -2217,6 +2340,7 @@
     definition = Engine.migrateDefinition(loaded.definition);
     lastSavedJson = JSON.stringify(definition);
     selectedId = null;
+    selectedIds.clear();
     undoStack = [];
     redoStack = [];
     syncMapControls();
@@ -2247,6 +2371,7 @@
     mapHash = null;
     lastSavedJson = null;
     selectedId = null;
+    selectedIds.clear();
     undoStack = [];
     redoStack = [];
     setHoverControl(null);
@@ -2286,6 +2411,7 @@
       mapHash = null;
       lastSavedJson = null;
       selectedId = null;
+      selectedIds.clear();
       undoStack = [];
       redoStack = [];
       syncMapControls();
@@ -2421,21 +2547,52 @@
     }
 
     const hit = hitTest(p.x, p.y);
-    select(hit?.id || null);
+    const modifySelection = event.shiftKey || event.ctrlKey || event.metaKey;
     if (hit) {
+      if (modifySelection) {
+        select(hit.id, { toggle: true });
+      } else if (!selectedIds.has(hit.id)) {
+        select(hit.id);
+      }
+
+      if (selectedIds.has(hit.id)) {
+        const originals = selectedComponents().map((component) => ({
+          id: component.id,
+          x: component.x,
+          y: component.y
+        }));
+        drag = {
+          mode: "move",
+          pointerId: event.pointerId,
+          before: clone(definition),
+          startWorldX: p.x,
+          startWorldY: p.y,
+          anchorId: hit.id,
+          originals,
+          moved: false
+        };
+        canvas.style.cursor = "grabbing";
+        canvas.setPointerCapture?.(event.pointerId);
+      } else {
+        setHoverControl(null);
+        canvas.style.cursor = "default";
+      }
+    } else {
+      const baseSelection = modifySelection ? [...selectedIds] : [];
+      if (!modifySelection) selectMany([]);
       drag = {
-        mode: "move",
+        mode: "marquee",
         pointerId: event.pointerId,
-        before: clone(definition),
-        offsetX: p.x - hit.x,
-        offsetY: p.y - hit.y,
+        startClientX: event.clientX,
+        startClientY: event.clientY,
+        currentClientX: event.clientX,
+        currentClientY: event.clientY,
+        baseSelection,
         moved: false
       };
-      canvas.style.cursor = "grabbing";
-      canvas.setPointerCapture?.(event.pointerId);
-    } else {
       setHoverControl(null);
-      canvas.style.cursor = "default";
+      canvas.style.cursor = "crosshair";
+      canvas.setPointerCapture?.(event.pointerId);
     }
     event.preventDefault();
   });
@@ -2457,26 +2614,75 @@
       return;
     }
 
+    if (drag.mode === "marquee") {
+      drag.currentClientX = event.clientX;
+      drag.currentClientY = event.clientY;
+      drag.moved ||= Math.hypot(
+        drag.currentClientX - drag.startClientX,
+        drag.currentClientY - drag.startClientY
+      ) >= 3;
+      if (drag.moved) {
+        const view = fit();
+        const box = marqueeRectScreen(drag);
+        const matches = definition.components.filter((component) => {
+          const bounds = componentBoundsScreen(component, view);
+          const right = bounds.left + bounds.width;
+          const bottom = bounds.top + bounds.height;
+          return right >= box.left
+            && bounds.left <= box.right
+            && bottom >= box.top
+            && bounds.top <= box.bottom;
+        }).map((component) => component.id);
+        selectMany(
+          [...drag.baseSelection, ...matches],
+          matches.at(-1) || drag.baseSelection.at(-1) || null
+        );
+      } else {
+        render();
+      }
+      canvas.style.cursor = "crosshair";
+      event.preventDefault();
+      return;
+    }
+
+    if (drag.mode === "move") {
+      const p = toWorld(event.clientX, event.clientY, false);
+      const anchor = drag.originals.find(
+        (item) => item.id === drag.anchorId
+      ) || drag.originals[0];
+      if (!anchor) return;
+      let dx = p.x - drag.startWorldX;
+      let dy = p.y - drag.startWorldY;
+      if ($("snapGrid").checked) {
+        dx = snap(anchor.x + dx) - anchor.x;
+        dy = snap(anchor.y + dy) - anchor.y;
+      }
+      const minX = Math.min(...drag.originals.map((item) => item.x));
+      const maxX = Math.max(...drag.originals.map((item) => item.x));
+      const minY = Math.min(...drag.originals.map((item) => item.y));
+      const maxY = Math.max(...drag.originals.map((item) => item.y));
+      dx = clamp(dx, -minX, definition.world.width - maxX);
+      dy = clamp(dy, -minY, definition.world.height - maxY);
+      for (const original of drag.originals) {
+        const component = definition.components.find(
+          (item) => item.id === original.id
+        );
+        if (!component) continue;
+        component.x = original.x + dx;
+        component.y = original.y + dy;
+      }
+      drag.moved ||= Math.abs(dx) > .001 || Math.abs(dy) > .001;
+      canvas.style.cursor = "grabbing";
+      syncInspector();
+      render();
+      event.preventDefault();
+      return;
+    }
+
     const c = currentComponent();
     if (!c) return;
 
-    if (drag.mode === "move") {
-      const p = toWorld(event.clientX, event.clientY);
-      const nextX = clamp(
-        snap(p.x - drag.offsetX),
-        0,
-        definition.world.width
-      );
-      const nextY = clamp(
-        snap(p.y - drag.offsetY),
-        0,
-        definition.world.height
-      );
-      drag.moved ||= nextX !== c.x || nextY !== c.y;
-      c.x = nextX;
-      c.y = nextY;
-      canvas.style.cursor = "grabbing";
-    } else if (drag.mode === "rotate") {
+    if (drag.mode === "rotate") {
       const p = toWorld(event.clientX, event.clientY, false);
       const angle = Math.atan2(
         p.y - drag.original.y,
@@ -2515,7 +2721,10 @@
 
   function finishDrag(event) {
     if (!drag || drag.pointerId !== event.pointerId) return;
-    if (drag.moved && drag.mode !== "pan") {
+    if (
+      drag.moved
+      && ["move", "rotate", "resize"].includes(drag.mode)
+    ) {
       undoStack.push(drag.before);
       if (undoStack.length > 100) undoStack.shift();
       redoStack = [];
