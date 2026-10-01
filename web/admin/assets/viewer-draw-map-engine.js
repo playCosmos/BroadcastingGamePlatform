@@ -242,6 +242,29 @@
     };
   }
 
+  function circularArcGeometry(c){
+    const w=Math.max(.001,Math.abs(finiteOr(c?.width,260)));
+    const h=Math.max(.001,Math.abs(finiteOr(c?.height,120)));
+    const radius=(w*w)/(8*h)+h/2;
+    const centerY=radius-h/2;
+    const endpointDy=h-radius;
+    const startAngle=(
+      Math.atan2(endpointDy,-w/2)*180/Math.PI+360
+    )%360;
+    const endAngle=(
+      Math.atan2(endpointDy,w/2)*180/Math.PI+360
+    )%360;
+    return {radius,centerY,startAngle,endAngle};
+  }
+
+  function circularArcSweep(startAngle,endAngle){
+    const start=clamp(finiteOr(startAngle,0),0,360);
+    const end=clamp(finiteOr(endAngle,360),0,360);
+    const raw=end-start;
+    if(Math.abs(raw)>=359.999 || Math.abs(raw)<1e-9) return 360;
+    return ((raw%360)+360)%360;
+  }
+
   const ROTATION_MODES = new Set([
     "FORCE_CONTINUOUS",
     "FORCE_OSCILLATE",
@@ -360,29 +383,49 @@
       const points=[];
 
       if(curveMode==="CIRCULAR_ARC"){
-        // Width is the chord length and height is the sagitta. These
-        // determine one exact circle, so resizing never deforms it into
-        // an ellipse.
-        const radius=(w*w)/(8*h)+h/2;
-        const centerY=radius-h/2;
-        const endpointDy=h-radius;
-        const middleAngle=-Math.PI/2;
-        let startAngle=Math.atan2(endpointDy,-w/2);
-        let endAngle=Math.atan2(endpointDy,w/2);
-        while(startAngle>=middleAngle) startAngle-=Math.PI*2;
-        while(endAngle<=middleAngle) endAngle+=Math.PI*2;
+        // Width/height continue to determine the source circle exactly
+        // as before; arcStartAngle/arcEndAngle trim any 0..360° portion.
+        const geometry=circularArcGeometry(c);
+        const startAngle=clamp(
+          finiteOr(p.arcStartAngle,geometry.startAngle),
+          0,
+          360
+        );
+        const endAngle=clamp(
+          finiteOr(p.arcEndAngle,geometry.endAngle),
+          0,
+          360
+        );
+        const sweep=circularArcSweep(startAngle,endAngle);
 
         for(let i=0;i<=segments;i++){
           const t=i/segments;
-          const angle=startAngle+(endAngle-startAngle)*t;
+          const angle=degToRad(startAngle+sweep*t);
           points.push({
-            x:Math.cos(angle)*radius,
-            y:centerY+Math.sin(angle)*radius
+            x:Math.cos(angle)*geometry.radius,
+            y:geometry.centerY+Math.sin(angle)*geometry.radius
           });
         }
       }else{
-        for(let i=0;i<=segments;i++){
-          const t=i/segments;
+        const rawStart=clamp(
+          finiteOr(p.curveStartPercent,0),
+          0,
+          100
+        )/100;
+        const rawEnd=clamp(
+          finiteOr(p.curveEndPercent,100),
+          0,
+          100
+        )/100;
+        const start=Math.min(rawStart,rawEnd);
+        const end=Math.max(rawStart,rawEnd);
+        const span=Math.max(0,end-start);
+        const activeSegments=Math.max(
+          1,
+          Math.ceil(segments*span)
+        );
+        for(let i=0;i<=activeSegments;i++){
+          const t=start+span*(i/activeSegments);
           const omt=1-t;
           const x=omt*omt*(-w/2)+2*omt*t*0+t*t*(w/2);
           const y=omt*omt*(h/2)+2*omt*t*(-h/2)+t*t*(h/2);
@@ -440,7 +483,13 @@
         width:280,
         height:140,
         properties:colliderProperties(
-          {curveMode:"PARABOLA",thickness:18,segments:16},
+          {
+            curveMode:"PARABOLA",
+            curveStartPercent:0,
+            curveEndPercent:100,
+            thickness:18,
+            segments:16
+          },
           {restitution:.35,friction:.06}
         )
       };
@@ -525,10 +574,13 @@
       const c=componentDefaults("CURVE_WALL",x,y);
       c.width=280;
       c.height=140;
+      const geometry=circularArcGeometry(c);
       c.properties=colliderProperties(
         {
           ...c.properties,
           curveMode:"CIRCULAR_ARC",
+          arcStartAngle:geometry.startAngle,
+          arcEndAngle:geometry.endAngle,
           segments:24,
           visualFill:"#3f6676",
           visualStroke:"#78c9e8"
@@ -926,10 +978,37 @@
       }
 
       if(c.type==="CURVE_WALL"){
-        c.properties=migratedColliderProperties({
-          ...c.properties,
-          curveMode:String(c.properties?.curveMode||"PARABOLA").toUpperCase()
-        });
+        const curveMode=String(
+          c.properties?.curveMode||"PARABOLA"
+        ).toUpperCase();
+        if(curveMode==="CIRCULAR_ARC"){
+          const geometry=circularArcGeometry(c);
+          c.properties=migratedColliderProperties({
+            ...c.properties,
+            curveMode,
+            arcStartAngle:finiteOr(
+              c.properties?.arcStartAngle,
+              geometry.startAngle
+            ),
+            arcEndAngle:finiteOr(
+              c.properties?.arcEndAngle,
+              geometry.endAngle
+            )
+          });
+        }else{
+          c.properties=migratedColliderProperties({
+            ...c.properties,
+            curveMode:"PARABOLA",
+            curveStartPercent:finiteOr(
+              c.properties?.curveStartPercent,
+              0
+            ),
+            curveEndPercent:finiteOr(
+              c.properties?.curveEndPercent,
+              100
+            )
+          });
+        }
       }else if(isCollider(c)){
         c.properties=migratedColliderProperties(c.properties);
       }
@@ -1272,6 +1351,27 @@
         }
         if(!Number.isInteger(segments)||segments<6||segments>32){
           errors.push("곡선 세그먼트 수는 6~32 정수여야 합니다.");
+        }
+        if(curveMode==="CIRCULAR_ARC"){
+          const start=Number(p.arcStartAngle);
+          const end=Number(p.arcEndAngle);
+          if(
+            !Number.isFinite(start)||!Number.isFinite(end)
+            || start<0||start>360||end<0||end>360
+          ){
+            errors.push("원호 시작/종료 각도는 0~360° 범위여야 합니다.");
+          }
+        }else{
+          const start=Number(p.curveStartPercent ?? 0);
+          const end=Number(p.curveEndPercent ?? 100);
+          if(
+            !Number.isFinite(start)||!Number.isFinite(end)
+            || start<0||start>100||end<0||end>100
+          ){
+            errors.push("포물선 시작/종료 구간은 0~100% 범위여야 합니다.");
+          }else if(Math.abs(start-end)<1e-9){
+            errors.push("포물선 시작/종료 구간은 서로 달라야 합니다.");
+          }
         }
       }
       if(c?.type==="ROTATIONAL_BODY"){
