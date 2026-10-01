@@ -742,6 +742,7 @@ public final class ViewerDrawService {
             : java.util.Set.of(
                 "WALL", "CURVE_WALL", "CIRCLE",
                 "SPAWN", "BURST_SPAWN", "FINISH",
+                "ROTATIONAL_BODY",
                 "GATE", "ROTATOR", "PENDULUM", "SEESAW",
                 "HINGE", "PADDLE",
                 "CONVEYOR", "ELEVATOR",
@@ -804,6 +805,7 @@ public final class ViewerDrawService {
 
             var rectangularTypes = java.util.Set.of(
                 "WALL", "CURVE_WALL", "RAMP", "FINISH",
+                "ROTATIONAL_BODY",
                 "GATE", "ROTATOR", "PENDULUM", "SEESAW",
                 "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE",
                 "LAUNCHER", "CONVEYOR", "ELEVATOR",
@@ -840,7 +842,8 @@ public final class ViewerDrawService {
 
             var colliderTypes = java.util.Set.of(
                 "WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER",
-                "CIRCLE", "GATE", "ROTATOR", "PENDULUM", "SEESAW",
+                "CIRCLE", "ROTATIONAL_BODY",
+                "GATE", "ROTATOR", "PENDULUM", "SEESAW",
                 "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE",
                 "LAUNCHER", "CONVEYOR", "ELEVATOR"
             );
@@ -862,6 +865,8 @@ public final class ViewerDrawService {
             }
 
             String[] signedAngleKeys = {
+                "startAngle",
+                "endAngle",
                 "lowerAngle",
                 "upperAngle",
                 "burstDirectionDegrees",
@@ -927,6 +932,43 @@ public final class ViewerDrawService {
                 if (direction < -360 || direction > 360) {
                     throw new IllegalArgumentException(
                         id + " launchDirectionDegrees must be within -360..360"
+                    );
+                }
+            }
+
+            if ("ROTATIONAL_BODY".equals(type)) {
+                String rotationMode = stringProperty(
+                    properties,
+                    "rotationMode",
+                    "FORCE_CONTINUOUS"
+                ).trim().toUpperCase(Locale.ROOT);
+                if (
+                    !java.util.Set.of(
+                        "FORCE_CONTINUOUS",
+                        "FORCE_OSCILLATE",
+                        "TORQUE_CONTINUOUS",
+                        "TORQUE_OSCILLATE",
+                        "FREE"
+                    ).contains(rotationMode)
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " rotationMode is invalid"
+                    );
+                }
+
+                double rawBladeCount = numberProperty(
+                    properties,
+                    "bladeCount",
+                    1
+                );
+                int bladeCount = (int) rawBladeCount;
+                if (
+                    rawBladeCount != bladeCount
+                    || bladeCount < 1
+                    || bladeCount > 4
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " bladeCount must be an integer within 1..4"
                     );
                 }
             }
