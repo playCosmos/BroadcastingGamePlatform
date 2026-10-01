@@ -1593,16 +1593,20 @@
       this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
-      this.resetHingeStates();
+      this.resetRotationStates();
     }
 
-    resetHingeStates(){
-      this.hingeStates=new Map();
+    resetRotationStates(){
+      this.rotationStates=new Map();
       for(const component of this.definition.components){
-        if(component.type!=="HINGE") continue;
-        this.hingeStates.set(component.id,{
+        if(component.type!=="ROTATIONAL_BODY") continue;
+        const mode=rotationMode(component);
+        if(mode.startsWith("FORCE_")) continue;
+        const speed=finiteOr(component.properties?.angularSpeed,0);
+        this.rotationStates.set(component.id,{
           angle:finiteOr(component.rotation,0),
-          angularVelocity:0
+          angularVelocity:mode==="TORQUE_CONTINUOUS" ? speed : 0,
+          direction:speed<0 ? -1 : 1
         });
       }
     }
@@ -1626,7 +1630,7 @@
       this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
-      this.resetHingeStates();
+      this.resetRotationStates();
 
       const rule=resolvedDrawRule(this.definition);
       if(rule.type==="RANDOM_OUTPUT_BUCKET"){
@@ -1694,20 +1698,42 @@
       return this.snapshot();
     }
 
-    hingeShape(component){
-      const state=this.hingeStates.get(component.id);
-      if(!state) return component;
-      return pivotedComponentShape(component,state.angle);
+    rotationShapes(component){
+      const mode=rotationMode(component);
+      if(mode.startsWith("FORCE_")){
+        return componentShapes(component,this.time);
+      }
+
+      const state=this.rotationStates.get(component.id);
+      if(!state) return componentShapes(component,this.time);
+
+      const bladeCount=Math.max(
+        1,
+        Math.min(
+          4,
+          Math.trunc(finiteOr(component.properties?.bladeCount,1))
+        )
+      );
+      return Array.from(
+        {length:bladeCount},
+        (_,index)=>pivotedComponentShape(
+          component,
+          state.angle+(180/bladeCount)*index
+        )
+      );
     }
 
-    updateHinges(dt){
+    updateRotationStates(dt){
       const world=this.definition.world;
       const gravityX=finiteOr(world.gravityX,0)*80;
       const gravityY=finiteOr(world.gravityY,12)*80;
 
       for(const component of this.definition.components){
-        if(component.type!=="HINGE") continue;
-        const state=this.hingeStates.get(component.id);
+        if(component.type!=="ROTATIONAL_BODY") continue;
+        const mode=rotationMode(component);
+        if(mode.startsWith("FORCE_")) continue;
+
+        const state=this.rotationStates.get(component.id);
         if(!state) continue;
 
         const p=component.properties||{};
@@ -1717,39 +1743,66 @@
         const ry=shape.y-pivot.y;
         const radiusSq=Math.max(400,rx*rx+ry*ry);
         const gravityTorque=rx*gravityY-ry*gravityX;
-        const angularAccel=
-          (gravityTorque/radiusSq)*(180/Math.PI);
+        state.angularVelocity+=
+          (gravityTorque/radiusSq)*(180/Math.PI)*dt;
 
-        state.angularVelocity+=angularAccel*dt;
-
-        const friction=Math.max(
-          0,
-          finiteOr(p.jointFriction,.15)
-        );
+        const friction=Math.max(0,finiteOr(p.jointFriction,.15));
         state.angularVelocity*=Math.exp(-friction*dt*2.5);
+
+        const speed=finiteOr(p.angularSpeed,90);
+        const torque=Math.max(0,finiteOr(p.motorTorque,30));
+
+        if(mode==="TORQUE_CONTINUOUS"){
+          const maxDelta=torque*12*dt;
+          state.angularVelocity+=clamp(
+            speed-state.angularVelocity,
+            -maxDelta,
+            maxDelta
+          );
+        }else if(mode==="TORQUE_OSCILLATE"){
+          const start=finiteOr(p.startAngle,-30);
+          const end=finiteOr(p.endAngle,30);
+          const minAngle=finiteOr(component.rotation,0)+Math.min(start,end);
+          const maxAngle=finiteOr(component.rotation,0)+Math.max(start,end);
+
+          if(state.angle<=minAngle+.25) state.direction=1;
+          if(state.angle>=maxAngle-.25) state.direction=-1;
+
+          const target=Math.abs(speed)*state.direction;
+          const maxDelta=torque*12*dt;
+          state.angularVelocity+=clamp(
+            target-state.angularVelocity,
+            -maxDelta,
+            maxDelta
+          );
+        }
+
         state.angle+=state.angularVelocity*dt;
 
-        const lower=finiteOr(p.lowerAngle,-70);
-        const upper=finiteOr(p.upperAngle,70);
-        const minAngle=finiteOr(component.rotation,0)+Math.min(lower,upper);
-        const maxAngle=finiteOr(component.rotation,0)+Math.max(lower,upper);
+        if(mode==="FREE"||mode==="TORQUE_OSCILLATE"){
+          const start=finiteOr(p.startAngle,-70);
+          const end=finiteOr(p.endAngle,70);
+          const minAngle=finiteOr(component.rotation,0)+Math.min(start,end);
+          const maxAngle=finiteOr(component.rotation,0)+Math.max(start,end);
 
-        if(state.angle<minAngle){
-          state.angle=minAngle;
-          if(state.angularVelocity<0){
-            state.angularVelocity*=-.12;
-          }
-        }else if(state.angle>maxAngle){
-          state.angle=maxAngle;
-          if(state.angularVelocity>0){
-            state.angularVelocity*=-.12;
+          if(state.angle<minAngle){
+            state.angle=minAngle;
+            if(state.angularVelocity<0) state.angularVelocity*=0;
+            state.direction=1;
+          }else if(state.angle>maxAngle){
+            state.angle=maxAngle;
+            if(state.angularVelocity>0) state.angularVelocity*=0;
+            state.direction=-1;
           }
         }
       }
     }
 
-    applyHingeImpact(component,marble,contact){
-      const state=this.hingeStates.get(component.id);
+    applyRotationImpact(component,contact){
+      const mode=rotationMode(component);
+      if(mode.startsWith("FORCE_")) return;
+
+      const state=this.rotationStates.get(component.id);
       if(!state||!contact) return;
 
       const pivot=componentPivotWorld(component);
@@ -1774,7 +1827,7 @@
       const world=this.definition.world;
       const gravityScale=80;
       this.time+=dt;
-      this.updateHinges(dt);
+      this.updateRotationStates(dt);
 
       for(const m of this.marbles){
         if(m.finished||m.eliminated||m.dnf) continue;
@@ -1788,8 +1841,8 @@
         this.resolveWorldBounds(m,world);
         const nextBoostContacts=new Set();
         for(const c of this.definition.components){
-          const shapes=c.type==="HINGE"
-            ? [this.hingeShape(c)]
+          const shapes=c.type==="ROTATIONAL_BODY"
+            ? this.rotationShapes(c)
             : componentShapes(c,this.time);
           for(const shape of shapes){
             if(isRectCollider(c)){
@@ -1798,8 +1851,8 @@
                 shape,
                 nextBoostContacts
               );
-              if(c.type==="HINGE"&&contact){
-                this.applyHingeImpact(c,m,contact);
+              if(c.type==="ROTATIONAL_BODY"&&contact){
+                this.applyRotationImpact(c,contact);
               }
             }else if(c.type==="CIRCLE"){
               this.resolveCircle(m,shape,nextBoostContacts);
@@ -2224,7 +2277,7 @@
           ? targetCountForDefinition(this.definition)
           : this.marbles.length,
         totalCount:this.marbles.length,
-        components:[...this.hingeStates.entries()].map(
+        components:[...this.rotationStates.entries()].map(
           ([id,state])=>{
             const component=this.definition.components.find(
               candidate=>candidate.id===id
@@ -2234,14 +2287,14 @@
               : null;
             return {
               id,
-              type:"HINGE",
+              type:"ROTATIONAL_BODY",
               x:shape?.x ?? 0,
               y:shape?.y ?? 0,
-              runtimeRotation:state.angle
+              runtimeRotation:state.angle,
+              angularVelocity:state.angularVelocity
             };
           }
-        )
-      };
+        )     };
     }
   }
 
