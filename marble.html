@@ -40,6 +40,11 @@
           <p class="panel-title">참가 항목 / MARBLE COUNT</p>
           <button id="addEntry" class="compact-button" type="button">+ 참가자 추가</button>
         </div>
+        <div class="entry-set-tools">
+          <button id="importEntrySet" class="compact-button" type="button">목록 불러오기</button>
+          <button id="exportEntrySet" class="compact-button" type="button">목록 내보내기</button>
+          <input id="entrySetFile" type="file" accept=".json,.txt,.csv,.tsv,application/json,text/plain,text/csv,text/tab-separated-values" hidden>
+        </div>
         <div id="entryRows" class="entry-list">
           <div class="entry-row">
             <input class="entry-name" type="text" value="1번" aria-label="참가 항목 이름">
