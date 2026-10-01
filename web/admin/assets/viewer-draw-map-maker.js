@@ -317,6 +317,7 @@
     GATE: {
       basic: [
         ...RECT_ROT_BASIC,
+        "propPivotRatio",
         "propOpenAngle",
         "propPeriod"
       ],
@@ -325,6 +326,7 @@
     ROTATOR: {
       basic: [
         ...RECT_ROT_BASIC,
+        "propPivotRatio",
         "propAngularSpeed",
         "propBladeCount"
       ],
@@ -333,6 +335,7 @@
     PENDULUM: {
       basic: [
         ...RECT_ROT_BASIC,
+        "propPivotRatio",
         "propAmplitude",
         "propPeriod"
       ],
@@ -341,6 +344,7 @@
     SEESAW: {
       basic: [
         ...RECT_ROT_BASIC,
+        "propPivotRatio",
         "propAmplitude",
         "propPeriod"
       ],
@@ -941,17 +945,16 @@
           ctx.stroke();
         }
       }
-      if (["HINGE","PADDLE"].includes(c.type)) {
-        const pivotRatio = c.type === "PADDLE"
-          ? num(c.properties?.pivotRatio, -.48)
-          : c.type === "HINGE"
-            ? num(c.properties?.pivotRatio, 0)
-            : 0;
+      if (
+        ["ROTATOR","GATE","PENDULUM","SEESAW","HINGE","PADDLE"]
+          .includes(c.type)
+      ) {
+        const pivot = Engine.componentPivotLocal(c);
         ctx.beginPath();
         ctx.fillStyle = "#f4fbff";
         ctx.arc(
-          pivotRatio * w,
-          0,
+          pivot.x * view.scale,
+          pivot.y * view.scale,
           Math.max(3, 5 * view.scale),
           0,
           Math.PI * 2
@@ -1560,10 +1563,19 @@
     $("propAmplitude").value = num(c.properties?.amplitude, c.type === "SEESAW" ? 14 : 42);
     $("propOpenAngle").value = num(c.properties?.openAngle, 78);
     $("propThickness").value = num(c.properties?.thickness, 14);
-    $("propPivotRatio").value = num(c.properties?.pivotRatio, c.type === "PADDLE" ? -.48 : 0);
+    const pivotFallback =
+      c.type === "GATE" || c.type === "PENDULUM"
+        ? -.5
+        : c.type === "HINGE" || c.type === "PADDLE"
+          ? -.48
+          : 0;
+    $("propPivotRatio").value = num(
+      c.properties?.pivotRatio,
+      pivotFallback
+    );
     $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
     $("propUpperAngle").value = num(c.properties?.upperAngle, 70);
-    $("propJointFriction").value = num(c.properties?.jointFriction, 1.2);
+    $("propJointFriction").value = num(c.properties?.jointFriction, .15);
     $("propMotorSpeed").value = num(c.properties?.motorSpeed, 180);
     $("propMotorTorque").value = num(c.properties?.motorTorque, 30);
     $("propBurstPower").value = num(c.properties?.burstPower, 1.15);
@@ -1810,7 +1822,19 @@
         num($("propThickness").value, 18)
       );
     }
-    if (["HINGE", "PADDLE"].includes(c.type)) c.properties.pivotRatio = num($("propPivotRatio").value, c.type === "PADDLE" ? -.48 : 0);
+    if (
+      ["ROTATOR","GATE","PENDULUM","SEESAW","HINGE","PADDLE"]
+        .includes(c.type)
+    ) {
+      c.properties.pivotRatio = num(
+        $("propPivotRatio").value,
+        c.type === "GATE" || c.type === "PENDULUM"
+          ? -.5
+          : c.type === "HINGE" || c.type === "PADDLE"
+            ? -.48
+            : 0
+      );
+    }
     if (c.type === "HINGE") {
       c.properties.lowerAngle = clamp(
         num($("propLowerAngle").value, -70),
@@ -1824,7 +1848,7 @@
       );
       c.properties.jointFriction = Math.max(
         0,
-        num($("propJointFriction").value, 1.2)
+        num($("propJointFriction").value, .15)
       );
     }
     if (c.type === "PADDLE") {
