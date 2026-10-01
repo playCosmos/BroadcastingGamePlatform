@@ -583,13 +583,13 @@
       if (component.type === "HINGE") {
         const lower = clamp(
           property(p, "lowerAngle", -70),
-          -180,
-          180
+          -360,
+          360
         ) * Math.PI / 180;
         const upper = clamp(
           property(p, "upperAngle", 70),
-          -180,
-          180
+          -360,
+          360
         ) * Math.PI / 180;
         jointDef.set_enableLimit(true);
         jointDef.set_lowerAngle(Math.min(lower, upper));
