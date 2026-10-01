@@ -61,7 +61,7 @@
     }));
 
     adapter.loadMap(definition);
-    let state = adapter.reset(entries, 42);
+    let state = adapter.reset(entries, 42, { launchMode: "BUNCH" });
     if (!adapter.shakeMarble("m1")) {
       throw new Error("box2d stuck-recovery nudge failed");
     }
