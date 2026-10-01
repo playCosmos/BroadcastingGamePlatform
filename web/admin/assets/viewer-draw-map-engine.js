@@ -1868,10 +1868,17 @@
         );
         const localIndex=Math.floor(i/spawns.length);
         const angle=(localIndex*2.399963229728653)+(rng()-.5)*.2;
-        const spread=Math.sqrt(localIndex+1)*Math.min(r*1.35,16);
+        const burstSpawn=spawn.type==="BURST_SPAWN";
+        const spread=burstSpawn
+          ? Math.min(
+              22,
+              Math.sqrt((localIndex%9)+1)*r*.55
+            )
+          : Math.sqrt(localIndex+1)*Math.min(r*1.35,16);
+        const spreadYScale=burstSpawn ? .45 : 1;
         let vx=(rng()-.5)*35;
         let vy=(rng()-.5)*8;
-        if(spawn.type==="BURST_SPAWN"){
+        if(burstSpawn){
           const jitter=(rng()*2-1)*finiteOr(spawn.properties?.burstSpreadDegrees,24);
           const direction=degToRad(finiteOr(spawn.properties?.burstDirectionDegrees,-90)+jitter);
           const variance=finiteOr(spawn.properties?.burstPowerVariance,.22);
@@ -1883,7 +1890,7 @@
         this.marbles.push({
           id:"m"+(i+1),
           x:spawn.x+Math.cos(angle)*spread,
-          y:spawn.y+Math.sin(angle)*spread,
+          y:spawn.y+Math.sin(angle)*spread*spreadYScale,
           vx,
           vy,
           radius:r,
@@ -2034,18 +2041,63 @@
       }
     }
 
+    collisionStepSeconds(remaining){
+      let maxSpeed=0;
+      let minRadius=Infinity;
+      for(const marble of this.marbles){
+        if(marble.finished||marble.eliminated||marble.dnf) continue;
+        maxSpeed=Math.max(
+          maxSpeed,
+          Math.hypot(marble.vx,marble.vy)
+        );
+        minRadius=Math.min(
+          minRadius,
+          Math.max(1,finiteOr(marble.radius,11))
+        );
+      }
+      if(maxSpeed<1e-6||!Number.isFinite(minRadius)){
+        return remaining;
+      }
+      const maxTravel=clamp(minRadius*.75,4,12);
+      return Math.min(
+        remaining,
+        Math.max(
+          1/2400,
+          maxTravel/maxSpeed
+        )
+      );
+    }
+
     step(dt){
+      let remaining=Math.max(0,finiteOr(dt,0));
+      let guard=0;
+      while(remaining>1e-9&&guard<24){
+        const subDt=this.collisionStepSeconds(remaining);
+        this.stepPhysics(subDt);
+        remaining-=subDt;
+        guard+=1;
+      }
+      if(remaining>1e-9){
+        this.stepPhysics(remaining);
+      }
+    }
+
+    stepPhysics(dt){
       const world=this.definition.world;
       const gravityScale=80;
       this.time+=dt;
       this.updateRotationStates(dt);
+      const damping=Math.pow(
+        .9995,
+        dt/this.fixedDt
+      );
 
       for(const m of this.marbles){
         if(m.finished||m.eliminated||m.dnf) continue;
         m.vx+=world.gravityX*gravityScale*dt;
         m.vy+=world.gravityY*gravityScale*dt;
-        m.vx*=0.9995;
-        m.vy*=0.9995;
+        m.vx*=damping;
+        m.vy*=damping;
         m.x+=m.vx*dt;
         m.y+=m.vy*dt;
 
