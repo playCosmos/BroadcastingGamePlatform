@@ -1271,13 +1271,10 @@
       warnRange(prefix,p,"friction",0,.5,"마찰");
       warnRange(prefix,p,"angularSpeed",-720,720,"회전 속도");
       warnRange(prefix,p,"period",.25,30,"주기");
-      warnRange(prefix,p,"amplitude",0,120,"진폭");
-      warnRange(prefix,p,"openAngle",0,160,"열림 각도");
       warnRange(prefix,p,"pivotRatio",-.5,.5,"피벗 위치");
       warnRange(prefix,p,"jointFriction",0,50,"관절 마찰");
       warnRange(prefix,p,"motorSpeed",-720,720,"모터 속도");
       warnRange(prefix,p,"motorTorque",0,200,"모터 토크");
-      warnRange(prefix,p,"burstSpreadDegrees",0,90,"버스트 분산");
       warnRange(prefix,p,"burstPowerVariance",0,.75,"버스트 세기 편차");
       warnRange(prefix,p,"burstIntervalMs",0,5000,"버스트 간격");
       warnRange(prefix,p,"beltSpeed",-1200,1200,"벨트 속도");
