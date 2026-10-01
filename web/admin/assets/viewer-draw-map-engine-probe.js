@@ -763,6 +763,71 @@ requireCondition(
   "map without finish must fail validation"
 );
 
+const parabolaCurve = Engine.createPreset(
+  "CURVE_PARABOLA",
+  300,
+  300
+);
+const circularArc = Engine.createPreset(
+  "CIRCULAR_ARC",
+  300,
+  300
+);
+requireCondition(
+  parabolaCurve.type === "CURVE_WALL"
+    && circularArc.type === "CURVE_WALL"
+    && parabolaCurve.properties.curveMode === "PARABOLA"
+    && circularArc.properties.curveMode === "CIRCULAR_ARC",
+  "curve presets must share CURVE_WALL and differ by curveMode"
+);
+const arcShapes = Engine.componentShapes(circularArc, 0);
+requireCondition(
+  arcShapes.length === circularArc.properties.segments,
+  "circular arc must resolve to segmented collision geometry"
+);
+const arcWidth = circularArc.width;
+const arcHeight = circularArc.height;
+const arcRadius =
+  arcWidth * arcWidth / (8 * arcHeight) + arcHeight / 2;
+const arcCenter = {
+  x: circularArc.x,
+  y: circularArc.y + arcRadius - arcHeight / 2
+};
+for (const shape of arcShapes) {
+  const angle = shape.rotation * Math.PI / 180;
+  const dx = Math.cos(angle) * shape.width / 2;
+  const dy = Math.sin(angle) * shape.width / 2;
+  for (const point of [
+    { x: shape.x - dx, y: shape.y - dy },
+    { x: shape.x + dx, y: shape.y + dy }
+  ]) {
+    requireCondition(
+      Math.abs(
+        Math.hypot(
+          point.x - arcCenter.x,
+          point.y - arcCenter.y
+        ) - arcRadius
+      ) < 0.001,
+      "circular arc collision endpoints must lie on one circle"
+    );
+  }
+}
+const oldCurveDefinition = structuredClone(definition);
+oldCurveDefinition.components.splice(
+  1,
+  0,
+  {
+    ...Engine.componentDefaults("CURVE_WALL", 300, 300),
+    properties: { thickness: 18, segments: 16 }
+  }
+);
+const migratedOldCurve = Engine.migrateDefinition(oldCurveDefinition)
+  .components.find((component) => component.type === "CURVE_WALL");
+requireCondition(
+  migratedOldCurve?.properties.curveMode === "PARABOLA",
+  "existing CURVE_WALL maps must migrate as parabola"
+);
+
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
