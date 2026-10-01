@@ -65,7 +65,6 @@ const goldbergTypes = [
   "PENDULUM",
   "SEESAW",
   "HINGE",
-  "GEAR",
   "PADDLE",
   "CONVEYOR",
   "ELEVATOR",
@@ -160,36 +159,67 @@ requireCondition(
     ).length >= 4,
   "legacy obstacles must migrate to current wall/circle colliders"
 );
-requireCondition(
-  Engine.componentShapes(
-    Engine.componentDefaults("GEAR", 300, 300),
-    0
-  ).length === 2,
-  "gear rotor must expand to crossed collision bars"
+const multiBladeRotator = Engine.componentDefaults(
+  "ROTATOR",
+  300,
+  300
 );
-const gear = Engine.componentDefaults("GEAR", 300, 300);
+multiBladeRotator.properties.bladeCount = 4;
 requireCondition(
-  Engine.motionRotation(gear, 1)
-    !== Engine.motionRotation(gear, 0),
-  "gear preview rotation must advance with simulation time"
+  Engine.componentShapes(multiBladeRotator, 0).length === 4,
+  "rotator bladeCount must resolve to four collision blades"
+);
+const invalidBladeRotator = structuredClone(multiBladeRotator);
+invalidBladeRotator.properties.bladeCount = 5;
+requireCondition(
+  Engine.validateDefinition({
+    ...structuredClone(definition),
+    components: [
+      definition.components[0],
+      invalidBladeRotator,
+      definition.components[1]
+    ]
+  }).length > 0,
+  "rotator bladeCount above four must fail validation"
 );
 
-const linkedGear = Engine.componentDefaults("GEAR", 250, 300);
-linkedGear.id = "gear-linked";
-const linkedHinge = Engine.componentDefaults("HINGE", 500, 300);
-linkedHinge.id = "hinge-target";
-linkedGear.properties.linkedComponentId = linkedHinge.id;
-linkedGear.properties.gearRatio = -1.5;
-const linkedDefinition = structuredClone(definition);
-linkedDefinition.components.splice(
-  1,
-  0,
-  linkedGear,
-  linkedHinge
+const legacyGearDefinition = {
+  schemaVersion: Engine.LEGACY_SCHEMA_VERSION,
+  name: "Legacy Gear Migration Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  components: [
+    { ...Engine.componentDefaults("SPAWN", 100, 80) },
+    {
+      id: "legacy-gear",
+      type: "GEAR",
+      x: 300,
+      y: 300,
+      rotation: 0,
+      width: 170,
+      height: 18,
+      radius: 0,
+      properties: {
+        restitution: .4,
+        friction: .06,
+        motorSpeed: 120,
+        motorTorque: 35,
+        linkedComponentId: "",
+        gearRatio: -1
+      }
+    },
+    { ...Engine.componentDefaults("FINISH", 400, 540) }
+  ]
+};
+const migratedGearDefinition =
+  Engine.migrateDefinition(legacyGearDefinition);
+const migratedGear = migratedGearDefinition.components.find(
+  (component) => component.id === "legacy-gear"
 );
 requireCondition(
-  Engine.validateDefinition(linkedDefinition).length === 0,
-  "linked gear map contract must validate"
+  migratedGear?.type === "ROTATOR"
+    && migratedGear.properties.bladeCount === 2
+    && migratedGear.properties.angularSpeed === 120,
+  "legacy GEAR must migrate to two-blade ROTATOR"
 );
 
 const outputDefinition = {
