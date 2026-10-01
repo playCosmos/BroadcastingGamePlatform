@@ -434,30 +434,27 @@
         burstIntervalMs:90
       }};
       case "FINISH": return {...base,width:260,height:56,properties:{sensorTag:""}};
-      case "GATE": return {...base,width:180,height:16,properties:colliderProperties(
-        {pivotRatio:-.5,openAngle:78,period:3.6,phase:0},
-        {restitution:.35,friction:.05}
-      )};
-      case "ROTATOR": return {...base,width:190,height:16,properties:colliderProperties(
-        {pivotRatio:0,angularSpeed:90,bladeCount:1},
-        {restitution:.42,friction:.04}
-      )};
-      case "PENDULUM": return {...base,width:18,height:190,properties:colliderProperties(
-        {pivotRatio:-.5,amplitude:42,period:3.2,phase:0},
-        {restitution:.4,friction:.05}
-      )};
-      case "SEESAW": return {...base,width:230,height:16,properties:colliderProperties(
-        {pivotRatio:0,amplitude:14,period:4,phase:0},
-        {restitution:.34,friction:.08}
-      )};
-      case "HINGE": return {...base,width:220,height:16,properties:colliderProperties(
-        {pivotRatio:-.48,lowerAngle:-70,upperAngle:70,jointFriction:.15},
-        {restitution:.34,friction:.08}
-      )};
-      case "PADDLE": return {...base,width:180,height:18,properties:colliderProperties(
-        {pivotRatio:-.48,motorSpeed:180,motorTorque:30},
-        {restitution:.45,friction:.06}
-      )};
+      case "ROTATIONAL_BODY": return {
+        ...base,
+        width:190,
+        height:16,
+        properties:colliderProperties(
+          {
+            rotationPreset:"ROTATOR",
+            rotationMode:"FORCE_CONTINUOUS",
+            pivotRatio:0,
+            angularSpeed:90,
+            startAngle:-30,
+            endAngle:30,
+            period:3.2,
+            phase:0,
+            motorTorque:30,
+            jointFriction:.15,
+            bladeCount:1
+          },
+          {restitution:.42,friction:.04}
+        )
+      };
       case "CONVEYOR": return {...base,width:280,height:28,properties:colliderProperties(
         {beltSpeed:160,beltGrip:.22},
         {restitution:.12,friction:.45}
@@ -529,11 +526,195 @@
       );
       return c;
     }
+
+    const rotationPresets={
+      ROTATOR:{
+        width:190,height:16,
+        restitution:.42,friction:.04,
+        visualFill:"#875b2f",visualStroke:"#f0b36a",
+        props:{
+          rotationMode:"FORCE_CONTINUOUS",
+          pivotRatio:0,angularSpeed:90,
+          startAngle:-30,endAngle:30,period:3.2,
+          motorTorque:30,jointFriction:.15,bladeCount:1
+        }
+      },
+      GATE:{
+        width:180,height:16,
+        restitution:.35,friction:.05,
+        visualFill:"#6d4e9a",visualStroke:"#b995ee",
+        props:{
+          rotationMode:"FORCE_OSCILLATE",
+          pivotRatio:-.5,angularSpeed:90,
+          startAngle:0,endAngle:78,period:3.6,
+          motorTorque:30,jointFriction:.15,bladeCount:1
+        }
+      },
+      PENDULUM:{
+        width:18,height:190,
+        restitution:.4,friction:.05,
+        visualFill:"#496b8f",visualStroke:"#82b6e9",
+        props:{
+          rotationMode:"FORCE_OSCILLATE",
+          pivotRatio:-.5,angularSpeed:90,
+          startAngle:-42,endAngle:42,period:3.2,
+          motorTorque:30,jointFriction:.15,bladeCount:1
+        }
+      },
+      SEESAW:{
+        width:230,height:16,
+        restitution:.34,friction:.08,
+        visualFill:"#6b6650",visualStroke:"#c5bb86",
+        props:{
+          rotationMode:"FORCE_OSCILLATE",
+          pivotRatio:0,angularSpeed:90,
+          startAngle:-14,endAngle:14,period:4,
+          motorTorque:30,jointFriction:.15,bladeCount:1
+        }
+      },
+      HINGE:{
+        width:220,height:16,
+        restitution:.34,friction:.08,
+        visualFill:"#47605b",visualStroke:"#8fc5b7",
+        props:{
+          rotationMode:"FREE",
+          pivotRatio:-.48,angularSpeed:0,
+          startAngle:-70,endAngle:70,period:3.2,
+          motorTorque:0,jointFriction:.15,bladeCount:1
+        }
+      },
+      PADDLE:{
+        width:180,height:18,
+        restitution:.45,friction:.06,
+        visualFill:"#7a4936",visualStroke:"#e8996f",
+        props:{
+          rotationMode:"TORQUE_CONTINUOUS",
+          pivotRatio:-.48,angularSpeed:180,
+          startAngle:-70,endAngle:70,period:3.2,
+          motorTorque:30,jointFriction:.05,bladeCount:1
+        }
+      }
+    };
+    if(rotationPresets[preset]){
+      const cfg=rotationPresets[preset];
+      const c=componentDefaults("ROTATIONAL_BODY",x,y);
+      c.width=cfg.width;
+      c.height=cfg.height;
+      c.properties=colliderProperties(
+        {
+          ...cfg.props,
+          rotationPreset:preset,
+          visualFill:cfg.visualFill,
+          visualStroke:cfg.visualStroke
+        },
+        {restitution:cfg.restitution,friction:cfg.friction}
+      );
+      c.properties.restitution=cfg.restitution;
+      c.properties.friction=cfg.friction;
+      return c;
+    }
+
     return componentDefaults(preset,x,y);
   }
 
   function migratedColliderProperties(properties,defaults={}){
     return colliderProperties({...properties},defaults);
+  }
+
+  function migrateRotationComponent(component){
+    const c=structuredClone(component);
+    const p=c.properties||{};
+    const sourceType=String(c.type||"").toUpperCase();
+    const common={...p,rotationPreset:sourceType};
+    let behavior=null;
+
+    if(sourceType==="ROTATOR"){
+      behavior={
+        rotationMode:"FORCE_CONTINUOUS",
+        pivotRatio:finiteOr(p.pivotRatio,0),
+        angularSpeed:finiteOr(p.angularSpeed,90),
+        startAngle:finiteOr(p.startAngle,-30),
+        endAngle:finiteOr(p.endAngle,30),
+        period:finiteOr(p.period,3.2),
+        motorTorque:finiteOr(p.motorTorque,30),
+        jointFriction:finiteOr(p.jointFriction,.15),
+        bladeCount:Math.max(1,Math.min(4,Math.trunc(finiteOr(p.bladeCount,1))))
+      };
+    }else if(sourceType==="GATE"){
+      behavior={
+        rotationMode:"FORCE_OSCILLATE",
+        pivotRatio:finiteOr(p.pivotRatio,-.5),
+        angularSpeed:finiteOr(p.angularSpeed,90),
+        startAngle:0,
+        endAngle:finiteOr(p.openAngle,78),
+        period:finiteOr(p.period,3.6),
+        motorTorque:finiteOr(p.motorTorque,30),
+        jointFriction:finiteOr(p.jointFriction,.15),
+        bladeCount:1
+      };
+    }else if(sourceType==="PENDULUM"){
+      const amplitude=finiteOr(p.amplitude,42);
+      behavior={
+        rotationMode:"FORCE_OSCILLATE",
+        pivotRatio:finiteOr(p.pivotRatio,-.5),
+        angularSpeed:finiteOr(p.angularSpeed,90),
+        startAngle:-amplitude,
+        endAngle:amplitude,
+        period:finiteOr(p.period,3.2),
+        motorTorque:finiteOr(p.motorTorque,30),
+        jointFriction:finiteOr(p.jointFriction,.15),
+        bladeCount:1
+      };
+    }else if(sourceType==="SEESAW"){
+      const amplitude=finiteOr(p.amplitude,14);
+      behavior={
+        rotationMode:"FORCE_OSCILLATE",
+        pivotRatio:finiteOr(p.pivotRatio,0),
+        angularSpeed:finiteOr(p.angularSpeed,90),
+        startAngle:-amplitude,
+        endAngle:amplitude,
+        period:finiteOr(p.period,4),
+        motorTorque:finiteOr(p.motorTorque,30),
+        jointFriction:finiteOr(p.jointFriction,.15),
+        bladeCount:1
+      };
+    }else if(sourceType==="HINGE"){
+      behavior={
+        rotationMode:"FREE",
+        pivotRatio:finiteOr(p.pivotRatio,-.48),
+        angularSpeed:0,
+        startAngle:finiteOr(p.lowerAngle,-70),
+        endAngle:finiteOr(p.upperAngle,70),
+        period:finiteOr(p.period,3.2),
+        motorTorque:0,
+        jointFriction:finiteOr(p.jointFriction,.15),
+        bladeCount:1
+      };
+    }else if(sourceType==="PADDLE"){
+      behavior={
+        rotationMode:"TORQUE_CONTINUOUS",
+        pivotRatio:finiteOr(p.pivotRatio,-.48),
+        angularSpeed:finiteOr(p.motorSpeed,180),
+        startAngle:finiteOr(p.lowerAngle,-70),
+        endAngle:finiteOr(p.upperAngle,70),
+        period:finiteOr(p.period,3.2),
+        motorTorque:finiteOr(p.motorTorque,30),
+        jointFriction:finiteOr(p.jointFriction,.05),
+        bladeCount:1
+      };
+    }
+    if(!behavior) return c;
+
+    const {
+      openAngle,amplitude,lowerAngle,upperAngle,motorSpeed,
+      ...remaining
+    }=common;
+    c.type="ROTATIONAL_BODY";
+    c.properties=migratedColliderProperties({
+      ...remaining,
+      ...behavior
+    });
+    return c;
   }
 
   function migrateDefinition(input){
@@ -617,18 +798,34 @@
           gearRatio,
           ...remaining
         }=c.properties;
-        c.type="ROTATOR";
+        c.type="ROTATIONAL_BODY";
         c.width=finiteOr(c.width,170);
         c.height=finiteOr(c.height,18);
         c.properties=migratedColliderProperties(
           {
             ...remaining,
+            rotationPreset:"ROTATOR",
+            rotationMode:"FORCE_CONTINUOUS",
+            pivotRatio:0,
             angularSpeed:finiteOr(motorSpeed,120),
+            startAngle:-30,
+            endAngle:30,
+            period:3.2,
+            motorTorque:finiteOr(motorTorque,35),
+            jointFriction:.15,
             bladeCount:2
           },
           {restitution:.4,friction:.06}
         );
         migrated.push(c);
+        continue;
+      }
+
+      if(
+        ["GATE","ROTATOR","PENDULUM","SEESAW","HINGE","PADDLE"]
+          .includes(c.type)
+      ){
+        migrated.push(migrateRotationComponent(c));
         continue;
       }
 
@@ -848,11 +1045,11 @@
         styled({...componentDefaults("WALL",840,735),width:245,height:15,rotation:-62},"#375b83","#7fb6e5"),
 
         // Flipper-like moving bars.
-        styled({...componentDefaults("SEESAW",420,805),width:185,height:24,rotation:-18,properties:{
+        styled({...createPreset("SEESAW",420,805),width:185,height:24,rotation:-18,properties:{
           restitution:.68,friction:.045,amplitude:12,period:2.3,phase:0,
           soundMaterial:"rubber",instrument:"click",audioNote:55,audioGain:.82,audioPan:-.3
         }},"#6941a9","#c49cff"),
-        styled({...componentDefaults("SEESAW",670,805),width:185,height:24,rotation:18,properties:{
+        styled({...createPreset("SEESAW",670,805),width:185,height:24,rotation:18,properties:{
           restitution:.68,friction:.045,amplitude:12,period:2.3,phase:.5,
           soundMaterial:"rubber",instrument:"click",audioNote:55,audioGain:.82,audioPan:.25
         }},"#6941a9","#c49cff"),
