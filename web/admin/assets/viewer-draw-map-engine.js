@@ -21,6 +21,39 @@
     "CIRCLE"
   ]);
 
+  const DEFAULT_VISUAL_STYLE = Object.freeze({
+    WALL:["#6f7c87","#a6b0b8"],
+    CURVE_WALL:["#566d7a","#a8d4e8"],
+    CIRCLE:["#d0d6db","#f5f7f8"],
+    GATE:["#6d4e9a","#b995ee"],
+    ROTATOR:["#875b2f","#f0b36a"],
+    PENDULUM:["#496b8f","#82b6e9"],
+    SEESAW:["#6b6650","#c5bb86"],
+    HINGE:["#47605b","#8fc5b7"],
+    PADDLE:["#7a4936","#e8996f"],
+    CONVEYOR:["#47565f","#8fc6df"],
+    ELEVATOR:["#3f586d","#84a8c6"],
+    OUTPUT:["#3f744c","#8bd3a1"],
+    SLOT:["#73503e","#dda57e"],
+    ELIMINATION:["#713d50","#df789d"],
+    SPAWN:["#216e8f","#62c3e7"],
+    BURST_SPAWN:["#784878","#e092df"],
+    FINISH:["#367c4d","#74d191"]
+  });
+
+  function defaultVisualStyle(type){
+    const pair=DEFAULT_VISUAL_STYLE[type]||["#59636c","#aab2b8"];
+    return {fill:pair[0],stroke:pair[1]};
+  }
+
+  function componentVisualStyle(component){
+    const defaults=defaultVisualStyle(component?.type);
+    return {
+      fill:String(component?.properties?.visualFill||defaults.fill),
+      stroke:String(component?.properties?.visualStroke||defaults.stroke)
+    };
+  }
+
   const clamp = (v,min,max) => Math.max(min,Math.min(max,v));
   const degToRad = (deg) => deg * Math.PI / 180;
   const finiteOr = (value, fallback) => {
@@ -39,7 +72,7 @@
       overrides.friction,
       finiteOr(defaults.friction,.05)
     ),
-    boost:Math.max(0,finiteOr(overrides.boost,0)),
+    boost:finiteOr(overrides.boost,0),
     ...overrides
   });
   const isCollider = (component) =>
@@ -1790,6 +1823,8 @@
     migrateDefinition,
     isCollider,
     isRectCollider,
+    defaultVisualStyle,
+    componentVisualStyle,
     defaultDefinition,
     emptyDefinition,
     validateDefinition,
