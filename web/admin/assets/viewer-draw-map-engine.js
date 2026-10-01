@@ -1141,7 +1141,7 @@
       }else if(rotation<-360||rotation>360){
         errors.push("회전각은 -360~360° 범위여야 합니다.");
       }
-      if(["WALL","CURVE_WALL","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","HINGE","PADDLE","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
+      if(["WALL","CURVE_WALL","FINISH","ROTATIONAL_BODY","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)){
           errors.push("사각형 컴포넌트 크기는 유한 숫자여야 합니다.");
@@ -1166,8 +1166,19 @@
         if(friction<0) errors.push("마찰은 0 이상이어야 합니다.");
         if(boost<0) errors.push("Boost는 0 이상이어야 합니다.");
       }
-      if(c?.type==="ROTATOR"){
+      if(c?.type==="ROTATIONAL_BODY"){
+        const mode=rotationMode(c);
         const bladeCount=Number(p.bladeCount ?? 1);
+        const pivotRatio=Number(p.pivotRatio ?? 0);
+        const startAngle=Number(p.startAngle ?? -30);
+        const endAngle=Number(p.endAngle ?? 30);
+        const period=Number(p.period ?? 3.2);
+        const torque=Number(p.motorTorque ?? 30);
+        const frictionValue=Number(p.jointFriction ?? .15);
+
+        if(!ROTATION_MODES.has(mode)){
+          errors.push("회전 방식이 유효하지 않습니다.");
+        }
         if(
           !Number.isInteger(bladeCount)
           || bladeCount<1
@@ -1175,38 +1186,49 @@
         ){
           errors.push("회전판 수는 1~4 정수여야 합니다.");
         }
-      }
-      const signedAngles=[
-        ["lowerAngle","최소 각도"],
-        ["upperAngle","최대 각도"],
-        ["burstDirectionDegrees","버스트 방향"],
-        ["axisAngle","이동 방향"]
-      ];
-      for(const [key,label] of signedAngles){
-        if(p[key]===undefined) continue;
-        const value=Number(p[key]);
-        if(!Number.isFinite(value)||value<-360||value>360){
-          errors.push(label+"은 -360~360° 범위여야 합니다.");
+        if(!Number.isFinite(pivotRatio)){
+          errors.push("피벗 위치는 유한 숫자여야 합니다.");
+        }
+        if(
+          !Number.isFinite(startAngle)
+          || !Number.isFinite(endAngle)
+          || startAngle<-360 || startAngle>360
+          || endAngle<-360 || endAngle>360
+        ){
+          errors.push("회전 시작/종료 각도는 -360~360° 범위여야 합니다.");
+        }
+        if(!Number.isFinite(period)||period<0){
+          errors.push("회전 주기는 0 이상이어야 합니다.");
+        }
+        if(!Number.isFinite(torque)||torque<0){
+          errors.push("회전 토크는 0 이상이어야 합니다.");
+        }
+        if(!Number.isFinite(frictionValue)||frictionValue<0){
+          errors.push("관절 마찰은 0 이상이어야 합니다.");
         }
       }
-      const magnitudeAngles=[
-        ["amplitude","진폭"],
-        ["openAngle","열림 각도"],
-        ["burstSpreadDegrees","버스트 분산"]
-      ];
-      for(const [key,label] of magnitudeAngles){
-        if(p[key]===undefined) continue;
-        const value=Number(p[key]);
+
+      if(p.burstDirectionDegrees!==undefined){
+        const value=Number(p.burstDirectionDegrees);
+        if(!Number.isFinite(value)||value<-360||value>360){
+          errors.push("버스트 방향은 -360~360° 범위여야 합니다.");
+        }
+      }
+      if(p.axisAngle!==undefined){
+        const value=Number(p.axisAngle);
+        if(!Number.isFinite(value)||value<-360||value>360){
+          errors.push("이동 방향은 -360~360° 범위여야 합니다.");
+        }
+      }
+      if(p.burstSpreadDegrees!==undefined){
+        const value=Number(p.burstSpreadDegrees);
         if(!Number.isFinite(value)||value<0||value>360){
-          errors.push(label+"은 0~360° 범위여야 합니다.");
+          errors.push("버스트 분산은 0~360° 범위여야 합니다.");
         }
       }
       const nonNegativeProperties=[
         ["thickness","두께"],
         ["marbleRadius","구슬 반지름"],
-        ["period","주기"],
-        ["jointFriction","관절 마찰"],
-        ["motorTorque","모터 토크"],
         ["burstPower","버스트 세기"],
         ["burstPowerVariance","버스트 세기 편차"],
         ["beltGrip","벨트 마찰 전달값"]
@@ -1506,12 +1528,13 @@
       }
       warnRange(prefix,p,"restitution",0,1.4,"탄성");
       warnRange(prefix,p,"friction",0,.5,"마찰");
-      warnRange(prefix,p,"angularSpeed",-720,720,"회전 속도");
-      warnRange(prefix,p,"period",.25,30,"주기");
-      warnRange(prefix,p,"pivotRatio",-.5,.5,"피벗 위치");
-      warnRange(prefix,p,"jointFriction",0,50,"관절 마찰");
-      warnRange(prefix,p,"motorSpeed",-720,720,"모터 속도");
-      warnRange(prefix,p,"motorTorque",0,200,"모터 토크");
+      if(c?.type==="ROTATIONAL_BODY"){
+        warnRange(prefix,p,"angularSpeed",-720,720,"회전 속도");
+        warnRange(prefix,p,"period",.25,30,"회전 주기");
+        warnRange(prefix,p,"pivotRatio",-1,1,"피벗 위치");
+        warnRange(prefix,p,"motorTorque",0,200,"회전 토크");
+        warnRange(prefix,p,"jointFriction",0,50,"관절 마찰");
+      }
       warnRange(prefix,p,"burstPowerVariance",0,.75,"버스트 세기 편차");
       warnRange(prefix,p,"burstIntervalMs",0,5000,"버스트 간격");
       warnRange(prefix,p,"beltSpeed",-1200,1200,"벨트 속도");
@@ -2240,6 +2263,7 @@
     componentPivotLocal,
     componentPivotWorld,
     pivotedComponentShape,
+    rotationMode,
     motionRotation,
     resolvedDrawRule,
     resolvedRunPolicy,
