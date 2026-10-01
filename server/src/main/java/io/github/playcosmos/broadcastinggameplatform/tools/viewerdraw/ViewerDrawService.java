@@ -686,22 +686,6 @@ public final class ViewerDrawService {
         requireFinite(world.height(), "world.height");
         requireFinite(world.gravityX(), "world.gravityX");
         requireFinite(world.gravityY(), "world.gravityY");
-        if (
-            world.width() < 320 || world.width() > 3840
-            || world.height() < 240 || world.height() > 2160
-        ) {
-            throw new IllegalArgumentException(
-                "world size is outside supported range"
-            );
-        }
-        if (
-            Math.abs(world.gravityX()) > 50
-            || Math.abs(world.gravityY()) > 50
-        ) {
-            throw new IllegalArgumentException(
-                "gravity must remain within -50..50"
-            );
-        }
 
         MachineDrawRule rawRule = raw.drawRule();
         String drawRuleType = rawRule == null || rawRule.type() == null
@@ -725,11 +709,6 @@ public final class ViewerDrawService {
                 "unsupported drawRule type: " + drawRuleType
             );
         }
-        if (drawRuleWinnerCount < 0 || drawRuleWinnerCount > 64) {
-            throw new IllegalArgumentException(
-                "drawRule winnerCount must be within 0..64"
-            );
-        }
 
         MachineRunPolicy rawRunPolicy = raw.runPolicy();
         double timeoutSeconds = rawRunPolicy == null
@@ -742,35 +721,9 @@ public final class ViewerDrawService {
             ? 0
             : rawRunPolicy.qualificationMaxNudges();
         requireFinite(timeoutSeconds, "runPolicy.timeoutSeconds");
-        if (timeoutSeconds < 0 || timeoutSeconds > 1800) {
-            throw new IllegalArgumentException(
-                "runPolicy timeoutSeconds must be within 0..1800"
-            );
-        }
-        if (
-            qualificationMinWinners < 0
-            || qualificationMinWinners > 64
-        ) {
-            throw new IllegalArgumentException(
-                "qualificationMinWinners must be within 0..64"
-            );
-        }
-        if (
-            qualificationMaxNudges < 0
-            || qualificationMaxNudges > 1000
-        ) {
-            throw new IllegalArgumentException(
-                "qualificationMaxNudges must be within 0..1000"
-            );
-        }
 
         List<MachineComponent> rawComponents =
             raw.components() == null ? List.of() : raw.components();
-        if (rawComponents.size() > 500) {
-            throw new IllegalArgumentException(
-                "machine map supports at most 500 components"
-            );
-        }
 
         var allowedTypes = legacySchema
             ? java.util.Set.of(
@@ -785,7 +738,7 @@ public final class ViewerDrawService {
                 "WALL", "CURVE_WALL", "CIRCLE",
                 "SPAWN", "BURST_SPAWN", "FINISH",
                 "GATE", "ROTATOR", "PENDULUM", "SEESAW",
-                "HINGE", "GEAR", "PADDLE",
+                "HINGE", "PADDLE",
                 "CONVEYOR", "ELEVATOR",
                 "OUTPUT", "SLOT", "ELIMINATION"
             );
@@ -835,68 +788,28 @@ public final class ViewerDrawService {
             requireFinite(rawComponent.height(), id + ".height");
             requireFinite(rawComponent.radius(), id + ".radius");
 
-            if (
-                rawComponent.x() < 0 || rawComponent.x() > world.width()
-                || rawComponent.y() < 0 || rawComponent.y() > world.height()
-            ) {
-                throw new IllegalArgumentException(
-                    id + " origin must remain inside world"
-                );
-            }
-
-            if (
-                (
-                    "WALL".equals(type) || "CURVE_WALL".equals(type)
-                    || "RAMP".equals(type)
-                    || "GATE".equals(type) || "ROTATOR".equals(type)
-                    || "PENDULUM".equals(type) || "SEESAW".equals(type)
-                    || "FUNNEL".equals(type) || "SPLITTER".equals(type)
-                    || "HINGE".equals(type) || "GEAR".equals(type)
-                    || "PADDLE".equals(type) || "LAUNCHER".equals(type)
-                    || "CONVEYOR".equals(type) || "ELEVATOR".equals(type)
-                    || "OUTPUT".equals(type)
-                    || "SLOT".equals(type) || "ELIMINATION".equals(type)
-                )
-                && (
-                    rawComponent.width() < 8
-                    || rawComponent.height() < 2
-                )
-            ) {
-                throw new IllegalArgumentException(
-                    id + " requires positive rectangular component dimensions"
-                );
-            }
-
-            if (
-                ("CIRCLE".equals(type)
-                    || "PEG".equals(type) || "BUMPER".equals(type)
-                    || "SPAWN".equals(type) || "BURST_SPAWN".equals(type))
-                && (
-                    rawComponent.radius() < 3
-                    || rawComponent.radius() > 120
-                )
-            ) {
-                throw new IllegalArgumentException(
-                    id + " radius must be 3..120"
-                );
-            }
-
-            if (
-                "FINISH".equals(type)
-                && (
-                    rawComponent.width() < 10
-                    || rawComponent.height() < 10
-                )
-            ) {
-                throw new IllegalArgumentException(
-                    id + " finish size must be at least 10x10"
-                );
-            }
-
             Map<String, Object> properties =
                 rawComponent.properties() == null
                     ? Map.of()
                     : rawComponent.properties();
+
+            if ("ROTATOR".equals(type)) {
+                double rawBladeCount = numberProperty(
+                    properties,
+                    "bladeCount",
+                    1
+                );
+                int bladeCount = (int) rawBladeCount;
+                if (
+                    rawBladeCount != bladeCount
+                    || bladeCount < 1
+                    || bladeCount > 4
+                ) {
+                    throw new IllegalArgumentException(
+                        id + " bladeCount must be an integer within 1..4"
+                    );
+                }
+            }
 
             if (
                 java.util.Set.of(
@@ -908,108 +821,19 @@ public final class ViewerDrawService {
                     "sensorTag",
                     ""
                 ).trim();
-                if (sensorTag.length() > 32) {
-                    throw new IllegalArgumentException(
-                        id + " sensorTag must be at most 32 characters"
-                    );
-                }
                 if (!sensorTag.isBlank()) {
                     sensorTags.add(sensorTag);
                 }
             }
 
-            if ("HINGE".equals(type) || "PADDLE".equals(type)) {
-                double pivotRatio = numberProperty(
-                    properties,
-                    "pivotRatio",
-                    "PADDLE".equals(type) ? -0.48 : 0
-                );
-                if (pivotRatio < -0.5 || pivotRatio > 0.5) {
-                    throw new IllegalArgumentException(
-                        id + " pivotRatio must be within -0.5..0.5"
-                    );
-                }
-            }
-            if ("HINGE".equals(type)) {
-                double lowerAngle = numberProperty(
-                    properties,
-                    "lowerAngle",
-                    -70
-                );
-                double upperAngle = numberProperty(
-                    properties,
-                    "upperAngle",
-                    70
-                );
-                double jointFriction = numberProperty(
-                    properties,
-                    "jointFriction",
-                    1.2
-                );
-                if (
-                    lowerAngle < -180 || upperAngle > 180
-                    || lowerAngle > upperAngle
-                ) {
-                    throw new IllegalArgumentException(
-                        id + " hinge angle limits are invalid"
-                    );
-                }
-                if (jointFriction < 0 || jointFriction > 50) {
-                    throw new IllegalArgumentException(
-                        id + " jointFriction must be within 0..50"
-                    );
-                }
-            }
-            if ("GEAR".equals(type) || "PADDLE".equals(type)) {
-                double motorSpeed = numberProperty(
-                    properties,
-                    "motorSpeed",
-                    "GEAR".equals(type) ? 120 : 180
-                );
-                double motorTorque = numberProperty(
-                    properties,
-                    "motorTorque",
-                    "GEAR".equals(type) ? 35 : 30
-                );
-                if (motorSpeed < -720 || motorSpeed > 720) {
-                    throw new IllegalArgumentException(
-                        id + " motorSpeed must be within -720..720"
-                    );
-                }
-                if (motorTorque < 0 || motorTorque > 200) {
-                    throw new IllegalArgumentException(
-                        id + " motorTorque must be within 0..200"
-                    );
-                }
-            }
             if (legacySchema && "LAUNCHER".equals(type)) {
                 double launchPower = numberProperty(
                     properties,
                     "launchPower",
                     1.2
                 );
-                if (launchPower < 0 || !Double.isFinite(launchPower)) {
-                    throw new IllegalArgumentException(
-                        id + " launchPower must be non-negative"
-                    );
-                }
             }
 
-            if (
-                java.util.Set.of(
-                    "WALL", "CURVE_WALL", "CIRCLE",
-                    "GATE", "ROTATOR", "PENDULUM", "SEESAW",
-                    "HINGE", "GEAR", "PADDLE",
-                    "CONVEYOR", "ELEVATOR"
-                ).contains(type)
-            ) {
-                double boost = numberProperty(properties, "boost", 0);
-                if (boost < 0 || !Double.isFinite(boost)) {
-                    throw new IllegalArgumentException(
-                        id + " boost must be non-negative"
-                    );
-                }
-            }
             if ("GEAR".equals(type)) {
                 String linkedComponentId = stringProperty(
                     properties,
@@ -1024,11 +848,6 @@ public final class ViewerDrawService {
                 if (id.equals(linkedComponentId)) {
                     throw new IllegalArgumentException(
                         id + " cannot link to itself"
-                    );
-                }
-                if (Math.abs(ratio) < 0.01 || Math.abs(ratio) > 20) {
-                    throw new IllegalArgumentException(
-                        id + " gearRatio absolute value must be within 0.01..20"
                     );
                 }
             }
@@ -1063,34 +882,6 @@ public final class ViewerDrawService {
                     "startDirection",
                     1
                 );
-                if (axisAngle < -360 || axisAngle > 360) {
-                    throw new IllegalArgumentException(
-                        id + " axisAngle must be within -360..360"
-                    );
-                }
-                if (
-                    travelMin < -1200 || travelMax > 1200
-                    || travelMin >= travelMax
-                ) {
-                    throw new IllegalArgumentException(
-                        id + " elevator travel range is invalid"
-                    );
-                }
-                if (motorSpeed < 1 || motorSpeed > 600) {
-                    throw new IllegalArgumentException(
-                        id + " motorSpeed must be within 1..600"
-                    );
-                }
-                if (motorForce < 0 || motorForce > 500) {
-                    throw new IllegalArgumentException(
-                        id + " motorForce must be within 0..500"
-                    );
-                }
-                if (startDirection != 1 && startDirection != -1) {
-                    throw new IllegalArgumentException(
-                        id + " startDirection must be -1 or 1"
-                    );
-                }
             }
             if ("OUTPUT".equals(type)) {
                 String outputKey = stringProperty(
@@ -1143,19 +934,14 @@ public final class ViewerDrawService {
                     "branchSetValue",
                     "ON"
                 ).trim();
-                if (outputKey.isBlank() || outputKey.length() > 32) {
+                if (outputKey.isBlank()) {
                     throw new IllegalArgumentException(
-                        id + " outputKey must be 1..32 characters"
+                        id + " outputKey is required"
                     );
                 }
                 if (!outputKeys.add(outputKey)) {
                     throw new IllegalArgumentException(
                         "outputKey must be unique"
-                    );
-                }
-                if (outputRank < 1 || outputRank > 64) {
-                    throw new IllegalArgumentException(
-                        id + " outputRank must be within 1..64"
                     );
                 }
                 if (
@@ -1167,21 +953,6 @@ public final class ViewerDrawService {
                     );
                 }
                 outputRanks.add(outputRank);
-                if (outputCapacity < 1 || outputCapacity > 64) {
-                    throw new IllegalArgumentException(
-                        id + " outputCapacity must be within 1..64"
-                    );
-                }
-                if (outputWeight <= 0 || outputWeight > 100) {
-                    throw new IllegalArgumentException(
-                        id + " outputWeight must be > 0 and <= 100"
-                    );
-                }
-                if (outputPriority < -100 || outputPriority > 100) {
-                    throw new IllegalArgumentException(
-                        id + " outputPriority must be within -100..100"
-                    );
-                }
                 if (
                     !java.util.Set.of(
                         "ALWAYS",
@@ -1195,27 +966,6 @@ public final class ViewerDrawService {
                 ) {
                     throw new IllegalArgumentException(
                         id + " conditionType is invalid"
-                    );
-                }
-                if (conditionClaims < 1 || conditionClaims > 64) {
-                    throw new IllegalArgumentException(
-                        id + " conditionClaims must be within 1..64"
-                    );
-                }
-                if (
-                    "AFTER_SECONDS".equals(conditionType)
-                    && (conditionSeconds <= 0 || conditionSeconds > 1800)
-                ) {
-                    throw new IllegalArgumentException(
-                        id + " conditionSeconds must be > 0 and <= 1800"
-                    );
-                }
-                if (
-                    branchSetKey.length() > 32
-                    || branchSetValue.length() > 32
-                ) {
-                    throw new IllegalArgumentException(
-                        id + " branch state key/value must be <= 32 characters"
                     );
                 }
                 if (!branchSetKey.isBlank()) {
@@ -1238,19 +988,14 @@ public final class ViewerDrawService {
                     "slotCapacity",
                     1
                 );
-                if (slotKey.isBlank() || slotKey.length() > 32) {
+                if (slotKey.isBlank()) {
                     throw new IllegalArgumentException(
-                        id + " slotKey must be 1..32 characters"
+                        id + " slotKey is required"
                     );
                 }
                 if (!slotKeys.add(slotKey)) {
                     throw new IllegalArgumentException(
                         "slotKey must be unique"
-                    );
-                }
-                if (slotCapacity < 1 || slotCapacity > 64) {
-                    throw new IllegalArgumentException(
-                        id + " slotCapacity must be within 1..64"
                     );
                 }
                 totalSlotCapacity += slotCapacity;
@@ -1262,12 +1007,9 @@ public final class ViewerDrawService {
                     "eliminationKey",
                     ""
                 ).trim();
-                if (
-                    eliminationKey.isBlank()
-                    || eliminationKey.length() > 32
-                ) {
+                if (eliminationKey.isBlank()) {
                     throw new IllegalArgumentException(
-                        id + " eliminationKey must be 1..32 characters"
+                        id + " eliminationKey is required"
                     );
                 }
                 if (!eliminationKeys.add(eliminationKey)) {
@@ -1323,21 +1065,6 @@ public final class ViewerDrawService {
                     id + " instrument is invalid"
                 );
             }
-            if (audioNote < 24 || audioNote > 108) {
-                throw new IllegalArgumentException(
-                    id + " audioNote must be within 24..108"
-                );
-            }
-            if (audioGain < 0 || audioGain > 2) {
-                throw new IllegalArgumentException(
-                    id + " audioGain must be within 0..2"
-                );
-            }
-            if (audioPan < -1 || audioPan > 1) {
-                throw new IllegalArgumentException(
-                    id + " audioPan must be within -1..1"
-                );
-            }
 
             if ("SPAWN".equals(type)) spawnCount += 1;
             if ("FINISH".equals(type)) finishCount += 1;
@@ -1360,7 +1087,7 @@ public final class ViewerDrawService {
         }
 
         for (MachineComponent component : normalizedComponents) {
-            if (!"GEAR".equals(component.type())) continue;
+            if (!legacySchema || !"GEAR".equals(component.type())) continue;
             String linkedComponentId = stringProperty(
                 component.properties(),
                 "linkedComponentId",
