@@ -101,6 +101,73 @@ requireCondition(
   "pendulum motion must oscillate with simulation time"
 );
 
+const pendulumPivot = Engine.componentPivotWorld(pendulum);
+const pendulumShape = Engine.componentShapes(pendulum, 0.8)[0];
+const movedPendulumPivot = Engine.componentPivotWorld(pendulumShape);
+requireCondition(
+  Math.hypot(
+    pendulumPivot.x - movedPendulumPivot.x,
+    pendulumPivot.y - movedPendulumPivot.y
+  ) < 0.0001,
+  "pendulum pivot must remain fixed while its body center moves"
+);
+requireCondition(
+  Math.hypot(
+    pendulum.x - pendulumShape.x,
+    pendulum.y - pendulumShape.y
+  ) > 1,
+  "pendulum must orbit its pivot instead of rotating around its center"
+);
+
+const hingeDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Reactive Hinge Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 50, 50),
+      properties: { marbleRadius: 8 }
+    },
+    {
+      ...Engine.componentDefaults("HINGE", 400, 220),
+      id: "reactive-hinge",
+      properties: {
+        ...Engine.componentDefaults("HINGE", 400, 220).properties,
+        pivotRatio: -.48,
+        lowerAngle: -90,
+        upperAngle: 90,
+        jointFriction: .05
+      }
+    },
+    {
+      ...Engine.componentDefaults("FINISH", 400, 560),
+      width: 300,
+      height: 50
+    }
+  ]
+};
+const hingePreview = new Engine.PreviewEngine(
+  hingeDefinition,
+  { seed: 17 }
+);
+let hingeState = hingePreview.reset(1, 17);
+const hingeStartAngle =
+  hingeState.components.find(
+    (component) => component.id === "reactive-hinge"
+  )?.runtimeRotation ?? 0;
+for (let step = 0; step < 120; step += 1) {
+  hingePreview.step(1 / 120);
+}
+hingeState = hingePreview.snapshot();
+const hingeEndAngle =
+  hingeState.components.find(
+    (component) => component.id === "reactive-hinge"
+  )?.runtimeRotation ?? hingeStartAngle;
+requireCondition(
+  Math.abs(hingeEndAngle - hingeStartAngle) > .5,
+  "HINGE preview must react as a dynamic revolute body"
+);
+
 const pegPreset = Engine.createPreset("PEG", 300, 300);
 const bumperPreset = Engine.createPreset("BUMPER", 300, 300);
 const launchWallPreset = Engine.createPreset("LAUNCH_WALL", 300, 300);
