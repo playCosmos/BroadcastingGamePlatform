@@ -969,7 +969,7 @@
       const r = Math.abs(c.radius) * view.scale;
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
     }
-    const shapes = c.type === "ROTATIONAL_BODY"
+    const shapes = ["ROTATIONAL_BODY", "CURVE_WALL"].includes(c.type)
       ? Engine.componentShapes(c, 0)
       : [c];
     let left = Infinity;
@@ -1253,6 +1253,14 @@
     }[type] || type;
   }
 
+  function curvePresetLabel(component) {
+    if (component?.type !== "CURVE_WALL") return "";
+    return String(component.properties?.curveMode || "PARABOLA").toUpperCase()
+      === "CIRCULAR_ARC"
+        ? "Circular Arc"
+        : "포물선";
+  }
+
   function rotationPresetLabel(component) {
     if (component?.type !== "ROTATIONAL_BODY") return "";
     return {
@@ -1428,7 +1436,7 @@
       if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
-        const shapes = c.type === "ROTATIONAL_BODY"
+        const shapes = ["ROTATIONAL_BODY", "CURVE_WALL"].includes(c.type)
           ? Engine.componentShapes(c, 0)
           : [c];
         for (const shape of shapes) {
@@ -1551,8 +1559,12 @@
 
   function addComponent(type, x, y) {
     pushUndo();
-    const presetName = type === "PRESET_PEG"
-      ? "PEG"
+    const presetName = type === "PRESET_CURVE_PARABOLA"
+      ? "CURVE_PARABOLA"
+      : type === "PRESET_CIRCULAR_ARC"
+        ? "CIRCULAR_ARC"
+        : type === "PRESET_PEG"
+          ? "PEG"
       : type === "PRESET_BUMPER"
         ? "BUMPER"
         : type === "PRESET_LAUNCH_WALL"
@@ -1678,7 +1690,8 @@
       advancedSettingsVisible = false;
     }
 
-    const presetLabel = rotationPresetLabel(c);
+    const presetLabel =
+      curvePresetLabel(c) || rotationPresetLabel(c);
     $("selectedType").textContent =
       componentTypeLabel(c.type)
       + (presetLabel ? " · " + presetLabel : "")
