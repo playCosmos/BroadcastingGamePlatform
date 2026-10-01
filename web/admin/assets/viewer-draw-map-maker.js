@@ -1410,8 +1410,8 @@
     if (!c || previewRunning) return;
     const before = clone(definition);
 
-    c.x = clamp(num($("propX").value, c.x), 0, definition.world.width);
-    c.y = clamp(num($("propY").value, c.y), 0, definition.world.height);
+    c.x = num($("propX").value, c.x);
+    c.y = num($("propY").value, c.y);
     c.rotation = num($("propRotation").value, c.rotation);
     if (["WALL", "CURVE_WALL", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "HINGE", "PADDLE", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
       c.width = num($("propWidth").value, c.width);
@@ -1462,12 +1462,16 @@
       c.properties.burstDirectionDegrees = num($("propBurstDirection").value, -90);
       c.properties.burstSpreadDegrees = num($("propBurstSpread").value, 24);
       c.properties.burstPowerVariance = num($("propBurstVariance").value, .22);
-      let burstMin = clamp(Math.trunc(num($("propBurstSizeMin").value, 3)), 1, 32);
-      let burstMax = clamp(Math.trunc(num($("propBurstSizeMax").value, 7)), 1, 32);
-      if (burstMin > burstMax) [burstMin, burstMax] = [burstMax, burstMin];
-      c.properties.burstSizeMin = burstMin;
-      c.properties.burstSizeMax = burstMax;
-      c.properties.burstIntervalMs = clamp(num($("propBurstInterval").value, 90), 0, 5000);
+      c.properties.burstSizeMin = Math.trunc(
+        num($("propBurstSizeMin").value, 3)
+      );
+      c.properties.burstSizeMax = Math.trunc(
+        num($("propBurstSizeMax").value, 7)
+      );
+      c.properties.burstIntervalMs = num(
+        $("propBurstInterval").value,
+        90
+      );
     }
     if (c.type === "CONVEYOR") {
       c.properties.beltSpeed = num($("propBeltSpeed").value, 160);
@@ -1477,43 +1481,36 @@
       c.properties.axisAngle = num($("propAxisAngle").value, -90);
       const oldMin = num(c.properties.travelMin, -120);
       const oldMax = num(c.properties.travelMax, 120);
-      const midpoint = clamp((oldMin + oldMax) / 2, -1199.5, 1199.5);
-      const requestedDistance = clamp(
-        num($("propTravelDistance").value, oldMax - oldMin || 240),
-        1,
-        2400
+      const midpoint = (oldMin + oldMax) / 2;
+      const requestedDistance = num(
+        $("propTravelDistance").value,
+        oldMax - oldMin || 240
       );
-      const maxHalf = Math.min(1200 - midpoint, midpoint + 1200);
-      const half = Math.min(requestedDistance / 2, Math.max(.5, maxHalf));
+      const half = requestedDistance / 2;
       c.properties.travelMin = midpoint - half;
       c.properties.travelMax = midpoint + half;
       c.properties.motorSpeed = num($("propElevatorSpeed").value, 90);
-      c.properties.motorForce = clamp(
-        num(c.properties.motorForce, 45),
-        0,
-        500
-      );
-      c.properties.startDirection =
-        num(c.properties.startDirection, 1) < 0 ? -1 : 1;
+      c.properties.motorForce = num(c.properties.motorForce, 45);
+      c.properties.startDirection = num(c.properties.startDirection, 1);
     }
     if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)) {
-      c.properties.sensorTag = $("propSensorTag").value.trim().slice(0, 32);
+      c.properties.sensorTag = $("propSensorTag").value.trim();
     }
     if (c.type === "OUTPUT") {
       c.properties.outputKey = $("propOutputKey").value.trim() || "OUT1";
-      c.properties.outputRank = clamp(Math.trunc(num($("propOutputRank").value, 1)), 1, 64);
-      c.properties.outputCapacity = clamp(Math.trunc(num($("propOutputCapacity").value, 1)), 1, 64);
-      c.properties.outputWeight = clamp(num($("propOutputWeight").value, 1), .01, 100);
-      c.properties.outputPriority = clamp(Math.trunc(num($("propOutputPriority").value, 0)), -100, 100);
+      c.properties.outputRank = Math.trunc(num($("propOutputRank").value, 1));
+      c.properties.outputCapacity = Math.trunc(num($("propOutputCapacity").value, 1));
+      c.properties.outputWeight = num($("propOutputWeight").value, 1);
+      c.properties.outputPriority = Math.trunc(num($("propOutputPriority").value, 0));
       c.properties.conditionType = $("propConditionType").value;
       c.properties.conditionOutputKey = $("propConditionOutputKey").value || "";
-      c.properties.conditionClaims = clamp(Math.trunc(num($("propConditionClaims").value, 1)), 1, 64);
-      c.properties.conditionSeconds = clamp(num($("propConditionSeconds").value, 1), .01, 1800);
+      c.properties.conditionClaims = Math.trunc(num($("propConditionClaims").value, 1));
+      c.properties.conditionSeconds = num($("propConditionSeconds").value, 1);
       c.properties.conditionSensorTag = $("propConditionSensorTag").value || "";
-      c.properties.conditionBranchKey = $("propConditionBranchKey").value.trim().slice(0, 32);
-      c.properties.conditionBranchValue = ($("propConditionBranchValue").value.trim() || "ON").slice(0, 32);
-      c.properties.branchSetKey = $("propBranchSetKey").value.trim().slice(0, 32);
-      c.properties.branchSetValue = ($("propBranchSetValue").value.trim() || "ON").slice(0, 32);
+      c.properties.conditionBranchKey = $("propConditionBranchKey").value.trim();
+      c.properties.conditionBranchValue = ($("propConditionBranchValue").value.trim() || "ON");
+      c.properties.branchSetKey = $("propBranchSetKey").value.trim();
+      c.properties.branchSetValue = ($("propBranchSetValue").value.trim() || "ON");
       if (!["AFTER_OUTPUT_CLAIMS","AFTER_OUTPUT_FULL"].includes(c.properties.conditionType)) {
         c.properties.conditionOutputKey = "";
       }
@@ -1537,7 +1534,7 @@
     }
     if (c.type === "SLOT") {
       c.properties.slotKey = $("propSlotKey").value.trim() || "SLOT1";
-      c.properties.slotCapacity = clamp(Math.trunc(num($("propSlotCapacity").value, 1)), 1, 64);
+      c.properties.slotCapacity = Math.trunc(num($("propSlotCapacity").value, 1));
     }
     if (c.type === "ELIMINATION") {
       c.properties.eliminationKey = $("propEliminationKey").value.trim() || "OUT";
