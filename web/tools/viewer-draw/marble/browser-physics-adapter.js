@@ -383,28 +383,19 @@
         )
       );
 
-      const bladeCount = component.type === "ROTATOR"
-        ? Math.max(
-            1,
-            Math.min(
-              4,
-              Math.trunc(
-                property(component.properties, "bladeCount", 1)
-              )
-            )
-          )
-        : 1;
-      for (let index = 0; index < bladeCount; index += 1) {
-        const shape = new B.b2PolygonShape();
-        shape.SetAsBox(
-          Math.max(0.01, Math.abs(component.width) / PIXELS_PER_METER / 2),
-          Math.max(0.01, Math.abs(component.height) / PIXELS_PER_METER / 2),
-          new B.b2Vec2(0, 0),
-          (Math.PI / bladeCount) * index
-        );
-        fixtureDef.set_shape(shape);
-        body.CreateFixture(fixtureDef);
-      }
+      const shape = new B.b2PolygonShape();
+      shape.SetAsBox(
+        Math.max(
+          0.01,
+          Math.abs(component.width) / PIXELS_PER_METER / 2
+        ),
+        Math.max(
+          0.01,
+          Math.abs(component.height) / PIXELS_PER_METER / 2
+        )
+      );
+      fixtureDef.set_shape(shape);
+      body.CreateFixture(fixtureDef);
     }
 
     createRotationFixtures(body, component) {
@@ -1353,23 +1344,12 @@
         );
       }
 
-      const drivenRotation = [
-        "GATE",
-        "ROTATOR",
-        "PENDULUM",
-        "SEESAW"
-      ].includes(component.type);
       const shapes = runtimeComponent.type === "ELEVATOR"
         ? [runtimeComponent]
-        : drivenRotation
-          ? root.ViewerDrawMapEngine.componentShapes(
-              component,
-              this.time
-            )
-          : root.ViewerDrawMapEngine.componentShapes(
-              runtimeComponent,
-              this.time
-            );
+        : root.ViewerDrawMapEngine.componentShapes(
+            runtimeComponent,
+            this.time
+          );
       let best = null;
       for (const shape of shapes) {
         const contact = this.rectBoostContact(
