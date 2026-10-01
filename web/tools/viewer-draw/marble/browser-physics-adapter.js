@@ -186,7 +186,6 @@
       this.conveyors = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
-      this.gearCouplings = [];
       this.elevators = [];
       this.soundEvents = [];
       this.soundSequence = 0;
@@ -255,7 +254,6 @@
       this.conveyors = [];
       this.movingComponents = [];
       this.reactiveComponents = [];
-      this.gearCouplings = [];
       this.elevators = [];
       this.soundEvents = [];
       this.accumulator = 0;
@@ -289,7 +287,6 @@
             this.createKinematicBox(component);
             break;
           case "HINGE":
-          case "GEAR":
           case "PADDLE":
             this.createRevoluteComponent(component);
             break;
@@ -314,7 +311,6 @@
         }
       }
 
-      this.createGearCouplings();
     }
 
     createWorldBounds() {
@@ -379,22 +375,43 @@
         (component.rotation || 0) * Math.PI / 180
       );
 
-      const shape = new B.b2PolygonShape();
-      shape.SetAsBox(
-        Math.max(0.01, component.width / PIXELS_PER_METER / 2),
-        Math.max(0.01, component.height / PIXELS_PER_METER / 2)
-      );
-
       const fixtureDef = new B.b2FixtureDef();
-      fixtureDef.set_shape(shape);
       fixtureDef.set_density(1);
       fixtureDef.set_restitution(
-        clamp(property(component.properties, "restitution", 0.35), 0, 1.4)
+        Math.max(
+          0,
+          property(component.properties, "restitution", 0.35)
+        )
       );
       fixtureDef.set_friction(
-        clamp(property(component.properties, "friction", 0.05), 0, 0.5)
+        Math.max(
+          0,
+          property(component.properties, "friction", 0.05)
+        )
       );
-      body.CreateFixture(fixtureDef);
+
+      const bladeCount = component.type === "ROTATOR"
+        ? Math.max(
+            1,
+            Math.min(
+              4,
+              Math.trunc(
+                property(component.properties, "bladeCount", 1)
+              )
+            )
+          )
+        : 1;
+      for (let index = 0; index < bladeCount; index += 1) {
+        const shape = new B.b2PolygonShape();
+        shape.SetAsBox(
+          Math.max(0.01, Math.abs(component.width) / PIXELS_PER_METER / 2),
+          Math.max(0.01, Math.abs(component.height) / PIXELS_PER_METER / 2),
+          new B.b2Vec2(0, 0),
+          (Math.PI / bladeCount) * index
+        );
+        fixtureDef.set_shape(shape);
+        body.CreateFixture(fixtureDef);
+      }
     }
 
     createKinematicBox(component) {
@@ -516,18 +533,6 @@
       fixtureDef.set_shape(primary);
       body.CreateFixture(fixtureDef);
 
-      if (component.type === "GEAR") {
-        const cross = new B.b2PolygonShape();
-        cross.SetAsBox(
-          Math.max(0.01, component.width / PIXELS_PER_METER / 2),
-          Math.max(0.01, component.height / PIXELS_PER_METER / 2),
-          new B.b2Vec2(0, 0),
-          Math.PI / 2
-        );
-        fixtureDef.set_shape(cross);
-        body.CreateFixture(fixtureDef);
-      }
-
       const jointDef = new B.b2RevoluteJointDef();
       const worldAnchor = new B.b2Vec2(
         anchorX / PIXELS_PER_METER,
@@ -559,10 +564,8 @@
         jointDef.set_motorSpeed(0);
         jointDef.set_maxMotorTorque(frictionTorque);
       } else {
-        const fallbackSpeed =
-          component.type === "GEAR" ? 120 : 180;
-        const fallbackTorque =
-          component.type === "GEAR" ? 35 : 30;
+        const fallbackSpeed = 180;
+        const fallbackTorque = 30;
         jointDef.set_enableMotor(true);
         jointDef.set_motorSpeed(
           clamp(
@@ -696,53 +699,6 @@
       this.reactiveComponents.push(item);
     }
 
-    createGearCouplings() {
-      const B = this.Box2D;
-      const byId = new Map(
-        this.reactiveComponents.map((item) => [
-          item.component.id,
-          item
-        ])
-      );
-      const pairs = new Set();
-
-      for (const component of this.definition.components) {
-        if (component.type !== "GEAR") continue;
-        const linkedId = String(
-          component.properties?.linkedComponentId || ""
-        ).trim();
-        if (!linkedId) continue;
-
-        const source = byId.get(component.id);
-        const target = byId.get(linkedId);
-        if (!source || !target) continue;
-
-        const pairKey = [component.id, linkedId]
-          .sort()
-          .join("|");
-        if (pairs.has(pairKey)) continue;
-        pairs.add(pairKey);
-
-        const ratio = clamp(
-          property(component.properties, "gearRatio", -1),
-          -20,
-          20
-        );
-        const jointDef = new B.b2GearJointDef();
-        jointDef.set_joint1(source.joint);
-        jointDef.set_joint2(target.joint);
-        jointDef.set_ratio(
-          Math.abs(ratio) < 0.01 ? -1 : ratio
-        );
-        const joint = this.world.CreateJoint(jointDef);
-        this.gearCouplings.push({
-          sourceId: component.id,
-          targetId: linkedId,
-          ratio,
-          joint
-        });
-      }
-    }
 
     updateElevators() {
       for (const item of this.elevators) {
