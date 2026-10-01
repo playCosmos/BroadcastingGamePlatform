@@ -827,15 +827,14 @@
     if(!def || def.schemaVersion!==SCHEMA_VERSION) errors.push("지원하지 않는 schemaVersion입니다.");
     if(!def?.name?.trim()) errors.push("맵 이름이 필요합니다.");
     const w=Number(def?.world?.width), h=Number(def?.world?.height);
-    if(!Number.isFinite(w)||w<320||w>3840||!Number.isFinite(h)||h<240||h>2160){
-      errors.push("World 크기는 320~3840 × 240~2160 범위여야 합니다.");
+    if(!Number.isFinite(w)||!Number.isFinite(h)){
+      errors.push("World 크기는 유한 숫자여야 합니다.");
     }
     const gx=Number(def?.world?.gravityX), gy=Number(def?.world?.gravityY);
-    if(!Number.isFinite(gx)||!Number.isFinite(gy)||Math.abs(gx)>50||Math.abs(gy)>50){
-      errors.push("중력 값은 -50~50 범위여야 합니다.");
+    if(!Number.isFinite(gx)||!Number.isFinite(gy)){
+      errors.push("중력 값은 유한 숫자여야 합니다.");
     }
     const comps=Array.isArray(def?.components)?def.components:[];
-    if(comps.length>500) errors.push("컴포넌트는 최대 500개입니다.");
     const rule=resolvedDrawRule(def);
     if(![
       "RACE_FINISH",
@@ -848,22 +847,10 @@
     ].includes(rule.type)){
       errors.push("지원하지 않는 drawRule type입니다.");
     }
-    if(rule.winnerCount<0||rule.winnerCount>64){
-      errors.push("drawRule winnerCount는 0~64 범위여야 합니다.");
-    }
     const runPolicy=resolvedRunPolicy(def);
     const rawTimeout=finiteOr(def?.runPolicy?.timeoutSeconds,0);
     const rawMinWinners=Math.trunc(finiteOr(def?.runPolicy?.qualificationMinWinners,0));
     const rawMaxNudges=Math.trunc(finiteOr(def?.runPolicy?.qualificationMaxNudges,0));
-    if(rawTimeout<0||rawTimeout>1800){
-      errors.push("timeoutSeconds는 0~1800초 범위여야 합니다.");
-    }
-    if(rawMinWinners<0||rawMinWinners>64){
-      errors.push("qualificationMinWinners는 0~64 범위여야 합니다.");
-    }
-    if(rawMaxNudges<0||rawMaxNudges>1000){
-      errors.push("qualificationMaxNudges는 0~1000 범위여야 합니다.");
-    }
     const ids=new Set();
     const typeById=new Map();
     const outputKeys=new Set();
@@ -882,29 +869,24 @@
       const x=Number(c?.x),y=Number(c?.y),rotation=Number(c?.rotation);
       if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(rotation)){
         errors.push("컴포넌트 위치/회전 값은 유한 숫자여야 합니다.");
-      }else if(x<0||x>w||y<0||y>h){
-        errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
       if(["WALL","CURVE_WALL","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","HINGE","PADDLE","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
-        if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
-          errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
+        if(!Number.isFinite(cw)||!Number.isFinite(ch)){
+          errors.push("사각형/복합 컴포넌트 크기는 유한 숫자여야 합니다.");
         }
       }
       if(["CIRCLE","SPAWN","BURST_SPAWN"].includes(c?.type)){
         const radius=Number(c?.radius);
-        if(!Number.isFinite(radius)||radius<3||radius>120){
-          errors.push("원형 컴포넌트 radius는 3~120 범위여야 합니다.");
+        if(!Number.isFinite(radius)){
+          errors.push("원형 컴포넌트 radius는 유한 숫자여야 합니다.");
         }
-      }
-      if(c?.type==="FINISH"&&(Number(c?.width)<10||Number(c?.height)<10)){
-        errors.push("FINISH 크기는 최소 10×10이어야 합니다.");
       }
       const p=c?.properties||{};
       if(isCollider(c)){
         const boost=finiteOr(p.boost,0);
-        if(!Number.isFinite(boost)||boost<0){
-          errors.push("Collider boost는 0 이상의 유한 숫자여야 합니다.");
+        if(!Number.isFinite(boost)){
+          errors.push("Collider boost는 유한 숫자여야 합니다.");
         }
       }
       if(c?.type==="ROTATOR"){
@@ -919,58 +901,7 @@
       }
       if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const sensorTag=String(p.sensorTag||"").trim();
-        if(sensorTag.length>32){
-          errors.push("sensorTag는 최대 32자입니다.");
-        }
         if(sensorTag) sensorTags.add(sensorTag);
-      }
-      if(["HINGE","PADDLE"].includes(c?.type)){
-        const pivot=finiteOr(p.pivotRatio,c?.type==="PADDLE"?-.48:0);
-        if(pivot<-.5||pivot>.5) errors.push("pivotRatio는 -0.5~0.5 범위여야 합니다.");
-      }
-      if(c?.type==="HINGE"){
-        const lower=finiteOr(p.lowerAngle,-70),upper=finiteOr(p.upperAngle,70);
-        const damping=finiteOr(p.jointFriction,1.2);
-        if(lower<-180||upper>180||lower>upper) errors.push("Hinge angle limit이 유효하지 않습니다.");
-        if(damping<0||damping>50) errors.push("Hinge jointFriction은 0~50 범위여야 합니다.");
-      }
-      if(["PADDLE"].includes(c?.type)){
-        const speed=finiteOr(p.motorSpeed,c?.type==="GEAR"?120:180);
-        const torque=finiteOr(p.motorTorque,c?.type==="GEAR"?35:30);
-        if(speed<-720||speed>720) errors.push("motorSpeed는 -720~720 범위여야 합니다.");
-        if(torque<0||torque>200) errors.push("motorTorque는 0~200 범위여야 합니다.");
-      }
-      if(c?.type==="BURST_SPAWN"){
-        const power=finiteOr(p.burstPower,1.15);
-        const direction=finiteOr(p.burstDirectionDegrees,-90);
-        const spread=finiteOr(p.burstSpreadDegrees,24);
-        const variance=finiteOr(p.burstPowerVariance,.22);
-        const min=Math.trunc(finiteOr(p.burstSizeMin,3));
-        const max=Math.trunc(finiteOr(p.burstSizeMax,7));
-        const interval=finiteOr(p.burstIntervalMs,90);
-        if(!Number.isFinite(power)||power<0) errors.push("Burst Spawn power는 0 이상의 유한 숫자여야 합니다.");
-        if(direction<-360||direction>360) errors.push("Burst Spawn direction은 -360~360° 범위여야 합니다.");
-        if(spread<0||spread>90) errors.push("Burst Spawn spread는 0~90° 범위여야 합니다.");
-        if(variance<0||variance>.75) errors.push("Burst Spawn power variance는 0~0.75 범위여야 합니다.");
-        if(min<1||max>32||min>max) errors.push("Burst Spawn 묶음 크기가 유효하지 않습니다.");
-        if(interval<0||interval>5000) errors.push("Burst Spawn interval은 0~5000ms 범위여야 합니다.");
-      }
-      if(c?.type==="CONVEYOR"){
-        const speed=finiteOr(p.beltSpeed,160);
-        const grip=finiteOr(p.beltGrip,.22);
-        if(speed<-1200||speed>1200) errors.push("Conveyor beltSpeed는 -1200~1200 px/s 범위여야 합니다.");
-        if(grip<0||grip>1) errors.push("Conveyor beltGrip은 0~1 범위여야 합니다.");
-      }
-      if(c?.type==="ELEVATOR"){
-        const axis=finiteOr(p.axisAngle,-90);
-        const min=finiteOr(p.travelMin,-120),max=finiteOr(p.travelMax,120);
-        const speed=finiteOr(p.motorSpeed,90),force=finiteOr(p.motorForce,45);
-        const direction=finiteOr(p.startDirection,1);
-        if(axis<-360||axis>360) errors.push("Elevator axisAngle은 -360~360 범위여야 합니다.");
-        if(min<-1200||max>1200||min>=max) errors.push("Elevator travel 범위가 유효하지 않습니다.");
-        if(speed<1||speed>600) errors.push("Elevator motorSpeed는 1~600 px/s 범위여야 합니다.");
-        if(force<0||force>500) errors.push("Elevator motorForce는 0~500 범위여야 합니다.");
-        if(direction!==1&&direction!==-1) errors.push("Elevator startDirection은 -1 또는 1이어야 합니다.");
       }
       if(c?.type==="OUTPUT"){
         const key=String(p.outputKey||"").trim();
@@ -983,15 +914,11 @@
         const conditionSeconds=finiteOr(p.conditionSeconds,1);
         const branchSetKey=String(p.branchSetKey||"").trim();
         const branchSetValue=String(p.branchSetValue||"ON").trim();
-        if(!key||key.length>32) errors.push("Output outputKey는 1~32자여야 합니다.");
+        if(!key) errors.push("Output outputKey가 필요합니다.");
         if(outputKeys.has(key)) errors.push("Output outputKey는 고유해야 합니다.");
         outputKeys.add(key);
-        if(rank<1||rank>64) errors.push("Output outputRank는 1~64 범위여야 합니다.");
         if(rule.type==="ORDERED_OUTPUT"&&outputRanks.has(rank)) errors.push("ORDERED_OUTPUT outputRank는 고유해야 합니다.");
         outputRanks.add(rank);
-        if(capacity<1||capacity>64) errors.push("Output outputCapacity는 1~64 범위여야 합니다.");
-        if(weight<=0||weight>100) errors.push("Output outputWeight는 0 초과 100 이하이어야 합니다.");
-        if(priority<-100||priority>100) errors.push("Output outputPriority는 -100~100 범위여야 합니다.");
         if(![
           "ALWAYS",
           "AFTER_ANY_CLAIM",
@@ -1003,15 +930,6 @@
         ].includes(conditionType)){
           errors.push("Output conditionType이 유효하지 않습니다.");
         }
-        if(conditionClaims<1||conditionClaims>64){
-          errors.push("Output conditionClaims는 1~64 범위여야 합니다.");
-        }
-        if(conditionType==="AFTER_SECONDS"&&(conditionSeconds<=0||conditionSeconds>1800)){
-          errors.push("conditionSeconds는 0초 초과 1800초 이하이어야 합니다.");
-        }
-        if(branchSetKey.length>32||branchSetValue.length>32){
-          errors.push("branch state key/value는 최대 32자입니다.");
-        }
         if(branchSetKey) branchProducerKeys.add(
           branchSetKey+"\u0000"+branchSetValue
         );
@@ -1021,16 +939,15 @@
       if(c?.type==="SLOT"){
         const key=String(p.slotKey||"").trim();
         const capacity=Math.trunc(finiteOr(p.slotCapacity,1));
-        if(!key||key.length>32) errors.push("Slot slotKey는 1~32자여야 합니다.");
+        if(!key) errors.push("Slot slotKey가 필요합니다.");
         if(slotKeys.has(key)) errors.push("Slot slotKey는 고유해야 합니다.");
         slotKeys.add(key);
-        if(capacity<1||capacity>64) errors.push("Slot slotCapacity는 1~64 범위여야 합니다.");
         totalSlotCapacity+=Math.max(0,capacity);
         slot++;
       }
       if(c?.type==="ELIMINATION"){
         const key=String(p.eliminationKey||"").trim();
-        if(!key||key.length>32) errors.push("Elimination eliminationKey는 1~32자여야 합니다.");
+        if(!key) errors.push("Elimination eliminationKey가 필요합니다.");
         if(eliminationKeys.has(key)) errors.push("Elimination eliminationKey는 고유해야 합니다.");
         eliminationKeys.add(key);
         elimination++;
@@ -1047,9 +964,6 @@
       if(!["none","bell","chime","xylophone","drum","click"].includes(instrument)){
         errors.push("instrument가 유효하지 않습니다.");
       }
-      if(note<24||note>108) errors.push("audioNote는 MIDI 24~108 범위여야 합니다.");
-      if(gain<0||gain>2) errors.push("audioGain은 0~2 범위여야 합니다.");
-      if(pan<-1||pan>1) errors.push("audioPan은 -1~1 범위여야 합니다.");
 
       if(c?.type==="SPAWN"||c?.type==="BURST_SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
