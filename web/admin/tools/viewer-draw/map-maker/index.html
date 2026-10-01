@@ -260,6 +260,10 @@
         <label class="mini-field"><span>시작 각도 °</span><input id="propStartAngle" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>종료 각도 °</span><input id="propEndAngle" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>레일 두께</span><input id="propThickness" type="number" step="1" min="0"></label>
+        <label class="mini-field" title="Circular Arc 전용. 0°=오른쪽, 90°=아래쪽이며 종료각이 시작각보다 작으면 360°를 넘어 이어집니다."><span>원호 시작 °</span><input id="propArcStartAngle" type="number" step="1" min="0" max="360"></label>
+        <label class="mini-field" title="Circular Arc 전용. 시작 0°, 종료 360°는 전체 원입니다."><span>원호 종료 °</span><input id="propArcEndAngle" type="number" step="1" min="0" max="360"></label>
+        <label class="mini-field" title="포물선 전용. 왼쪽 끝을 0%, 오른쪽 끝을 100%로 보고 표시할 시작 위치를 지정합니다."><span>포물선 시작 %</span><input id="propCurveStartPercent" type="number" step="1" min="0" max="100"></label>
+        <label class="mini-field" title="포물선 전용. 예: 0~50%는 왼쪽 절반, 50~100%는 오른쪽 절반입니다."><span>포물선 종료 %</span><input id="propCurveEndPercent" type="number" step="1" min="0" max="100"></label>
         <label class="mini-field" title="0은 중심입니다. -0.5는 오브젝트의 긴 축 시작 끝점, +0.5는 반대 끝점입니다."><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" step=".01"></label>
         <label class="mini-field"><span>관절 마찰</span><input id="propJointFriction" type="number" step=".1" min="0"></label>
         <label class="mini-field"><span>회전 토크</span><input id="propMotorTorque" type="number" step="1" min="0"></label>
