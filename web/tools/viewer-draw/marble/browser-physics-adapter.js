@@ -440,10 +440,16 @@
       const fixtureDef = new B.b2FixtureDef();
       fixtureDef.set_density(1);
       fixtureDef.set_restitution(
-        clamp(property(component.properties, "restitution", 0.35), 0, 1.4)
+        Math.max(
+          0,
+          property(component.properties, "restitution", 0.35)
+        )
       );
       fixtureDef.set_friction(
-        clamp(property(component.properties, "friction", 0.05), 0, 0.5)
+        Math.max(
+          0,
+          property(component.properties, "friction", 0.05)
+        )
       );
 
       const bladeCount = component.type === "ROTATOR"
@@ -523,10 +529,10 @@
       const B = this.Box2D;
       const p = component.properties || {};
       const pivotFallback = -0.48;
-      const pivotRatio = clamp(
-        property(p, "pivotRatio", pivotFallback),
-        -0.5,
-        0.5
+      const pivotRatio = property(
+        p,
+        "pivotRatio",
+        pivotFallback
       );
       const angle = (component.rotation || 0) * Math.PI / 180;
       const localPivotX = component.width * pivotRatio;
@@ -559,10 +565,10 @@
       const fixtureDef = new B.b2FixtureDef();
       fixtureDef.set_density(1);
       fixtureDef.set_restitution(
-        clamp(property(p, "restitution", 0.38), 0, 1.4)
+        Math.max(0, property(p, "restitution", 0.38))
       );
       fixtureDef.set_friction(
-        clamp(property(p, "friction", 0.06), 0, 0.5)
+        Math.max(0, property(p, "friction", 0.06))
       );
 
       const primary = new B.b2PolygonShape();
@@ -595,10 +601,9 @@
         jointDef.set_lowerAngle(Math.min(lower, upper));
         jointDef.set_upperAngle(Math.max(lower, upper));
 
-        const frictionTorque = clamp(
-          property(p, "jointFriction", 0.15),
+        const frictionTorque = Math.max(
           0,
-          50
+          property(p, "jointFriction", 0.15)
         );
         jointDef.set_enableMotor(frictionTorque > 0);
         jointDef.set_motorSpeed(0);
@@ -608,17 +613,13 @@
         const fallbackTorque = 30;
         jointDef.set_enableMotor(true);
         jointDef.set_motorSpeed(
-          clamp(
-            property(p, "motorSpeed", fallbackSpeed),
-            -720,
-            720
-          ) * Math.PI / 180
+          property(p, "motorSpeed", fallbackSpeed)
+            * Math.PI / 180
         );
         jointDef.set_maxMotorTorque(
-          clamp(
-            property(p, "motorTorque", fallbackTorque),
+          Math.max(
             0,
-            200
+            property(p, "motorTorque", fallbackTorque)
           )
         );
       }
