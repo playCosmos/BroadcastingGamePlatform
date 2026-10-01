@@ -416,12 +416,17 @@
 
     createKinematicBox(component) {
       const B = this.Box2D;
+      const pivot =
+        root.ViewerDrawMapEngine.componentPivotWorld(component);
+      const localPivot =
+        root.ViewerDrawMapEngine.componentPivotLocal(component);
+
       const bodyDef = new B.b2BodyDef();
       bodyDef.set_type(B.b2_kinematicBody);
       bodyDef.set_position(
         new B.b2Vec2(
-          component.x / PIXELS_PER_METER,
-          component.y / PIXELS_PER_METER
+          pivot.x / PIXELS_PER_METER,
+          pivot.y / PIXELS_PER_METER
         )
       );
 
@@ -432,14 +437,7 @@
           * Math.PI / 180
       );
 
-      const shape = new B.b2PolygonShape();
-      shape.SetAsBox(
-        Math.max(0.01, component.width / PIXELS_PER_METER / 2),
-        Math.max(0.01, component.height / PIXELS_PER_METER / 2)
-      );
-
       const fixtureDef = new B.b2FixtureDef();
-      fixtureDef.set_shape(shape);
       fixtureDef.set_density(1);
       fixtureDef.set_restitution(
         clamp(property(component.properties, "restitution", 0.35), 0, 1.4)
@@ -447,11 +445,51 @@
       fixtureDef.set_friction(
         clamp(property(component.properties, "friction", 0.05), 0, 0.5)
       );
-      body.CreateFixture(fixtureDef);
+
+      const bladeCount = component.type === "ROTATOR"
+        ? Math.max(
+            1,
+            Math.min(
+              4,
+              Math.trunc(
+                property(component.properties, "bladeCount", 1)
+              )
+            )
+          )
+        : 1;
+
+      for (let index = 0; index < bladeCount; index += 1) {
+        const localAngle = (Math.PI / bladeCount) * index;
+        const cos = Math.cos(localAngle);
+        const sin = Math.sin(localAngle);
+        const centerX =
+          (-localPivot.x * cos + localPivot.y * sin)
+          / PIXELS_PER_METER;
+        const centerY =
+          (-localPivot.x * sin - localPivot.y * cos)
+          / PIXELS_PER_METER;
+
+        const shape = new B.b2PolygonShape();
+        shape.SetAsBox(
+          Math.max(
+            0.01,
+            Math.abs(component.width) / PIXELS_PER_METER / 2
+          ),
+          Math.max(
+            0.01,
+            Math.abs(component.height) / PIXELS_PER_METER / 2
+          ),
+          new B.b2Vec2(centerX, centerY),
+          localAngle
+        );
+        fixtureDef.set_shape(shape);
+        body.CreateFixture(fixtureDef);
+      }
 
       this.movingComponents.push({
         component,
-        body
+        body,
+        pivot
       });
     }
 
@@ -468,7 +506,10 @@
           time + FIXED_DT
         );
         item.body.SetTransform(
-          item.body.GetPosition(),
+          new B.b2Vec2(
+            item.pivot.x / PIXELS_PER_METER,
+            item.pivot.y / PIXELS_PER_METER
+          ),
           current * Math.PI / 180
         );
         item.body.SetLinearVelocity(new B.b2Vec2(0, 0));
@@ -481,8 +522,7 @@
     createRevoluteComponent(component) {
       const B = this.Box2D;
       const p = component.properties || {};
-      const pivotFallback =
-        component.type === "PADDLE" ? -0.48 : 0;
+      const pivotFallback = -0.48;
       const pivotRatio = clamp(
         property(p, "pivotRatio", pivotFallback),
         -0.5,
@@ -556,7 +596,7 @@
         jointDef.set_upperAngle(Math.max(lower, upper));
 
         const frictionTorque = clamp(
-          property(p, "jointFriction", 1.2),
+          property(p, "jointFriction", 0.15),
           0,
           50
         );
