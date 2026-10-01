@@ -71,7 +71,9 @@
       $("drawStatus").textContent = "목록 초기화 실패: " + error.message;
     });
   });
-  $("sendToMarble").addEventListener("click", handoffToMarble);
+  $("sendToMarble").addEventListener("click", () => {
+    void handoffToMarble();
+  });
 
   document.querySelectorAll(".mode-tab").forEach((button) => {
       button.classList.toggle("active", button.dataset.mode === mode);
@@ -264,22 +266,33 @@
     }
   }
 
-  function handoffToMarble() {
-    const sourceEntries = selectedEntries();
-    if (!sourceEntries.length) {
-      $("drawStatus").textContent = "Marble Draw로 전달할 참가자가 없습니다.";
-      return;
+  async function handoffToMarble() {
+    try {
+      if (entrySource === "CHAT_KEYWORD") {
+        chatSnapshot = await collectionAction("close");
+      }
+      const sourceEntries = selectedEntries();
+      if (!sourceEntries.length) {
+        $("drawStatus").textContent =
+          "Marble Draw로 전달할 참가자가 없습니다.";
+        return;
+      }
+      sessionStorage.setItem(
+        "viewerDraw.entrySnapshot",
+        JSON.stringify({
+          schemaVersion: "viewer-draw-entry-set/v1",
+          source: entrySource,
+          frozenAt: new Date().toISOString(),
+          entries: sourceEntries
+        })
+      );
+      $("drawStatus").textContent =
+        sourceEntries.length + "명 Freeze · Marble Draw로 이동";
+      window.location.href = "/tools/viewer-draw/marble/";
+    } catch (error) {
+      $("drawStatus").textContent =
+        "Marble 전달 실패: " + error.message;
     }
-    sessionStorage.setItem(
-      "viewerDraw.entrySnapshot",
-      JSON.stringify({
-        schemaVersion: "viewer-draw-entry-set/v1",
-        source: entrySource,
-        frozenAt: new Date().toISOString(),
-        entries: sourceEntries
-      })
-    );
-    window.location.href = "/tools/viewer-draw/marble/";
   }
 
   function updateSessionInfo(session) {
