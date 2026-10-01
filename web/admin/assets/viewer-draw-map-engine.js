@@ -6,14 +6,12 @@
   const TYPES = new Set([
     "WALL","CURVE_WALL","CIRCLE",
     "SPAWN","BURST_SPAWN","FINISH",
-    "GATE","ROTATOR","PENDULUM","SEESAW",
-    "HINGE","PADDLE",
+    "ROTATIONAL_BODY",
     "CONVEYOR","ELEVATOR",
     "OUTPUT","SLOT","ELIMINATION"
   ]);
   const RECT_COLLIDER_TYPES = new Set([
-    "WALL","GATE","ROTATOR","PENDULUM","SEESAW",
-    "HINGE","PADDLE","CONVEYOR","ELEVATOR"
+    "WALL","ROTATIONAL_BODY","CONVEYOR","ELEVATOR"
   ]);
   const COLLIDER_TYPES = new Set([
     ...RECT_COLLIDER_TYPES,
@@ -25,12 +23,7 @@
     WALL:["#6f7c87","#a6b0b8"],
     CURVE_WALL:["#566d7a","#a8d4e8"],
     CIRCLE:["#d0d6db","#f5f7f8"],
-    GATE:["#6d4e9a","#b995ee"],
-    ROTATOR:["#875b2f","#f0b36a"],
-    PENDULUM:["#496b8f","#82b6e9"],
-    SEESAW:["#6b6650","#c5bb86"],
-    HINGE:["#47605b","#8fc5b7"],
-    PADDLE:["#7a4936","#e8996f"],
+    ROTATIONAL_BODY:["#875b2f","#f0b36a"],
     CONVEYOR:["#47565f","#8fc6df"],
     ELEVATOR:["#3f586d","#84a8c6"],
     OUTPUT:["#3f744c","#8bd3a1"],
@@ -249,17 +242,25 @@
     };
   }
 
-  function defaultPivotRatio(type){
-    if(type==="GATE"||type==="PENDULUM") return -.5;
-    if(type==="HINGE"||type==="PADDLE") return -.48;
-    return 0;
+  const ROTATION_MODES = new Set([
+    "FORCE_CONTINUOUS",
+    "FORCE_OSCILLATE",
+    "TORQUE_CONTINUOUS",
+    "TORQUE_OSCILLATE",
+    "FREE"
+  ]);
+
+  function rotationMode(component){
+    const mode=String(
+      component?.properties?.rotationMode||"FORCE_CONTINUOUS"
+    ).toUpperCase();
+    return ROTATION_MODES.has(mode)
+      ? mode
+      : "FORCE_CONTINUOUS";
   }
 
   function componentPivotLocal(c){
-    const ratio=finiteOr(
-      c?.properties?.pivotRatio,
-      defaultPivotRatio(c?.type)
-    );
+    const ratio=finiteOr(c?.properties?.pivotRatio,0);
     const width=finiteOr(c?.width,0);
     const height=finiteOr(c?.height,0);
     if(Math.abs(height)>Math.abs(width)){
@@ -298,37 +299,34 @@
   }
 
   function motionRotation(c,time=0){
-    const p=c.properties||{};
-    const runtimeRotation=Number(c.runtimeRotation);
+    const runtimeRotation=Number(c?.runtimeRotation);
     if(Number.isFinite(runtimeRotation)) return runtimeRotation;
-    const base=finiteOr(c.rotation,0);
+    const base=finiteOr(c?.rotation,0);
+    if(c?.type!=="ROTATIONAL_BODY") return base;
+
+    const p=c?.properties||{};
+    const mode=rotationMode(c);
     const t=Math.max(0,finiteOr(time,0));
-    if(["ROTATOR","PADDLE"].includes(c.type)){
-      const fallback=c.type==="PADDLE" ? 180 : 90;
-      return base+finiteOr(
-        p.motorSpeed ?? p.angularSpeed,
-        fallback
-      )*t;
+
+    if(mode==="FORCE_CONTINUOUS"){
+      return base+finiteOr(p.angularSpeed,90)*t;
     }
-    const period=finiteOr(p.period,c.type==="GATE"?3.6:3.2);
-    const phase=finiteOr(p.phase,0)*Math.PI*2;
-    const wave=period===0
-      ? 0
-      : Math.sin((Math.PI*2*t/period)+phase);
-    if(c.type==="GATE"){
-      return base+finiteOr(p.openAngle,78)*(.5+.5*wave);
-    }
-    if(c.type==="PENDULUM"){
-      return base+finiteOr(p.amplitude,42)*wave;
-    }
-    if(c.type==="SEESAW"){
-      return base+finiteOr(p.amplitude,14)*wave;
+    if(mode==="FORCE_OSCILLATE"){
+      const startAngle=finiteOr(p.startAngle,-30);
+      const endAngle=finiteOr(p.endAngle,30);
+      const period=Math.max(0,finiteOr(p.period,3.2));
+      if(period===0){
+        return base+(startAngle+endAngle)/2;
+      }
+      const phase=finiteOr(p.phase,0)*Math.PI*2;
+      const wave=.5+.5*Math.sin((Math.PI*2*t/period)+phase);
+      return base+startAngle+(endAngle-startAngle)*wave;
     }
     return base;
   }
 
   function componentShapes(c,time=0){
-    if(c.type==="ROTATOR"){
+    if(c?.type==="ROTATIONAL_BODY"){
       const rotation=motionRotation(c,time);
       const bladeCount=Math.max(
         1,
@@ -345,23 +343,7 @@
         )
       );
     }
-    if(["GATE","PENDULUM","SEESAW","PADDLE"].includes(c.type)){
-      return [
-        pivotedComponentShape(
-          c,
-          motionRotation(c,time)
-        )
-      ];
-    }
-    if(c.type==="HINGE"){
-      return [
-        pivotedComponentShape(
-          c,
-          motionRotation(c,time)
-        )
-      ];
-    }
-    if(c.type==="ELEVATOR"){
+    if(c?.type==="ELEVATOR"){
       const position=elevatorPosition(c,time);
       return [{...c,...position}];
     }
