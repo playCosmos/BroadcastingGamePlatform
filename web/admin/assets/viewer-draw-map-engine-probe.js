@@ -827,6 +827,80 @@ requireCondition(
   migratedOldCurve?.properties.curveMode === "PARABOLA",
   "existing CURVE_WALL maps must migrate as parabola"
 );
+requireCondition(
+  migratedOldCurve?.properties.curveStartPercent === 0
+    && migratedOldCurve?.properties.curveEndPercent === 100,
+  "existing parabola curves must migrate to the full 0..100% range"
+);
+
+const halfParabola = Engine.createPreset(
+  "CURVE_PARABOLA",
+  300,
+  300
+);
+halfParabola.properties.curveStartPercent = 0;
+halfParabola.properties.curveEndPercent = 50;
+const halfParabolaShapes = Engine.componentShapes(halfParabola, 0);
+requireCondition(
+  halfParabolaShapes.length > 0
+    && halfParabolaShapes.every(
+      (shape) => shape.x <= halfParabola.x + 0.001
+    ),
+  "0..50% parabola trim must keep only the left half"
+);
+
+const fullArc = Engine.createPreset(
+  "CIRCULAR_ARC",
+  300,
+  300
+);
+fullArc.properties.arcStartAngle = 0;
+fullArc.properties.arcEndAngle = 360;
+const fullArcShapes = Engine.componentShapes(fullArc, 0);
+requireCondition(
+  fullArcShapes.length === fullArc.properties.segments,
+  "0..360 degree circular arc must create a full circle"
+);
+
+const wrappedHalfArc = Engine.createPreset(
+  "CIRCULAR_ARC",
+  300,
+  300
+);
+wrappedHalfArc.properties.arcStartAngle = 270;
+wrappedHalfArc.properties.arcEndAngle = 90;
+const wrappedShapes = Engine.componentShapes(wrappedHalfArc, 0);
+const firstWrapped = wrappedShapes[0];
+const lastWrapped = wrappedShapes.at(-1);
+const wrappedStart = {
+  x: firstWrapped.x - Math.cos(firstWrapped.rotation * Math.PI / 180) * firstWrapped.width / 2,
+  y: firstWrapped.y - Math.sin(firstWrapped.rotation * Math.PI / 180) * firstWrapped.width / 2
+};
+const wrappedEnd = {
+  x: lastWrapped.x + Math.cos(lastWrapped.rotation * Math.PI / 180) * lastWrapped.width / 2,
+  y: lastWrapped.y + Math.sin(lastWrapped.rotation * Math.PI / 180) * lastWrapped.width / 2
+};
+requireCondition(
+  wrappedStart.y < arcCenter.y
+    && wrappedEnd.y > arcCenter.y,
+  "270..90 degree circular arc must wrap through 360 degrees"
+);
+
+const legacyArcDefinition = structuredClone(definition);
+const legacyArc = Engine.createPreset("CIRCULAR_ARC", 300, 300);
+delete legacyArc.properties.arcStartAngle;
+delete legacyArc.properties.arcEndAngle;
+legacyArcDefinition.components.splice(1, 0, legacyArc);
+const migratedLegacyArc = Engine.migrateDefinition(legacyArcDefinition)
+  .components.find(
+    (component) => component.type === "CURVE_WALL"
+      && component.properties?.curveMode === "CIRCULAR_ARC"
+  );
+requireCondition(
+  Number.isFinite(migratedLegacyArc?.properties.arcStartAngle)
+    && Number.isFinite(migratedLegacyArc?.properties.arcEndAngle),
+  "existing circular arcs must migrate with preserved default angles"
+);
 
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
@@ -841,7 +915,9 @@ for (const source of [makerSource, localMakerSource]) {
     source.includes('mode: "marquee"')
       && source.includes("selectedIds = new Set()")
       && source.includes("drawMarqueeSelection")
-      && source.includes("selectedComponents()"),
+      && source.includes("selectedComponents()")
+      && source.includes("propArcStartAngle")
+      && source.includes("propCurveStartPercent"),
     "Map Maker must support drag multi-selection in both storage modes"
   );
 }
