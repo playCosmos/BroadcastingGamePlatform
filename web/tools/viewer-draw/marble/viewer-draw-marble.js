@@ -231,12 +231,23 @@
         continue;
       }
 
-      const key = displayName.toLocaleLowerCase();
+      const provider = String(row.dataset.provider || "").trim();
+      const userId = String(row.dataset.userId || "").trim();
+      const entryId = String(row.dataset.entryId || "").trim();
+      const key = provider && userId
+        ? provider.toUpperCase() + "\u0000" + userId
+        : displayName.toLocaleLowerCase();
       const existing = byKey.get(key);
       if (existing) {
         existing.count += count;
       } else {
-        const item = { displayName, count };
+        const item = {
+          displayName,
+          count,
+          entryId,
+          provider: provider || null,
+          userId: userId || null
+        };
         byKey.set(key, item);
         items.push(item);
       }
@@ -244,9 +255,17 @@
     return items;
   }
 
-  function addEntryRow(displayName = "", count = 1) {
+  function addEntryRow(
+    displayName = "",
+    count = 1,
+    identity = null,
+    focus = true
+  ) {
     const row = document.createElement("div");
     row.className = "entry-row";
+    if (identity?.entryId) row.dataset.entryId = identity.entryId;
+    if (identity?.provider) row.dataset.provider = identity.provider;
+    if (identity?.userId) row.dataset.userId = identity.userId;
 
     const name = document.createElement("input");
     name.className = "entry-name";
@@ -277,7 +296,129 @@
     $("entryRows").appendChild(row);
     updateEntryCount();
     refreshEntryRemoveButtons();
-    name.focus();
+    if (focus) name.focus();
+  }
+
+  function replaceEntryRows(items) {
+    $("entryRows").replaceChildren();
+    for (const item of items) {
+      addEntryRow(
+        item.displayName,
+        item.count || 1,
+        item,
+        false
+      );
+    }
+    if (!$("entryRows").childElementCount) {
+      addEntryRow("", 1, null, false);
+    }
+    updateEntryCount();
+    refreshEntryRemoveButtons();
+  }
+
+  function normalizeImportedEntry(value, index = 0) {
+    if (typeof value === "string") {
+      const displayName = value.trim();
+      return displayName
+        ? { displayName, count: 1 }
+        : null;
+    }
+    if (!value || typeof value !== "object") return null;
+    const displayName = String(
+      value.displayName ?? value.label ?? value.name ?? ""
+    ).trim();
+    if (!displayName) return null;
+    return {
+      entryId: String(value.entryId || "").trim()
+        || "import-" + (index + 1),
+      provider: String(value.provider || "").trim() || null,
+      userId: String(value.userId || "").trim() || null,
+      displayName,
+      count: Math.max(
+        1,
+        Math.trunc(Number(value.count ?? value.marbleCount ?? 1) || 1)
+      )
+    };
+  }
+
+  function parseEntrySetText(text) {
+    const source = String(text || "").trim();
+    if (!source) return [];
+
+    if (source.startsWith("[") || source.startsWith("{")) {
+      const parsed = JSON.parse(source);
+      const raw = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.entries)
+          ? parsed.entries
+          : [];
+      return raw
+        .map(normalizeImportedEntry)
+        .filter(Boolean);
+    }
+
+    return source
+      .split(/\r?\n/)
+      .map((line, index) => {
+        const trimmed = line.trim();
+        if (!trimmed) return null;
+        const parts = trimmed.includes("\t")
+          ? trimmed.split("\t")
+          : trimmed.split(",");
+        const last = parts.at(-1)?.trim() || "";
+        const numericCount = /^\d+$/.test(last)
+          ? Math.max(1, Math.trunc(Number(last)))
+          : 1;
+        const nameParts = numericCount !== 1 || /^1$/.test(last)
+          ? parts.slice(0, -1)
+          : parts;
+        const displayName = nameParts.join(",").trim();
+        return normalizeImportedEntry(
+          { displayName, count: numericCount },
+          index
+        );
+      })
+      .filter(Boolean);
+  }
+
+  function applyEntrySnapshot(snapshot) {
+    const raw = Array.isArray(snapshot)
+      ? snapshot
+      : snapshot?.entries;
+    if (!Array.isArray(raw)) return false;
+    const items = raw
+      .map(normalizeImportedEntry)
+      .filter(Boolean);
+    if (!items.length) return false;
+    replaceEntryRows(items);
+    return true;
+  }
+
+  function exportEntrySet() {
+    const items = parseEntryItems().map((item) => ({
+      entryId: item.entryId || undefined,
+      provider: item.provider || undefined,
+      userId: item.userId || undefined,
+      displayName: item.displayName,
+      count: item.count
+    }));
+    const payload = {
+      schemaVersion: "viewer-draw-entry-set/v1",
+      exportedAt: new Date().toISOString(),
+      entries: items
+    };
+    const blob = new Blob(
+      [JSON.stringify(payload, null, 2)],
+      { type: "application/json" }
+    );
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "viewer-draw-entries.json";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
   }
 
   function refreshEntryRemoveButtons() {
@@ -292,9 +433,18 @@
     const entries = [];
     parseEntryItems().forEach((item, itemIndex) => {
       for (let copyIndex = 0; copyIndex < item.count; copyIndex += 1) {
+        const sourceEntryId = item.entryId || "";
         entries.push({
-          entryId:
-            "item-" + (itemIndex + 1) + "-marble-" + (copyIndex + 1),
+          entryId: sourceEntryId
+            ? sourceEntryId
+                + (item.count > 1
+                  ? "-marble-" + (copyIndex + 1)
+                  : "")
+            : "item-" + (itemIndex + 1)
+                + "-marble-" + (copyIndex + 1),
+          provider: item.provider || null,
+          userId: item.userId || null,
+          sourceEntryId: sourceEntryId || null,
           displayName: item.displayName,
           itemIndex,
           copyIndex,
@@ -1488,6 +1638,30 @@
     };
   }
 
+  $("importEntrySet")?.addEventListener("click", () => {
+    if (!running) $("entrySetFile")?.click();
+  });
+  $("entrySetFile")?.addEventListener("change", async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || running) return;
+    try {
+      const items = parseEntrySetText(await file.text());
+      if (!items.length) {
+        throw new Error("유효한 참가자가 없습니다.");
+      }
+      replaceEntryRows(items);
+      $("drawState").textContent =
+        "READY · ENTRY SET " + items.length + " ITEMS";
+      $("winnerBanner").hidden = true;
+    } catch (error) {
+      alert("참가자 목록 불러오기 실패: " + error.message);
+    }
+  });
+  $("exportEntrySet")?.addEventListener("click", () => {
+    if (!running) exportEntrySet();
+  });
+
   $("loadMapButton").addEventListener("click", () => {
     if (!running) $("mapFile").click();
   });
@@ -1605,6 +1779,23 @@
     refreshEntryRemoveButtons();
     updateLaunchControls();
     adapter = await createPhysicsAdapter();
+
+    const handedOffEntries = sessionStorage.getItem(
+      "viewerDraw.entrySnapshot"
+    );
+    if (handedOffEntries) {
+      sessionStorage.removeItem("viewerDraw.entrySnapshot");
+      try {
+        if (!applyEntrySnapshot(JSON.parse(handedOffEntries))) {
+          throw new Error("empty entry snapshot");
+        }
+      } catch (error) {
+        console.warn(
+          "[viewer-draw] ignored invalid entry snapshot handoff",
+          error
+        );
+      }
+    }
 
     let initialDefinition = definition;
     const handedOff = sessionStorage.getItem(
