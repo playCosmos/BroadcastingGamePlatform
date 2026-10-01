@@ -249,6 +249,58 @@
     };
   }
 
+  function defaultPivotRatio(type){
+    if(type==="GATE"||type==="PENDULUM") return -.5;
+    if(type==="HINGE"||type==="PADDLE") return -.48;
+    return 0;
+  }
+
+  function componentPivotLocal(c){
+    const ratio=finiteOr(
+      c?.properties?.pivotRatio,
+      defaultPivotRatio(c?.type)
+    );
+    if(c?.type==="PENDULUM"){
+      return {
+        x:0,
+        y:finiteOr(c?.height,0)*ratio
+      };
+    }
+    return {
+      x:finiteOr(c?.width,0)*ratio,
+      y:0
+    };
+  }
+
+  function componentPivotWorld(c){
+    const local=componentPivotLocal(c);
+    const angle=degToRad(finiteOr(c?.rotation,0));
+    const co=Math.cos(angle),si=Math.sin(angle);
+    return {
+      x:finiteOr(c?.x,0)+local.x*co-local.y*si,
+      y:finiteOr(c?.y,0)+local.x*si+local.y*co
+    };
+  }
+
+  function pivotedComponentShape(c,rotation){
+    if(Number.isFinite(Number(c?.runtimeRotation))){
+      return {...c,rotation};
+    }
+    const local=componentPivotLocal(c);
+    if(Math.abs(local.x)<1e-9&&Math.abs(local.y)<1e-9){
+      return {...c,rotation};
+    }
+    const pivot=componentPivotWorld(c);
+    const angle=degToRad(rotation);
+    const co=Math.cos(angle),si=Math.sin(angle);
+    return {
+      ...c,
+      x:pivot.x-(local.x*co-local.y*si),
+      y:pivot.y-(local.x*si+local.y*co),
+      rotation
+    };
+  }
+
   function motionRotation(c,time=0){
     const p=c.properties||{};
     const runtimeRotation=Number(c.runtimeRotation);
@@ -291,17 +343,27 @@
       );
       return Array.from(
         {length:bladeCount},
-        (_,index)=>({
-          ...c,
-          rotation:rotation+(180/bladeCount)*index
-        })
+        (_,index)=>pivotedComponentShape(
+          c,
+          rotation+(180/bladeCount)*index
+        )
       );
     }
     if(["GATE","PENDULUM","SEESAW","PADDLE"].includes(c.type)){
-      return [{...c,rotation:motionRotation(c,time)}];
+      return [
+        pivotedComponentShape(
+          c,
+          motionRotation(c,time)
+        )
+      ];
     }
     if(c.type==="HINGE"){
-      return [{...c,rotation:motionRotation(c,time)}];
+      return [
+        pivotedComponentShape(
+          c,
+          motionRotation(c,time)
+        )
+      ];
     }
     if(c.type==="ELEVATOR"){
       const position=elevatorPosition(c,time);
@@ -395,23 +457,23 @@
       }};
       case "FINISH": return {...base,width:260,height:56,properties:{sensorTag:""}};
       case "GATE": return {...base,width:180,height:16,properties:colliderProperties(
-        {openAngle:78,period:3.6,phase:0},
+        {pivotRatio:-.5,openAngle:78,period:3.6,phase:0},
         {restitution:.35,friction:.05}
       )};
       case "ROTATOR": return {...base,width:190,height:16,properties:colliderProperties(
-        {angularSpeed:90,bladeCount:1},
+        {pivotRatio:0,angularSpeed:90,bladeCount:1},
         {restitution:.42,friction:.04}
       )};
       case "PENDULUM": return {...base,width:18,height:190,properties:colliderProperties(
-        {amplitude:42,period:3.2,phase:0},
+        {pivotRatio:-.5,amplitude:42,period:3.2,phase:0},
         {restitution:.4,friction:.05}
       )};
       case "SEESAW": return {...base,width:230,height:16,properties:colliderProperties(
-        {amplitude:14,period:4,phase:0},
+        {pivotRatio:0,amplitude:14,period:4,phase:0},
         {restitution:.34,friction:.08}
       )};
       case "HINGE": return {...base,width:220,height:16,properties:colliderProperties(
-        {pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2},
+        {pivotRatio:-.48,lowerAngle:-70,upperAngle:70,jointFriction:.15},
         {restitution:.34,friction:.08}
       )};
       case "PADDLE": return {...base,width:180,height:18,properties:colliderProperties(
@@ -1871,6 +1933,9 @@
     validateDefinition,
     validateWarnings,
     componentShapes,
+    componentPivotLocal,
+    componentPivotWorld,
+    pivotedComponentShape,
     motionRotation,
     resolvedDrawRule,
     resolvedRunPolicy,
