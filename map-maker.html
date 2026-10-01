@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="./web/assets/platform.css">
-  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-rotation1">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-rotation2">
 </head>
 <body data-storage-mode="local">
 <main class="shell map-maker-shell">
@@ -46,10 +46,10 @@
         </button>
         <div class="palette-flyout" role="menu">
           <p class="palette-flyout-title">WALL 프리셋</p>
-          <button class="palette-item palette-preset" data-tool="WALL" role="menuitem" data-tooltip="기본 직선 충돌체입니다. Boost 기본값은 0입니다.">
+          <button class="palette-item palette-preset" data-tool="WALL" style="--preset-fill:#6f7c87;--preset-stroke:#a6b0b8" role="menuitem" data-tooltip="기본 직선 충돌체입니다. Boost 기본값은 0입니다.">
             <span>일반 벽</span><small>기본</small>
           </button>
-          <button class="palette-item palette-preset" data-tool="PRESET_LAUNCH_WALL" role="menuitem" data-tooltip="일반 벽과 같은 WALL이며 Boost 기본값만 높습니다.">
+          <button class="palette-item palette-preset" data-tool="PRESET_LAUNCH_WALL" style="--preset-fill:#3e6675;--preset-stroke:#78bdd5" role="menuitem" data-tooltip="일반 벽과 같은 WALL이며 Boost 기본값만 높습니다.">
             <span>발사벽</span><small>Boost 프리셋</small>
           </button>
         </div>
@@ -61,7 +61,7 @@
         </button>
         <div class="palette-flyout" role="menu">
           <p class="palette-flyout-title">CURVE WALL</p>
-          <button class="palette-item palette-preset" data-tool="CURVE_WALL" role="menuitem" data-tooltip="폭과 높이로 곡률을 조절하는 곡선 충돌체입니다.">
+          <button class="palette-item palette-preset" data-tool="CURVE_WALL" style="--preset-fill:#566d7a;--preset-stroke:#a8d4e8" role="menuitem" data-tooltip="폭과 높이로 곡률을 조절하는 곡선 충돌체입니다.">
             <span>곡선 벽</span><small>기본</small>
           </button>
         </div>
@@ -73,10 +73,10 @@
         </button>
         <div class="palette-flyout" role="menu">
           <p class="palette-flyout-title">CIRCLE 프리셋</p>
-          <button class="palette-item palette-preset" data-tool="PRESET_PEG" role="menuitem" data-tooltip="CIRCLE 기반 작은 충돌체입니다. Boost 기본값은 0입니다.">
+          <button class="palette-item palette-preset" data-tool="PRESET_PEG" style="--preset-fill:#d0d6db;--preset-stroke:#f5f7f8" role="menuitem" data-tooltip="CIRCLE 기반 작은 충돌체입니다. Boost 기본값은 0입니다.">
             <span>핀</span><small>기본</small>
           </button>
-          <button class="palette-item palette-preset" data-tool="PRESET_BUMPER" role="menuitem" data-tooltip="핀과 같은 CIRCLE이며 높은 탄성과 Boost 기본값을 사용합니다.">
+          <button class="palette-item palette-preset" data-tool="PRESET_BUMPER" style="--preset-fill:#8f3d46;--preset-stroke:#e17a84" role="menuitem" data-tooltip="핀과 같은 CIRCLE이며 높은 탄성과 Boost 기본값을 사용합니다.">
             <span>범퍼</span><small>Boost 프리셋</small>
           </button>
         </div>
@@ -88,12 +88,12 @@
         </button>
         <div class="palette-flyout palette-flyout-wide" role="menu">
           <p class="palette-flyout-title">ROTATIONAL BODY 프리셋</p>
-          <button class="palette-item palette-preset" data-tool="PRESET_ROTATOR" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 연속 회전 프리셋입니다. 충돌에 의해 속도가 변하지 않으며 판 개수는 1~4개입니다."><span>회전판</span><small>강제 연속</small></button>
-          <button class="palette-item palette-preset" data-tool="PRESET_GATE" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 왕복 프리셋입니다. 한쪽 피벗을 기준으로 시작/종료 각도 사이를 왕복하며 충돌에 의해 궤적이 변하지 않습니다."><span>게이트</span><small>강제 왕복</small></button>
-          <button class="palette-item palette-preset" data-tool="PRESET_PENDULUM" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 왕복 프리셋입니다. 긴 축 끝의 피벗을 기준으로 흔들리며 충돌은 움직임을 지연시키지 않습니다."><span>진자</span><small>강제 왕복</small></button>
-          <button class="palette-item palette-preset" data-tool="PRESET_SEESAW" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 중앙 피벗 왕복 프리셋입니다. 지정 각도 범위를 강제로 반복합니다."><span>시소</span><small>강제 왕복</small></button>
-          <button class="palette-item palette-preset" data-tool="PRESET_HINGE" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 자유 회전 프리셋입니다. 모터가 없고 구슬 충돌과 중력에 직접 반응하며 시작/종료 각도가 관절 한계가 됩니다."><span>힌지 / 피벗</span><small>자유 회전</small></button>
-          <button class="palette-item palette-preset" data-tool="PRESET_PADDLE" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 토크 구동 프리셋입니다. 목표 회전 속도를 토크로 유지하므로 충돌에 따라 순간적으로 느려지거나 빨라질 수 있고 토크가 클수록 영향이 작습니다."><span>패들</span><small>토크 연속</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_ROTATOR" style="--preset-fill:#875b2f;--preset-stroke:#f0b36a" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 연속 회전 프리셋입니다. 충돌에 의해 속도가 변하지 않으며 판 개수는 1~4개입니다."><span>회전판</span><small>강제 연속</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_GATE" style="--preset-fill:#6d4e9a;--preset-stroke:#b995ee" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 왕복 프리셋입니다. 한쪽 피벗을 기준으로 시작/종료 각도 사이를 왕복하며 충돌에 의해 궤적이 변하지 않습니다."><span>게이트</span><small>강제 왕복</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_PENDULUM" style="--preset-fill:#496b8f;--preset-stroke:#82b6e9" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 왕복 프리셋입니다. 긴 축 끝의 피벗을 기준으로 흔들리며 충돌은 움직임을 지연시키지 않습니다."><span>진자</span><small>강제 왕복</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_SEESAW" style="--preset-fill:#6b6650;--preset-stroke:#c5bb86" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 중앙 피벗 왕복 프리셋입니다. 지정 각도 범위를 강제로 반복합니다."><span>시소</span><small>강제 왕복</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_HINGE" style="--preset-fill:#47605b;--preset-stroke:#8fc5b7" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 자유 회전 프리셋입니다. 모터가 없고 구슬 충돌과 중력에 직접 반응하며 시작/종료 각도가 관절 한계가 됩니다."><span>힌지 / 피벗</span><small>자유 회전</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_PADDLE" style="--preset-fill:#7a4936;--preset-stroke:#e8996f" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 토크 구동 프리셋입니다. 목표 회전 속도를 토크로 유지하므로 충돌에 따라 순간적으로 느려지거나 빨라질 수 있고 토크가 클수록 영향이 작습니다."><span>패들</span><small>토크 연속</small></button>
         </div>
       </div>
 
@@ -340,8 +340,8 @@
     </aside>
   </section>
 </main>
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261001-rotation1"></script>
-<script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-pivot3"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-rotation1"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261001-rotation2"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-rotation2"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-rotation2"></script>
 </body>
 </html>
