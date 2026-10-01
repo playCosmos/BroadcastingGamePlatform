@@ -1318,12 +1318,23 @@
         );
       }
 
+      const drivenRotation = [
+        "GATE",
+        "ROTATOR",
+        "PENDULUM",
+        "SEESAW"
+      ].includes(component.type);
       const shapes = runtimeComponent.type === "ELEVATOR"
         ? [runtimeComponent]
-        : root.ViewerDrawMapEngine.componentShapes(
-            runtimeComponent,
-            this.time
-          );
+        : drivenRotation
+          ? root.ViewerDrawMapEngine.componentShapes(
+              component,
+              this.time
+            )
+          : root.ViewerDrawMapEngine.componentShapes(
+              runtimeComponent,
+              this.time
+            );
       let best = null;
       for (const shape of shapes) {
         const contact = this.rectBoostContact(
