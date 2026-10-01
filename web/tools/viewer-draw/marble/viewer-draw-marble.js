@@ -104,10 +104,9 @@
   }
 
   function midiFrequency(note) {
-    return 440 * Math.pow(
-      2,
-      (clamp(Number(note) || 60, 24, 108) - 69) / 12
-    );
+    const value = Number(note);
+    const midi = Number.isFinite(value) ? value : 60;
+    return 440 * Math.pow(2, (midi - 69) / 12);
   }
 
   function connectVoice(source, gain, panner) {
@@ -144,7 +143,8 @@
           : "sine";
     oscillator.frequency.value =
       noteFrequency * (0.9 + strength * 0.2);
-    const profileGain = clamp(Number(event.gain) || 1, 0, 2);
+    const rawGain = Number(event.gain);
+    const profileGain = Number.isFinite(rawGain) ? rawGain : 1;
     gain.gain.setValueAtTime(
       Math.max(0.0002, (0.018 + strength * 0.052) * profileGain),
       now
@@ -191,11 +191,16 @@
       source.playbackRate.value =
         Math.pow(
           2,
-          (clamp(Number(event.note) || 60, 24, 108)
-            - sample.baseNote) / 12
+          (
+            (Number.isFinite(Number(event.note))
+              ? Number(event.note)
+              : 60)
+            - sample.baseNote
+          ) / 12
         )
         * (0.97 + strength * 0.06);
-      const profileGain = clamp(Number(event.gain) || 1, 0, 2);
+      const rawGain = Number(event.gain);
+      const profileGain = Number.isFinite(rawGain) ? rawGain : 1;
       gain.gain.value =
         (0.08 + strength * 0.22) * profileGain;
       if (!connectVoice(source, gain, panner)) continue;
