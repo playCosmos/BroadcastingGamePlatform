@@ -499,7 +499,6 @@
       PENDULUM: ["#496b8f", "#82b6e9"],
       SEESAW: ["#6b6650", "#c5bb86"],
       HINGE: ["#47605b", "#8fc5b7"],
-      GEAR: ["#6d5730", "#dfbc6b"],
       PADDLE: ["#7a4936", "#e8996f"],
       CONVEYOR: ["#47565f", "#8fc6df"],
       ELEVATOR: ["#3f586d", "#84a8c6"],
