@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20261001-pivot3">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw-map-maker.css?v=20261001-rotation1">
 </head>
 <body>
 <main class="shell map-maker-shell">
@@ -82,27 +82,18 @@
         </div>
       </div>
 
-      <div class="palette-group" data-palette-group="kinematic-rotation">
+      <div class="palette-group" data-palette-group="rotation">
         <button class="palette-group-trigger" type="button" aria-expanded="false">
-          <span>궤적 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
+          <span>회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
         </button>
         <div class="palette-flyout palette-flyout-wide" role="menu">
-          <p class="palette-flyout-title">KINEMATIC ROTATION · 궤적 제어</p>
-          <button class="palette-item palette-preset" data-tool="ROTATOR" role="menuitem" data-tooltip="중심축을 기준으로 일정 속도로 계속 회전합니다. 판 개수를 1~4개로 설정할 수 있습니다."><span>회전판</span><small>연속 회전</small></button>
-          <button class="palette-item palette-preset" data-tool="GATE" role="menuitem" data-tooltip="지정된 각도 범위를 주기적으로 왕복하여 통로를 열고 닫습니다."><span>게이트</span><small>왕복 회전</small></button>
-          <button class="palette-item palette-preset" data-tool="PENDULUM" role="menuitem" data-tooltip="기준축에서 좌우로 왕복 회전하며 구슬과 충돌하는 진자 프리셋입니다."><span>진자</span><small>왕복 회전</small></button>
-          <button class="palette-item palette-preset" data-tool="SEESAW" role="menuitem" data-tooltip="중앙을 기준으로 작은 각도를 왕복하는 시소 프리셋입니다."><span>시소</span><small>왕복 회전</small></button>
-        </div>
-      </div>
-
-      <div class="palette-group" data-palette-group="revolute-rotation">
-        <button class="palette-group-trigger" type="button" aria-expanded="false">
-          <span>관절 회전 구조체</span><span class="palette-group-chevron" aria-hidden="true">›</span>
-        </button>
-        <div class="palette-flyout palette-flyout-wide" role="menu">
-          <p class="palette-flyout-title">REVOLUTE JOINT · 물리 관절</p>
-          <button class="palette-item palette-preset" data-tool="HINGE" role="menuitem" data-tooltip="REVOLUTE JOINT의 수동 프리셋입니다. 모터 없이 구슬의 충돌력과 중력에 따라 회전합니다."><span>힌지 / 피벗</span><small>자유 관절</small></button>
-          <button class="palette-item palette-preset" data-tool="PADDLE" role="menuitem" data-tooltip="REVOLUTE JOINT에 모터를 켠 프리셋입니다. 스스로 회전하지만 충돌력도 받는 물리 관절입니다."><span>패들</span><small>모터 관절</small></button>
+          <p class="palette-flyout-title">ROTATIONAL BODY 프리셋</p>
+          <button class="palette-item palette-preset" data-tool="PRESET_ROTATOR" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 연속 회전 프리셋입니다. 충돌에 의해 속도가 변하지 않으며 판 개수는 1~4개입니다."><span>회전판</span><small>강제 연속</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_GATE" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 왕복 프리셋입니다. 한쪽 피벗을 기준으로 시작/종료 각도 사이를 왕복하며 충돌에 의해 궤적이 변하지 않습니다."><span>게이트</span><small>강제 왕복</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_PENDULUM" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 강제 왕복 프리셋입니다. 긴 축 끝의 피벗을 기준으로 흔들리며 충돌은 움직임을 지연시키지 않습니다."><span>진자</span><small>강제 왕복</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_SEESAW" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 중앙 피벗 왕복 프리셋입니다. 지정 각도 범위를 강제로 반복합니다."><span>시소</span><small>강제 왕복</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_HINGE" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 자유 회전 프리셋입니다. 모터가 없고 구슬 충돌과 중력에 직접 반응하며 시작/종료 각도가 관절 한계가 됩니다."><span>힌지 / 피벗</span><small>자유 회전</small></button>
+          <button class="palette-item palette-preset" data-tool="PRESET_PADDLE" role="menuitem" data-tooltip="같은 ROTATIONAL_BODY의 토크 구동 프리셋입니다. 목표 회전 속도를 토크로 유지하므로 충돌에 따라 순간적으로 느려지거나 빨라질 수 있고 토크가 클수록 영향이 작습니다."><span>패들</span><small>토크 연속</small></button>
         </div>
       </div>
 
@@ -251,18 +242,24 @@
         <label class="mini-field"><span>반지름</span><input id="propRadius" type="number" step="1" min="0"></label>
         <label class="mini-field"><span>탄성</span><input id="propRestitution" type="number" step=".05" min="0"></label>
         <label class="mini-field"><span>마찰</span><input id="propFriction" type="number" step=".01" min="0"></label>
+        <label class="mini-field"><span>회전 방식</span>
+          <select id="propRotationMode">
+            <option value="FORCE_CONTINUOUS">강제 연속 · 충돌 영향 없음</option>
+            <option value="FORCE_OSCILLATE">강제 왕복 · 충돌 영향 없음</option>
+            <option value="TORQUE_CONTINUOUS">토크 연속 · 충돌 영향 받음</option>
+            <option value="TORQUE_OSCILLATE">토크 왕복 · 충돌 영향 받음</option>
+            <option value="FREE">자유 회전 · 충돌/중력 반응</option>
+          </select>
+        </label>
         <label class="mini-field"><span>회전 속도 °/s</span><input id="propAngularSpeed" type="number" step="5"></label>
         <label class="mini-field"><span>회전판 수</span><input id="propBladeCount" type="number" min="1" max="4" step="1"></label>
         <label class="mini-field"><span>주기 초</span><input id="propPeriod" type="number" step=".1" min="0"></label>
-        <label class="mini-field"><span>진폭 °</span><input id="propAmplitude" type="number" step="1" min="0" max="360"></label>
-        <label class="mini-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" step="1" min="0" max="360"></label>
+        <label class="mini-field"><span>시작 각도 °</span><input id="propStartAngle" type="number" step="1" min="-360" max="360"></label>
+        <label class="mini-field"><span>종료 각도 °</span><input id="propEndAngle" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>레일 두께</span><input id="propThickness" type="number" step="1" min="0"></label>
         <label class="mini-field" title="0은 중심입니다. -0.5는 오브젝트의 긴 축 시작 끝점, +0.5는 반대 끝점입니다."><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" step=".01"></label>
-        <label class="mini-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" step="1" min="-360" max="360"></label>
-        <label class="mini-field"><span>최대 각도 °</span><input id="propUpperAngle" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>관절 마찰</span><input id="propJointFriction" type="number" step=".1" min="0"></label>
-        <label class="mini-field"><span>모터 속도 °/s</span><input id="propMotorSpeed" type="number" step="5"></label>
-        <label class="mini-field"><span>모터 토크</span><input id="propMotorTorque" type="number" step="1" min="0"></label>
+        <label class="mini-field"><span>회전 토크</span><input id="propMotorTorque" type="number" step="1" min="0"></label>
         <label class="mini-field"><span>버스트 세기</span><input id="propBurstPower" type="number" step=".05" min="0"></label>
         <label class="mini-field"><span>버스트 방향 °</span><input id="propBurstDirection" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field"><span>버스트 분산 ±°</span><input id="propBurstSpread" type="number" step="1" min="0" max="360"></label>
@@ -343,8 +340,8 @@
     </aside>
   </section>
 </main>
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20261001-pivot3"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20261001-rotation1"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-pivot3"></script>
-<script src="/admin/assets/viewer-draw-map-maker.js?v=20261001-pivot3"></script>
+<script src="/admin/assets/viewer-draw-map-maker.js?v=20261001-rotation1"></script>
 </body>
 </html>
