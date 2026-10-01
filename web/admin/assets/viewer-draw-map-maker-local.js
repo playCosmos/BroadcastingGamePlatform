@@ -2,6 +2,7 @@
   "use strict";
 
   const Engine = window.ViewerDrawMapEngine;
+  const SoundBank = window.ViewerDrawSoundBank;
   const $ = (id) => document.getElementById(id);
   const canvas = $("mapCanvas");
   const wrap = $("mapCanvasWrap");
@@ -65,6 +66,7 @@
   let previewLastTime = 0;
   let previewSnapshot = null;
   let resizeTimer = 0;
+  let inspectorAudioContext = null;
 
   const clone = (value) => structuredClone(value);
   const num = (value, fallback = 0) => {
@@ -75,12 +77,17 @@
   let advancedSettingsVisible = false;
   let inspectorComponentId = null;
 
+  const VISUAL_FIELDS = [
+    "propVisualFill",
+    "propVisualStroke"
+  ];
   const AUDIO_FIELDS = [
     "propSoundMaterial",
     "propInstrument",
     "propAudioNote",
     "propAudioGain",
-    "propAudioPan"
+    "propAudioPan",
+    "previewAudioNote"
   ];
   const PHYSICS_ADVANCED = ["propRestitution", "propFriction", "propBoost"];
   const RECT_BASIC = ["propX", "propY", "propWidth", "propHeight"];
@@ -278,7 +285,10 @@
       return;
     }
 
-    const basic = schema.basic || [];
+    const basic = [
+      ...(schema.basic || []),
+      ...VISUAL_FIELDS
+    ];
     const advanced = [
       ...(schema.advanced || []),
       ...conditionalOutputFields(component)
@@ -652,32 +662,8 @@
     }
   }
 
-  function componentStyle(type) {
-    return {
-      WALL: ["#6f7c87", "#a6b0b8"],
-      CURVE_WALL: ["#566d7a", "#a8d4e8"],
-      CIRCLE: ["#d0d6db", "#f5f7f8"],
-      GATE: ["#6d4e9a", "#b995ee"],
-      ROTATOR: ["#875b2f", "#f0b36a"],
-      PENDULUM: ["#496b8f", "#82b6e9"],
-      SEESAW: ["#6b6650", "#c5bb86"],
-      HINGE: ["#47605b", "#8fc5b7"],
-      PADDLE: ["#7a4936", "#e8996f"],
-      CONVEYOR: ["#47565f", "#8fc6df"],
-      ELEVATOR: ["#3f586d", "#84a8c6"],
-      OUTPUT: ["#3f744c", "#8bd3a1"],
-      SLOT: ["#73503e", "#dda57e"],
-      ELIMINATION: ["#713d50", "#df789d"],
-      SPAWN: ["#216e8f", "#62c3e7"],
-      BURST_SPAWN: ["#784878", "#e092df"],
-      FINISH: ["#367c4d", "#74d191"]
-    }[type] || ["#59636c", "#aab2b8"];
-  }
-
   function drawComponent(c, view) {
-    const [defaultFill, defaultStroke] = componentStyle(c.type);
-    const fill = String(c.properties?.visualFill || defaultFill);
-    const stroke = String(c.properties?.visualStroke || defaultStroke);
+    const { fill, stroke } = Engine.componentVisualStyle(c);
     const p = toScreen(c.x, c.y, view);
     const selected = c.id === selectedId && !previewRunning;
 
@@ -1444,6 +1430,9 @@
     $("propSlotKey").value = String(c.properties?.slotKey || "SLOT1");
     $("propSlotCapacity").value = Math.trunc(num(c.properties?.slotCapacity, 1));
     $("propEliminationKey").value = String(c.properties?.eliminationKey || "OUT");
+    const visualStyle = Engine.componentVisualStyle(c);
+    $("propVisualFill").value = visualStyle.fill;
+    $("propVisualStroke").value = visualStyle.stroke;
     $("propSoundMaterial").value = String(c.properties?.soundMaterial || "metal").toLowerCase();
     $("propInstrument").value = String(c.properties?.instrument || "none").toLowerCase();
     $("propAudioNote").value = Math.trunc(num(c.properties?.audioNote, 60));
@@ -1453,6 +1442,80 @@
     $("propMarbleRadius").value = num(c.properties?.marbleRadius, 11);
 
     applyInspectorSchema(c);
+  }
+
+  async function previewSelectedAudio() {
+    const c = currentComponent();
+    if (!c || !Engine.isCollider(c)) return;
+
+    const AudioCtor =
+      window.AudioContext || window.webkitAudioContext;
+    if (!AudioCtor) {
+      setStatus("이 브라우저는 Web Audio를 지원하지 않습니다.", "warning");
+      return;
+    }
+    if (!SoundBank?.getSample) {
+      setStatus("사운드 뱅크를 불러오지 못했습니다.", "warning");
+      return;
+    }
+
+    try {
+      if (!inspectorAudioContext) {
+        inspectorAudioContext = new AudioCtor();
+      }
+      if (inspectorAudioContext.state === "suspended") {
+        await inspectorAudioContext.resume();
+      }
+
+      const event = {
+        material: $("propSoundMaterial").value,
+        instrument: $("propInstrument").value,
+        note: num($("propAudioNote").value, 60),
+        gain: num($("propAudioGain").value, 1),
+        pan: num($("propAudioPan").value, 0)
+      };
+      const sample = SoundBank.getSample(
+        inspectorAudioContext,
+        event
+      );
+      if (!sample?.buffer) {
+        setStatus("선택한 소리를 미리 들을 수 없습니다.", "warning");
+        return;
+      }
+
+      const source = inspectorAudioContext.createBufferSource();
+      const gain = inspectorAudioContext.createGain();
+      const panner = inspectorAudioContext.createStereoPanner
+        ? inspectorAudioContext.createStereoPanner()
+        : null;
+      const rate = Math.pow(
+        2,
+        (event.note - sample.baseNote) / 12
+      );
+      source.buffer = sample.buffer;
+      source.playbackRate.value =
+        Number.isFinite(rate) && rate > 0 ? rate : 1;
+      gain.gain.value = Math.max(0, event.gain) * .28;
+      source.connect(gain);
+      if (panner) {
+        panner.pan.value = Math.max(
+          -1,
+          Math.min(1, event.pan)
+        );
+        gain.connect(panner);
+        panner.connect(inspectorAudioContext.destination);
+      } else {
+        gain.connect(inspectorAudioContext.destination);
+      }
+      source.onended = () => {
+        try { source.disconnect(); } catch {}
+        try { gain.disconnect(); } catch {}
+        try { panner?.disconnect(); } catch {}
+      };
+      source.start();
+    } catch (error) {
+      setStatus("음정 미리듣기 실패: " + error.message, "warning");
+    }
   }
 
   function updateSelectedFromInspector() {
@@ -1472,6 +1535,8 @@
     }
 
     c.properties = c.properties || {};
+    c.properties.visualFill = $("propVisualFill").value;
+    c.properties.visualStroke = $("propVisualStroke").value;
     const oldOutputKey = c.type === "OUTPUT"
       ? String(c.properties.outputKey || "")
       : "";
@@ -2136,6 +2201,7 @@
   canvas.addEventListener("contextmenu", (event) => event.preventDefault());
 
   setupPaletteGroups();
+  $("previewAudioNote").addEventListener("click", previewSelectedAudio);
 
   document.querySelectorAll("[data-tool]").forEach((button) => {
     button.addEventListener("click", () => {
@@ -2146,6 +2212,7 @@
   });
 
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
+   "propVisualFill","propVisualStroke",
    "propRestitution","propFriction","propAngularSpeed","propBladeCount","propPeriod",
    "propAmplitude","propOpenAngle","propThickness",
    "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
