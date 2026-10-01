@@ -107,6 +107,22 @@ requireCondition(
   "reactive hinge must carry joint limits in the map contract"
 );
 
+requireCondition(
+  physicsSource.includes("componentPivotWorld(component)")
+    && physicsSource.includes("b2_kinematicBody"),
+  "driven rotators must use an explicit fixed pivot in Box2D"
+);
+requireCondition(
+  physicsSource.includes("createRevoluteComponent(component)")
+    && physicsSource.includes("b2_dynamicBody")
+    && physicsSource.includes("b2RevoluteJointDef"),
+  "hinge and paddle must use dynamic revolute bodies"
+);
+
+const physicsSource = fs.readFileSync(
+  path.join(__dirname, "browser-physics-adapter.js"),
+  "utf8"
+);
 const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
   "utf8"
