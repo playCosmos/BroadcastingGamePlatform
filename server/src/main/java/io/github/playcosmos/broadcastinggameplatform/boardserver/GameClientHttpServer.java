@@ -938,7 +938,15 @@ public final class GameClientHttpServer implements AutoCloseable {
         String name,
         String mode,
         List<String> entries,
+        String entrySource,
+        List<ViewerDrawService.DrawEntry> drawEntries,
         Map<String, Object> config
+    ) {}
+
+    private record ViewerDrawEntryCollectionRequest(
+        String provider,
+        String channelId,
+        String keyword
     ) {}
 
     private record ViewerDrawMapSaveRequest(
@@ -1038,6 +1046,80 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange, 401, Map.of(
                 "error", "administrator authentication required"
             ));
+            return;
+        }
+
+        String collectionBase =
+            "/api/v1/tools/viewer-draw/entry-collection";
+        if (
+            collectionBase.equals(path)
+            || (collectionBase + "/").equals(path)
+        ) {
+            if ("GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+                sendJson(
+                    exchange,
+                    200,
+                    viewerDraw.entryCollectionSnapshot()
+                );
+                return;
+            }
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+
+        if (
+            path != null
+            && path.startsWith(collectionBase + "/")
+        ) {
+            String action = path.substring(
+                (collectionBase + "/").length()
+            );
+            if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+                return;
+            }
+
+            try {
+                var snapshot = switch (action) {
+                    case "open" -> {
+                        var request = readJson(
+                            exchange,
+                            ViewerDrawEntryCollectionRequest.class
+                        );
+                        yield viewerDraw.openChatEntryCollection(
+                            request.provider(),
+                            request.channelId(),
+                            request.keyword()
+                        );
+                    }
+                    case "pause" ->
+                        viewerDraw.pauseEntryCollection();
+                    case "resume" ->
+                        viewerDraw.resumeEntryCollection();
+                    case "close" ->
+                        viewerDraw.closeEntryCollection();
+                    case "clear" ->
+                        viewerDraw.clearEntryCollection();
+                    default -> null;
+                };
+                if (snapshot == null) {
+                    sendJson(
+                        exchange,
+                        404,
+                        Map.of("error", "entry collection action not found")
+                    );
+                    return;
+                }
+                sendJson(exchange, 200, snapshot);
+            } catch (Exception error) {
+                sendJson(
+                    exchange,
+                    400,
+                    Map.of("error", safeMessage(error))
+                );
+            }
             return;
         }
 
@@ -1255,12 +1337,21 @@ public final class GameClientHttpServer implements AutoCloseable {
                         sendJson(exchange, 400, Map.of("error", "JSON body is required"));
                         return;
                     }
-                    var created = viewerDraw.create(
-                        request.name(),
-                        request.mode(),
-                        request.entries(),
-                        request.config()
-                    );
+                    var created =
+                        request.drawEntries() != null
+                            ? viewerDraw.create(
+                                request.name(),
+                                request.mode(),
+                                request.entrySource(),
+                                request.drawEntries(),
+                                request.config()
+                            )
+                            : viewerDraw.create(
+                                request.name(),
+                                request.mode(),
+                                request.entries(),
+                                request.config()
+                            );
                     sendJson(exchange, 201, created);
                 } catch (Exception error) {
                     sendJson(exchange, 400, Map.of("error", safeMessage(error)));
