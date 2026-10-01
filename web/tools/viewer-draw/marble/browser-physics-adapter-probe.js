@@ -140,6 +140,10 @@ const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
   "utf8"
 );
+const auditSyncSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw-audit-sync.js"),
+  "utf8"
+);
 const soundBankSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-sound-bank.js"),
   "utf8"
@@ -185,6 +189,19 @@ requireCondition(
     && !controllerSource.includes("crypto.subtle.digest")
     && !controllerSource.includes("qualificationMaxNudges"),
   "public Marble Draw must remain browser-local without Audit integration"
+);
+requireCondition(
+  controllerSource.includes("viewerDraw.entrySnapshot")
+    && controllerSource.includes("sourceEntryId")
+    && controllerSource.includes("viewer-draw:run-completed"),
+  "Marble controller must accept frozen participant handoff without server authority"
+);
+requireCondition(
+  auditSyncSource.includes("viewer-draw-run-audit/v0")
+    && auditSyncSource.includes("/api/v1/tools/viewer-draw/audits")
+    && !auditSyncSource.includes("userId:")
+    && !auditSyncSource.includes("provider: entry"),
+  "post-run audit sync must stay separate and omit provider identities from public audit"
 );
 
 for (const forbidden of [
