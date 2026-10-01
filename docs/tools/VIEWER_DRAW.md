@@ -1557,15 +1557,30 @@ Map Maker와 Browser Box2D Authority에 다음 컴포넌트를 같은 MachineMap
 V1의 Gate/Pendulum/Seesaw는 joint solver 기반 자유 회전체가 아니라 **정의된 time-driven kinematic motion**이다.
 따라서 제작자가 설정한 운동이 재현 가능하고 맵 정의에 포함되며, 추후 reactive joint component와 구분한다.
 
-### V7 — Chat Entry Collection
+### V7 — Chat Entry Collection — SOOP IMPLEMENTED / PROVIDER EXPANSION PENDING
 
-- SOOP ChatMessageEvent
-- 참가 키워드
-- 중복 제거
-- 접수 시작/종료
-- participant counter
-- 추첨 시작 전 브라우저로 참가자 snapshot 전달
-- CHZZK 대응 인터페이스
+SOOP 경로 구현 완료:
+
+- 기존 `SoopBroadcastProvider`의 `ChatMessageEvent`를 Viewer Draw가 직접 구독
+- `provider + userId` 기준 중복 제거
+- 쉼표/줄바꿈으로 복수 참가 키워드 지정
+- 선택적 channelId 필터
+- 접수 시작 / 일시정지 / 재개 / 종료 / 목록 초기화
+- 실시간 participant counter
+- SOOP provider 연결 상태 표시
+- 접수 종료 시 참가자 snapshot Freeze
+- `entrySource=CHAT_KEYWORD`와 provider/userId를 Viewer Draw 세션에 보존
+- Frozen Entry hash에 provider/userId identity 포함
+- Admin Viewer Draw에서 Frozen snapshot을 `sessionStorage`로 Browser Marble Draw에 전달
+- Marble Draw에서 참가자 identity를 유지한 채 실제 Marble entry로 변환
+- Marble Draw 참가 목록 JSON / TXT / CSV / TSV Import 및 JSON Export
+- 채팅 Provider가 끊겨도 이미 접수된 목록은 유지
+
+Provider-neutral 경계:
+
+- 수집기는 `ChatMessageEvent`와 provider 문자열만 소비하므로 CHZZK 등 후속 Provider도 같은 계약으로 연결 가능
+- 현재 실제 Provider 구현 및 Admin UI는 SOOP만 연결
+- `CHAT_ACTIVITY_WINDOW`, `DONATION_FILTER`, CHZZK Provider 자체 구현은 후속 범위
 
 ### V8 — Goldberg / Machine Expansion — PARTIAL IMPLEMENTED
 
@@ -1811,8 +1826,8 @@ V6 운영/제작 확장 구현 완료:
 - 기존 Lotto/Ticket 제품 전체를 새 플랫폼으로 이전하지 않음
 - 참가자 원천은 Manual/Chat/Game Room/Imported/Donation으로 분리
 - 기본 Entry Source는 MANUAL_LIST
-- 채팅으로 참가자를 받는 기능은 옵션
-- 최근 채팅 사용자 자동 수집도 옵션
+- 채팅으로 참가자를 받는 기능은 옵션이며 SOOP `CHAT_KEYWORD` 경로는 구현됨
+- 최근 채팅 사용자 자동 수집도 옵션이며 아직 구현하지 않음
 - 후원자 수집도 옵션
 - 게임 룸 참가자 가져오기도 옵션
 - 채팅/후원 Provider가 없어도 Viewer Draw는 완전하게 동작해야 함
