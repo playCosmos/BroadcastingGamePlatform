@@ -271,7 +271,12 @@
 
   function componentPivotWorld(c){
     const local=componentPivotLocal(c);
-    const angle=degToRad(finiteOr(c?.rotation,0));
+    const liveRotation=Number(c?.runtimeRotation);
+    const angle=degToRad(
+      Number.isFinite(liveRotation)
+        ? liveRotation
+        : finiteOr(c?.rotation,0)
+    );
     const co=Math.cos(angle),si=Math.sin(angle);
     return {
       x:finiteOr(c?.x,0)+local.x*co-local.y*si,
@@ -1191,6 +1196,9 @@
         if(boost<0) errors.push("Boost는 0 이상이어야 합니다.");
       }
       if(c?.type==="ROTATIONAL_BODY"){
+        const rawMode=String(
+          p.rotationMode ?? "FORCE_CONTINUOUS"
+        ).toUpperCase();
         const mode=rotationMode(c);
         const bladeCount=Number(p.bladeCount ?? 1);
         const pivotRatio=Number(p.pivotRatio ?? 0);
@@ -1200,7 +1208,7 @@
         const torque=Number(p.motorTorque ?? 30);
         const frictionValue=Number(p.jointFriction ?? .15);
 
-        if(!ROTATION_MODES.has(mode)){
+        if(!ROTATION_MODES.has(rawMode)){
           errors.push("회전 방식이 유효하지 않습니다.");
         }
         if(
