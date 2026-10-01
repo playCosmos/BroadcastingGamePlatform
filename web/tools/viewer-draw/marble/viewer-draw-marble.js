@@ -27,6 +27,7 @@
   let fastForwardActive = false;
   let finishSlowMotion = false;
   let stuckNudges = 0;
+  let runStartedAt = null;
 
   const FINISH_SLOW_RATE = 0.35;
   let stuckState = new Map();
@@ -1479,6 +1480,21 @@
     }
     $("winnerBanner").hidden = false;
     cancelAnimationFrame(frameId);
+
+    window.dispatchEvent(
+      new CustomEvent("viewer-draw:run-completed", {
+        detail: {
+          definition: structuredClone(definition),
+          entries: structuredClone(entries),
+          state: structuredClone(state),
+          seed: Math.trunc(Number($("seed").value) || 1),
+          startedAt: runStartedAt,
+          completedAt: new Date().toISOString(),
+          stuckNudges,
+          engineId: adapter.engineId()
+        }
+      })
+    );
   }
 
   function tick(now) {
@@ -1552,6 +1568,7 @@
     running = true;
     completed = false;
     stuckNudges = 0;
+    runStartedAt = new Date().toISOString();
     stuckState = new Map();
     speedMultiplier = 1;
     fastForwardActive = false;
@@ -1589,6 +1606,7 @@
     fastForwardActive = false;
     finishSlowMotion = false;
     stuckNudges = 0;
+    runStartedAt = null;
     stuckState = new Map();
     setRunControlsLocked(false);
     setFastForward(false);
