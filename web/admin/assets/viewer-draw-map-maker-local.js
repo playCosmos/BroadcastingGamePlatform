@@ -352,66 +352,14 @@
       basic: [...RECT_BASIC],
       advanced: ["propSensorTag"]
     },
-    GATE: {
+    ROTATIONAL_BODY: {
       basic: [
         ...RECT_ROT_BASIC,
+        "propRotationMode",
         "propPivotRatio",
-        "propOpenAngle",
-        "propPeriod"
-      ],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    ROTATOR: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propPivotRatio",
-        "propAngularSpeed",
         "propBladeCount"
       ],
       advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    PENDULUM: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propPivotRatio",
-        "propAmplitude",
-        "propPeriod"
-      ],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    SEESAW: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propPivotRatio",
-        "propAmplitude",
-        "propPeriod"
-      ],
-      advanced: [...PHYSICS_ADVANCED, ...AUDIO_FIELDS]
-    },
-    HINGE: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propPivotRatio",
-        "propLowerAngle",
-        "propUpperAngle"
-      ],
-      advanced: [
-        "propJointFriction",
-        ...PHYSICS_ADVANCED,
-        ...AUDIO_FIELDS
-      ]
-    },
-    PADDLE: {
-      basic: [
-        ...RECT_ROT_BASIC,
-        "propPivotRatio",
-        "propMotorSpeed"
-      ],
-      advanced: [
-        "propMotorTorque",
-        ...PHYSICS_ADVANCED,
-        ...AUDIO_FIELDS
-      ]
     },
     CONVEYOR: {
       basic: [
@@ -470,6 +418,38 @@
     return $(id)?.closest(".mini-field") || null;
   }
 
+  function conditionalRotationFields(component) {
+    if (component?.type !== "ROTATIONAL_BODY") return [];
+    const mode = Engine.rotationMode(component);
+    if (mode === "FORCE_CONTINUOUS") {
+      return ["propAngularSpeed"];
+    }
+    if (mode === "FORCE_OSCILLATE") {
+      return ["propStartAngle", "propEndAngle", "propPeriod"];
+    }
+    if (mode === "TORQUE_CONTINUOUS") {
+      return [
+        "propAngularSpeed",
+        "propMotorTorque",
+        "propJointFriction"
+      ];
+    }
+    if (mode === "TORQUE_OSCILLATE") {
+      return [
+        "propStartAngle",
+        "propEndAngle",
+        "propAngularSpeed",
+        "propMotorTorque",
+        "propJointFriction"
+      ];
+    }
+    return [
+      "propStartAngle",
+      "propEndAngle",
+      "propJointFriction"
+    ];
+  }
+
   function conditionalOutputFields(component) {
     if (component?.type !== "OUTPUT") return [];
     const mode = String(
@@ -513,6 +493,7 @@
 
     const basic = [
       ...(schema.basic || []),
+      ...conditionalRotationFields(component),
       ...VISUAL_FIELDS
     ];
     const advanced = [
@@ -965,8 +946,7 @@
         }
       }
       if (
-        ["ROTATOR","GATE","PENDULUM","SEESAW","HINGE","PADDLE"]
-          .includes(c.type)
+        c.type === "ROTATIONAL_BODY"
       ) {
         const pivot = Engine.componentPivotLocal(c);
         ctx.beginPath();
@@ -991,7 +971,7 @@
       const r = Math.abs(c.radius) * view.scale;
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
     }
-    const shapes = c.type === "ROTATOR"
+    const shapes = c.type === "ROTATIONAL_BODY"
       ? Engine.componentShapes(c, 0)
       : [c];
     let left = Infinity;
@@ -1048,7 +1028,7 @@
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.stroke();
-    } else if (c.type === "ROTATOR") {
+    } else if (c.type === "ROTATIONAL_BODY") {
       const w = Math.max(2, Math.abs(c.width) * view.scale);
       const h = Math.max(2, Math.abs(c.height) * view.scale);
       const bladeCount = Math.max(
@@ -1192,12 +1172,7 @@
       WALL: "벽",
       CURVE_WALL: "곡선 벽",
       CIRCLE: "원형 구조체",
-      GATE: "게이트",
-      ROTATOR: "회전판",
-      PENDULUM: "진자",
-      SEESAW: "시소",
-      HINGE: "힌지 / 피벗",
-      PADDLE: "패들",
+      ROTATIONAL_BODY: "회전 구조체",
       CONVEYOR: "컨베이어",
       ELEVATOR: "엘리베이터",
       SPAWN: "뭉침 스포너",
@@ -1207,6 +1182,18 @@
       SLOT: "슬롯",
       ELIMINATION: "탈락 구역"
     }[type] || type;
+  }
+
+  function rotationPresetLabel(component) {
+    if (component?.type !== "ROTATIONAL_BODY") return "";
+    return {
+      ROTATOR: "회전판",
+      GATE: "게이트",
+      PENDULUM: "진자",
+      SEESAW: "시소",
+      HINGE: "힌지 / 피벗",
+      PADDLE: "패들"
+    }[String(component.properties?.rotationPreset || "").toUpperCase()] || "";
   }
 
   function selectionControlAt(clientX, clientY) {
@@ -1372,7 +1359,7 @@
       if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
-        const shapes = c.type === "ROTATOR"
+        const shapes = c.type === "ROTATIONAL_BODY"
           ? Engine.componentShapes(c, 0)
           : [c];
         for (const shape of shapes) {
@@ -1476,7 +1463,19 @@
         ? "BUMPER"
         : type === "PRESET_LAUNCH_WALL"
           ? "LAUNCH_WALL"
-          : null;
+          : type === "PRESET_ROTATOR"
+            ? "ROTATOR"
+            : type === "PRESET_GATE"
+              ? "GATE"
+              : type === "PRESET_PENDULUM"
+                ? "PENDULUM"
+                : type === "PRESET_SEESAW"
+                  ? "SEESAW"
+                  : type === "PRESET_HINGE"
+                    ? "HINGE"
+                    : type === "PRESET_PADDLE"
+                      ? "PADDLE"
+                      : null;
     const c = presetName
       ? Engine.createPreset(presetName, snap(x), snap(y))
       : Engine.componentDefaults(type, snap(x), snap(y));
@@ -1577,8 +1576,11 @@
       advancedSettingsVisible = false;
     }
 
+    const presetLabel = rotationPresetLabel(c);
     $("selectedType").textContent =
-      componentTypeLabel(c.type) + " · " + c.id.slice(0, 8);
+      componentTypeLabel(c.type)
+      + (presetLabel ? " · " + presetLabel : "")
+      + " · " + c.id.slice(0, 8);
     $("propX").value = Math.round(c.x * 100) / 100;
     $("propY").value = Math.round(c.y * 100) / 100;
     $("propRotation").value = c.rotation || 0;
@@ -1587,28 +1589,20 @@
     $("propRadius").value = c.radius || 0;
     $("propRestitution").value = num(c.properties?.restitution, .35);
     $("propFriction").value = num(c.properties?.friction, .05);
+    $("propRotationMode").value = Engine.rotationMode(c);
     $("propAngularSpeed").value = num(c.properties?.angularSpeed, 90);
     $("propBladeCount").value = Math.trunc(
       num(c.properties?.bladeCount, 1)
     );
-    $("propPeriod").value = num(c.properties?.period, c.type === "GATE" ? 3.6 : 3.2);
-    $("propAmplitude").value = num(c.properties?.amplitude, c.type === "SEESAW" ? 14 : 42);
-    $("propOpenAngle").value = num(c.properties?.openAngle, 78);
+    $("propPeriod").value = num(c.properties?.period, 3.2);
+    $("propStartAngle").value = num(c.properties?.startAngle, -30);
+    $("propEndAngle").value = num(c.properties?.endAngle, 30);
     $("propThickness").value = num(c.properties?.thickness, 14);
-    const pivotFallback =
-      c.type === "GATE" || c.type === "PENDULUM"
-        ? -.5
-        : c.type === "HINGE" || c.type === "PADDLE"
-          ? -.48
-          : 0;
-    $("propPivotRatio").value = num(
-      c.properties?.pivotRatio,
-      pivotFallback
+    $("propPivotRatio").value = num(c.properties?.pivotRatio, 0);
+    $("propJointFriction").value = num(
+      c.properties?.jointFriction,
+      .15
     );
-    $("propLowerAngle").value = num(c.properties?.lowerAngle, -70);
-    $("propUpperAngle").value = num(c.properties?.upperAngle, 70);
-    $("propJointFriction").value = num(c.properties?.jointFriction, .15);
-    $("propMotorSpeed").value = num(c.properties?.motorSpeed, 180);
     $("propMotorTorque").value = num(c.properties?.motorTorque, 30);
     $("propBurstPower").value = num(c.properties?.burstPower, 1.15);
     $("propBurstDirection").value = num(c.properties?.burstDirectionDegrees, -90);
@@ -1789,7 +1783,7 @@
       -360,
       360
     );
-    if (["WALL", "CURVE_WALL", "FINISH", "GATE", "ROTATOR", "PENDULUM", "SEESAW", "HINGE", "PADDLE", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
+    if (["WALL", "CURVE_WALL", "FINISH", "ROTATIONAL_BODY", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
       c.width = Math.max(0, num($("propWidth").value, c.width));
       c.height = Math.max(0, num($("propHeight").value, c.height));
     }
@@ -1817,8 +1811,12 @@
         num($("propBoost").value, 0)
       );
     }
-    if (c.type === "ROTATOR") {
-      c.properties.angularSpeed = num($("propAngularSpeed").value, 90);
+    if (c.type === "ROTATIONAL_BODY") {
+      c.properties.rotationMode = $("propRotationMode").value;
+      c.properties.angularSpeed = num(
+        $("propAngularSpeed").value,
+        90
+      );
       c.properties.bladeCount = Math.max(
         1,
         Math.min(
@@ -1827,67 +1825,37 @@
         )
       );
       $("propBladeCount").value = c.properties.bladeCount;
-    }
-    if (["GATE", "PENDULUM", "SEESAW"].includes(c.type)) {
       c.properties.period = Math.max(
         0,
         num($("propPeriod").value, 3.2)
       );
-    }
-    if (["PENDULUM", "SEESAW"].includes(c.type)) {
-      c.properties.amplitude = clamp(
-        num($("propAmplitude").value, c.type === "SEESAW" ? 14 : 42),
-        0,
+      c.properties.startAngle = clamp(
+        num($("propStartAngle").value, -30),
+        -360,
         360
       );
-    }
-    if (c.type === "GATE") {
-      c.properties.openAngle = clamp(
-        num($("propOpenAngle").value, 78),
-        0,
+      c.properties.endAngle = clamp(
+        num($("propEndAngle").value, 30),
+        -360,
         360
       );
-    }
-    if (c.type === "CURVE_WALL") {
-      c.properties.thickness = Math.max(
-        0,
-        num($("propThickness").value, 18)
-      );
-    }
-    if (
-      ["ROTATOR","GATE","PENDULUM","SEESAW","HINGE","PADDLE"]
-        .includes(c.type)
-    ) {
       c.properties.pivotRatio = num(
         $("propPivotRatio").value,
-        c.type === "GATE" || c.type === "PENDULUM"
-          ? -.5
-          : c.type === "HINGE" || c.type === "PADDLE"
-            ? -.48
-            : 0
+        0
       );
-    }
-    if (c.type === "HINGE") {
-      c.properties.lowerAngle = clamp(
-        num($("propLowerAngle").value, -70),
-        -360,
-        360
-      );
-      c.properties.upperAngle = clamp(
-        num($("propUpperAngle").value, 70),
-        -360,
-        360
+      c.properties.motorTorque = Math.max(
+        0,
+        num($("propMotorTorque").value, 30)
       );
       c.properties.jointFriction = Math.max(
         0,
         num($("propJointFriction").value, .15)
       );
     }
-    if (c.type === "PADDLE") {
-      c.properties.motorSpeed = num($("propMotorSpeed").value, 180);
-      c.properties.motorTorque = Math.max(
+    if (c.type === "CURVE_WALL") {
+      c.properties.thickness = Math.max(
         0,
-        num($("propMotorTorque").value, 30)
+        num($("propThickness").value, 18)
       );
     }
     if (c.type === "BURST_SPAWN") {
@@ -2586,10 +2554,11 @@
 
   ["propX","propY","propRotation","propWidth","propHeight","propRadius",
    "propVisualFill","propVisualStroke",
-   "propRestitution","propFriction","propAngularSpeed","propBladeCount","propPeriod",
-   "propAmplitude","propOpenAngle","propThickness",
-   "propPivotRatio","propLowerAngle","propUpperAngle","propJointFriction",
-   "propMotorSpeed","propMotorTorque",
+   "propRestitution","propFriction","propRotationMode","propAngularSpeed","propBladeCount","propPeriod",
+   "propStartAngle","propEndAngle",
+   "propThickness",
+   "propPivotRatio","propJointFriction",
+   "propMotorTorque",
    "propBurstPower","propBurstDirection","propBurstSpread","propBurstVariance",
    "propBurstSizeMin","propBurstSizeMax","propBurstInterval",
    "propBeltSpeed","propBeltGrip",
@@ -2604,7 +2573,12 @@
    "propBoost","propMarbleRadius"]
     .forEach((id) => {
       const input = $(id);
-      if (input) input.addEventListener("change", updateSelectedFromInspector);
+      if (input) {
+        input.addEventListener("change", () => {
+          updateSelectedFromInspector();
+          if (id === "propRotationMode") syncAdvancedSettings();
+        });
+      }
     });
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
