@@ -153,8 +153,8 @@
 
       <div class="panel-section">
         <p class="panel-title">월드</p>
-        <label class="mini-field"><span>너비</span><input id="worldWidth" type="number" value="1280"></label>
-        <label class="mini-field"><span>높이</span><input id="worldHeight" type="number" value="720"></label>
+        <label class="mini-field"><span>너비</span><input id="worldWidth" type="number" value="1280" min="0"></label>
+        <label class="mini-field"><span>높이</span><input id="worldHeight" type="number" value="720" min="0"></label>
         <label class="mini-field"><span>X 중력</span><input id="gravityX" type="number" step=".5" value="0"></label>
         <label class="mini-field"><span>Y 중력</span><input id="gravityY" type="number" step=".5" value="12"></label>
         <label class="mini-field"><span>격자</span><input id="gridSize" type="number" value="20"></label>
@@ -217,38 +217,38 @@
         <button id="advancedSettingsToggle" class="small-button advanced-settings-toggle" type="button" aria-expanded="false">고급 설정 보기</button>
         <label class="mini-field"><span>X</span><input id="propX" type="number" step="1"></label>
         <label class="mini-field"><span>Y</span><input id="propY" type="number" step="1"></label>
-        <label class="mini-field"><span>회전각</span><input id="propRotation" type="number" step="1"></label>
+        <label class="mini-field"><span>회전각</span><input id="propRotation" type="number" step="1" min="-360" max="360"></label>
         <label class="mini-field color-field"><span>채움색</span><input id="propVisualFill" type="color"></label>
         <label class="mini-field color-field"><span>테두리색</span><input id="propVisualStroke" type="color"></label>
-        <label class="mini-field"><span>너비</span><input id="propWidth" type="number" step="1"></label>
-        <label class="mini-field"><span>높이</span><input id="propHeight" type="number" step="1"></label>
-        <label class="mini-field"><span>반지름</span><input id="propRadius" type="number" step="1"></label>
-        <label class="mini-field"><span>탄성</span><input id="propRestitution" type="number" step=".05"></label>
-        <label class="mini-field"><span>마찰</span><input id="propFriction" type="number" step=".01"></label>
+        <label class="mini-field"><span>너비</span><input id="propWidth" type="number" step="1" min="0"></label>
+        <label class="mini-field"><span>높이</span><input id="propHeight" type="number" step="1" min="0"></label>
+        <label class="mini-field"><span>반지름</span><input id="propRadius" type="number" step="1" min="0"></label>
+        <label class="mini-field"><span>탄성</span><input id="propRestitution" type="number" step=".05" min="0"></label>
+        <label class="mini-field"><span>마찰</span><input id="propFriction" type="number" step=".01" min="0"></label>
         <label class="mini-field"><span>회전 속도 °/s</span><input id="propAngularSpeed" type="number" step="5"></label>
         <label class="mini-field"><span>회전판 수</span><input id="propBladeCount" type="number" min="1" max="4" step="1"></label>
-        <label class="mini-field"><span>주기 초</span><input id="propPeriod" type="number" step=".1"></label>
-        <label class="mini-field"><span>진폭 °</span><input id="propAmplitude" type="number" step="1"></label>
-        <label class="mini-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" step="1"></label>
-        <label class="mini-field"><span>레일 두께</span><input id="propThickness" type="number" step="1"></label>
+        <label class="mini-field"><span>주기 초</span><input id="propPeriod" type="number" step=".1" min="0"></label>
+        <label class="mini-field"><span>진폭 °</span><input id="propAmplitude" type="number" step="1" min="0" max="360"></label>
+        <label class="mini-field"><span>열림 각도 °</span><input id="propOpenAngle" type="number" step="1" min="0" max="360"></label>
+        <label class="mini-field"><span>레일 두께</span><input id="propThickness" type="number" step="1" min="0"></label>
         <label class="mini-field"><span>피벗 위치 비율</span><input id="propPivotRatio" type="number" step=".01"></label>
-        <label class="mini-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" step="1"></label>
-        <label class="mini-field"><span>최대 각도 °</span><input id="propUpperAngle" type="number" step="1"></label>
-        <label class="mini-field"><span>관절 마찰</span><input id="propJointFriction" type="number" step=".1"></label>
+        <label class="mini-field"><span>최소 각도 °</span><input id="propLowerAngle" type="number" step="1" min="-360" max="360"></label>
+        <label class="mini-field"><span>최대 각도 °</span><input id="propUpperAngle" type="number" step="1" min="-360" max="360"></label>
+        <label class="mini-field"><span>관절 마찰</span><input id="propJointFriction" type="number" step=".1" min="0"></label>
         <label class="mini-field"><span>모터 속도 °/s</span><input id="propMotorSpeed" type="number" step="5"></label>
-        <label class="mini-field"><span>모터 토크</span><input id="propMotorTorque" type="number" step="1"></label>
-        <label class="mini-field"><span>버스트 세기</span><input id="propBurstPower" type="number" step=".05"></label>
-        <label class="mini-field"><span>버스트 방향 °</span><input id="propBurstDirection" type="number" step="1"></label>
-        <label class="mini-field"><span>버스트 분산 ±°</span><input id="propBurstSpread" type="number" step="1"></label>
-        <label class="mini-field"><span>버스트 세기 편차</span><input id="propBurstVariance" type="number" step=".01"></label>
+        <label class="mini-field"><span>모터 토크</span><input id="propMotorTorque" type="number" step="1" min="0"></label>
+        <label class="mini-field"><span>버스트 세기</span><input id="propBurstPower" type="number" step=".05" min="0"></label>
+        <label class="mini-field"><span>버스트 방향 °</span><input id="propBurstDirection" type="number" step="1" min="-360" max="360"></label>
+        <label class="mini-field"><span>버스트 분산 ±°</span><input id="propBurstSpread" type="number" step="1" min="0" max="360"></label>
+        <label class="mini-field"><span>버스트 세기 편차</span><input id="propBurstVariance" type="number" step=".01" min="0"></label>
         <label class="mini-field"><span>묶음 최소</span><input id="propBurstSizeMin" type="number" step="1"></label>
         <label class="mini-field"><span>묶음 최대</span><input id="propBurstSizeMax" type="number" step="1"></label>
-        <label class="mini-field"><span>묶음 간격 ms</span><input id="propBurstInterval" type="number" step="10"></label>
+        <label class="mini-field"><span>묶음 간격 ms</span><input id="propBurstInterval" type="number" step="10" min="0"></label>
         <label class="mini-field"><span>벨트 속도 px/s</span><input id="propBeltSpeed" type="number" step="10"></label>
-        <label class="mini-field"><span>벨트 마찰 전달</span><input id="propBeltGrip" type="number" step=".05"></label>
-        <label class="mini-field"><span>이동 방향 °</span><input id="propAxisAngle" type="number" step="1"></label>
-        <label class="mini-field"><span>이동 거리 px</span><input id="propTravelDistance" type="number" step="10"></label>
-        <label class="mini-field"><span>이동 속도 px/s</span><input id="propElevatorSpeed" type="number" step="1"></label>
+        <label class="mini-field"><span>벨트 마찰 전달</span><input id="propBeltGrip" type="number" step=".05" min="0"></label>
+        <label class="mini-field"><span>이동 방향 °</span><input id="propAxisAngle" type="number" step="1" min="-360" max="360"></label>
+        <label class="mini-field"><span>이동 거리 px</span><input id="propTravelDistance" type="number" step="10" min="0"></label>
+        <label class="mini-field"><span>이동 속도 px/s</span><input id="propElevatorSpeed" type="number" step="1" min="0"></label>
         <label class="mini-field"><span>출력 키</span><input id="propOutputKey"></label>
         <label class="mini-field"><span>출력 순위</span><input id="propOutputRank" type="number" step="1"></label>
         <label class="mini-field"><span>출력 용량</span><input id="propOutputCapacity" type="number" step="1"></label>
@@ -297,15 +297,15 @@
             <option value="click">클릭</option>
           </select>
         </label>
-        <label class="mini-field"><span>MIDI 음정</span><input id="propAudioNote" type="number" step="1"></label>
-        <label class="mini-field"><span>오디오 게인</span><input id="propAudioGain" type="number" step=".05"></label>
-        <label class="mini-field"><span>오디오 팬</span><input id="propAudioPan" type="number" step=".05"></label>
+        <label class="mini-field"><span>MIDI 음정</span><input id="propAudioNote" type="number" step="1" min="24" max="108"></label>
+        <label class="mini-field"><span>오디오 게인</span><input id="propAudioGain" type="number" step=".05" min="0" max="2"></label>
+        <label class="mini-field"><span>오디오 팬</span><input id="propAudioPan" type="number" step=".05" min="-1" max="1"></label>
         <div class="mini-field audio-preview-field">
           <span>현재 음정</span>
           <button id="previewAudioNote" class="small-button" type="button" data-tooltip="현재 재질/악기와 MIDI 음정 설정을 실제 추첨용 사운드 뱅크로 재생합니다.">▶ 미리듣기</button>
         </div>
-        <label class="mini-field"><span>추가 반발력</span><input id="propBoost" type="number" step=".05"></label>
-        <label class="mini-field"><span>구슬 반지름</span><input id="propMarbleRadius" type="number" step="1"></label>
+        <label class="mini-field"><span>추가 반발력</span><input id="propBoost" type="number" step=".05" min="0"></label>
+        <label class="mini-field"><span>구슬 반지름</span><input id="propMarbleRadius" type="number" step="1" min="0"></label>
       </div>
 
       <div class="panel-section map-meta">
