@@ -101,11 +101,7 @@
   function conditionalOutputActive(output,definition,context={}){
     const p=output?.properties||{};
     const mode=String(p.conditionType||"ALWAYS").toUpperCase();
-    const threshold=clamp(
-      Math.trunc(finiteOr(p.conditionClaims,1)),
-      1,
-      64
-    );
+    const threshold=Math.trunc(finiteOr(p.conditionClaims,1));
     const outputs=(definition?.components||[]).filter(
       c=>c?.type==="OUTPUT"
     );
@@ -135,7 +131,7 @@
     }
 
     if(mode==="AFTER_SECONDS"){
-      return time>=clamp(finiteOr(p.conditionSeconds,1),.01,1800);
+      return time>=finiteOr(p.conditionSeconds,1);
     }
 
     if(mode==="AFTER_SENSOR_CLAIMS"){
@@ -172,13 +168,20 @@
 
   function elevatorPosition(c,time=0){
     const p=c.properties||{};
-    const min=clamp(finiteOr(p.travelMin,-120),-1200,1200);
-    const max=clamp(finiteOr(p.travelMax,120),-1200,1200);
+    const min=finiteOr(p.travelMin,-120);
+    const max=finiteOr(p.travelMax,120);
     const lower=Math.min(min,max),upper=Math.max(min,max);
-    const span=Math.max(1,upper-lower);
-    const speed=clamp(Math.abs(finiteOr(p.motorSpeed,90)),1,600);
+    const span=upper-lower;
+    const speed=Math.abs(finiteOr(p.motorSpeed,90));
     const t=Math.max(0,finiteOr(time,0));
-    const start=clamp(0,lower,upper);
+    if(span===0){
+      const axis=degToRad(finiteOr(p.axisAngle,-90));
+      return {
+        x:c.x+Math.cos(axis)*lower,
+        y:c.y+Math.sin(axis)*lower
+      };
+    }
+    const start=Math.max(lower,Math.min(upper,0));
     const direction=finiteOr(p.startDirection,1)<0?-1:1;
     const origin=direction>0 ? start-lower : upper-start;
     const distance=(origin+t*speed)%(span*2);
@@ -226,21 +229,19 @@
         fallback
       )*t;
     }
-    const period=clamp(
-      finiteOr(p.period,c.type==="GATE"?3.6:3.2),
-      .25,
-      30
-    );
+    const period=finiteOr(p.period,c.type==="GATE"?3.6:3.2);
     const phase=finiteOr(p.phase,0)*Math.PI*2;
-    const wave=Math.sin((Math.PI*2*t/period)+phase);
+    const wave=period===0
+      ? 0
+      : Math.sin((Math.PI*2*t/period)+phase);
     if(c.type==="GATE"){
-      return base+clamp(finiteOr(p.openAngle,78),0,160)*(.5+.5*wave);
+      return base+finiteOr(p.openAngle,78)*(.5+.5*wave);
     }
     if(c.type==="PENDULUM"){
-      return base+clamp(finiteOr(p.amplitude,42),0,120)*wave;
+      return base+finiteOr(p.amplitude,42)*wave;
     }
     if(c.type==="SEESAW"){
-      return base+clamp(finiteOr(p.amplitude,14),0,120)*wave;
+      return base+finiteOr(p.amplitude,14)*wave;
     }
     return base;
   }
@@ -276,9 +277,9 @@
 
     const p=c.properties||{};
     if(c.type==="CURVE_WALL"){
-      const w=Math.max(40,finiteOr(c.width,260));
-      const h=Math.max(20,finiteOr(c.height,120));
-      const thickness=clamp(finiteOr(p.thickness,18),4,80);
+      const w=Math.max(.001,Math.abs(finiteOr(c.width,260)));
+      const h=Math.max(.001,Math.abs(finiteOr(c.height,120)));
+      const thickness=Math.max(.001,Math.abs(finiteOr(p.thickness,18)));
       const segments=clamp(Math.trunc(finiteOr(p.segments,16)),6,32);
       const points=[];
       for(let i=0;i<=segments;i++){
@@ -1299,17 +1300,20 @@
 
       for(let i=0;i<n;i++){
         const spawn=spawns[i%spawns.length];
-        const r=clamp(Number(spawn.properties?.marbleRadius)||11,5,24);
+        const r=Math.max(
+          .001,
+          Math.abs(Number(spawn.properties?.marbleRadius)||11)
+        );
         const localIndex=Math.floor(i/spawns.length);
         const angle=(localIndex*2.399963229728653)+(rng()-.5)*.2;
         const spread=Math.sqrt(localIndex+1)*Math.min(r*1.35,16);
         let vx=(rng()-.5)*35;
         let vy=(rng()-.5)*8;
         if(spawn.type==="BURST_SPAWN"){
-          const jitter=(rng()*2-1)*clamp(finiteOr(spawn.properties?.burstSpreadDegrees,24),0,90);
+          const jitter=(rng()*2-1)*finiteOr(spawn.properties?.burstSpreadDegrees,24);
           const direction=degToRad(finiteOr(spawn.properties?.burstDirectionDegrees,-90)+jitter);
-          const variance=clamp(finiteOr(spawn.properties?.burstPowerVariance,.22),0,.75);
-          const power=Math.max(0,finiteOr(spawn.properties?.burstPower,1.15))
+          const variance=finiteOr(spawn.properties?.burstPowerVariance,.22);
+          const power=finiteOr(spawn.properties?.burstPower,1.15)
             *(1+(rng()*2-1)*variance);
           vx=Math.cos(direction)*power*145;
           vy=Math.sin(direction)*power*145;
@@ -1603,7 +1607,7 @@
       const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
       const dx=m.x-c.x,dy=m.y-c.y;
       const lx=dx*co+dy*si, ly=-dx*si+dy*co;
-      const hw=Math.max(1,c.width/2),hh=Math.max(1,c.height/2);
+      const hw=Math.max(.001,Math.abs(c.width)/2),hh=Math.max(.001,Math.abs(c.height)/2);
       const qx=clamp(lx,-hw,hw),qy=clamp(ly,-hh,hh);
       let nx=lx-qx,ny=ly-qy;
       let dist=Math.hypot(nx,ny);
@@ -1624,16 +1628,16 @@
       m.y+=wy*penetration;
       const vn=m.vx*wx+m.vy*wy;
       if(vn<0){
-        const restitution=clamp(finiteOr(c.properties?.restitution,.35),0,1.4);
+        const restitution=finiteOr(c.properties?.restitution,.35);
         m.vx-=(1+restitution)*vn*wx;
         m.vy-=(1+restitution)*vn*wy;
-        const friction=clamp(finiteOr(c.properties?.friction,.05),0,.5);
+        const friction=finiteOr(c.properties?.friction,.05);
         const tx=-wy,ty=wx,vt=m.vx*tx+m.vy*ty;
         m.vx-=vt*friction*tx;
         m.vy-=vt*friction*ty;
       }
-      const boost=Math.max(0,finiteOr(c.properties?.boost,0));
-      if(boost>0&&nextBoostContacts){
+      const boost=finiteOr(c.properties?.boost,0);
+      if(boost!==0&&nextBoostContacts){
         nextBoostContacts.add(c.id);
         if(!m.boostContacts?.has(c.id)){
           m.vx+=wx*boost*70;
@@ -1645,7 +1649,7 @@
     resolveCircle(m,c,nextBoostContacts=null){
       let dx=m.x-c.x,dy=m.y-c.y;
       let dist=Math.hypot(dx,dy);
-      const target=m.radius+Math.max(1,c.radius);
+      const target=m.radius+Math.max(.001,Math.abs(c.radius));
       if(dist>=target) return;
       if(dist<1e-8){dx=1;dy=0;dist=1;}
       const nx=dx/dist,ny=dy/dist;
@@ -1654,16 +1658,12 @@
       m.y+=ny*penetration;
       const vn=m.vx*nx+m.vy*ny;
       if(vn<0){
-        const restitution=clamp(
-          finiteOr(c.properties?.restitution,.55),
-          0,
-          1.4
-        );
+        const restitution=finiteOr(c.properties?.restitution,.55);
         m.vx-=(1+restitution)*vn*nx;
         m.vy-=(1+restitution)*vn*ny;
       }
-      const boost=Math.max(0,finiteOr(c.properties?.boost,0));
-      if(boost>0&&nextBoostContacts){
+      const boost=finiteOr(c.properties?.boost,0);
+      if(boost!==0&&nextBoostContacts){
         nextBoostContacts.add(c.id);
         if(!m.boostContacts?.has(c.id)){
           m.vx+=nx*boost*70;
@@ -1687,11 +1687,10 @@
           ) continue;
           const a=degToRad(conveyor.rotation||0);
           const tx=Math.cos(a),ty=Math.sin(a);
-          const target=clamp(finiteOr(conveyor.properties?.beltSpeed,160),-1200,1200);
-          const grip=clamp(finiteOr(conveyor.properties?.beltGrip,.22),0,1);
+          const target=finiteOr(conveyor.properties?.beltSpeed,160);
+          const grip=finiteOr(conveyor.properties?.beltGrip,.22);
           const current=m.vx*tx+m.vy*ty;
-          const maxChange=Math.max(20,Math.abs(target)*3)*dt;
-          const change=clamp((target-current)*grip,-maxChange,maxChange);
+          const change=(target-current)*grip;
           m.vx+=tx*change;
           m.vy+=ty*change;
         }
