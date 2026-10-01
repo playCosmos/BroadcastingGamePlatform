@@ -174,3 +174,27 @@ body.workspace-resizing-y{cursor:row-resize}
   .map-maker-grid{grid-template-columns:1fr}
   .map-canvas-wrap{min-height:320px}
 }
+
+
+/* Preset visual identity */
+.palette-preset{
+  grid-template-columns:14px minmax(0,1fr) auto;
+}
+.palette-preset::before{
+  content:"";
+  display:block;
+  width:11px;
+  height:11px;
+  border:2px solid var(--preset-stroke,#aab2b8);
+  border-radius:4px;
+  background:var(--preset-fill,#59636c);
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,.18),
+    0 0 0 1px rgba(255,255,255,.04);
+}
+.palette-preset:hover::before,
+.palette-preset.active::before{
+  box-shadow:
+    inset 0 0 0 1px rgba(0,0,0,.12),
+    0 0 0 2px rgba(158,213,255,.16);
+}
