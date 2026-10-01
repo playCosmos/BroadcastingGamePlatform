@@ -7,13 +7,13 @@
     "WALL","CURVE_WALL","CIRCLE",
     "SPAWN","BURST_SPAWN","FINISH",
     "GATE","ROTATOR","PENDULUM","SEESAW",
-    "HINGE","GEAR","PADDLE",
+    "HINGE","PADDLE",
     "CONVEYOR","ELEVATOR",
     "OUTPUT","SLOT","ELIMINATION"
   ]);
   const RECT_COLLIDER_TYPES = new Set([
     "WALL","GATE","ROTATOR","PENDULUM","SEESAW",
-    "HINGE","GEAR","PADDLE","CONVEYOR","ELEVATOR"
+    "HINGE","PADDLE","CONVEYOR","ELEVATOR"
   ]);
   const COLLIDER_TYPES = new Set([
     ...RECT_COLLIDER_TYPES,
@@ -223,9 +223,12 @@
     if(Number.isFinite(runtimeRotation)) return runtimeRotation;
     const base=finiteOr(c.rotation,0);
     const t=Math.max(0,finiteOr(time,0));
-    if(["ROTATOR","GEAR","PADDLE"].includes(c.type)){
-      const fallback=c.type==="GEAR" ? 120 : c.type==="PADDLE" ? 180 : 90;
-      return base+clamp(finiteOr(p.motorSpeed ?? p.angularSpeed,fallback),-720,720)*t;
+    if(["ROTATOR","PADDLE"].includes(c.type)){
+      const fallback=c.type==="PADDLE" ? 180 : 90;
+      return base+finiteOr(
+        p.motorSpeed ?? p.angularSpeed,
+        fallback
+      )*t;
     }
     const period=clamp(
       finiteOr(p.period,c.type==="GATE"?3.6:3.2),
@@ -247,18 +250,28 @@
   }
 
   function componentShapes(c,time=0){
-    if(["GATE","ROTATOR","PENDULUM","SEESAW","PADDLE"].includes(c.type)){
+    if(c.type==="ROTATOR"){
+      const rotation=motionRotation(c,time);
+      const bladeCount=Math.max(
+        1,
+        Math.min(
+          4,
+          Math.trunc(finiteOr(c.properties?.bladeCount,1))
+        )
+      );
+      return Array.from(
+        {length:bladeCount},
+        (_,index)=>({
+          ...c,
+          rotation:rotation+(180/bladeCount)*index
+        })
+      );
+    }
+    if(["GATE","PENDULUM","SEESAW","PADDLE"].includes(c.type)){
       return [{...c,rotation:motionRotation(c,time)}];
     }
     if(c.type==="HINGE"){
       return [{...c,rotation:motionRotation(c,time)}];
-    }
-    if(c.type==="GEAR"){
-      const rotation=motionRotation(c,time);
-      return [
-        {...c,rotation},
-        {...c,rotation:rotation+90}
-      ];
     }
     if(c.type==="ELEVATOR"){
       const position=elevatorPosition(c,time);
@@ -356,7 +369,7 @@
         {restitution:.35,friction:.05}
       )};
       case "ROTATOR": return {...base,width:190,height:16,properties:colliderProperties(
-        {angularSpeed:90},
+        {angularSpeed:90,bladeCount:1},
         {restitution:.42,friction:.04}
       )};
       case "PENDULUM": return {...base,width:18,height:190,properties:colliderProperties(
@@ -370,10 +383,6 @@
       case "HINGE": return {...base,width:220,height:16,properties:colliderProperties(
         {pivotRatio:0,lowerAngle:-70,upperAngle:70,jointFriction:1.2},
         {restitution:.34,friction:.08}
-      )};
-      case "GEAR": return {...base,width:170,height:18,properties:colliderProperties(
-        {motorSpeed:120,motorTorque:35,linkedComponentId:"",gearRatio:-1},
-        {restitution:.4,friction:.06}
       )};
       case "PADDLE": return {...base,width:180,height:18,properties:colliderProperties(
         {pivotRatio:-.48,motorSpeed:180,motorTorque:30},
@@ -525,6 +534,29 @@
             )
           },
           {restitution:.4,friction:.05}
+        );
+        migrated.push(c);
+        continue;
+      }
+
+      if(c.type==="GEAR"){
+        const {
+          motorSpeed,
+          motorTorque,
+          linkedComponentId,
+          gearRatio,
+          ...remaining
+        }=c.properties;
+        c.type="ROTATOR";
+        c.width=finiteOr(c.width,170);
+        c.height=finiteOr(c.height,18);
+        c.properties=migratedColliderProperties(
+          {
+            ...remaining,
+            angularSpeed:finiteOr(motorSpeed,120),
+            bladeCount:2
+          },
+          {restitution:.4,friction:.06}
         );
         migrated.push(c);
         continue;
@@ -853,7 +885,7 @@
       }else if(x<0||x>w||y<0||y>h){
         errors.push("컴포넌트 기준점은 World 내부여야 합니다.");
       }
-      if(["WALL","CURVE_WALL","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","HINGE","GEAR","PADDLE","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
+      if(["WALL","CURVE_WALL","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","HINGE","PADDLE","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)||cw<8||ch<2){
           errors.push("사각형/복합 컴포넌트 크기가 유효하지 않습니다.");
@@ -875,6 +907,16 @@
           errors.push("Collider boost는 0 이상의 유한 숫자여야 합니다.");
         }
       }
+      if(c?.type==="ROTATOR"){
+        const bladeCount=Number(p.bladeCount ?? 1);
+        if(
+          !Number.isInteger(bladeCount)
+          || bladeCount<1
+          || bladeCount>4
+        ){
+          errors.push("회전판 수는 1~4 정수여야 합니다.");
+        }
+      }
       if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const sensorTag=String(p.sensorTag||"").trim();
         if(sensorTag.length>32){
@@ -892,7 +934,7 @@
         if(lower<-180||upper>180||lower>upper) errors.push("Hinge angle limit이 유효하지 않습니다.");
         if(damping<0||damping>50) errors.push("Hinge jointFriction은 0~50 범위여야 합니다.");
       }
-      if(["GEAR","PADDLE"].includes(c?.type)){
+      if(["PADDLE"].includes(c?.type)){
         const speed=finiteOr(p.motorSpeed,c?.type==="GEAR"?120:180);
         const torque=finiteOr(p.motorTorque,c?.type==="GEAR"?35:30);
         if(speed<-720||speed>720) errors.push("motorSpeed는 -720~720 범위여야 합니다.");
@@ -918,12 +960,6 @@
         const grip=finiteOr(p.beltGrip,.22);
         if(speed<-1200||speed>1200) errors.push("Conveyor beltSpeed는 -1200~1200 px/s 범위여야 합니다.");
         if(grip<0||grip>1) errors.push("Conveyor beltGrip은 0~1 범위여야 합니다.");
-      }
-      if(c?.type==="GEAR"){
-        const linked=String(p.linkedComponentId||"").trim();
-        const ratio=finiteOr(p.gearRatio,-1);
-        if(linked===c.id) errors.push("Gear는 자기 자신과 연결할 수 없습니다.");
-        if(Math.abs(ratio)<.01||Math.abs(ratio)>20) errors.push("gearRatio 절대값은 0.01~20 범위여야 합니다.");
       }
       if(c?.type==="ELEVATOR"){
         const axis=finiteOr(p.axisAngle,-90);
@@ -1017,18 +1053,6 @@
 
       if(c?.type==="SPAWN"||c?.type==="BURST_SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
-    }
-
-    for(const c of comps){
-      if(c?.type!=="GEAR") continue;
-      const linked=String(c?.properties?.linkedComponentId||"").trim();
-      if(!linked) continue;
-      const targetType=typeById.get(linked);
-      if(!targetType){
-        errors.push("Gear linkedComponentId 대상이 존재하지 않습니다.");
-      }else if(!["GEAR","HINGE","PADDLE","ELEVATOR"].includes(targetType)){
-        errors.push("Gear는 joint 기반 컴포넌트에만 연결할 수 있습니다.");
-      }
     }
 
     const outputs=comps.filter(c=>c?.type==="OUTPUT");
