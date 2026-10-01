@@ -83,28 +83,34 @@ goldbergDefinition.components.splice(
     "WALL",
     "CURVE_WALL",
     "CIRCLE",
-    "GATE",
-    "ROTATOR",
-    "PENDULUM",
-    "SEESAW",
-    "HINGE",
-    "PADDLE",
+    "ROTATIONAL_BODY",
     "CONVEYOR",
     "ELEVATOR",
     "OUTPUT",
     "SLOT",
     "ELIMINATION"
   ].map((type, index) =>
-    Engine.componentDefaults(type, 60 + index * 45, 300)
+    Engine.componentDefaults(type, 60 + index * 55, 300)
   )
 );
 requireCondition(
   Engine.validateDefinition(goldbergDefinition).length === 0,
   "browser authority contract must accept Goldberg map components"
 );
+const forceRotation = Engine.createPreset("ROTATOR", 300, 300);
+const torqueRotation = Engine.createPreset("PADDLE", 300, 300);
+const freeRotation = Engine.createPreset("HINGE", 300, 300);
 requireCondition(
-  Engine.componentDefaults("HINGE", 300, 300).properties.lowerAngle < 0,
-  "reactive hinge must carry joint limits in the map contract"
+  forceRotation.type === "ROTATIONAL_BODY"
+    && torqueRotation.type === "ROTATIONAL_BODY"
+    && freeRotation.type === "ROTATIONAL_BODY",
+  "all rotation presets must share one runtime component type"
+);
+requireCondition(
+  forceRotation.properties.rotationMode === "FORCE_CONTINUOUS"
+    && torqueRotation.properties.rotationMode === "TORQUE_CONTINUOUS"
+    && freeRotation.properties.rotationMode === "FREE",
+  "rotation presets must select force torque or free behavior by values"
 );
 
 
@@ -113,15 +119,17 @@ const physicsSource = fs.readFileSync(
   "utf8"
 );
 requireCondition(
-  physicsSource.includes("componentPivotWorld(component)")
-    && physicsSource.includes("b2_kinematicBody"),
-  "driven rotators must use an explicit fixed pivot in Box2D"
-);
-requireCondition(
-  physicsSource.includes("createRevoluteComponent(component)")
+  physicsSource.includes("createRotationalBody(component)")
+    && physicsSource.includes("rotationMode(component)")
+    && physicsSource.includes("b2_kinematicBody")
     && physicsSource.includes("b2_dynamicBody")
     && physicsSource.includes("b2RevoluteJointDef"),
-  "hinge and paddle must use dynamic revolute bodies"
+  "one rotational body engine must dispatch FORCE and physical modes"
+);
+requireCondition(
+  physicsSource.includes("TORQUE_OSCILLATE")
+    && physicsSource.includes("updateTorqueRotations"),
+  "torque-driven rotation must retain collision-reactive motor control"
 );
 
 const controllerSource = fs.readFileSync(
