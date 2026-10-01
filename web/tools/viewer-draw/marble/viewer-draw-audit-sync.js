@@ -50,7 +50,7 @@
         "winner count " + winnerCount + " < required " + minimum
       );
     }
-    if (maxNudges > 0 && detail.stuckNudges > maxNudges) {
+    if (detail.stuckNudges > maxNudges) {
       reasons.push(
         "nudge count " + detail.stuckNudges + " > allowed " + maxNudges
       );
