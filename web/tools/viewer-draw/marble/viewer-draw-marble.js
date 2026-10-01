@@ -489,36 +489,9 @@
     };
   }
 
-  function componentStyle(type) {
-    return {
-      WALL: ["#697680", "#a1abb2"],
-      CURVE_WALL: ["#566d7a", "#a8d4e8"],
-      CIRCLE: ["#c9d0d5", "#f1f4f6"],
-      GATE: ["#6d4e9a", "#b995ee"],
-      ROTATOR: ["#875b2f", "#f0b36a"],
-      PENDULUM: ["#496b8f", "#82b6e9"],
-      SEESAW: ["#6b6650", "#c5bb86"],
-      HINGE: ["#47605b", "#8fc5b7"],
-      PADDLE: ["#7a4936", "#e8996f"],
-      CONVEYOR: ["#47565f", "#8fc6df"],
-      ELEVATOR: ["#3f586d", "#84a8c6"],
-      OUTPUT: ["#3f744c", "#8bd3a1"],
-      SLOT: ["#73503e", "#dda57e"],
-      ELIMINATION: ["#713d50", "#df789d"],
-      SPAWN: ["#1d6c8d", "#60c3e8"],
-      BURST_SPAWN: ["#784878", "#e092df"],
-      FINISH: ["#327649", "#72cf90"]
-    }[type] || ["#59636c", "#aab2b8"];
-  }
-
   function drawComponent(target, component, view, simplified = false) {
-    const [defaultFill, defaultStroke] = componentStyle(component.type);
-    const fill = String(
-      component.properties?.visualFill || defaultFill
-    );
-    const stroke = String(
-      component.properties?.visualStroke || defaultStroke
-    );
+    const { fill, stroke } =
+      Engine.componentVisualStyle(component);
     const p = {
       x: view.ox + component.x * view.scale,
       y: view.oy + component.y * view.scale
