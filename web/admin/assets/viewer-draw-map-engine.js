@@ -899,25 +899,33 @@
       const x=Number(c?.x),y=Number(c?.y),rotation=Number(c?.rotation);
       if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(rotation)){
         errors.push("컴포넌트 위치/회전 값은 유한 숫자여야 합니다.");
+      }else if(rotation<-360||rotation>360){
+        errors.push("회전각은 -360~360° 범위여야 합니다.");
       }
       if(["WALL","CURVE_WALL","FINISH","GATE","ROTATOR","PENDULUM","SEESAW","HINGE","PADDLE","CONVEYOR","ELEVATOR","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const cw=Number(c?.width),ch=Number(c?.height);
         if(!Number.isFinite(cw)||!Number.isFinite(ch)){
-          errors.push("사각형/복합 컴포넌트 크기는 유한 숫자여야 합니다.");
+          errors.push("사각형 컴포넌트 크기는 유한 숫자여야 합니다.");
+        }else if(cw<0||ch<0){
+          errors.push("너비와 높이는 0 이상이어야 합니다.");
         }
       }
       if(["CIRCLE","SPAWN","BURST_SPAWN"].includes(c?.type)){
         const radius=Number(c?.radius);
         if(!Number.isFinite(radius)){
           errors.push("원형 컴포넌트 radius는 유한 숫자여야 합니다.");
+        }else if(radius<0){
+          errors.push("반지름은 0 이상이어야 합니다.");
         }
       }
       const p=c?.properties||{};
       if(isCollider(c)){
+        const restitution=finiteOr(p.restitution,.35);
+        const friction=finiteOr(p.friction,.05);
         const boost=finiteOr(p.boost,0);
-        if(!Number.isFinite(boost)){
-          errors.push("Collider boost는 유한 숫자여야 합니다.");
-        }
+        if(restitution<0) errors.push("탄성은 0 이상이어야 합니다.");
+        if(friction<0) errors.push("마찰은 0 이상이어야 합니다.");
+        if(boost<0) errors.push("Boost는 0 이상이어야 합니다.");
       }
       if(c?.type==="ROTATOR"){
         const bladeCount=Number(p.bladeCount ?? 1);
@@ -927,6 +935,48 @@
           || bladeCount>4
         ){
           errors.push("회전판 수는 1~4 정수여야 합니다.");
+        }
+      }
+      const signedAngles=[
+        ["lowerAngle","최소 각도"],
+        ["upperAngle","최대 각도"],
+        ["burstDirectionDegrees","버스트 방향"],
+        ["axisAngle","이동 방향"]
+      ];
+      for(const [key,label] of signedAngles){
+        if(p[key]===undefined) continue;
+        const value=Number(p[key]);
+        if(!Number.isFinite(value)||value<-360||value>360){
+          errors.push(label+"은 -360~360° 범위여야 합니다.");
+        }
+      }
+      const magnitudeAngles=[
+        ["amplitude","진폭"],
+        ["openAngle","열림 각도"],
+        ["burstSpreadDegrees","버스트 분산"]
+      ];
+      for(const [key,label] of magnitudeAngles){
+        if(p[key]===undefined) continue;
+        const value=Number(p[key]);
+        if(!Number.isFinite(value)||value<0||value>360){
+          errors.push(label+"은 0~360° 범위여야 합니다.");
+        }
+      }
+      const nonNegativeProperties=[
+        ["thickness","두께"],
+        ["marbleRadius","구슬 반지름"],
+        ["period","주기"],
+        ["jointFriction","관절 마찰"],
+        ["motorTorque","모터 토크"],
+        ["burstPower","버스트 세기"],
+        ["burstPowerVariance","버스트 세기 편차"],
+        ["beltGrip","벨트 마찰 전달값"]
+      ];
+      for(const [key,label] of nonNegativeProperties){
+        if(p[key]===undefined) continue;
+        const value=Number(p[key]);
+        if(!Number.isFinite(value)||value<0){
+          errors.push(label+"은 0 이상이어야 합니다.");
         }
       }
       if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
@@ -994,6 +1044,9 @@
       if(!["none","bell","chime","xylophone","drum","click"].includes(instrument)){
         errors.push("instrument가 유효하지 않습니다.");
       }
+      if(note<24||note>108) errors.push("audioNote는 MIDI 24~108 범위여야 합니다.");
+      if(gain<0||gain>2) errors.push("audioGain은 0~2 범위여야 합니다.");
+      if(pan<-1||pan>1) errors.push("audioPan은 -1~1 범위여야 합니다.");
 
       if(c?.type==="SPAWN"||c?.type==="BURST_SPAWN") spawn++;
       if(c?.type==="FINISH") finish++;
@@ -1212,14 +1265,8 @@
       if(Number.isFinite(x)&&Number.isFinite(y)&&Number.isFinite(w)&&Number.isFinite(h)&&(x<0||x>w||y<0||y>h)){
         warnings.push(prefix+": 기준점이 World 밖에 있습니다.");
       }
-      if(Number.isFinite(c?.width)&&Number(c.width)<=0) warnings.push(prefix+": 너비가 0 이하입니다.");
-      if(Number.isFinite(c?.height)&&Number(c.height)<=0) warnings.push(prefix+": 높이가 0 이하입니다.");
-      if(["CIRCLE","SPAWN","BURST_SPAWN"].includes(c?.type)&&Number.isFinite(c?.radius)&&Number(c.radius)<=0){
-        warnings.push(prefix+": 반지름이 0 이하입니다.");
-      }
       warnRange(prefix,p,"restitution",0,1.4,"탄성");
       warnRange(prefix,p,"friction",0,.5,"마찰");
-      if(Number.isFinite(Number(p.boost))&&Number(p.boost)<0) warnings.push(prefix+": Boost가 음수입니다.");
       warnRange(prefix,p,"angularSpeed",-720,720,"회전 속도");
       warnRange(prefix,p,"period",.25,30,"주기");
       warnRange(prefix,p,"amplitude",0,120,"진폭");
@@ -1228,16 +1275,11 @@
       warnRange(prefix,p,"jointFriction",0,50,"관절 마찰");
       warnRange(prefix,p,"motorSpeed",-720,720,"모터 속도");
       warnRange(prefix,p,"motorTorque",0,200,"모터 토크");
-      warnRange(prefix,p,"burstDirectionDegrees",-360,360,"버스트 방향");
       warnRange(prefix,p,"burstSpreadDegrees",0,90,"버스트 분산");
       warnRange(prefix,p,"burstPowerVariance",0,.75,"버스트 세기 편차");
       warnRange(prefix,p,"burstIntervalMs",0,5000,"버스트 간격");
       warnRange(prefix,p,"beltSpeed",-1200,1200,"벨트 속도");
       warnRange(prefix,p,"beltGrip",0,1,"벨트 마찰 전달");
-      warnRange(prefix,p,"axisAngle",-360,360,"이동 방향");
-      warnRange(prefix,p,"audioNote",24,108,"MIDI 음정");
-      warnRange(prefix,p,"audioGain",0,2,"오디오 게인");
-      warnRange(prefix,p,"audioPan",-1,1,"오디오 팬");
       if(c?.type==="BURST_SPAWN"){
         const min=Number(p.burstSizeMin),max=Number(p.burstSizeMax);
         if(Number.isFinite(min)&&Number.isFinite(max)&&(min<1||max<1||min>32||max>32||min>max)){
