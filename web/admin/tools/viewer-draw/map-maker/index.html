@@ -23,7 +23,7 @@
   </header>
 
   <section class="map-topbar">
-    <label><span>맵 이름</span><input id="mapName" value="New Marble Machine" maxlength="80"></label>
+    <label><span>맵 이름</span><input id="mapName" value="New Marble Machine"></label>
     <label><span>저장된 맵</span><select id="savedMaps"><option value="">새 맵</option></select></label>
     <button id="loadMap" class="small-button">불러오기</button>
     <button id="newMap" class="small-button">새 맵</button>
@@ -153,11 +153,11 @@
 
       <div class="panel-section">
         <p class="panel-title">월드</p>
-        <label class="mini-field"><span>너비</span><input id="worldWidth" type="number" min="320" max="3840" value="1280"></label>
-        <label class="mini-field"><span>높이</span><input id="worldHeight" type="number" min="240" max="2160" value="720"></label>
-        <label class="mini-field"><span>X 중력</span><input id="gravityX" type="number" min="-50" max="50" step=".5" value="0"></label>
-        <label class="mini-field"><span>Y 중력</span><input id="gravityY" type="number" min="-50" max="50" step=".5" value="12"></label>
-        <label class="mini-field"><span>격자</span><input id="gridSize" type="number" min="5" max="100" value="20"></label>
+        <label class="mini-field"><span>너비</span><input id="worldWidth" type="number" value="1280"></label>
+        <label class="mini-field"><span>높이</span><input id="worldHeight" type="number" value="720"></label>
+        <label class="mini-field"><span>X 중력</span><input id="gravityX" type="number" step=".5" value="0"></label>
+        <label class="mini-field"><span>Y 중력</span><input id="gravityY" type="number" step=".5" value="12"></label>
+        <label class="mini-field"><span>격자</span><input id="gridSize" type="number" value="20"></label>
         <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>격자에 맞춤</span></label>
       </div>
 
@@ -174,14 +174,14 @@
             <option value="CONDITIONAL_OUTPUT">조건부 출력</option>
           </select>
         </label>
-        <label class="mini-field"><span>당첨자 수</span><input id="drawRuleWinnerCount" type="number" min="0" max="64" value="0"></label>
+        <label class="mini-field"><span>당첨자 수</span><input id="drawRuleWinnerCount" type="number" value="0"></label>
       </div>
 
       <div class="panel-section">
         <p class="panel-title">실행 정책</p>
-        <label class="mini-field"><span>제한 시간 초 (0=끔)</span><input id="runTimeoutSeconds" type="number" min="0" max="1800" step="1" value="0"></label>
-        <label class="mini-field"><span>최소 당첨 인원</span><input id="qualificationMinWinners" type="number" min="0" max="64" step="1" value="0"></label>
-        <label class="mini-field"><span>최대 보정 횟수 (0=끔)</span><input id="qualificationMaxNudges" type="number" min="0" max="1000" step="1" value="0"></label>
+        <label class="mini-field"><span>제한 시간 초 (0=끔)</span><input id="runTimeoutSeconds" type="number" step="1" value="0"></label>
+        <label class="mini-field"><span>최소 당첨 인원</span><input id="qualificationMinWinners" type="number" step="1" value="0"></label>
+        <label class="mini-field"><span>최대 보정 횟수 (0=끔)</span><input id="qualificationMaxNudges" type="number" step="1" value="0"></label>
       </div>
     </aside>
 
@@ -190,7 +190,7 @@
         <div class="preview-controls">
           <button id="previewToggle" class="primary-button">▶ 미리보기</button>
           <button id="previewReset" class="small-button">초기화</button>
-          <label>구슬 수 <input id="marbleCount" type="number" min="1" value="16"></label>
+          <label>구슬 수 <input id="marbleCount" type="number" value="16"></label>
           <label>난수 시드 <input id="previewSeed" type="number" value="1"></label>
           <div class="editor-zoom-controls" aria-label="맵 확대 축소">
             <button id="zoomOut" class="small-button" type="button" title="축소">−</button>
