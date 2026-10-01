@@ -6,7 +6,9 @@
   const $ = (id) => document.getElementById(id);
   const canvas = $("mapCanvas");
   const wrap = $("mapCanvasWrap");
+  const workspace = document.querySelector(".map-maker-grid");
   const ctx = canvas.getContext("2d");
+  const WORKSPACE_LAYOUT_KEY = "viewerDrawMapMakerWorkspaceV1";
 
   let definition = Engine.defaultDefinition();
   let mapId = null;
@@ -36,7 +38,227 @@
     return Number.isFinite(n) ? n : fallback;
   };
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  let workspaceLayout = {
+    paletteWidth: null,
+    inspectorWidth: null,
+    canvasHeight: null
+  };
+  let workspaceResize = null;
   let advancedSettingsVisible = false;
+
+  function readWorkspaceLayout() {
+    try {
+      const parsed = JSON.parse(
+        localStorage.getItem(WORKSPACE_LAYOUT_KEY) || "{}"
+      );
+      return {
+        paletteWidth: Number.isFinite(Number(parsed.paletteWidth))
+          ? Number(parsed.paletteWidth)
+          : null,
+        inspectorWidth: Number.isFinite(Number(parsed.inspectorWidth))
+          ? Number(parsed.inspectorWidth)
+          : null,
+        canvasHeight: Number.isFinite(Number(parsed.canvasHeight))
+          ? Number(parsed.canvasHeight)
+          : null
+      };
+    } catch {
+      return {
+        paletteWidth: null,
+        inspectorWidth: null,
+        canvasHeight: null
+      };
+    }
+  }
+
+  function saveWorkspaceLayout() {
+    try {
+      localStorage.setItem(
+        WORKSPACE_LAYOUT_KEY,
+        JSON.stringify(workspaceLayout)
+      );
+    } catch {}
+  }
+
+  function autoWorkspaceCanvasHeight() {
+    const top = wrap.getBoundingClientRect().top;
+    return Math.max(
+      360,
+      Math.floor(window.innerHeight - top - 52)
+    );
+  }
+
+  function workspacePanelLimit(otherWidth) {
+    return Math.max(
+      180,
+      window.innerWidth - otherWidth - 520
+    );
+  }
+
+  function applyWorkspaceLayout() {
+    if (!workspace || window.innerWidth <= 1050) return;
+
+    const currentPalette = document
+      .querySelector(".palette-panel")
+      ?.getBoundingClientRect().width || 190;
+    const currentInspector = document
+      .querySelector(".inspector-panel")
+      ?.getBoundingClientRect().width || 250;
+
+    const paletteWidth = Math.max(
+      140,
+      Math.min(
+        workspacePanelLimit(
+          workspaceLayout.inspectorWidth ?? currentInspector
+        ),
+        workspaceLayout.paletteWidth ?? 190
+      )
+    );
+    const inspectorWidth = Math.max(
+      200,
+      Math.min(
+        workspacePanelLimit(paletteWidth),
+        workspaceLayout.inspectorWidth ?? 250
+      )
+    );
+    const canvasHeight = Math.max(
+      320,
+      workspaceLayout.canvasHeight
+        ?? autoWorkspaceCanvasHeight()
+    );
+
+    workspace.style.setProperty(
+      "--palette-width",
+      paletteWidth + "px"
+    );
+    workspace.style.setProperty(
+      "--inspector-width",
+      inspectorWidth + "px"
+    );
+    workspace.style.setProperty(
+      "--canvas-height",
+      canvasHeight + "px"
+    );
+  }
+
+  function finishWorkspaceResize(pointerId = null) {
+    if (!workspaceResize) return;
+    const splitter = workspaceResize.splitter;
+    if (
+      pointerId !== null
+      && splitter.hasPointerCapture?.(pointerId)
+    ) {
+      splitter.releasePointerCapture(pointerId);
+    }
+    splitter.classList.remove("active");
+    document.body.classList.remove(
+      "workspace-resizing",
+      "workspace-resizing-x",
+      "workspace-resizing-y"
+    );
+    workspaceResize = null;
+    saveWorkspaceLayout();
+  }
+
+  function setupWorkspaceResizers() {
+    workspaceLayout = readWorkspaceLayout();
+    requestAnimationFrame(() => {
+      applyWorkspaceLayout();
+      render();
+    });
+
+    document
+      .querySelectorAll("[data-workspace-resize]")
+      .forEach((splitter) => {
+        splitter.addEventListener("pointerdown", (event) => {
+          if (window.innerWidth <= 1050) return;
+          const kind = splitter.dataset.workspaceResize;
+          workspaceResize = {
+            kind,
+            splitter,
+            pointerId: event.pointerId,
+            startX: event.clientX,
+            startY: event.clientY,
+            paletteWidth: document
+              .querySelector(".palette-panel")
+              ?.getBoundingClientRect().width || 190,
+            inspectorWidth: document
+              .querySelector(".inspector-panel")
+              ?.getBoundingClientRect().width || 250,
+            canvasHeight: wrap.getBoundingClientRect().height
+          };
+          splitter.setPointerCapture?.(event.pointerId);
+          splitter.classList.add("active");
+          document.body.classList.add(
+            "workspace-resizing",
+            kind === "canvas"
+              ? "workspace-resizing-y"
+              : "workspace-resizing-x"
+          );
+          event.preventDefault();
+        });
+
+        splitter.addEventListener("pointermove", (event) => {
+          if (
+            !workspaceResize
+            || workspaceResize.pointerId !== event.pointerId
+          ) return;
+
+          const dx = event.clientX - workspaceResize.startX;
+          const dy = event.clientY - workspaceResize.startY;
+
+          if (workspaceResize.kind === "palette") {
+            workspaceLayout.paletteWidth = Math.max(
+              140,
+              workspaceResize.paletteWidth + dx
+            );
+          } else if (workspaceResize.kind === "inspector") {
+            workspaceLayout.inspectorWidth = Math.max(
+              200,
+              workspaceResize.inspectorWidth - dx
+            );
+          } else if (workspaceResize.kind === "canvas") {
+            workspaceLayout.canvasHeight = Math.max(
+              320,
+              workspaceResize.canvasHeight + dy
+            );
+          }
+
+          applyWorkspaceLayout();
+          event.preventDefault();
+        });
+
+        const end = (event) => {
+          if (
+            workspaceResize
+            && workspaceResize.pointerId === event.pointerId
+          ) {
+            finishWorkspaceResize(event.pointerId);
+          }
+        };
+        splitter.addEventListener("pointerup", end);
+        splitter.addEventListener("pointercancel", end);
+
+        splitter.addEventListener("dblclick", () => {
+          const kind = splitter.dataset.workspaceResize;
+          if (kind === "palette") {
+            workspaceLayout.paletteWidth = null;
+          } else if (kind === "inspector") {
+            workspaceLayout.inspectorWidth = null;
+          } else {
+            workspaceLayout.canvasHeight = null;
+          }
+          applyWorkspaceLayout();
+          saveWorkspaceLayout();
+          render();
+        });
+      });
+
+    window.addEventListener("resize", () => {
+      if (window.innerWidth <= 1050) return;
+      applyWorkspaceLayout();
+    });
+  }
   let inspectorComponentId = null;
 
   const VISUAL_FIELDS = [
@@ -2378,6 +2600,8 @@
       event.preventDefault();
     }
   });
+
+  setupWorkspaceResizers();
 
   new ResizeObserver(() => {
     clearTimeout(resizeTimer);
