@@ -209,9 +209,27 @@ public final class PlatformServerMain {
         );
 
         var viewerDraw = new ViewerDrawService(database);
-        var drawingChatSubscription = platformEvents.subscribe(
+        var chatSubscription = platformEvents.subscribe(
             ChatMessageEvent.class,
             chat -> {
+                try {
+                    if (viewerDraw.processChatMessage(chat)) {
+                        var snapshot =
+                            viewerDraw.entryCollectionSnapshot();
+                        System.out.println(
+                            "[viewer-draw] chat entry accepted"
+                                + " provider=" + chat.provider()
+                                + " user=" + chat.userId()
+                                + " entries=" + snapshot.entryCount()
+                        );
+                    }
+                } catch (Exception error) {
+                    System.err.println(
+                        "[viewer-draw] chat collection failed: "
+                            + error.getMessage()
+                    );
+                }
+
                 try {
                     var result = drawingGame.processChatMessage(chat);
                     if (
@@ -311,7 +329,7 @@ public final class PlatformServerMain {
             catch (InterruptedException error) { Thread.currentThread().interrupt(); }
             catch (Exception ignored) {}
             try { boardDonationSubscription.close(); } catch (Exception ignored) {}
-            try { drawingChatSubscription.close(); } catch (Exception ignored) {}
+            try { chatSubscription.close(); } catch (Exception ignored) {}
             try { participantSoop.close(); } catch (Exception ignored) {}
             try { providers.close(); } catch (Exception ignored) {}
             try { fileLog.close(); } catch (Exception ignored) {}
