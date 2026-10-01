@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="./web/assets/platform.css">
-  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-bounds1">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-workspace1">
 </head>
 <body data-storage-mode="local">
 <main class="shell map-maker-shell">
@@ -185,6 +185,15 @@
       </div>
     </aside>
 
+    <div
+      class="maker-splitter maker-splitter-x"
+      data-workspace-resize="palette"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="도구 패널 너비 조절"
+      title="드래그: 도구 패널 너비 조절 · 더블클릭: 기본값"
+    ></div>
+
     <section class="maker-stage">
       <div class="stage-toolbar">
         <div class="preview-controls">
@@ -206,8 +215,25 @@
       <div class="map-canvas-wrap" id="mapCanvasWrap">
         <canvas id="mapCanvas"></canvas>
       </div>
+      <div
+        class="maker-splitter maker-splitter-y"
+        data-workspace-resize="canvas"
+        role="separator"
+        aria-orientation="horizontal"
+        aria-label="캔버스 높이 조절"
+        title="드래그: 캔버스 높이 조절 · 더블클릭: 화면 높이에 맞춤"
+      ></div>
       <div class="map-validation" id="mapValidation">맵은 이 브라우저의 localStorage에만 저장됩니다. JSON Import/Export와 현재 맵 즉시 테스트를 지원합니다.</div>
     </section>
+
+    <div
+      class="maker-splitter maker-splitter-x"
+      data-workspace-resize="inspector"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="속성 패널 너비 조절"
+      title="드래그: 속성 패널 너비 조절 · 더블클릭: 기본값"
+    ></div>
 
     <aside class="maker-panel inspector-panel">
       <p class="panel-title">속성</p>
@@ -319,6 +345,6 @@
 </main>
 <script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261001-bounds1"></script>
 <script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-bounds1"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-bounds1"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261001-workspace1"></script>
 </body>
 </html>
