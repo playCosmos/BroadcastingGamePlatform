@@ -52,6 +52,8 @@ jobs:
           if (-not (Test-Path "web/vendor/box2d-wasm/Box2D.simd.wasm")) { throw "box2d-wasm SIMD wasm missing" }
           node --check web/tools/viewer-draw/marble/viewer-draw-marble.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node --check web/tools/viewer-draw/marble/viewer-draw-audit-sync.js
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node web/tools/viewer-draw/marble/browser-physics-adapter-probe.js
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           node --check web/admin/assets/drawing-guess-canvas.js
