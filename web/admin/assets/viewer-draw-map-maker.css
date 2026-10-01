@@ -28,3 +28,5 @@
   .palette-group:not(.open)>.palette-flyout{display:none}
   .palette-group.open>.palette-flyout{display:block}
 }
+
+.map-validation.warning{color:#e7c67a}
