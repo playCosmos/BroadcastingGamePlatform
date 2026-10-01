@@ -30,3 +30,9 @@
 }
 
 .map-validation.warning{color:#e7c67a}
+
+.color-field input[type="color"]{height:34px;padding:3px;cursor:pointer}
+.color-field input[type="color"]::-webkit-color-swatch-wrapper{padding:0}
+.color-field input[type="color"]::-webkit-color-swatch{border:0;border-radius:5px}
+.color-field input[type="color"]::-moz-color-swatch{border:0;border-radius:5px}
+.audio-preview-field .small-button{width:100%;justify-content:center}
