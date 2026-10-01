@@ -6,6 +6,18 @@
   ).toUpperCase();
   let mode = requestedMode === "NUMBER" ? "NUMBER" : "RANDOM";
   let activeSession = null;
+  let entrySource = "MANUAL_LIST";
+  let manualEntryDraft = "";
+  let chatSnapshot = {
+    source: "CHAT_KEYWORD",
+    provider: "SOOP",
+    channelId: "",
+    keyword: "!참가",
+    state: "IDLE",
+    entryCount: 0,
+    entries: []
+  };
+  let collectionPollTimer = 0;
   const numberView = new window.ViewerDrawNumberPresentation(
     $("numberCanvas"),
     $("numberResult")
@@ -13,7 +25,55 @@
 
   function setMode(next) {
     mode = next;
-    document.querySelectorAll(".mode-tab").forEach((button) => {
+    $("manualEntries").addEventListener("input", () => {
+    if (entrySource === "MANUAL_LIST") {
+      manualEntryDraft = $("manualEntries").value;
+    }
+  });
+
+  $("entrySource").addEventListener("change", () => {
+    applyEntrySource($("entrySource").value);
+  });
+
+  $("chatOpen").addEventListener("click", async () => {
+    try {
+      const keyword = $("chatKeyword").value.trim();
+      if (!keyword) throw new Error("참가 키워드를 입력하세요.");
+      $("drawStatus").textContent = "SOOP 채팅 참가 접수 시작 중...";
+      await collectionAction("open", {
+        provider: "SOOP",
+        channelId: $("chatChannelId").value.trim(),
+        keyword
+      });
+      $("drawStatus").textContent = "SOOP 채팅 참가 접수 중";
+      await refreshProviderStatus();
+    } catch (error) {
+      $("drawStatus").textContent = "접수 시작 실패: " + error.message;
+    }
+  });
+  $("chatPause").addEventListener("click", () => {
+    void collectionAction("pause").catch((error) => {
+      $("drawStatus").textContent = "일시정지 실패: " + error.message;
+    });
+  });
+  $("chatResume").addEventListener("click", () => {
+    void collectionAction("resume").catch((error) => {
+      $("drawStatus").textContent = "재개 실패: " + error.message;
+    });
+  });
+  $("chatClose").addEventListener("click", () => {
+    void collectionAction("close").catch((error) => {
+      $("drawStatus").textContent = "접수 종료 실패: " + error.message;
+    });
+  });
+  $("chatClear").addEventListener("click", () => {
+    void collectionAction("clear").catch((error) => {
+      $("drawStatus").textContent = "목록 초기화 실패: " + error.message;
+    });
+  });
+  $("sendToMarble").addEventListener("click", handoffToMarble);
+
+  document.querySelectorAll(".mode-tab").forEach((button) => {
       button.classList.toggle("active", button.dataset.mode === mode);
     });
     $("randomSettings").hidden = mode !== "RANDOM";
@@ -54,15 +114,41 @@
       .filter(Boolean);
   }
 
+  function selectedEntries() {
+    if (entrySource === "CHAT_KEYWORD") {
+      return Array.isArray(chatSnapshot.entries)
+        ? chatSnapshot.entries
+        : [];
+    }
+    return entries().map((displayName, index) => ({
+      entryId: "manual-web-" + (index + 1),
+      provider: null,
+      userId: null,
+      displayName,
+      label: displayName
+    }));
+  }
+
   function requestBody() {
     if (mode === "RANDOM") {
+      const config = {
+        winnerCount: Math.max(1, Number($("winnerCount").value) || 1)
+      };
+      if (entrySource === "CHAT_KEYWORD") {
+        return {
+          name: $("drawName").value,
+          mode,
+          entrySource,
+          drawEntries: selectedEntries(),
+          entries: [],
+          config
+        };
+      }
       return {
         name: $("drawName").value,
         mode,
         entries: entries(),
-        config: {
-          winnerCount: Math.max(1, Number($("winnerCount").value) || 1)
-        }
+        config
       };
     }
     return {
@@ -85,6 +171,115 @@
     const body = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(body.error || `HTTP ${response.status}`);
     return body;
+  }
+
+  function collectionSummary(snapshot) {
+    const state = String(snapshot?.state || "IDLE");
+    const count = Number(snapshot?.entryCount || 0);
+    return state + " · " + count + "명";
+  }
+
+  function applyChatSnapshot(snapshot) {
+    if (!snapshot || typeof snapshot !== "object") return;
+    chatSnapshot = snapshot;
+    $("chatCollectionState").textContent = collectionSummary(snapshot);
+
+    const state = String(snapshot.state || "IDLE");
+    $("chatOpen").disabled = state === "OPEN";
+    $("chatPause").disabled = state !== "OPEN";
+    $("chatResume").disabled = !["PAUSED", "CLOSED"].includes(state);
+    $("chatClose").disabled = !["OPEN", "PAUSED"].includes(state);
+    $("chatClear").disabled = Number(snapshot.entryCount || 0) < 1;
+
+    if (entrySource === "CHAT_KEYWORD") {
+      $("manualEntries").value = (snapshot.entries || [])
+        .map((entry) => entry.displayName || entry.label || entry.userId)
+        .filter(Boolean)
+        .join("\n");
+    }
+  }
+
+  async function refreshEntryCollection() {
+    if (mode !== "RANDOM") return;
+    const snapshot = await api(
+      "/api/v1/tools/viewer-draw/entry-collection"
+    );
+    applyChatSnapshot(snapshot);
+  }
+
+  async function refreshProviderStatus() {
+    try {
+      const body = await api("/api/v1/providers");
+      const soop = (body.providers || []).find(
+        (provider) => String(provider.id || "").toUpperCase() === "SOOP"
+      );
+      const status = String(soop?.status || "UNAVAILABLE");
+      const streamer = String(soop?.streamerId || "").trim();
+      $("soopProviderStatus").textContent =
+        "SOOP: " + status + (streamer ? " · " + streamer : "");
+    } catch (error) {
+      $("soopProviderStatus").textContent = "SOOP: 상태 확인 실패";
+    }
+  }
+
+  async function collectionAction(action, body = {}) {
+    const snapshot = await api(
+      "/api/v1/tools/viewer-draw/entry-collection/" + action,
+      {
+        method: "POST",
+        body: JSON.stringify(body)
+      }
+    );
+    applyChatSnapshot(snapshot);
+    return snapshot;
+  }
+
+  function applyEntrySource(next) {
+    const normalized = next === "CHAT_KEYWORD"
+      ? "CHAT_KEYWORD"
+      : "MANUAL_LIST";
+    if (entrySource === "MANUAL_LIST") {
+      manualEntryDraft = $("manualEntries").value;
+    }
+    entrySource = normalized;
+    $("entrySource").value = normalized;
+    const chat = normalized === "CHAT_KEYWORD";
+    $("chatEntryControls").hidden = !chat;
+    $("manualEntries").readOnly = chat;
+    $("manualEntries").placeholder = chat
+      ? "SOOP 채팅으로 접수된 참가자가 여기에 표시됩니다."
+      : "viewer01\nviewer02\nviewer03";
+    $("entrySourceHelp").textContent = chat
+      ? "Provider + userId로 중복 제거하며 접수 종료 후 목록을 Freeze합니다."
+      : "수동 입력만으로도 추첨이 완전히 동작합니다.";
+    if (chat) {
+      applyChatSnapshot(chatSnapshot);
+      void refreshEntryCollection().catch((error) => {
+        $("drawStatus").textContent =
+          "채팅 참가자 상태 조회 실패: " + error.message;
+      });
+      void refreshProviderStatus();
+    } else {
+      $("manualEntries").value = manualEntryDraft;
+    }
+  }
+
+  function handoffToMarble() {
+    const sourceEntries = selectedEntries();
+    if (!sourceEntries.length) {
+      $("drawStatus").textContent = "Marble Draw로 전달할 참가자가 없습니다.";
+      return;
+    }
+    sessionStorage.setItem(
+      "viewerDraw.entrySnapshot",
+      JSON.stringify({
+        schemaVersion: "viewer-draw-entry-set/v1",
+        source: entrySource,
+        frozenAt: new Date().toISOString(),
+        entries: sourceEntries
+      })
+    );
+    window.location.href = "/tools/viewer-draw/marble/";
   }
 
   function updateSessionInfo(session) {
@@ -146,6 +341,14 @@
     button.disabled = true;
     $("drawStatus").textContent = "추첨 세션 생성 중...";
     try {
+      if (mode === "RANDOM" && entrySource === "CHAT_KEYWORD") {
+        chatSnapshot = await collectionAction("close");
+        if (!chatSnapshot.entries?.length) {
+          throw new Error("접수된 SOOP 참가자가 없습니다.");
+        }
+        $("drawStatus").textContent =
+          "SOOP 참가자 " + chatSnapshot.entryCount + "명 고정 · 세션 생성 중...";
+      }
       let session = await api("/api/v1/tools/viewer-draw/sessions", {
         method: "POST",
         body: JSON.stringify(requestBody())
@@ -233,8 +436,18 @@
     if (mode === "NUMBER") resetDraw();
   });
 
+  manualEntryDraft = $("manualEntries").value;
+  applyEntrySource("MANUAL_LIST");
   setMode(mode);
   refreshHistory().catch((error) => {
     $("drawStatus").textContent = "기록 조회 실패: " + error.message;
+  });
+  collectionPollTimer = window.setInterval(() => {
+    if (entrySource !== "CHAT_KEYWORD" || mode !== "RANDOM") return;
+    void refreshEntryCollection().catch(() => {});
+    void refreshProviderStatus();
+  }, 1000);
+  window.addEventListener("pagehide", () => {
+    window.clearInterval(collectionPollTimer);
   });
 })();
