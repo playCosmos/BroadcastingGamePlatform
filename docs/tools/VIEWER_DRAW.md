@@ -1724,15 +1724,19 @@ V5 구현 완료:
   - MIDI note 기반 `playbackRate` pitch shift
   - 외부 CDN/네트워크 의존 없음
   - Sound Bank 부재 시 기존 oscillator synth fallback
-- Qualification / Local Audit V1
+- Qualification / Server-hosted post-run Audit V1
   - `viewer-draw-run-audit/v0`
+  - 실제 Physics controller는 완료 시 frozen run material만 이벤트로 노출
+  - 별도 `viewer-draw-audit-sync.js`가 로드된 Platform Server 페이지에서만 Audit 생성/해시/저장을 수행
   - MapDefinition SHA-256
   - Frozen Entry snapshot SHA-256
   - engine/fixed timestep/seed/timestamps 기록
   - winners / DNF / elimination / output / slot claim 기록
   - timeout / stuck nudge 기록
   - QUALIFIED / NOT_QUALIFIED 및 reason 기록
-  - 브라우저에서 Audit JSON 직접 내보내기
+  - Audit JSON 직접 내보내기
+  - 서버 저장은 사용자 명시 동작이며 Physics 결과 결정 이후에만 가능
+  - 공개 root `marble.html`은 Audit sync 모듈을 로드하지 않음
 
 중요:
 
@@ -1786,7 +1790,8 @@ V6 운영/제작 확장 구현 완료:
 중요:
 
 - `viewer-draw-marble.js`는 여전히 서버 transport를 결과 판정에 사용하지 않는다.
-- Audit 업로드/이력은 별도 `viewer-draw-audit-sync.js` 모듈에서만 처리한다.
+- `viewer-draw-marble.js`의 완료 이벤트는 결과가 이미 확정된 뒤의 읽기 전용 snapshot 전달이다.
+- Audit 생성/업로드/이력은 별도 `viewer-draw-audit-sync.js` 모듈에서만 처리한다.
 - 서버가 중단되어도 이미 시작한 Marble 추첨의 Physics/winner/timeout/qualification에는 영향이 없다.
 - OBS audit overlay는 완료 후 저장된 Audit의 표현 계층이며 Physics authority가 아니다.
 - Branch state는 Output이 실제로 claim된 순간에만 변경된다.
