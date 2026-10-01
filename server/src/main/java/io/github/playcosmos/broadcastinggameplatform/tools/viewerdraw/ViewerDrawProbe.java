@@ -1,7 +1,9 @@
 package io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw;
 
 import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabase;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import java.nio.file.Files;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -51,6 +53,85 @@ public final class ViewerDrawProbe {
 
         require(service.recent(10).size() == 2, "history must persist both draws");
 
+        var collection = service.openChatEntryCollection(
+            "SOOP",
+            "channel-a",
+            "!참가,!join"
+        );
+        require(
+            "OPEN".equals(collection.state())
+                && collection.entryCount() == 0,
+            "chat entry collection must open empty"
+        );
+
+        require(
+            !service.processChatMessage(
+                chat("SOOP", "channel-a", "u0", "Wrong", "hello")
+            ),
+            "unmatched chat must not enter collection"
+        );
+        require(
+            service.processChatMessage(
+                chat("SOOP", "channel-a", "u1", "Viewer 1", "!참가")
+            ),
+            "matching SOOP keyword must add viewer"
+        );
+        require(
+            !service.processChatMessage(
+                chat("SOOP", "channel-a", "u1", "Viewer 1", "!join")
+            ),
+            "provider user identity must deduplicate chat entry"
+        );
+        require(
+            !service.processChatMessage(
+                chat("SOOP", "other", "u2", "Viewer 2", "!참가")
+            ),
+            "configured channel must be respected"
+        );
+
+        service.pauseEntryCollection();
+        require(
+            !service.processChatMessage(
+                chat("SOOP", "channel-a", "u2", "Viewer 2", "!참가")
+            ),
+            "paused collection must reject chat"
+        );
+        service.resumeEntryCollection();
+        require(
+            service.processChatMessage(
+                chat("SOOP", "channel-a", "u2", "Viewer 2", "!join")
+            ),
+            "resumed collection must accept chat"
+        );
+
+        collection = service.closeEntryCollection();
+        require(
+            "CLOSED".equals(collection.state())
+                && collection.entryCount() == 2
+                && collection.duplicateMessages() == 1,
+            "chat collection snapshot mismatch"
+        );
+
+        var chatRandom = service.create(
+            "chat-random",
+            "RANDOM",
+            "CHAT_KEYWORD",
+            collection.entries(),
+            Map.of("winnerCount", 1)
+        );
+        require(
+            "CHAT_KEYWORD".equals(chatRandom.entrySource())
+                && chatRandom.entryCount() == 2
+                && "SOOP".equals(chatRandom.entries().get(0).provider())
+                && chatRandom.entries().get(0).userId() != null,
+            "chat identity must persist into viewer draw session"
+        );
+        chatRandom = service.freeze(chatRandom.sessionId());
+        require(
+            chatRandom.frozenEntryHash() != null,
+            "chat session must freeze with identity-aware hash"
+        );
+
         System.out.println("Viewer Draw probe passed.");
     }
 
@@ -62,6 +143,24 @@ public final class ViewerDrawProbe {
     @SuppressWarnings("unchecked")
     private static List<Object> castList(Object value) {
         return (List<Object>) value;
+    }
+
+    private static ChatMessageEvent chat(
+        String provider,
+        String channelId,
+        String userId,
+        String nickname,
+        String message
+    ) {
+        return new ChatMessageEvent(
+            provider,
+            channelId,
+            userId,
+            nickname,
+            message,
+            "{}",
+            Instant.now().toEpochMilli()
+        );
     }
 
     private static void require(boolean condition, String message) {
