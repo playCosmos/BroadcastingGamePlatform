@@ -627,7 +627,12 @@
     const c=structuredClone(component);
     const p=c.properties||{};
     const sourceType=String(c.type||"").toUpperCase();
-    const common={...p,rotationPreset:sourceType};
+    const presetDefaults=createPreset(sourceType,c.x,c.y);
+    const common={
+      ...(presetDefaults?.properties||{}),
+      ...p,
+      rotationPreset:sourceType
+    };
     let behavior=null;
 
     if(sourceType==="ROTATOR"){
