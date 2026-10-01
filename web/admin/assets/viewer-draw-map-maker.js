@@ -758,16 +758,29 @@
   function componentBoundsScreen(c, view) {
     if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
       const p = toScreen(c.x, c.y, view);
-      const r = c.radius * view.scale;
+      const r = Math.abs(c.radius) * view.scale;
       return { left: p.x - r, top: p.y - r, width: r * 2, height: r * 2 };
     }
-    const p = toScreen(c.x, c.y, view);
-    const w = c.width * view.scale;
-    const h = c.height * view.scale;
-    const a = (c.rotation || 0) * Math.PI / 180;
-    const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a));
-    const bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
-    return { left: p.x - bw / 2, top: p.y - bh / 2, width: bw, height: bh };
+    const shapes = c.type === "ROTATOR"
+      ? Engine.componentShapes(c, 0)
+      : [c];
+    let left = Infinity;
+    let top = Infinity;
+    let right = -Infinity;
+    let bottom = -Infinity;
+    for (const shape of shapes) {
+      const p = toScreen(shape.x, shape.y, view);
+      const w = Math.abs(shape.width) * view.scale;
+      const h = Math.abs(shape.height) * view.scale;
+      const a = (shape.rotation || 0) * Math.PI / 180;
+      const bw = Math.abs(w * Math.cos(a)) + Math.abs(h * Math.sin(a));
+      const bh = Math.abs(w * Math.sin(a)) + Math.abs(h * Math.cos(a));
+      left = Math.min(left, p.x - bw / 2);
+      top = Math.min(top, p.y - bh / 2);
+      right = Math.max(right, p.x + bw / 2);
+      bottom = Math.max(bottom, p.y + bh / 2);
+    }
+    return { left, top, width: right - left, height: bottom - top };
   }
 
   function isCircularComponent(c) {
@@ -805,9 +818,22 @@
       ctx.beginPath();
       ctx.arc(0, 0, r, 0, Math.PI * 2);
       ctx.stroke();
+    } else if (c.type === "ROTATOR") {
+      const w = Math.max(2, Math.abs(c.width) * view.scale);
+      const h = Math.max(2, Math.abs(c.height) * view.scale);
+      const bladeCount = Math.max(
+        1,
+        Math.min(4, Math.trunc(num(c.properties?.bladeCount, 1)))
+      );
+      for (let index = 0; index < bladeCount; index += 1) {
+        ctx.save();
+        ctx.rotate((Math.PI / bladeCount) * index);
+        ctx.strokeRect(-w / 2, -h / 2, w, h);
+        ctx.restore();
+      }
     } else {
-      const w = Math.max(2, c.width * view.scale);
-      const h = Math.max(2, c.height * view.scale);
+      const w = Math.max(2, Math.abs(c.width) * view.scale);
+      const h = Math.max(2, Math.abs(c.height) * view.scale);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
     }
 
@@ -1103,11 +1129,16 @@
       if (["CIRCLE", "SPAWN", "BURST_SPAWN"].includes(c.type)) {
         if (Math.hypot(x - c.x, y - c.y) <= c.radius + 8) return c;
       } else {
-        const p = localPointFor(c, x, y);
-        if (
-          Math.abs(p.x) <= Math.abs(c.width) / 2 + 8
-          && Math.abs(p.y) <= Math.abs(c.height) / 2 + 8
-        ) return c;
+        const shapes = c.type === "ROTATOR"
+          ? Engine.componentShapes(c, 0)
+          : [c];
+        for (const shape of shapes) {
+          const p = localPointFor(shape, x, y);
+          if (
+            Math.abs(p.x) <= Math.abs(shape.width) / 2 + 8
+            && Math.abs(p.y) <= Math.abs(shape.height) / 2 + 8
+          ) return c;
+        }
       }
     }
     return null;
