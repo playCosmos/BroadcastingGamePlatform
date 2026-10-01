@@ -88,7 +88,6 @@ goldbergDefinition.components.splice(
     "PENDULUM",
     "SEESAW",
     "HINGE",
-    "GEAR",
     "PADDLE",
     "CONVEYOR",
     "ELEVATOR",
