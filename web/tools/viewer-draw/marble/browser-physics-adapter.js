@@ -1050,6 +1050,7 @@
         );
 
         const body = this.world.CreateBody(bodyDef);
+        body.SetBullet(true);
         const shape = new B.b2CircleShape();
         shape.set_m_radius(radius / PIXELS_PER_METER);
         const fixtureDef = new B.b2FixtureDef();
