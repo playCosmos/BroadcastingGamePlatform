@@ -87,15 +87,36 @@
       throw new Error("ranked entries mismatch");
     }
 
-    const gearA = Engine.componentDefaults("GEAR", 360, 430);
-    gearA.id = "gear-a";
-    const gearB = Engine.componentDefaults("GEAR", 520, 430);
-    gearB.id = "gear-b";
-    gearA.properties = {
-      ...gearA.properties,
-      linkedComponentId: gearB.id,
-      gearRatio: -1
-    };
+    const forceRotation = Engine.createPreset(
+      "ROTATOR",
+      330,
+      220
+    );
+    forceRotation.id = "force-rotation";
+    const oscillatingRotation = Engine.createPreset(
+      "PENDULUM",
+      540,
+      220
+    );
+    oscillatingRotation.id = "oscillating-rotation";
+    const freeRotation = Engine.createPreset(
+      "HINGE",
+      360,
+      430
+    );
+    freeRotation.id = "free-rotation";
+    const torqueRotation = Engine.createPreset(
+      "PADDLE",
+      690,
+      430
+    );
+    torqueRotation.id = "torque-rotation";
+    const elevator = Engine.componentDefaults(
+      "ELEVATOR",
+      1060,
+      430
+    );
+    elevator.id = "probe-elevator";
 
     const goldbergDefinition = {
       schemaVersion: Engine.SCHEMA_VERSION,
@@ -112,18 +133,15 @@
           radius: 16,
           properties: { marbleRadius: 10 }
         },
-        Engine.componentDefaults("GATE", 120, 220),
-        Engine.componentDefaults("ROTATOR", 330, 220),
-        Engine.componentDefaults("PENDULUM", 540, 220),
-        Engine.componentDefaults("SEESAW", 750, 220),
-        Engine.componentDefaults("FUNNEL", 960, 270),
-        Engine.componentDefaults("SPLITTER", 1120, 270),
-        Engine.componentDefaults("HINGE", 180, 430),
-        gearA,
-        gearB,
-        Engine.componentDefaults("PADDLE", 690, 430),
-        Engine.componentDefaults("LAUNCHER", 880, 430),
-        Engine.componentDefaults("ELEVATOR", 1060, 430),
+        Engine.componentDefaults("WALL", 120, 220),
+        Engine.componentDefaults("CURVE_WALL", 180, 320),
+        Engine.componentDefaults("CIRCLE", 250, 430),
+        forceRotation,
+        oscillatingRotation,
+        freeRotation,
+        torqueRotation,
+        Engine.componentDefaults("CONVEYOR", 880, 430),
+        elevator,
         {
           ...Engine.componentDefaults("FINISH", 640, 660),
           width: 420,
@@ -131,6 +149,16 @@
         }
       ]
     };
+
+    const goldbergErrors = Engine.validateDefinition(
+      goldbergDefinition
+    );
+    if (goldbergErrors.length) {
+      throw new Error(
+        "Goldberg Box2D map validation failed: "
+          + goldbergErrors.join(" / ")
+      );
+    }
 
     adapter.loadMap(goldbergDefinition);
     state = adapter.reset(entries.slice(0, 2), 77);
@@ -140,23 +168,45 @@
     if (!state || state.totalCount !== 2) {
       throw new Error("Goldberg Box2D map failed to step");
     }
-    if (!Array.isArray(state.components) || state.components.length !== 5) {
-      throw new Error("reactive component runtime state missing");
+    if (
+      !Array.isArray(state.components)
+      || !state.components.some(
+        (component) => component.id === "free-rotation"
+      )
+      || !state.components.some(
+        (component) => component.id === "torque-rotation"
+      )
+      || !state.components.some(
+        (component) => component.id === "probe-elevator"
+      )
+    ) {
+      throw new Error(
+        "reactive rotation/elevator runtime state missing"
+      );
     }
-    if (adapter.gearCouplings.length !== 1) {
-      throw new Error("gear coupling was not created");
+    if (adapter.movingComponents.length !== 2) {
+      throw new Error(
+        "force-driven rotation bodies were not created"
+      );
+    }
+    if (adapter.reactiveComponents.length !== 3) {
+      throw new Error(
+        "physical rotation/elevator bodies were not created"
+      );
     }
     if (adapter.elevators.length !== 1) {
-      throw new Error("elevator prismatic joint was not created");
+      throw new Error(
+        "elevator prismatic joint was not created"
+      );
     }
     if (!Array.isArray(state.audioEvents)) {
       throw new Error("physics audio event channel missing");
     }
-    const gearState = state.components.find(
-      (component) => component.type === "GEAR"
+    const freeState = state.components.find(
+      (component) => component.id === "free-rotation"
     );
-    if (!gearState || !Number.isFinite(gearState.runtimeRotation)) {
-      throw new Error("gear runtime rotation missing");
+    if (!freeState || !Number.isFinite(freeState.runtimeRotation)) {
+      throw new Error("free rotation runtime angle missing");
     }
 
     const outputDefinition = {
