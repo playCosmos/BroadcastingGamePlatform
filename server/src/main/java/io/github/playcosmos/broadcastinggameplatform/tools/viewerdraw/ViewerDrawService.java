@@ -684,6 +684,11 @@ public final class ViewerDrawService {
         }
         requireFinite(world.width(), "world.width");
         requireFinite(world.height(), "world.height");
+        if (world.width() < 0 || world.height() < 0) {
+            throw new IllegalArgumentException(
+                "world width/height must be non-negative"
+            );
+        }
         requireFinite(world.gravityX(), "world.gravityX");
         requireFinite(world.gravityY(), "world.gravityY");
 
@@ -788,10 +793,143 @@ public final class ViewerDrawService {
             requireFinite(rawComponent.height(), id + ".height");
             requireFinite(rawComponent.radius(), id + ".radius");
 
+            if (
+                rawComponent.rotation() < -360
+                || rawComponent.rotation() > 360
+            ) {
+                throw new IllegalArgumentException(
+                    id + " rotation must be within -360..360"
+                );
+            }
+
+            var rectangularTypes = java.util.Set.of(
+                "WALL", "CURVE_WALL", "RAMP", "FINISH",
+                "GATE", "ROTATOR", "PENDULUM", "SEESAW",
+                "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE",
+                "LAUNCHER", "CONVEYOR", "ELEVATOR",
+                "OUTPUT", "SLOT", "ELIMINATION"
+            );
+            if (
+                rectangularTypes.contains(type)
+                && (
+                    rawComponent.width() < 0
+                    || rawComponent.height() < 0
+                )
+            ) {
+                throw new IllegalArgumentException(
+                    id + " width/height must be non-negative"
+                );
+            }
+
+            var circularTypes = java.util.Set.of(
+                "CIRCLE", "PEG", "BUMPER", "SPAWN", "BURST_SPAWN"
+            );
+            if (
+                circularTypes.contains(type)
+                && rawComponent.radius() < 0
+            ) {
+                throw new IllegalArgumentException(
+                    id + " radius must be non-negative"
+                );
+            }
+
             Map<String, Object> properties =
                 rawComponent.properties() == null
                     ? Map.of()
                     : rawComponent.properties();
+
+            var colliderTypes = java.util.Set.of(
+                "WALL", "CURVE_WALL", "RAMP", "PEG", "BUMPER",
+                "CIRCLE", "GATE", "ROTATOR", "PENDULUM", "SEESAW",
+                "FUNNEL", "SPLITTER", "HINGE", "GEAR", "PADDLE",
+                "LAUNCHER", "CONVEYOR", "ELEVATOR"
+            );
+            if (colliderTypes.contains(type)) {
+                double restitution = numberProperty(
+                    properties, "restitution", 0.35
+                );
+                double friction = numberProperty(
+                    properties, "friction", 0.05
+                );
+                double boost = numberProperty(
+                    properties, "boost", 0
+                );
+                if (restitution < 0 || friction < 0 || boost < 0) {
+                    throw new IllegalArgumentException(
+                        id + " restitution/friction/boost must be non-negative"
+                    );
+                }
+            }
+
+            String[] signedAngleKeys = {
+                "lowerAngle",
+                "upperAngle",
+                "burstDirectionDegrees",
+                "axisAngle"
+            };
+            for (String key : signedAngleKeys) {
+                if (!properties.containsKey(key)) continue;
+                double value = numberProperty(properties, key, 0);
+                if (value < -360 || value > 360) {
+                    throw new IllegalArgumentException(
+                        id + " " + key + " must be within -360..360"
+                    );
+                }
+            }
+
+            String[] angleMagnitudeKeys = {
+                "amplitude",
+                "openAngle",
+                "burstSpreadDegrees"
+            };
+            for (String key : angleMagnitudeKeys) {
+                if (!properties.containsKey(key)) continue;
+                double value = numberProperty(properties, key, 0);
+                if (value < 0 || value > 360) {
+                    throw new IllegalArgumentException(
+                        id + " " + key + " must be within 0..360"
+                    );
+                }
+            }
+
+            String[] nonNegativeKeys = {
+                "thickness",
+                "marbleRadius",
+                "period",
+                "jointFriction",
+                "motorTorque",
+                "burstPower",
+                "burstPowerVariance",
+                "burstIntervalMs",
+                "beltGrip",
+                "motorForce"
+            };
+            for (String key : nonNegativeKeys) {
+                if (!properties.containsKey(key)) continue;
+                double value = numberProperty(properties, key, 0);
+                if (value < 0) {
+                    throw new IllegalArgumentException(
+                        id + " " + key + " must be non-negative"
+                    );
+                }
+            }
+
+            if (
+                legacySchema
+                && "LAUNCHER".equals(type)
+                && properties.containsKey("launchDirectionDegrees")
+            ) {
+                double direction = numberProperty(
+                    properties,
+                    "launchDirectionDegrees",
+                    -90
+                );
+                if (direction < -360 || direction > 360) {
+                    throw new IllegalArgumentException(
+                        id + " launchDirectionDegrees must be within -360..360"
+                    );
+                }
+            }
 
             if ("ROTATOR".equals(type)) {
                 double rawBladeCount = numberProperty(
@@ -832,6 +970,11 @@ public final class ViewerDrawService {
                     "launchPower",
                     1.2
                 );
+                if (launchPower < 0) {
+                    throw new IllegalArgumentException(
+                        id + " launchPower must be non-negative"
+                    );
+                }
             }
 
             if ("GEAR".equals(type)) {
@@ -1063,6 +1206,21 @@ public final class ViewerDrawService {
             ) {
                 throw new IllegalArgumentException(
                     id + " instrument is invalid"
+                );
+            }
+            if (audioNote < 24 || audioNote > 108) {
+                throw new IllegalArgumentException(
+                    id + " audioNote must be within 24..108"
+                );
+            }
+            if (audioGain < 0 || audioGain > 2) {
+                throw new IllegalArgumentException(
+                    id + " audioGain must be within 0..2"
+                );
+            }
+            if (audioPan < -1 || audioPan > 1) {
+                throw new IllegalArgumentException(
+                    id + " audioPan must be within -1..1"
                 );
             }
 
