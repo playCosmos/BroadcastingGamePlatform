@@ -60,12 +60,7 @@ const goldbergTypes = [
   "WALL",
   "CURVE_WALL",
   "CIRCLE",
-  "GATE",
-  "ROTATOR",
-  "PENDULUM",
-  "SEESAW",
-  "HINGE",
-  "PADDLE",
+  "ROTATIONAL_BODY",
   "CONVEYOR",
   "ELEVATOR",
   "OUTPUT",
@@ -87,85 +82,151 @@ for (const [index, type] of goldbergTypes.entries()) {
   );
 }
 
-const rotator = Engine.componentDefaults("ROTATOR", 300, 300);
+const rotationPresetNames = [
+  "ROTATOR",
+  "GATE",
+  "PENDULUM",
+  "SEESAW",
+  "HINGE",
+  "PADDLE"
+];
+const rotationPresets = rotationPresetNames.map(
+  (name, index) => Engine.createPreset(
+    name,
+    160 + index * 90,
+    280
+  )
+);
+requireCondition(
+  rotationPresets.every(
+    (component) => component.type === "ROTATIONAL_BODY"
+  ),
+  "all rotation presets must create ROTATIONAL_BODY"
+);
+requireCondition(
+  new Set(
+    rotationPresets.map(
+      (component) => component.properties.rotationMode
+    )
+  ).has("FORCE_CONTINUOUS")
+    && new Set(
+      rotationPresets.map(
+        (component) => component.properties.rotationMode
+      )
+    ).has("FORCE_OSCILLATE")
+    && new Set(
+      rotationPresets.map(
+        (component) => component.properties.rotationMode
+      )
+    ).has("TORQUE_CONTINUOUS")
+    && new Set(
+      rotationPresets.map(
+        (component) => component.properties.rotationMode
+      )
+    ).has("FREE"),
+  "rotation presets must differ by rotationMode values"
+);
+
+const rotator = Engine.createPreset("ROTATOR", 300, 300);
 requireCondition(
   Engine.motionRotation(rotator, 1)
     !== Engine.motionRotation(rotator, 0),
-  "rotator motion must advance with simulation time"
+  "force-continuous rotation must advance with time"
 );
 
-const pendulum = Engine.componentDefaults("PENDULUM", 300, 300);
+const pendulum = Engine.createPreset("PENDULUM", 300, 300);
 requireCondition(
   Engine.motionRotation(pendulum, 0.8)
     !== Engine.motionRotation(pendulum, 0),
-  "pendulum motion must oscillate with simulation time"
+  "force-oscillating rotation must move with time"
 );
-
 const pendulumPivot = Engine.componentPivotWorld(pendulum);
 const pendulumShape = Engine.componentShapes(pendulum, 0.8)[0];
-const movedPendulumPivot = Engine.componentPivotWorld(pendulumShape);
+const pivotAfterMove = Engine.componentPivotWorld(pendulumShape);
 requireCondition(
   Math.hypot(
-    pendulumPivot.x - movedPendulumPivot.x,
-    pendulumPivot.y - movedPendulumPivot.y
+    pendulumPivot.x - pivotAfterMove.x,
+    pendulumPivot.y - pivotAfterMove.y
   ) < 0.0001,
-  "pendulum pivot must remain fixed while its body center moves"
+  "pendulum pivot must remain fixed"
 );
 requireCondition(
   Math.hypot(
     pendulum.x - pendulumShape.x,
     pendulum.y - pendulumShape.y
   ) > 1,
-  "pendulum must orbit its pivot instead of rotating around its center"
+  "pendulum center must orbit its pivot"
 );
 
-const hingeDefinition = {
+const forcePreset = Engine.createPreset("ROTATOR", 280, 260);
+forcePreset.id = "force-rotation";
+const torquePreset = Engine.createPreset("PADDLE", 430, 260);
+torquePreset.id = "torque-rotation";
+const freePreset = Engine.createPreset("HINGE", 580, 260);
+freePreset.id = "free-rotation";
+
+const rotationDefinition = {
   schemaVersion: Engine.SCHEMA_VERSION,
-  name: "Reactive Hinge Probe",
-  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  name: "Unified Rotation Probe",
+  world: { width: 900, height: 600, gravityX: 0, gravityY: 12 },
   components: [
-    {
-      ...Engine.componentDefaults("SPAWN", 50, 50),
-      properties: { marbleRadius: 8 }
-    },
-    {
-      ...Engine.componentDefaults("HINGE", 400, 220),
-      id: "reactive-hinge",
-      properties: {
-        ...Engine.componentDefaults("HINGE", 400, 220).properties,
-        pivotRatio: -.48,
-        lowerAngle: -90,
-        upperAngle: 90,
-        jointFriction: .05
-      }
-    },
-    {
-      ...Engine.componentDefaults("FINISH", 400, 560),
-      width: 300,
-      height: 50
-    }
+    { ...Engine.componentDefaults("SPAWN", 80, 60) },
+    forcePreset,
+    torquePreset,
+    freePreset,
+    { ...Engine.componentDefaults("FINISH", 450, 550) }
   ]
 };
-const hingePreview = new Engine.PreviewEngine(
-  hingeDefinition,
+const rotationPreview = new Engine.PreviewEngine(
+  rotationDefinition,
   { seed: 17 }
 );
-let hingeState = hingePreview.reset(1, 17);
-const hingeStartAngle =
-  hingeState.components.find(
-    (component) => component.id === "reactive-hinge"
-  )?.runtimeRotation ?? 0;
-for (let step = 0; step < 120; step += 1) {
-  hingePreview.step(1 / 120);
-}
-hingeState = hingePreview.snapshot();
-const hingeEndAngle =
-  hingeState.components.find(
-    (component) => component.id === "reactive-hinge"
-  )?.runtimeRotation ?? hingeStartAngle;
+let rotationState = rotationPreview.reset(1, 17);
 requireCondition(
-  Math.abs(hingeEndAngle - hingeStartAngle) > .5,
-  "HINGE preview must react as a dynamic revolute body"
+  !rotationState.components.some(
+    (component) => component.id === "force-rotation"
+  ),
+  "FORCE rotation must not create collision-reactive state"
+);
+requireCondition(
+  rotationState.components.some(
+    (component) => component.id === "torque-rotation"
+  )
+    && rotationState.components.some(
+      (component) => component.id === "free-rotation"
+    ),
+  "TORQUE and FREE rotation must create dynamic state"
+);
+
+const torqueBefore = rotationPreview.rotationStates
+  .get("torque-rotation").angularVelocity;
+rotationPreview.applyRotationImpact(
+  torquePreset,
+  {
+    contactX: torquePreset.x + torquePreset.width / 2,
+    contactY: torquePreset.y,
+    incomingVx: 0,
+    incomingVy: 320
+  }
+);
+const torqueAfter = rotationPreview.rotationStates
+  .get("torque-rotation").angularVelocity;
+requireCondition(
+  Math.abs(torqueAfter - torqueBefore) > 0.01,
+  "TORQUE rotation must react to collision impulse"
+);
+
+for (let step = 0; step < 120; step += 1) {
+  rotationPreview.step(1 / 120);
+}
+rotationState = rotationPreview.snapshot();
+const freeRotation = rotationState.components.find(
+  (component) => component.id === "free-rotation"
+);
+requireCondition(
+  freeRotation
+    && Math.abs(freeRotation.runtimeRotation - freePreset.rotation) > .5,
+  "FREE rotation must react to gravity/physics"
 );
 
 const pegPreset = Engine.createPreset("PEG", 300, 300);
@@ -218,15 +279,17 @@ const migratedDefinition = Engine.migrateDefinition(legacyDefinition);
 requireCondition(
   migratedDefinition.schemaVersion === Engine.SCHEMA_VERSION
     && !migratedDefinition.components.some((component) =>
-      ["RAMP","FUNNEL","SPLITTER","LAUNCHER","PEG","BUMPER"]
-        .includes(component.type)
+      [
+        "RAMP","FUNNEL","SPLITTER","LAUNCHER","PEG","BUMPER",
+        "GATE","ROTATOR","PENDULUM","SEESAW","HINGE","PADDLE"
+      ].includes(component.type)
     )
     && migratedDefinition.components.filter(
       (component) => component.type === "WALL"
     ).length >= 4,
   "legacy obstacles must migrate to current wall/circle colliders"
 );
-const multiBladeRotator = Engine.componentDefaults(
+const multiBladeRotator = Engine.createPreset(
   "ROTATOR",
   300,
   300
@@ -283,10 +346,48 @@ const migratedGear = migratedGearDefinition.components.find(
   (component) => component.id === "legacy-gear"
 );
 requireCondition(
-  migratedGear?.type === "ROTATOR"
+  migratedGear?.type === "ROTATIONAL_BODY"
     && migratedGear.properties.bladeCount === 2
     && migratedGear.properties.angularSpeed === 120,
-  "legacy GEAR must migrate to two-blade ROTATOR"
+  "legacy GEAR must migrate to two-blade ROTATIONAL_BODY"
+);
+
+const oldV1RotationDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Old V1 Rotation Migration Probe",
+  world: { width: 800, height: 600, gravityX: 0, gravityY: 12 },
+  components: [
+    { ...Engine.componentDefaults("SPAWN", 100, 80) },
+    {
+      id: "old-v1-paddle",
+      type: "PADDLE",
+      x: 400,
+      y: 300,
+      rotation: 0,
+      width: 180,
+      height: 18,
+      radius: 0,
+      properties: {
+        restitution: .45,
+        friction: .06,
+        pivotRatio: -.48,
+        motorSpeed: 180,
+        motorTorque: 30
+      }
+    },
+    { ...Engine.componentDefaults("FINISH", 400, 540) }
+  ]
+};
+const migratedOldV1Rotation =
+  Engine.migrateDefinition(oldV1RotationDefinition);
+const migratedPaddle =
+  migratedOldV1Rotation.components.find(
+    (component) => component.id === "old-v1-paddle"
+  );
+requireCondition(
+  migratedPaddle?.type === "ROTATIONAL_BODY"
+    && migratedPaddle.properties.rotationMode === "TORQUE_CONTINUOUS",
+  "old v1 PADDLE must migrate to unified torque rotation"
 );
 
 const outputDefinition = {
