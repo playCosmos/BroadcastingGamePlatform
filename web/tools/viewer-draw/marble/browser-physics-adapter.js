@@ -280,15 +280,8 @@
           case "CIRCLE":
             this.createStaticCircle(component);
             break;
-          case "GATE":
-          case "ROTATOR":
-          case "PENDULUM":
-          case "SEESAW":
-            this.createKinematicBox(component);
-            break;
-          case "HINGE":
-          case "PADDLE":
-            this.createRevoluteComponent(component);
+          case "ROTATIONAL_BODY":
+            this.createRotationalBody(component);
             break;
           case "CONVEYOR":
             this.createStaticBox(component);
@@ -414,55 +407,27 @@
       }
     }
 
-    createKinematicBox(component) {
+    createRotationFixtures(body, component) {
       const B = this.Box2D;
-      const pivot =
-        root.ViewerDrawMapEngine.componentPivotWorld(component);
+      const p = component.properties || {};
       const localPivot =
         root.ViewerDrawMapEngine.componentPivotLocal(component);
-
-      const bodyDef = new B.b2BodyDef();
-      bodyDef.set_type(B.b2_kinematicBody);
-      bodyDef.set_position(
-        new B.b2Vec2(
-          pivot.x / PIXELS_PER_METER,
-          pivot.y / PIXELS_PER_METER
+      const bladeCount = Math.max(
+        1,
+        Math.min(
+          4,
+          Math.trunc(property(p, "bladeCount", 1))
         )
-      );
-
-      const body = this.world.CreateBody(bodyDef);
-      body.SetTransform(
-        body.GetPosition(),
-        root.ViewerDrawMapEngine.motionRotation(component, 0)
-          * Math.PI / 180
       );
 
       const fixtureDef = new B.b2FixtureDef();
       fixtureDef.set_density(1);
       fixtureDef.set_restitution(
-        Math.max(
-          0,
-          property(component.properties, "restitution", 0.35)
-        )
+        Math.max(0, property(p, "restitution", 0.35))
       );
       fixtureDef.set_friction(
-        Math.max(
-          0,
-          property(component.properties, "friction", 0.05)
-        )
+        Math.max(0, property(p, "friction", 0.05))
       );
-
-      const bladeCount = component.type === "ROTATOR"
-        ? Math.max(
-            1,
-            Math.min(
-              4,
-              Math.trunc(
-                property(component.properties, "bladeCount", 1)
-              )
-            )
-          )
-        : 1;
 
       for (let index = 0; index < bladeCount; index += 1) {
         const localAngle = (Math.PI / bladeCount) * index;
@@ -491,11 +456,46 @@
         fixtureDef.set_shape(shape);
         body.CreateFixture(fixtureDef);
       }
+    }
+
+    createRotationalBody(component) {
+      const mode =
+        root.ViewerDrawMapEngine.rotationMode(component);
+      if (mode.startsWith("FORCE_")) {
+        this.createForceRotationBody(component);
+      } else {
+        this.createTorqueRotationBody(component, mode);
+      }
+    }
+
+    createForceRotationBody(component) {
+      const B = this.Box2D;
+      const pivot =
+        root.ViewerDrawMapEngine.componentPivotWorld(component);
+
+      const bodyDef = new B.b2BodyDef();
+      bodyDef.set_type(B.b2_kinematicBody);
+      bodyDef.set_position(
+        new B.b2Vec2(
+          pivot.x / PIXELS_PER_METER,
+          pivot.y / PIXELS_PER_METER
+        )
+      );
+
+      const body = this.world.CreateBody(bodyDef);
+      body.SetTransform(
+        body.GetPosition(),
+        root.ViewerDrawMapEngine.motionRotation(component, 0)
+          * Math.PI / 180
+      );
+      this.createRotationFixtures(body, component);
 
       this.movingComponents.push({
         component,
         body,
-        pivot
+        pivot,
+        rotationMode:
+          root.ViewerDrawMapEngine.rotationMode(component)
       });
     }
 
@@ -525,28 +525,18 @@
       }
     }
 
-    createRevoluteComponent(component) {
+    createTorqueRotationBody(component, mode) {
       const B = this.Box2D;
       const p = component.properties || {};
-      const pivotFallback = -0.48;
-      const pivotRatio = property(
-        p,
-        "pivotRatio",
-        pivotFallback
-      );
-      const angle = (component.rotation || 0) * Math.PI / 180;
-      const localPivotX = component.width * pivotRatio;
-      const anchorX =
-        component.x + Math.cos(angle) * localPivotX;
-      const anchorY =
-        component.y + Math.sin(angle) * localPivotX;
+      const pivot =
+        root.ViewerDrawMapEngine.componentPivotWorld(component);
 
       const anchorDef = new B.b2BodyDef();
       anchorDef.set_type(B.b2_staticBody);
       anchorDef.set_position(
         new B.b2Vec2(
-          anchorX / PIXELS_PER_METER,
-          anchorY / PIXELS_PER_METER
+          pivot.x / PIXELS_PER_METER,
+          pivot.y / PIXELS_PER_METER
         )
       );
       const anchorBody = this.world.CreateBody(anchorDef);
@@ -555,83 +545,106 @@
       bodyDef.set_type(B.b2_dynamicBody);
       bodyDef.set_position(
         new B.b2Vec2(
-          component.x / PIXELS_PER_METER,
-          component.y / PIXELS_PER_METER
+          pivot.x / PIXELS_PER_METER,
+          pivot.y / PIXELS_PER_METER
         )
       );
       const body = this.world.CreateBody(bodyDef);
-      body.SetTransform(body.GetPosition(), angle);
-
-      const fixtureDef = new B.b2FixtureDef();
-      fixtureDef.set_density(1);
-      fixtureDef.set_restitution(
-        Math.max(0, property(p, "restitution", 0.38))
+      body.SetTransform(
+        body.GetPosition(),
+        (component.rotation || 0) * Math.PI / 180
       );
-      fixtureDef.set_friction(
-        Math.max(0, property(p, "friction", 0.06))
-      );
-
-      const primary = new B.b2PolygonShape();
-      primary.SetAsBox(
-        Math.max(0.01, component.width / PIXELS_PER_METER / 2),
-        Math.max(0.01, component.height / PIXELS_PER_METER / 2)
-      );
-      fixtureDef.set_shape(primary);
-      body.CreateFixture(fixtureDef);
+      this.createRotationFixtures(body, component);
 
       const jointDef = new B.b2RevoluteJointDef();
       const worldAnchor = new B.b2Vec2(
-        anchorX / PIXELS_PER_METER,
-        anchorY / PIXELS_PER_METER
+        pivot.x / PIXELS_PER_METER,
+        pivot.y / PIXELS_PER_METER
       );
       jointDef.Initialize(anchorBody, body, worldAnchor);
 
-      if (component.type === "HINGE") {
-        const lower = clamp(
-          property(p, "lowerAngle", -70),
-          -360,
-          360
-        ) * Math.PI / 180;
-        const upper = clamp(
-          property(p, "upperAngle", 70),
-          -360,
-          360
-        ) * Math.PI / 180;
-        jointDef.set_enableLimit(true);
-        jointDef.set_lowerAngle(Math.min(lower, upper));
-        jointDef.set_upperAngle(Math.max(lower, upper));
+      const start = clamp(
+        property(p, "startAngle", -70),
+        -360,
+        360
+      ) * Math.PI / 180;
+      const end = clamp(
+        property(p, "endAngle", 70),
+        -360,
+        360
+      ) * Math.PI / 180;
+      const speed =
+        property(p, "angularSpeed", 90) * Math.PI / 180;
+      const torque = Math.max(
+        0,
+        property(p, "motorTorque", 30)
+      );
+      const frictionTorque = Math.max(
+        0,
+        property(p, "jointFriction", 0.15)
+      );
 
-        const frictionTorque = Math.max(
-          0,
-          property(p, "jointFriction", 0.15)
-        );
+      if (mode === "FREE" || mode === "TORQUE_OSCILLATE") {
+        jointDef.set_enableLimit(true);
+        jointDef.set_lowerAngle(Math.min(start, end));
+        jointDef.set_upperAngle(Math.max(start, end));
+      }
+
+      if (mode === "FREE") {
         jointDef.set_enableMotor(frictionTorque > 0);
         jointDef.set_motorSpeed(0);
         jointDef.set_maxMotorTorque(frictionTorque);
       } else {
-        const fallbackSpeed = 180;
-        const fallbackTorque = 30;
-        jointDef.set_enableMotor(true);
-        jointDef.set_motorSpeed(
-          property(p, "motorSpeed", fallbackSpeed)
-            * Math.PI / 180
-        );
-        jointDef.set_maxMotorTorque(
-          Math.max(
-            0,
-            property(p, "motorTorque", fallbackTorque)
-          )
-        );
+        jointDef.set_enableMotor(torque > 0);
+        jointDef.set_motorSpeed(speed);
+        jointDef.set_maxMotorTorque(torque);
       }
 
-      const joint = this.world.CreateJoint(jointDef);
+      const joint = B.castObject(
+        this.world.CreateJoint(jointDef),
+        B.b2RevoluteJoint
+      );
+
       this.reactiveComponents.push({
         component,
         body,
         anchorBody,
         joint,
-        jointType: "REVOLUTE"
+        jointType: "REVOLUTE",
+        rotationMode: mode,
+        direction: speed < 0 ? -1 : 1,
+        speed: Math.abs(speed)
       });
+    }
+
+    updateTorqueRotations() {
+      for (const item of this.reactiveComponents) {
+        if (item.rotationMode !== "TORQUE_OSCILLATE") {
+          continue;
+        }
+        const p = item.component.properties || {};
+        const lower = Math.min(
+          property(p, "startAngle", -30),
+          property(p, "endAngle", 30)
+        ) * Math.PI / 180;
+        const upper = Math.max(
+          property(p, "startAngle", -30),
+          property(p, "endAngle", 30)
+        ) * Math.PI / 180;
+        const angle = item.joint.GetJointAngle();
+
+        if (item.direction > 0 && angle >= upper - 0.01) {
+          item.direction = -1;
+        } else if (
+          item.direction < 0
+          && angle <= lower + 0.01
+        ) {
+          item.direction = 1;
+        }
+        item.joint.SetMotorSpeed(
+          item.speed * item.direction
+        );
+      }
     }
 
     createPrismaticComponent(component) {
@@ -1210,6 +1223,7 @@
         this.releaseQueuedMarbles();
         const beforeVelocities = this.captureVelocities();
         this.updateMovingComponents(this.time);
+        this.updateTorqueRotations();
         this.updateElevators();
         this.world.Step(FIXED_DT, 6, 2);
         this.time += FIXED_DT;
@@ -1297,6 +1311,26 @@
       const position = runtimeItem.body.GetPosition();
       const rotation =
         runtimeItem.body.GetAngle() * 180 / Math.PI;
+
+      if (component.type === "ROTATIONAL_BODY") {
+        const local =
+          root.ViewerDrawMapEngine.componentPivotLocal(component);
+        const angle = rotation * Math.PI / 180;
+        const cos = Math.cos(angle);
+        const sin = Math.sin(angle);
+        return {
+          ...component,
+          x:
+            position.x * PIXELS_PER_METER
+            - (local.x * cos - local.y * sin),
+          y:
+            position.y * PIXELS_PER_METER
+            - (local.x * sin + local.y * cos),
+          rotation,
+          runtimeRotation: rotation
+        };
+      }
+
       return {
         ...component,
         x: position.x * PIXELS_PER_METER,
@@ -2040,13 +2074,29 @@
         ),
         components: this.reactiveComponents.map((item) => {
           const position = item.body.GetPosition();
+          const rotation =
+            item.body.GetAngle() * 180 / Math.PI;
+          const local =
+            item.component.type === "ROTATIONAL_BODY"
+              ? root.ViewerDrawMapEngine.componentPivotLocal(
+                  item.component
+                )
+              : { x: 0, y: 0 };
+          const angle = rotation * Math.PI / 180;
+          const cos = Math.cos(angle);
+          const sin = Math.sin(angle);
           return {
             id: item.component.id,
             type: item.component.type,
-            x: position.x * PIXELS_PER_METER,
-            y: position.y * PIXELS_PER_METER,
-            runtimeRotation:
-              item.body.GetAngle() * 180 / Math.PI
+            x:
+              position.x * PIXELS_PER_METER
+              - (local.x * cos - local.y * sin),
+            y:
+              position.y * PIXELS_PER_METER
+              - (local.x * sin + local.y * cos),
+            runtimeRotation: rotation,
+            angularVelocity:
+              item.body.GetAngularVelocity() * 180 / Math.PI
           };
         }),
         marbles: this.marbles.map((marble) => {
