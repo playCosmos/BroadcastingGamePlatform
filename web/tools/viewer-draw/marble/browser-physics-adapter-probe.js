@@ -177,11 +177,10 @@ requireCondition(
   "actual Marble Draw must use packaged PCM sample bank first"
 );
 requireCondition(
-  controllerSource.includes("viewer-draw-run-audit/v0")
-    && controllerSource.includes("crypto.subtle.digest")
-    && controllerSource.includes("dnfOrder")
-    && controllerSource.includes("qualificationMaxNudges"),
-  "actual Marble Draw must export local qualification audit"
+  !controllerSource.includes("viewer-draw-run-audit/v0")
+    && !controllerSource.includes("crypto.subtle.digest")
+    && !controllerSource.includes("qualificationMaxNudges"),
+  "public Marble Draw must remain browser-local without Audit integration"
 );
 
 for (const forbidden of [
