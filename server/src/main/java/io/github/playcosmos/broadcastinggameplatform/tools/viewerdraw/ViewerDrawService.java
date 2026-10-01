@@ -3,6 +3,7 @@ package io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw;
 import com.google.gson.Gson;
 import com.google.gson.reflect.TypeToken;
 import io.github.playcosmos.broadcastinggameplatform.db.DatabaseAccess;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
@@ -26,6 +27,9 @@ public final class ViewerDrawService {
     private static final int MAX_NUMBER_DRAW_COUNT = 7;
 
     private final DatabaseAccess database;
+    private final Object entryCollectionLock = new Object();
+    private EntryCollectionState entryCollection =
+        EntryCollectionState.idle();
 
     public ViewerDrawService(DatabaseAccess database) {
         this.database = database;
@@ -55,6 +59,38 @@ public final class ViewerDrawService {
         List<DrawEntry> entries,
         Object result
     ) {}
+
+    public record EntryCollectionSnapshot(
+        String source,
+        String provider,
+        String channelId,
+        String keyword,
+        String state,
+        int entryCount,
+        long acceptedMessages,
+        long duplicateMessages,
+        String startedAt,
+        String updatedAt,
+        List<DrawEntry> entries
+    ) {}
+
+    private static final class EntryCollectionState {
+        String source = "MANUAL_LIST";
+        String provider = "";
+        String channelId = "";
+        String keyword = "";
+        String state = "IDLE";
+        long acceptedMessages;
+        long duplicateMessages;
+        String startedAt;
+        String updatedAt;
+        final LinkedHashMap<String, DrawEntry> entries =
+            new LinkedHashMap<>();
+
+        static EntryCollectionState idle() {
+            return new EntryCollectionState();
+        }
+    }
 
     public record MachineWorld(
         double width,
@@ -178,6 +214,200 @@ public final class ViewerDrawService {
         String createdAt,
         Map<String, Object> audit
     ) {}
+
+    public EntryCollectionSnapshot openChatEntryCollection(
+        String provider,
+        String channelId,
+        String keyword
+    ) {
+        String normalizedProvider = normalizeProvider(provider);
+        if (normalizedProvider.isBlank()) {
+            throw new IllegalArgumentException("provider is required");
+        }
+        String normalizedKeyword = keyword == null
+            ? ""
+            : keyword.trim();
+        if (normalizedKeyword.isBlank()) {
+            throw new IllegalArgumentException("keyword is required");
+        }
+
+        synchronized (entryCollectionLock) {
+            var next = new EntryCollectionState();
+            next.source = "CHAT_KEYWORD";
+            next.provider = normalizedProvider;
+            next.channelId = channelId == null
+                ? ""
+                : channelId.trim();
+            next.keyword = normalizedKeyword;
+            next.state = "OPEN";
+            next.startedAt = Instant.now().toString();
+            next.updatedAt = next.startedAt;
+            entryCollection = next;
+            return entryCollectionSnapshotLocked();
+        }
+    }
+
+    public EntryCollectionSnapshot pauseEntryCollection() {
+        synchronized (entryCollectionLock) {
+            if ("OPEN".equals(entryCollection.state)) {
+                entryCollection.state = "PAUSED";
+                entryCollection.updatedAt = Instant.now().toString();
+            }
+            return entryCollectionSnapshotLocked();
+        }
+    }
+
+    public EntryCollectionSnapshot resumeEntryCollection() {
+        synchronized (entryCollectionLock) {
+            if (
+                "PAUSED".equals(entryCollection.state)
+                || "CLOSED".equals(entryCollection.state)
+            ) {
+                if (!"CHAT_KEYWORD".equals(entryCollection.source)) {
+                    throw new IllegalStateException(
+                        "chat collection is not configured"
+                    );
+                }
+                entryCollection.state = "OPEN";
+                entryCollection.updatedAt = Instant.now().toString();
+            }
+            return entryCollectionSnapshotLocked();
+        }
+    }
+
+    public EntryCollectionSnapshot closeEntryCollection() {
+        synchronized (entryCollectionLock) {
+            if (
+                "OPEN".equals(entryCollection.state)
+                || "PAUSED".equals(entryCollection.state)
+            ) {
+                entryCollection.state = "CLOSED";
+                entryCollection.updatedAt = Instant.now().toString();
+            }
+            return entryCollectionSnapshotLocked();
+        }
+    }
+
+    public EntryCollectionSnapshot clearEntryCollection() {
+        synchronized (entryCollectionLock) {
+            entryCollection.entries.clear();
+            entryCollection.acceptedMessages = 0;
+            entryCollection.duplicateMessages = 0;
+            entryCollection.updatedAt = Instant.now().toString();
+            return entryCollectionSnapshotLocked();
+        }
+    }
+
+    public EntryCollectionSnapshot entryCollectionSnapshot() {
+        synchronized (entryCollectionLock) {
+            return entryCollectionSnapshotLocked();
+        }
+    }
+
+    public boolean processChatMessage(ChatMessageEvent event) {
+        if (event == null) return false;
+        synchronized (entryCollectionLock) {
+            if (!"OPEN".equals(entryCollection.state)) return false;
+            if (
+                !entryCollection.provider.equals(
+                    normalizeProvider(event.provider())
+                )
+            ) {
+                return false;
+            }
+            if (
+                !entryCollection.channelId.isBlank()
+                && !entryCollection.channelId.equals(
+                    event.channelId() == null
+                        ? ""
+                        : event.channelId().trim()
+                )
+            ) {
+                return false;
+            }
+            if (!matchesKeyword(event.message(), entryCollection.keyword)) {
+                return false;
+            }
+
+            String userId = event.userId() == null
+                ? ""
+                : event.userId().trim();
+            if (userId.isBlank()) return false;
+            String key = entryCollection.provider + "\u0000" + userId;
+            if (entryCollection.entries.containsKey(key)) {
+                entryCollection.duplicateMessages += 1;
+                entryCollection.updatedAt = Instant.now().toString();
+                return false;
+            }
+            if (entryCollection.entries.size() >= MAX_ENTRIES) {
+                return false;
+            }
+
+            String displayName = event.nickname() == null
+                ? ""
+                : event.nickname().trim();
+            if (displayName.isBlank()) displayName = userId;
+            String entryId = UUID.nameUUIDFromBytes(
+                ("viewer-draw:" + key).getBytes(StandardCharsets.UTF_8)
+            ).toString();
+
+            entryCollection.entries.put(
+                key,
+                new DrawEntry(
+                    entryId,
+                    entryCollection.provider,
+                    userId,
+                    displayName,
+                    displayName
+                )
+            );
+            entryCollection.acceptedMessages += 1;
+            entryCollection.updatedAt = Instant.now().toString();
+            return true;
+        }
+    }
+
+    private EntryCollectionSnapshot entryCollectionSnapshotLocked() {
+        return new EntryCollectionSnapshot(
+            entryCollection.source,
+            entryCollection.provider,
+            entryCollection.channelId,
+            entryCollection.keyword,
+            entryCollection.state,
+            entryCollection.entries.size(),
+            entryCollection.acceptedMessages,
+            entryCollection.duplicateMessages,
+            entryCollection.startedAt,
+            entryCollection.updatedAt,
+            List.copyOf(entryCollection.entries.values())
+        );
+    }
+
+    private static boolean matchesKeyword(
+        String message,
+        String configuredKeywords
+    ) {
+        String normalizedMessage = message == null
+            ? ""
+            : message.trim();
+        if (normalizedMessage.isBlank()) return false;
+        for (String candidate : configuredKeywords.split("[,\\r\\n]+")) {
+            String normalized = candidate.trim();
+            if (
+                !normalized.isBlank()
+                && normalizedMessage.equalsIgnoreCase(normalized)
+            ) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String normalizeProvider(String provider) {
+        return provider == null
+            ? ""
+            : provider.trim().toUpperCase(Locale.ROOT);
+    }
 
     public MarbleAudit saveMarbleAudit(
         Map<String, Object> rawAudit
@@ -2036,7 +2266,34 @@ public final class ViewerDrawService {
         List<String> manualEntries,
         Map<String, Object> config
     ) throws SQLException {
+        var drawEntries = new ArrayList<DrawEntry>();
+        for (String displayName : normalizeManualEntries(manualEntries)) {
+            drawEntries.add(new DrawEntry(
+                UUID.randomUUID().toString(),
+                null,
+                null,
+                displayName,
+                displayName
+            ));
+        }
+        return create(
+            name,
+            mode,
+            "MANUAL_LIST",
+            drawEntries,
+            config
+        );
+    }
+
+    public Session create(
+        String name,
+        String mode,
+        String entrySource,
+        List<DrawEntry> sourceEntries,
+        Map<String, Object> config
+    ) throws SQLException {
         String normalizedMode = normalizeMode(mode);
+        String normalizedEntrySource = normalizeEntrySource(entrySource);
         String sessionId = UUID.randomUUID().toString();
         String publicCode = createPublicCode();
         String now = Instant.now().toString();
@@ -2047,8 +2304,8 @@ public final class ViewerDrawService {
             normalizedMode,
             config == null ? Map.of() : config
         );
-        List<String> entries = normalizedMode.equals("RANDOM")
-            ? normalizeManualEntries(manualEntries)
+        List<DrawEntry> entries = normalizedMode.equals("RANDOM")
+            ? normalizeDrawEntries(sourceEntries)
             : List.of();
 
         try (var connection = database.open()) {
@@ -2058,32 +2315,35 @@ public final class ViewerDrawService {
                     INSERT INTO viewer_draw_session(
                         session_id, public_code, name, mode, entry_source, state,
                         config_json, entry_count, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, 'MANUAL_LIST', 'DRAFT', ?, ?, ?, ?)
+                    ) VALUES (?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?, ?)
                     """)) {
                     statement.setString(1, sessionId);
                     statement.setString(2, publicCode);
                     statement.setString(3, normalizedName);
                     statement.setString(4, normalizedMode);
-                    statement.setString(5, GSON.toJson(normalizedConfig));
-                    statement.setInt(6, entries.size());
-                    statement.setString(7, now);
+                    statement.setString(5, normalizedEntrySource);
+                    statement.setString(6, GSON.toJson(normalizedConfig));
+                    statement.setInt(7, entries.size());
                     statement.setString(8, now);
+                    statement.setString(9, now);
                     statement.executeUpdate();
                 }
 
                 int index = 0;
-                for (String displayName : entries) {
+                for (DrawEntry entry : entries) {
                     try (var statement = connection.prepareStatement("""
                         INSERT INTO viewer_draw_entry(
                             session_id, entry_index, entry_id,
-                            display_name, label
-                        ) VALUES (?, ?, ?, ?, ?)
+                            provider_id, user_id, display_name, label
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?)
                         """)) {
                         statement.setString(1, sessionId);
                         statement.setInt(2, index++);
-                        statement.setString(3, UUID.randomUUID().toString());
-                        statement.setString(4, displayName);
-                        statement.setString(5, displayName);
+                        statement.setString(3, entry.entryId());
+                        statement.setString(4, entry.provider());
+                        statement.setString(5, entry.userId());
+                        statement.setString(6, entry.displayName());
+                        statement.setString(7, entry.label());
                         statement.executeUpdate();
                     }
                 }
@@ -2386,6 +2646,72 @@ public final class ViewerDrawService {
         return fallback;
     }
 
+    private static String normalizeEntrySource(String source) {
+        String normalized = source == null
+            ? "MANUAL_LIST"
+            : source.trim().toUpperCase(Locale.ROOT);
+        return switch (normalized) {
+            case "MANUAL_LIST",
+                "CHAT_KEYWORD",
+                "CHAT_ACTIVITY_WINDOW",
+                "GAME_ROOM_PARTICIPANTS",
+                "IMPORTED_SET",
+                "DONATION_FILTER" -> normalized;
+            default -> throw new IllegalArgumentException(
+                "unsupported entry source: " + source
+            );
+        };
+    }
+
+    private static List<DrawEntry> normalizeDrawEntries(
+        List<DrawEntry> raw
+    ) {
+        if (raw == null) return List.of();
+        var result = new ArrayList<DrawEntry>();
+        var seen = new java.util.LinkedHashSet<String>();
+        for (DrawEntry value : raw) {
+            if (value == null) continue;
+            String provider = normalizeProvider(value.provider());
+            String userId = value.userId() == null
+                ? ""
+                : value.userId().trim();
+            String displayName = value.displayName() == null
+                ? ""
+                : value.displayName().trim();
+            String label = value.label() == null
+                ? ""
+                : value.label().trim();
+            if (displayName.isBlank()) displayName = label;
+            if (label.isBlank()) label = displayName;
+            if (displayName.isBlank()) continue;
+
+            String dedupeKey = !provider.isBlank() && !userId.isBlank()
+                ? provider + "\u0000" + userId
+                : displayName;
+            if (!seen.add(dedupeKey)) continue;
+
+            String entryId = value.entryId() == null
+                ? ""
+                : value.entryId().trim();
+            if (entryId.isBlank()) {
+                entryId = UUID.randomUUID().toString();
+            }
+            result.add(new DrawEntry(
+                entryId,
+                provider.isBlank() ? null : provider,
+                userId.isBlank() ? null : userId,
+                displayName,
+                label
+            ));
+            if (result.size() > MAX_ENTRIES) {
+                throw new IllegalArgumentException(
+                    "too many entries; max=" + MAX_ENTRIES
+                );
+            }
+        }
+        return List.copyOf(result);
+    }
+
     private static List<String> normalizeManualEntries(List<String> raw) {
         if (raw == null) return List.of();
         var result = new ArrayList<String>();
@@ -2411,6 +2737,10 @@ public final class ViewerDrawService {
             for (DrawEntry entry : session.entries()) {
                 digest.update((byte) 0);
                 digest.update(entry.entryId().getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+                digest.update(String.valueOf(entry.provider()).getBytes(StandardCharsets.UTF_8));
+                digest.update((byte) 0);
+                digest.update(String.valueOf(entry.userId()).getBytes(StandardCharsets.UTF_8));
                 digest.update((byte) 0);
                 digest.update(entry.label().getBytes(StandardCharsets.UTF_8));
             }
