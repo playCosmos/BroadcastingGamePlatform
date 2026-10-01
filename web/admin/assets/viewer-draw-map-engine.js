@@ -1395,6 +1395,18 @@
       this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
+      this.resetHingeStates();
+    }
+
+    resetHingeStates(){
+      this.hingeStates=new Map();
+      for(const component of this.definition.components){
+        if(component.type!=="HINGE") continue;
+        this.hingeStates.set(component.id,{
+          angle:finiteOr(component.rotation,0),
+          angularVelocity:0
+        });
+      }
     }
 
     reset(count=12,seed=this.seed){
@@ -1416,6 +1428,7 @@
       this.selectedOutputKey=null;
       this.accumulator=0;
       this.time=0;
+      this.resetHingeStates();
 
       const rule=resolvedDrawRule(this.definition);
       if(rule.type==="RANDOM_OUTPUT_BUCKET"){
@@ -1483,10 +1496,87 @@
       return this.snapshot();
     }
 
+    hingeShape(component){
+      const state=this.hingeStates.get(component.id);
+      if(!state) return component;
+      return pivotedComponentShape(component,state.angle);
+    }
+
+    updateHinges(dt){
+      const world=this.definition.world;
+      const gravityX=finiteOr(world.gravityX,0)*80;
+      const gravityY=finiteOr(world.gravityY,12)*80;
+
+      for(const component of this.definition.components){
+        if(component.type!=="HINGE") continue;
+        const state=this.hingeStates.get(component.id);
+        if(!state) continue;
+
+        const p=component.properties||{};
+        const shape=pivotedComponentShape(component,state.angle);
+        const pivot=componentPivotWorld(component);
+        const rx=shape.x-pivot.x;
+        const ry=shape.y-pivot.y;
+        const radiusSq=Math.max(400,rx*rx+ry*ry);
+        const gravityTorque=rx*gravityY-ry*gravityX;
+        const angularAccel=
+          (gravityTorque/radiusSq)*(180/Math.PI);
+
+        state.angularVelocity+=angularAccel*dt;
+
+        const friction=Math.max(
+          0,
+          finiteOr(p.jointFriction,.15)
+        );
+        state.angularVelocity*=Math.exp(-friction*dt*2.5);
+        state.angle+=state.angularVelocity*dt;
+
+        const lower=finiteOr(p.lowerAngle,-70);
+        const upper=finiteOr(p.upperAngle,70);
+        const minAngle=finiteOr(component.rotation,0)+Math.min(lower,upper);
+        const maxAngle=finiteOr(component.rotation,0)+Math.max(lower,upper);
+
+        if(state.angle<minAngle){
+          state.angle=minAngle;
+          if(state.angularVelocity<0){
+            state.angularVelocity*=-.12;
+          }
+        }else if(state.angle>maxAngle){
+          state.angle=maxAngle;
+          if(state.angularVelocity>0){
+            state.angularVelocity*=-.12;
+          }
+        }
+      }
+    }
+
+    applyHingeImpact(component,marble,contact){
+      const state=this.hingeStates.get(component.id);
+      if(!state||!contact) return;
+
+      const pivot=componentPivotWorld(component);
+      const rx=contact.contactX-pivot.x;
+      const ry=contact.contactY-pivot.y;
+      const radius=Math.hypot(rx,ry);
+      if(radius<8) return;
+
+      const tx=-ry/radius;
+      const ty=rx/radius;
+      const tangentSpeed=
+        contact.incomingVx*tx+contact.incomingVy*ty;
+      const deltaDegrees=
+        (tangentSpeed/radius)*(180/Math.PI)*.45;
+
+      if(Number.isFinite(deltaDegrees)){
+        state.angularVelocity+=deltaDegrees;
+      }
+    }
+
     step(dt){
       const world=this.definition.world;
       const gravityScale=80;
       this.time+=dt;
+      this.updateHinges(dt);
 
       for(const m of this.marbles){
         if(m.finished||m.eliminated||m.dnf) continue;
@@ -1500,9 +1590,19 @@
         this.resolveWorldBounds(m,world);
         const nextBoostContacts=new Set();
         for(const c of this.definition.components){
-          for(const shape of componentShapes(c,this.time)){
+          const shapes=c.type==="HINGE"
+            ? [this.hingeShape(c)]
+            : componentShapes(c,this.time);
+          for(const shape of shapes){
             if(isRectCollider(c)){
-              this.resolveRect(m,shape,nextBoostContacts);
+              const contact=this.resolveRect(
+                m,
+                shape,
+                nextBoostContacts
+              );
+              if(c.type==="HINGE"&&contact){
+                this.applyHingeImpact(c,m,contact);
+              }
             }else if(c.type==="CIRCLE"){
               this.resolveCircle(m,shape,nextBoostContacts);
             }
@@ -1740,6 +1840,8 @@
     }
 
     resolveRect(m,c,nextBoostContacts=null){
+      const incomingVx=m.vx;
+      const incomingVy=m.vy;
       const a=degToRad(c.rotation||0),co=Math.cos(a),si=Math.sin(a);
       const dx=m.x-c.x,dy=m.y-c.y;
       const lx=dx*co+dy*si, ly=-dx*si+dy*co;
@@ -1757,8 +1859,10 @@
       }else{
         nx/=dist;ny/=dist;
       }
-      if(penetration<=0) return;
+      if(penetration<=0) return null;
 
+      const contactX=c.x+qx*co-qy*si;
+      const contactY=c.y+qx*si+qy*co;
       const wx=nx*co-ny*si, wy=nx*si+ny*co;
       m.x+=wx*penetration;
       m.y+=wy*penetration;
@@ -1780,6 +1884,14 @@
           m.vy+=wy*boost*70;
         }
       }
+      return {
+        contactX,
+        contactY,
+        normalX:wx,
+        normalY:wy,
+        incomingVx,
+        incomingVy
+      };
     }
 
     resolveCircle(m,c,nextBoostContacts=null){
@@ -1913,7 +2025,24 @@
         targetCount:Number.isFinite(targetCountForDefinition(this.definition))
           ? targetCountForDefinition(this.definition)
           : this.marbles.length,
-        totalCount:this.marbles.length
+        totalCount:this.marbles.length,
+        components:[...this.hingeStates.entries()].map(
+          ([id,state])=>{
+            const component=this.definition.components.find(
+              candidate=>candidate.id===id
+            );
+            const shape=component
+              ? pivotedComponentShape(component,state.angle)
+              : null;
+            return {
+              id,
+              type:"HINGE",
+              x:shape?.x ?? 0,
+              y:shape?.y ?? 0,
+              runtimeRotation:state.angle
+            };
+          }
+        )
       };
     }
   }
