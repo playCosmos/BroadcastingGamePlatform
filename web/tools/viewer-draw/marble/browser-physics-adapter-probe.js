@@ -131,6 +131,10 @@ requireCondition(
     && physicsSource.includes("updateTorqueRotations"),
   "torque-driven rotation must retain collision-reactive motor control"
 );
+requireCondition(
+  physicsSource.includes("body.SetBullet(true)"),
+  "high-speed marbles must enable Box2D bullet CCD"
+);
 
 const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
