@@ -902,6 +902,116 @@ requireCondition(
   "existing circular arcs must migrate with preserved default angles"
 );
 
+const seedOneBurstDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Seed 1 High-Speed Burst Regression",
+  world: {
+    width: 1280,
+    height: 2560,
+    gravityX: 0,
+    gravityY: 12
+  },
+  drawRule: { type: "RACE_FINISH", winnerCount: 0 },
+  components: [
+    {
+      ...Engine.componentDefaults("BURST_SPAWN", 1215, 2480),
+      radius: 20,
+      properties: {
+        marbleRadius: 11,
+        spawnRole: "BURST",
+        burstDirectionDegrees: -90,
+        burstSpreadDegrees: 24,
+        burstPower: 20,
+        burstPowerVariance: .22,
+        burstSizeMin: 3,
+        burstSizeMax: 7,
+        burstIntervalMs: 90
+      }
+    },
+    {
+      ...Engine.componentDefaults("WALL", 1150, 2545),
+      width: 220,
+      height: 30,
+      properties: {
+        restitution: 2,
+        friction: .05,
+        boost: 18
+      }
+    },
+    {
+      ...Engine.componentDefaults("WALL", 1160, 1595),
+      rotation: 90,
+      width: 1870,
+      height: 18
+    },
+    {
+      ...Engine.componentDefaults("FINISH", 640, 100),
+      width: 120,
+      height: 40
+    }
+  ]
+};
+const seedOnePreview = new Engine.PreviewEngine(
+  seedOneBurstDefinition,
+  { seed: 1 }
+);
+const seedOneInitial = seedOnePreview.reset(16, 1);
+requireCondition(
+  seedOneInitial.marbles.every(
+    (marble) => marble.y + marble.radius < 2530
+  ),
+  "seed 1 BURST spawn must not initialize inside the boosted floor"
+);
+
+const thinWallDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "High-Speed Thin Wall Regression",
+  world: {
+    width: 400,
+    height: 300,
+    gravityX: 0,
+    gravityY: 0
+  },
+  drawRule: { type: "RACE_FINISH", winnerCount: 0 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 80, 150),
+      properties: { marbleRadius: 11 }
+    },
+    {
+      ...Engine.componentDefaults("WALL", 200, 150),
+      rotation: 90,
+      width: 260,
+      height: 18,
+      properties: {
+        restitution: .35,
+        friction: .06,
+        boost: 0
+      }
+    },
+    {
+      ...Engine.componentDefaults("FINISH", 370, 150),
+      width: 30,
+      height: 100
+    }
+  ]
+};
+const thinWallPreview = new Engine.PreviewEngine(
+  thinWallDefinition,
+  { seed: 1 }
+);
+thinWallPreview.reset(1, 1);
+const fastMarble = thinWallPreview.marbles[0];
+fastMarble.x = 130;
+fastMarble.y = 150;
+fastMarble.vx = 12000;
+fastMarble.vy = 0;
+thinWallPreview.step(1 / 120);
+requireCondition(
+  fastMarble.x <= 180.1 && fastMarble.vx < 0,
+  "preview adaptive substeps must stop a high-speed marble at an 18px wall"
+);
+
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
