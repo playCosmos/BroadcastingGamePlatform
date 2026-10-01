@@ -392,8 +392,7 @@
     if (mode === "TORQUE_CONTINUOUS") {
       return [
         "propAngularSpeed",
-        "propMotorTorque",
-        "propJointFriction"
+        "propMotorTorque"
       ];
     }
     if (mode === "TORQUE_OSCILLATE") {
@@ -401,8 +400,7 @@
         "propStartAngle",
         "propEndAngle",
         "propAngularSpeed",
-        "propMotorTorque",
-        "propJointFriction"
+        "propMotorTorque"
       ];
     }
     return [
