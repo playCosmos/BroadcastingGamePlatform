@@ -356,14 +356,40 @@
       const h=Math.max(.001,Math.abs(finiteOr(c.height,120)));
       const thickness=Math.max(.001,Math.abs(finiteOr(p.thickness,18)));
       const segments=clamp(Math.trunc(finiteOr(p.segments,16)),6,32);
+      const curveMode=String(p.curveMode||"PARABOLA").toUpperCase();
       const points=[];
-      for(let i=0;i<=segments;i++){
-        const t=i/segments;
-        const omt=1-t;
-        const x=omt*omt*(-w/2)+2*omt*t*0+t*t*(w/2);
-        const y=omt*omt*(h/2)+2*omt*t*(-h/2)+t*t*(h/2);
-        points.push({x,y});
+
+      if(curveMode==="CIRCULAR_ARC"){
+        // Width is the chord length and height is the sagitta. These
+        // determine one exact circle, so resizing never deforms it into
+        // an ellipse.
+        const radius=(w*w)/(8*h)+h/2;
+        const centerY=radius-h/2;
+        const endpointDy=h-radius;
+        const middleAngle=-Math.PI/2;
+        let startAngle=Math.atan2(endpointDy,-w/2);
+        let endAngle=Math.atan2(endpointDy,w/2);
+        while(startAngle>=middleAngle) startAngle-=Math.PI*2;
+        while(endAngle<=middleAngle) endAngle+=Math.PI*2;
+
+        for(let i=0;i<=segments;i++){
+          const t=i/segments;
+          const angle=startAngle+(endAngle-startAngle)*t;
+          points.push({
+            x:Math.cos(angle)*radius,
+            y:centerY+Math.sin(angle)*radius
+          });
+        }
+      }else{
+        for(let i=0;i<=segments;i++){
+          const t=i/segments;
+          const omt=1-t;
+          const x=omt*omt*(-w/2)+2*omt*t*0+t*t*(w/2);
+          const y=omt*omt*(h/2)+2*omt*t*(-h/2)+t*t*(h/2);
+          points.push({x,y});
+        }
       }
+
       return points.slice(0,-1).map((point,index)=>
         segmentRect(
           c,
@@ -414,7 +440,7 @@
         width:280,
         height:140,
         properties:colliderProperties(
-          {thickness:18,segments:16},
+          {curveMode:"PARABOLA",thickness:18,segments:16},
           {restitution:.35,friction:.06}
         )
       };
@@ -482,6 +508,35 @@
   function createPreset(name,x=640,y=360){
     const preset=String(name||"").toUpperCase();
     if(preset==="WALL") return componentDefaults("WALL",x,y);
+    if(preset==="CURVE_PARABOLA"||preset==="PARABOLA"){
+      const c=componentDefaults("CURVE_WALL",x,y);
+      c.properties=colliderProperties(
+        {
+          ...c.properties,
+          curveMode:"PARABOLA",
+          visualFill:"#566d7a",
+          visualStroke:"#a8d4e8"
+        },
+        {restitution:.35,friction:.06}
+      );
+      return c;
+    }
+    if(preset==="CIRCULAR_ARC"||preset==="ARC"){
+      const c=componentDefaults("CURVE_WALL",x,y);
+      c.width=280;
+      c.height=140;
+      c.properties=colliderProperties(
+        {
+          ...c.properties,
+          curveMode:"CIRCULAR_ARC",
+          segments:24,
+          visualFill:"#3f6676",
+          visualStroke:"#78c9e8"
+        },
+        {restitution:.35,friction:.06}
+      );
+      return c;
+    }
     if(preset==="PEG"){
       const c=componentDefaults("CIRCLE",x,y);
       c.radius=13;
@@ -870,7 +925,12 @@
         continue;
       }
 
-      if(isCollider(c)){
+      if(c.type==="CURVE_WALL"){
+        c.properties=migratedColliderProperties({
+          curveMode:String(c.properties?.curveMode||"PARABOLA").toUpperCase(),
+          ...c.properties
+        });
+      }else if(isCollider(c)){
         c.properties=migratedColliderProperties(c.properties);
       }
       migrated.push(c);
