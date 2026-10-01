@@ -1807,8 +1807,14 @@
     if (previewRunning) return;
     pushUndo();
     definition.name = $("mapName").value.trim() || "Untitled Marble Machine";
-    definition.world.width = num($("worldWidth").value, 1280);
-    definition.world.height = num($("worldHeight").value, 720);
+    definition.world.width = Math.max(
+      0,
+      num($("worldWidth").value, 1280)
+    );
+    definition.world.height = Math.max(
+      0,
+      num($("worldHeight").value, 720)
+    );
     definition.world.gravityX = num($("gravityX").value, 0);
     definition.world.gravityY = num($("gravityY").value, 12);
     syncMapControls();
