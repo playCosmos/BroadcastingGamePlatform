@@ -1,5 +1,8 @@
 "use strict";
 
+const fs = require("fs");
+const path = require("path");
+
 require("./viewer-draw-map-engine.js");
 
 const Engine = globalThis.ViewerDrawMapEngine;
@@ -759,5 +762,23 @@ requireCondition(
   Engine.validateDefinition(invalid).length > 0,
   "map without finish must fail validation"
 );
+
+const makerSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw-map-maker.js"),
+  "utf8"
+);
+const localMakerSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw-map-maker-local.js"),
+  "utf8"
+);
+for (const source of [makerSource, localMakerSource]) {
+  requireCondition(
+    source.includes('mode: "marquee"')
+      && source.includes("selectedIds = new Set()")
+      && source.includes("drawMarqueeSelection")
+      && source.includes("selectedComponents()"),
+    "Map Maker must support drag multi-selection in both storage modes"
+  );
+}
 
 console.log("Viewer Draw map engine probe passed.");
