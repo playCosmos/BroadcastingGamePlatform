@@ -419,6 +419,16 @@
     return $(id)?.closest(".mini-field") || null;
   }
 
+  function conditionalCurveFields(component) {
+    if (component?.type !== "CURVE_WALL") return [];
+    const mode = String(
+      component.properties?.curveMode || "PARABOLA"
+    ).toUpperCase();
+    return mode === "CIRCULAR_ARC"
+      ? ["propArcStartAngle", "propArcEndAngle"]
+      : ["propCurveStartPercent", "propCurveEndPercent"];
+  }
+
   function conditionalRotationFields(component) {
     if (component?.type !== "ROTATIONAL_BODY") return [];
     const mode = Engine.rotationMode(component);
@@ -492,6 +502,7 @@
 
     const basic = [
       ...(schema.basic || []),
+      ...conditionalCurveFields(component),
       ...conditionalRotationFields(component),
       ...VISUAL_FIELDS
     ];
@@ -1732,6 +1743,22 @@
     $("propStartAngle").value = num(c.properties?.startAngle, -30);
     $("propEndAngle").value = num(c.properties?.endAngle, 30);
     $("propThickness").value = num(c.properties?.thickness, 14);
+    $("propArcStartAngle").value = num(
+      c.properties?.arcStartAngle,
+      0
+    );
+    $("propArcEndAngle").value = num(
+      c.properties?.arcEndAngle,
+      360
+    );
+    $("propCurveStartPercent").value = num(
+      c.properties?.curveStartPercent,
+      0
+    );
+    $("propCurveEndPercent").value = num(
+      c.properties?.curveEndPercent,
+      100
+    );
     $("propPivotRatio").value = num(c.properties?.pivotRatio, 0);
     $("propJointFriction").value = num(
       c.properties?.jointFriction,
@@ -1991,6 +2018,44 @@
         0,
         num($("propThickness").value, 18)
       );
+      const curveMode = String(
+        c.properties?.curveMode || "PARABOLA"
+      ).toUpperCase();
+      if (curveMode === "CIRCULAR_ARC") {
+        c.properties.arcStartAngle = clamp(
+          num(
+            $("propArcStartAngle").value,
+            c.properties?.arcStartAngle ?? 0
+          ),
+          0,
+          360
+        );
+        c.properties.arcEndAngle = clamp(
+          num(
+            $("propArcEndAngle").value,
+            c.properties?.arcEndAngle ?? 360
+          ),
+          0,
+          360
+        );
+      } else {
+        c.properties.curveStartPercent = clamp(
+          num(
+            $("propCurveStartPercent").value,
+            c.properties?.curveStartPercent ?? 0
+          ),
+          0,
+          100
+        );
+        c.properties.curveEndPercent = clamp(
+          num(
+            $("propCurveEndPercent").value,
+            c.properties?.curveEndPercent ?? 100
+          ),
+          0,
+          100
+        );
+      }
     }
     if (c.type === "BURST_SPAWN") {
       c.properties.marbleRadius = Math.max(
@@ -2776,7 +2841,8 @@
    "propVisualFill","propVisualStroke",
    "propRestitution","propFriction","propRotationMode","propAngularSpeed","propBladeCount","propPeriod",
    "propStartAngle","propEndAngle",
-   "propThickness",
+   "propThickness","propArcStartAngle","propArcEndAngle",
+   "propCurveStartPercent","propCurveEndPercent",
    "propPivotRatio","propJointFriction",
    "propMotorTorque",
    "propBurstPower","propBurstDirection","propBurstSpread","propBurstVariance",
