@@ -1515,7 +1515,7 @@
       }
     }
 
-    if(!spawn) errors.push("SPAWN이 최소 1개 필요합니다.");
+    if(spawn!==1) errors.push("SPAWN/BURST_SPAWN은 정확히 1개 필요합니다.");
     if(rule.type==="RACE_FINISH"&&!finish){
       errors.push("RACE_FINISH에는 FINISH가 최소 1개 필요합니다.");
     }
