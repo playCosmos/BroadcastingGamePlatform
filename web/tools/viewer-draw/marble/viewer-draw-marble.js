@@ -734,6 +734,32 @@
       );
       target.fillRect(-width / 2, -height / 2, width, height);
       target.strokeRect(-width / 2, -height / 2, width, height);
+      if (
+        component.type === "WALL"
+        && Engine.isOneWayWall(component)
+        && !simplified
+      ) {
+        const direction = Engine.oneWayDirection(component);
+        const length = Math.max(24, 42 * view.scale);
+        const head = Math.max(5, 8 * view.scale);
+        const endY = direction * length / 2;
+        const startY = -direction * length / 2;
+        target.save();
+        target.strokeStyle = "#d8f8ff";
+        target.fillStyle = "#d8f8ff";
+        target.lineWidth = Math.max(1.5, 2 * view.scale);
+        target.beginPath();
+        target.moveTo(0, startY);
+        target.lineTo(0, endY);
+        target.stroke();
+        target.beginPath();
+        target.moveTo(0, endY);
+        target.lineTo(-head, endY - direction * head);
+        target.lineTo(head, endY - direction * head);
+        target.closePath();
+        target.fill();
+        target.restore();
+      }
       if (component.type === "CONVEYOR" && !simplified) {
         target.strokeStyle = "#d8f2ff";
         const arrow = Math.max(8, 18 * view.scale);
