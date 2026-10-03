@@ -7,6 +7,12 @@ require("./viewer-draw-map-engine.js");
 
 const Engine = globalThis.ViewerDrawMapEngine;
 
+const defaultWall = Engine.componentDefaults("WALL", 100, 100);
+requireCondition(
+  defaultWall.properties?.friction === 0.02,
+  "new WALL default friction must stay at 0.02"
+);
+
 function requireCondition(condition, message) {
   if (!condition) throw new Error(message);
 }
@@ -1179,6 +1185,26 @@ requireCondition(
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
+);
+const localMakerSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw-map-maker-local.js"),
+  "utf8"
+);
+const serverMakerHtml = fs.readFileSync(
+  path.join(__dirname, "../tools/viewer-draw/map-maker/index.html"),
+  "utf8"
+);
+const localMakerHtml = fs.readFileSync(
+  path.join(__dirname, "../../../map-maker.html"),
+  "utf8"
+);
+
+requireCondition(
+  serverMakerHtml.includes('id="gridSize" type="number" value="10"')
+    && localMakerHtml.includes('id="gridSize" type="number" value="10"')
+    && makerSource.includes('num($("gridSize").value, 10)')
+    && localMakerSource.includes('num($("gridSize").value, 10)'),
+  "Map Maker grid snap default and fallback must stay at 10"
 );
 const localMakerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker-local.js"),
