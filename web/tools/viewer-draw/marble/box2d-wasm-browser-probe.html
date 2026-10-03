@@ -953,6 +953,26 @@
       );
     }
 
+    let audioMaxY = Math.max(
+      ...state.marbles.map((marble) => marble.y)
+    );
+    for (let step = 0; step < 600; step += 1) {
+      state = adapter.step(1 / 60);
+      audioMaxY = Math.max(
+        audioMaxY,
+        ...state.marbles
+          .filter((marble) => marble.launched !== false)
+          .map((marble) => marble.y)
+      );
+      if (audioMaxY > 1050) break;
+    }
+    if (!(audioMaxY > 1050)) {
+      throw new Error(
+        "Audio Marble Machine spawn lane is blocked; maxY="
+          + audioMaxY.toFixed(1)
+      );
+    }
+
     adapter.loadMap(jumpDefinition);
     state = adapter.reset(entries.slice(0, 6), 212, {
       launchMode: "BURST"
