@@ -638,6 +638,8 @@ Collider 공통
 ├─ restitution
 ├─ friction
 ├─ boost = 0
+├─ collisionMode = SOLID | ONE_WAY
+├─ oneWayDirection = +1 | -1
 └─ collision audio profile
 
 WALL
@@ -682,6 +684,11 @@ CIRCLE
 - `FUNNEL`과 `SPLITTER`는 삭제했다. 레거시 맵을 읽을 때 두 개의 명시적인 `WALL`로 분해한다.
 - `boost`는 특정 Bumper/Launcher 전용 기능이 아니라 모든 Collider의 공통 속성이다.
 - `boost=0`이면 추가 impulse가 없고, `boost>0`이면 충돌 법선 방향으로 추가 impulse를 적용한다.
+- `collisionMode`와 `oneWayDirection`도 Collider base property다.
+- 방향성이 명확한 사각 Collider(`WALL`, `ROTATIONAL_BODY`, `CONVEYOR`, `ELEVATOR`)는 `ONE_WAY`를 사용할 수 있다.
+- `oneWayDirection`은 월드 절대방향이 아니라 component local ±Y다. 따라서 회전체가 움직이면 통과 방향도 현재 runtime rotation을 따라간다.
+- Browser Box2D Authority는 `PreSolve`에서 Marble과 Collider 표면의 상대속도를 사용해 통과/차단을 결정한다. 따라서 `FORCE_OSCILLATE`뿐 아니라 TORQUE/FREE 회전체도 기존 joint 반작용을 유지한다.
+- `CIRCLE`과 `CURVE_WALL`은 현재 방향 기준이 모호하므로 `SOLID`만 허용한다.
 
 `CONVEYOR`와 `ELEVATOR`는 사각형 모양이 같아도 기능을 합치지 않는다.
 
