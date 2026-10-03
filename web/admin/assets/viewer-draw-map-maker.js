@@ -1748,9 +1748,6 @@
     $("worldHeight").value = definition.world.height;
     $("gravityX").value = definition.world.gravityX;
     $("gravityY").value = definition.world.gravityY;
-    const rule = Engine.resolvedDrawRule(definition);
-    $("drawRuleType").value = rule.type;
-    $("drawRuleWinnerCount").value = rule.winnerCount;
     const runPolicy = Engine.resolvedRunPolicy(definition);
     $("runTimeoutSeconds").value = runPolicy.timeoutSeconds;
     $("qualificationMinWinners").value = runPolicy.qualificationMinWinners;
@@ -2272,31 +2269,6 @@
     validateClient(false);
   }
 
-
-  function updateDrawRule() {
-    if (previewRunning) return;
-    pushUndo();
-    const supportedRules = new Set([
-      "RACE_FINISH",
-      "ORDERED_OUTPUT",
-      "SLOT_COLLECTION",
-      "LAST_SURVIVOR",
-      "CASCADE_SELECTION",
-      "RANDOM_OUTPUT_BUCKET",
-      "CONDITIONAL_OUTPUT"
-    ]);
-    const selectedRule = $("drawRuleType").value;
-    definition.drawRule = {
-      type: supportedRules.has(selectedRule)
-        ? selectedRule
-        : "RACE_FINISH",
-      winnerCount: Math.trunc(
-        num($("drawRuleWinnerCount").value, 0)
-      )
-    };
-    syncMapControls();
-    validateClient(false);
-  }
 
   function updateRunPolicy() {
     if (previewRunning) return;
@@ -3182,8 +3154,6 @@
 
   ["worldWidth","worldHeight","gravityX","gravityY"]
     .forEach((id) => $(id).addEventListener("change", updateWorld));
-  ["drawRuleType","drawRuleWinnerCount"]
-    .forEach((id) => $(id).addEventListener("change", updateDrawRule));
   ["runTimeoutSeconds","qualificationMinWinners","qualificationMaxNudges"]
     .forEach((id) => $(id).addEventListener("change", updateRunPolicy));
 
