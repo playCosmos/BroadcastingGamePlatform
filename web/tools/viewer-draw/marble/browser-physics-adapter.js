@@ -189,7 +189,7 @@
       this.elevators = [];
       this.oneWayFixtureMeta = new Map();
       this.marbleBodyMeta = new Map();
-      this.oneWayBlockingContacts = new Set();
+      this.oneWayBlockingContacts = new Map();
       this.contactListener = null;
       this.soundEvents = [];
       this.soundSequence = 0;
@@ -261,7 +261,7 @@
       this.elevators = [];
       this.oneWayFixtureMeta = new Map();
       this.marbleBodyMeta = new Map();
-      this.oneWayBlockingContacts = new Set();
+      this.oneWayBlockingContacts = new Map();
       this.contactListener = null;
       this.soundEvents = [];
       this.accumulator = 0;
@@ -443,8 +443,12 @@
         }
 
         if (relativeAlongPass < 0) {
-          this.oneWayBlockingContacts.add(
-            marble.id + "\u0000" + meta.component.id
+          this.oneWayBlockingContacts.set(
+            marble.id + "\u0000" + meta.component.id,
+            {
+              nx: passNx,
+              ny: passNy
+            }
           );
         }
       };
@@ -1617,21 +1621,31 @@
             property(component.properties, "boost", 0)
           );
           if (boost <= 0) continue;
+          const oneWayContact =
+            root.ViewerDrawMapEngine.isOneWayCollider(component)
+              ? this.oneWayBlockingContacts.get(
+                  marble.id + "\u0000" + component.id
+                )
+              : null;
           if (
             root.ViewerDrawMapEngine.isOneWayCollider(component)
-            && !this.oneWayBlockingContacts.has(
-              marble.id + "\u0000" + component.id
-            )
+            && !oneWayContact
           ) {
             continue;
           }
 
-          const contact = this.boostContact(
-            x,
-            y,
-            marble.radius,
-            component
-          );
+          const contact = oneWayContact
+            ? {
+                nx: oneWayContact.nx,
+                ny: oneWayContact.ny,
+                distance: 0
+              }
+            : this.boostContact(
+                x,
+                y,
+                marble.radius,
+                component
+              );
           if (!contact) continue;
 
           nextContacts.add(component.id);
