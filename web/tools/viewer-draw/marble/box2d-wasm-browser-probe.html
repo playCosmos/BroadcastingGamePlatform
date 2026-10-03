@@ -391,32 +391,101 @@
       throw new Error("slot audio profile did not reach audio event channel");
     }
 
-    const elimination = Engine.componentDefaults(
-      "ELIMINATION",
+    const sharedFinish = Engine.componentDefaults(
+      "FINISH",
       400,
       520
     );
-    elimination.width = 600;
-    elimination.height = 130;
-    elimination.properties = {
-      eliminationKey: "PIT",
+    sharedFinish.width = 600;
+    sharedFinish.height = 130;
+    sharedFinish.properties = {
+      sensorTag: "GOAL",
       soundMaterial: "stone",
       instrument: "drum",
       audioNote: 40,
       audioGain: 1,
       audioPan: 0
     };
-    state = runSensorRule(
-      "Last Survivor Box2D Probe",
-      { type: "LAST_SURVIVOR", winnerCount: 1 },
-      [elimination],
-      4,
-      1,
-      111
+
+    const unifiedFinishDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Unified Finish Box2D Probe",
+      world: {
+        width: 800,
+        height: 600,
+        gravityX: 0,
+        gravityY: 12
+      },
+      drawRule: {
+        type: "RACE_FINISH",
+        winnerCount: 0
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 60),
+          properties: { marbleRadius: 10 }
+        },
+        sharedFinish
+      ]
+    };
+    const unifiedFinishErrors = Engine.validateDefinition(
+      unifiedFinishDefinition
     );
-    if (state.eliminationOrder.length !== 3) {
+    if (unifiedFinishErrors.length) {
       throw new Error(
-        "last survivor must eliminate exactly three marbles"
+        "Unified FINISH validation failed: "
+          + unifiedFinishErrors.join(" / ")
+      );
+    }
+
+    adapter.loadMap(unifiedFinishDefinition);
+    state = adapter.reset(entries.slice(0, 4), 110, {
+      resultMode: "RANK_RANGE",
+      rankStart: 2,
+      rankEnd: 3,
+      winnerCount: 2
+    });
+    for (
+      let step = 0;
+      step < 3600
+        && state.rankedEntries.length < 2;
+      step += 1
+    ) {
+      state = adapter.step(1 / 120);
+    }
+    if (
+      state.rankedEntries.length !== 2
+      || state.finishOrder.length < 3
+      || state.winnerOrder.length !== 2
+      || state.targetCount !== 2
+      || state.winnerOrder[0] !== state.finishOrder[1]
+      || state.winnerOrder[1] !== state.finishOrder[2]
+    ) {
+      throw new Error(
+        "same FINISH must support runtime rank-range selection"
+      );
+    }
+
+    adapter.loadMap(unifiedFinishDefinition);
+    state = adapter.reset(entries.slice(0, 4), 111, {
+      resultMode: "LAST_SURVIVOR",
+      winnerCount: 1
+    });
+    for (
+      let step = 0;
+      step < 3600
+        && state.rankedEntries.length < 1;
+      step += 1
+    ) {
+      state = adapter.step(1 / 120);
+    }
+    if (
+      state.rankedEntries.length !== 1
+      || state.eliminationOrder.length !== 3
+      || state.targetCount !== 1
+    ) {
+      throw new Error(
+        "same FINISH must support runtime last-survivor selection"
       );
     }
 
@@ -1051,6 +1120,9 @@
     adapter.loadMap(originalDefinition);
     state = adapter.reset(originalEntries, 2022, {
       launchMode: "BURST",
+      resultMode: "RANK_RANGE",
+      rankStart: 1,
+      rankEnd: 1,
       winnerCount: 1
     });
     if (
