@@ -2109,9 +2109,12 @@
 
       if(rule.type==="ORDERED_OUTPUT"){
         const outputs=this.definition.components.filter(c=>c.type==="OUTPUT");
+        const target=this.effectiveTargetCount();
         for(const m of active){
+          if(this.finishOrder.length>=target) break;
           const output=outputs.find(o=>
             !this.outputClaims.has(Math.trunc(finiteOr(o.properties?.outputRank,0)))
+            && Math.trunc(finiteOr(o.properties?.outputRank,0))<=target
             && this.pointInRect(m.x,m.y,o)
           );
           if(!output) continue;
@@ -2258,7 +2261,9 @@
       }
 
       const finishes=this.definition.components.filter(c=>c.type==="FINISH");
+      const target=this.effectiveTargetCount();
       for(const m of active){
+        if(this.finishOrder.length>=target) break;
         if(finishes.some(f=>this.pointInRect(m.x,m.y,f))){
           this.finishOrder.push(m.id);
           this.completeMarble(m,this.finishOrder.length);
