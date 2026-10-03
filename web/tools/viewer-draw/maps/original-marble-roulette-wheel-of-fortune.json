@@ -16,8 +16,8 @@
     "visualBackground": "#101820"
   },
   "drawRule": {
-    "type": "RACE_FINISH",
-    "winnerCount": 0
+    "type": "LAST_SURVIVOR",
+    "winnerCount": 1
   },
   "runPolicy": {
     "timeoutSeconds": 240,
@@ -1836,21 +1836,22 @@
       }
     },
     {
-      "id": "original-roulette-finish",
-      "type": "FINISH",
+      "id": "original-roulette-elimination",
+      "type": "ELIMINATION",
       "x": 650,
-      "y": 5558,
+      "y": 5600,
       "rotation": 0,
       "width": 1300,
-      "height": 32,
+      "height": 100,
       "radius": 0,
       "properties": {
-        "sensorTag": "ORIGINAL_GOAL",
-        "visualFill": "rgba(92,190,126,0.22)",
-        "visualStroke": "#9cf0b9",
+        "eliminationKey": "ORIGINAL_GOAL_DROP",
+        "sensorTag": "ORIGINAL_GOAL_DROP",
+        "visualFill": "rgba(209,83,120,0.18)",
+        "visualStroke": "#d15378",
         "soundMaterial": "metal",
-        "instrument": "bell",
-        "audioNote": 84,
+        "instrument": "drum",
+        "audioNote": 43,
         "audioGain": 1,
         "audioPan": 0
       }
