@@ -554,7 +554,7 @@
           + pinballErrors.join(" / ")
       );
     }
-    if (pinballDefinition.components.length !== 74) {
+    if (pinballDefinition.components.length !== 69) {
       throw new Error(
         "completed pinball map component count changed: "
           + pinballDefinition.components.length
@@ -577,12 +577,15 @@
         "d3c7a90b-30ff-4a2a-ae48-54dc35a90c91"
     );
     if (
-      launcher?.x !== 1215
+      launcher?.x !== 1295
       || launcher?.y !== 2480
       || launcher?.properties?.burstPower !== 20
+      || launcher?.properties?.burstIntervalMs !== 150
+      || pinballDefinition.world?.width !== 1440
+      || pinballDefinition.world?.height !== 2560
       || oneWayHinge?.properties?.rotationMode !== "FREE"
       || oneWayHinge?.properties?.pivotRatio !== -0.48
-      || oneWayHinge?.properties?.startAngle !== -79.9998
+      || oneWayHinge?.properties?.startAngle !== -79.98
       || oneWayHinge?.properties?.endAngle !== 0
       || cabinetArc?.properties?.curveMode !== "CIRCULAR_ARC"
     ) {
