@@ -1196,14 +1196,26 @@
           Math.trunc(Number(options?.winnerCount) || 0)
         )
       );
+      const mapSpawner = this.definition.components.find(
+        (component) =>
+          component.type === "SPAWN"
+          || component.type === "BURST_SPAWN"
+      );
+      const spawnRole = String(
+        mapSpawner?.properties?.spawnRole || ""
+      ).toUpperCase();
       this.launchMode =
-        String(options?.launchMode || "BURST").toUpperCase()
-          === "BUNCH"
-          ? "BUNCH"
-          : "BURST";
+        mapSpawner?.type === "BURST_SPAWN"
+        || spawnRole === "BURST"
+          ? "BURST"
+          : "BUNCH";
       this.launchIntervalSeconds = Math.max(
         0.04,
-        Number(options?.launchIntervalMs || 90) / 1000
+        Number(
+          mapSpawner?.properties?.burstIntervalMs
+          ?? options?.launchIntervalMs
+          ?? 90
+        ) / 1000
       );
       this.nextLaunchIndex = 0;
       this.nextLaunchAt = 0;
