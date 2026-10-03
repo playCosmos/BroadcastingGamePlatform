@@ -13,6 +13,9 @@
   const RECT_COLLIDER_TYPES = new Set([
     "WALL","ROTATIONAL_BODY","CONVEYOR","ELEVATOR"
   ]);
+  const DIRECTIONAL_COLLIDER_TYPES = new Set(
+    RECT_COLLIDER_TYPES
+  );
   const COLLIDER_TYPES = new Set([
     ...RECT_COLLIDER_TYPES,
     "CURVE_WALL",
@@ -56,18 +59,33 @@
   const colliderProperties = (
     overrides = {},
     defaults = {restitution:.35, friction:.05}
-  ) => ({
-    restitution:finiteOr(
-      overrides.restitution,
-      finiteOr(defaults.restitution,.35)
-    ),
-    friction:finiteOr(
-      overrides.friction,
-      finiteOr(defaults.friction,.05)
-    ),
-    boost:finiteOr(overrides.boost,0),
-    ...overrides
-  });
+  ) => {
+    const rawMode = String(
+      overrides.collisionMode
+      ?? defaults.collisionMode
+      ?? "SOLID"
+    ).toUpperCase();
+    const direction = finiteOr(
+      overrides.oneWayDirection,
+      finiteOr(defaults.oneWayDirection,1)
+    ) < 0 ? -1 : 1;
+    return {
+      collisionMode:rawMode==="ONE_WAY" ? "ONE_WAY" : "SOLID",
+      oneWayDirection:direction,
+      restitution:finiteOr(
+        overrides.restitution,
+        finiteOr(defaults.restitution,.35)
+      ),
+      friction:finiteOr(
+        overrides.friction,
+        finiteOr(defaults.friction,.05)
+      ),
+      boost:finiteOr(overrides.boost,0),
+      ...overrides,
+      collisionMode:rawMode==="ONE_WAY" ? "ONE_WAY" : "SOLID",
+      oneWayDirection:direction
+    };
+  };
   const isCollider = (component) =>
     Boolean(component && COLLIDER_TYPES.has(component.type));
   const isRectCollider = (component) =>
@@ -75,15 +93,26 @@
       RECT_COLLIDER_TYPES.has(component.type)
       || component.type === "CURVE_WALL"
     ));
-  const wallCollisionMode = (component) =>
-    component?.type === "WALL"
-      ? String(component.properties?.collisionMode || "SOLID").toUpperCase()
+  const isDirectionalCollider = (component) =>
+    Boolean(
+      component
+      && DIRECTIONAL_COLLIDER_TYPES.has(component.type)
+    );
+  const colliderCollisionMode = (component) =>
+    isDirectionalCollider(component)
+      ? String(
+          component.properties?.collisionMode || "SOLID"
+        ).toUpperCase()
       : "SOLID";
   const oneWayDirection = (component) =>
     finiteOr(component?.properties?.oneWayDirection, 1) < 0 ? -1 : 1;
+  const isOneWayCollider = (component) =>
+    isDirectionalCollider(component)
+    && colliderCollisionMode(component) === "ONE_WAY";
+  const wallCollisionMode = colliderCollisionMode;
   const isOneWayWall = (component) =>
     component?.type === "WALL"
-    && wallCollisionMode(component) === "ONE_WAY";
+    && isOneWayCollider(component);
 
   function resolvedDrawRule(def){
     const raw=def?.drawRule||{};
@@ -486,7 +515,7 @@
         width:260,
         height:18,
         properties:colliderProperties(
-          {collisionMode:"SOLID",oneWayDirection:1},
+          {},
           {restitution:.35,friction:.06}
         )
       };
@@ -1040,11 +1069,17 @@
       }else if(isCollider(c)){
         c.properties=migratedColliderProperties(c.properties);
       }
-      if(c.type==="WALL"){
-        const mode=String(c.properties?.collisionMode||"SOLID").toUpperCase();
-        c.properties.collisionMode=mode==="ONE_WAY"?"ONE_WAY":"SOLID";
+      if(isDirectionalCollider(c)){
+        const mode=String(
+          c.properties?.collisionMode||"SOLID"
+        ).toUpperCase();
+        c.properties.collisionMode=
+          mode==="ONE_WAY" ? "ONE_WAY" : "SOLID";
         c.properties.oneWayDirection=
-          finiteOr(c.properties?.oneWayDirection,1)<0?-1:1;
+          finiteOr(c.properties?.oneWayDirection,1)<0 ? -1 : 1;
+      }else if(isCollider(c)){
+        c.properties.collisionMode="SOLID";
+        c.properties.oneWayDirection=1;
       }
       migrated.push(c);
     }
@@ -1270,17 +1305,32 @@
           errors.push(label+"은 0 이상이어야 합니다.");
         }
       }
-      if(c?.type==="WALL"){
-        const collisionMode=String(p.collisionMode||"SOLID").toUpperCase();
+      if(isDirectionalCollider(c)){
+        const collisionMode=String(
+          p.collisionMode||"SOLID"
+        ).toUpperCase();
         if(!["SOLID","ONE_WAY"].includes(collisionMode)){
-          errors.push("WALL collisionMode이 유효하지 않습니다.");
+          errors.push(
+            c.type+" collisionMode이 유효하지 않습니다."
+          );
         }
         if(collisionMode==="ONE_WAY"){
           const direction=Number(p.oneWayDirection);
           if(direction!==1&&direction!==-1){
-            errors.push("ONE_WAY WALL oneWayDirection은 1 또는 -1이어야 합니다.");
+            errors.push(
+              "ONE_WAY "+c.type
+              +" oneWayDirection은 1 또는 -1이어야 합니다."
+            );
           }
         }
+      }else if(
+        isCollider(c)
+        && String(p.collisionMode||"SOLID").toUpperCase()
+          !== "SOLID"
+      ){
+        errors.push(
+          c.type+"은 ONE_WAY 충돌 모드를 지원하지 않습니다."
+        );
       }
       if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
         const sensorTag=String(p.sensorTag||"").trim();
@@ -1942,13 +1992,18 @@
             : componentShapes(c,this.time);
           for(const shape of shapes){
             if(isRectCollider(c)){
-              const contact=isOneWayWall(c)
+              const contact=isOneWayCollider(c)
                 ? this.resolveOneWayRect(
                     m,
                     shape,
                     prevX,
                     prevY,
-                    nextBoostContacts
+                    nextBoostContacts,
+                    this.colliderPointVelocity(
+                      c,
+                      m.x,
+                      m.y
+                    )
                   )
                 : this.resolveRect(
                     m,
@@ -2194,12 +2249,45 @@
       if(m.y>w.height-m.radius){m.y=w.height-m.radius;if(m.vy>0)m.vy=-m.vy*e;}
     }
 
+    colliderPointVelocity(component,x,y){
+      if(component?.type!=="ROTATIONAL_BODY"){
+        return {x:0,y:0};
+      }
+
+      const mode=rotationMode(component);
+      let angularVelocity=0;
+      if(mode.startsWith("FORCE_")){
+        const now=motionRotation(component,this.time);
+        const next=motionRotation(
+          component,
+          this.time+this.fixedDt
+        );
+        angularVelocity=(next-now)/this.fixedDt;
+      }else{
+        angularVelocity=finiteOr(
+          this.rotationStates.get(component.id)
+            ?.angularVelocity,
+          0
+        );
+      }
+
+      const pivot=componentPivotWorld(component);
+      const omega=degToRad(angularVelocity);
+      const rx=x-pivot.x;
+      const ry=y-pivot.y;
+      return {
+        x:-omega*ry,
+        y:omega*rx
+      };
+    }
+
     resolveOneWayRect(
       m,
       c,
       prevX,
       prevY,
-      nextBoostContacts=null
+      nextBoostContacts=null,
+      surfaceVelocity={x:0,y:0}
     ){
       const direction=oneWayDirection(c);
       const angle=degToRad(c.rotation||0);
@@ -2218,7 +2306,12 @@
       const surface=hh+m.radius;
       const prevDepth=previous.y*direction;
       const currDepth=current.y*direction;
-      const localVy=(-m.vx*si+m.vy*co)*direction;
+      const relativeVx=
+        m.vx-finiteOr(surfaceVelocity?.x,0);
+      const relativeVy=
+        m.vy-finiteOr(surfaceVelocity?.y,0);
+      const localVy=
+        (-relativeVx*si+relativeVy*co)*direction;
       const key=c.id;
       m.oneWayPassThrough ||= new Set();
 
@@ -2263,16 +2356,26 @@
 
       const nx=-si*direction;
       const ny=co*direction;
-      const vn=m.vx*nx+m.vy*ny;
+      let rvx=relativeVx;
+      let rvy=relativeVy;
+      const vn=rvx*nx+rvy*ny;
       if(vn<0){
-        const restitution=finiteOr(c.properties?.restitution,.35);
-        m.vx-=(1+restitution)*vn*nx;
-        m.vy-=(1+restitution)*vn*ny;
-        const friction=finiteOr(c.properties?.friction,.05);
+        const restitution=finiteOr(
+          c.properties?.restitution,
+          .35
+        );
+        rvx-=(1+restitution)*vn*nx;
+        rvy-=(1+restitution)*vn*ny;
+        const friction=finiteOr(
+          c.properties?.friction,
+          .05
+        );
         const tx=-ny,ty=nx;
-        const vt=m.vx*tx+m.vy*ty;
-        m.vx-=vt*friction*tx;
-        m.vy-=vt*friction*ty;
+        const vt=rvx*tx+rvy*ty;
+        rvx-=vt*friction*tx;
+        rvy-=vt*friction*ty;
+        m.vx=rvx+finiteOr(surfaceVelocity?.x,0);
+        m.vy=rvy+finiteOr(surfaceVelocity?.y,0);
       }
 
       const boost=finiteOr(c.properties?.boost,0);
@@ -2510,8 +2613,11 @@
     migrateDefinition,
     isCollider,
     isRectCollider,
+    isDirectionalCollider,
+    colliderCollisionMode,
     wallCollisionMode,
     oneWayDirection,
+    isOneWayCollider,
     isOneWayWall,
     defaultVisualStyle,
     componentVisualStyle,
