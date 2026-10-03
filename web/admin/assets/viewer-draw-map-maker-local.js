@@ -2655,6 +2655,82 @@
     }
   }
 
+  function formatPreviewTime(seconds) {
+    const totalMs = Math.max(
+      0,
+      Math.round(num(seconds, 0) * 1000)
+    );
+    const minutes = Math.floor(totalMs / 60000);
+    const secs = Math.floor((totalMs % 60000) / 1000);
+    const millis = totalMs % 1000;
+    return (
+      String(minutes).padStart(2, "0")
+      + ":"
+      + String(secs).padStart(2, "0")
+      + "."
+      + String(millis).padStart(3, "0")
+    );
+  }
+
+  function renderPreviewTiming() {
+    const status = $("simStatus");
+    const splits = $("previewSplits");
+    if (!previewSnapshot) {
+      status.textContent = "0 / 0 · 00:00.000";
+      if (splits) {
+        splits.hidden = true;
+        splits.replaceChildren();
+      }
+      return;
+    }
+
+    const target = Math.max(
+      0,
+      Math.trunc(
+        num(previewSnapshot.targetCount, previewSnapshot.totalCount)
+      )
+    );
+    status.textContent =
+      `${previewSnapshot.finishedCount} / ${target} · ${formatPreviewTime(previewSnapshot.time)}`;
+
+    if (!splits) return;
+    const winnerSplits = Array.isArray(previewSnapshot.winnerSplits)
+      ? previewSnapshot.winnerSplits
+      : [];
+    splits.replaceChildren();
+    splits.hidden = winnerSplits.length === 0;
+
+    for (const split of winnerSplits) {
+      const item = document.createElement("span");
+      item.className = "preview-lap";
+
+      const rank = document.createElement("strong");
+      rank.className = "preview-lap-rank";
+      rank.textContent = String(split.rank) + "위";
+
+      const marble = document.createElement("span");
+      marble.className = "preview-lap-marble";
+      marble.textContent = String(split.id || "-");
+
+      const time = document.createElement("span");
+      time.className = "preview-lap-time";
+      time.textContent = formatPreviewTime(split.time);
+
+      item.append(rank, marble, time);
+      splits.append(item);
+    }
+  }
+
+  function finishCompletedPreview() {
+    previewRunning = false;
+    cancelAnimationFrame(previewFrame);
+    previewFrame = 0;
+    $("previewToggle").textContent = "▶ 다시";
+    $("modeStatus").textContent = "완료";
+    canvas.style.cursor = tool === "SELECT" ? "default" : "crosshair";
+    updateEditButtons();
+  }
+
   function startPreview() {
     if (previewRunning) {
       stopPreview();
@@ -2677,6 +2753,7 @@
       $("modeStatus").textContent = "시뮬레이션";
       setTool("SELECT");
       updateEditButtons();
+      renderPreviewTiming();
       previewFrame = requestAnimationFrame(previewTick);
       render();
     } catch (error) {
@@ -2689,9 +2766,14 @@
     const dt = Math.min(.05, Math.max(0, (now - previewLastTime) / 1000));
     previewLastTime = now;
     previewSnapshot = previewEngine.advance(dt);
-    $("simStatus").textContent =
-      `${previewSnapshot.finishedCount} / ${previewSnapshot.totalCount} · ${previewSnapshot.time.toFixed(1)}s`;
+    renderPreviewTiming();
     render();
+
+    if (previewSnapshot.runStatus === "COMPLETED") {
+      finishCompletedPreview();
+      return;
+    }
+
     previewFrame = requestAnimationFrame(previewTick);
   }
 
@@ -2704,12 +2786,13 @@
     $("modeStatus").textContent = "편집";
     canvas.style.cursor = tool === "SELECT" ? "default" : "crosshair";
     updateEditButtons();
+    renderPreviewTiming();
   }
 
   function resetPreview() {
     if (!previewEngine) {
       previewSnapshot = null;
-      $("simStatus").textContent = "0 / 0";
+      renderPreviewTiming();
       render();
       return;
     }
@@ -2718,8 +2801,10 @@
       Math.trunc(num($("previewSeed").value, 1))
     );
     previewLastTime = performance.now();
-    $("simStatus").textContent =
-      `0 / ${previewSnapshot.totalCount} · 0.0s`;
+    $("modeStatus").textContent = previewRunning
+      ? "시뮬레이션"
+      : "편집";
+    renderPreviewTiming();
     render();
   }
 
