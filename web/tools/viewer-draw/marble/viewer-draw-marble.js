@@ -11,20 +11,8 @@
   const ctx = canvas.getContext("2d");
   const minimapCtx = minimapCanvas.getContext("2d");
 
-  const BUNDLED_MAPS = {
-    RETRO: new URL(
-      "../maps/retro-cadet-survivor-v3.json",
-      document.currentScript?.src || location.href
-    ).href,
-    JUMP: new URL(
-      "../maps/magic-mirror-jump-v1.json",
-      document.currentScript?.src || location.href
-    ).href,
-    AUDIO: new URL(
-      "../maps/audio-marble-machine-v1.json",
-      document.currentScript?.src || location.href
-    ).href
-  };
+  const BUNDLED_MAPS =
+    window.ViewerDrawBundledMaps || {};
 
   const STUCK_DELAY_MS = 5000;
   const STUCK_DISTANCE_PX = 0.65;
@@ -631,17 +619,13 @@
     resetDraw();
   }
 
-  async function loadBundledMap(key) {
+  function loadBundledMap(key) {
     const normalized = String(key || "").toUpperCase();
-    const url = BUNDLED_MAPS[normalized];
-    if (!url) {
+    const bundled = BUNDLED_MAPS[normalized];
+    if (!bundled) {
       throw new Error("알 수 없는 기본맵입니다.");
     }
-    const response = await fetch(url, { cache: "no-store" });
-    if (!response.ok) {
-      throw new Error("기본맵 HTTP " + response.status);
-    }
-    loadDefinition(await response.json());
+    loadDefinition(structuredClone(bundled));
     if ($("bundledMap")) $("bundledMap").value = normalized;
   }
 
@@ -1823,9 +1807,11 @@
     if (running) return;
     const key = $("bundledMap").value;
     if (key === "CUSTOM") return;
-    void loadBundledMap(key).catch((error) => {
+    try {
+      loadBundledMap(key);
+    } catch (error) {
       alert("기본맵 불러오기 실패: " + error.message);
-    });
+    }
   });
 
   $("winnerCount").addEventListener("change", renderRanks);
@@ -1929,7 +1915,7 @@
       || "RETRO"
     ).toUpperCase();
     sessionStorage.removeItem("viewerDraw.bundledMapKey");
-    await loadBundledMap(
+    loadBundledMap(
       Object.hasOwn(BUNDLED_MAPS, requestedMap)
         ? requestedMap
         : "RETRO"
