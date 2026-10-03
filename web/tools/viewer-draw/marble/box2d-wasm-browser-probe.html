@@ -916,7 +916,7 @@
       audioDefinition.world?.width !== 8000
       || audioDefinition.world?.height !== 4000
       || audioDefinition.drawRule?.type !== "CASCADE_SELECTION"
-      || audioDefinition.components.length !== 165
+      || audioDefinition.components.length !== 420
       || audioSpawners.length !== 1
       || audioSpawners[0].type !== "BURST_SPAWN"
       || !audioDefinition.components.some(
@@ -969,6 +969,23 @@
     if (!(audioMaxY > 1050)) {
       throw new Error(
         "Audio Marble Machine spawn lane is blocked; maxY="
+          + audioMaxY.toFixed(1)
+      );
+    }
+
+    for (let step = 0; step < 3600; step += 1) {
+      state = adapter.step(1 / 60);
+      audioMaxY = Math.max(
+        audioMaxY,
+        ...state.marbles
+          .filter((marble) => marble.launched !== false)
+          .map((marble) => marble.y)
+      );
+      if (audioMaxY > 3750) break;
+    }
+    if (!(audioMaxY > 3750)) {
+      throw new Error(
+        "Audio Marble Machine finish lanes are blocked; maxY="
           + audioMaxY.toFixed(1)
       );
     }
