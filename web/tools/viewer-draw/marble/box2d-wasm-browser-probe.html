@@ -735,6 +735,63 @@
       );
     }
 
+    const boostedOneWayWall = structuredClone(oneWayWall);
+    boostedOneWayWall.id = "boosted-one-way-wall-probe";
+    boostedOneWayWall.properties.oneWayDirection = -1;
+    boostedOneWayWall.properties.restitution = 0;
+    boostedOneWayWall.properties.boost = 4;
+    const boostedOneWayDefinition = {
+      ...oneWayDefinition,
+      name: "Boosted One-Way Wall Box2D Probe",
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 240),
+          properties: { marbleRadius: 10 }
+        },
+        boostedOneWayWall,
+        {
+          ...Engine.componentDefaults("FINISH", 760, 40),
+          width: 40,
+          height: 40
+        }
+      ]
+    };
+    adapter.loadMap(boostedOneWayDefinition);
+    state = adapter.reset(entries.slice(0, 1), 205, {
+      launchMode: "BUNCH"
+    });
+    body = adapter.marbles[0].body;
+    body.SetTransform(
+      new adapter.Box2D.b2Vec2(4, 2.4),
+      0
+    );
+    body.SetLinearVelocity(
+      new adapter.Box2D.b2Vec2(0, 2)
+    );
+    let boostedOneWayBestY = 240;
+    for (let step = 0; step < 120; step += 1) {
+      state = adapter.step(1 / 120);
+      boostedOneWayBestY = Math.min(
+        boostedOneWayBestY,
+        state.marbles[0].y
+      );
+    }
+    const boostedOneWayVelocity =
+      adapter.marbles[0].body.GetLinearVelocity();
+    if (
+      boostedOneWayBestY > 210
+      || boostedOneWayVelocity.y >= 0
+    ) {
+      throw new Error(
+        "static one-way boost did not launch from blocking side; bestY="
+          + boostedOneWayBestY.toFixed(1)
+          + ", vy="
+          + boostedOneWayVelocity.y.toFixed(3)
+          + ", blockers="
+          + adapter.oneWayBlockingContacts.size
+      );
+    }
+
     const movingMirror = Engine.componentDefaults(
       "ROTATIONAL_BODY",
       400,
