@@ -1338,6 +1338,34 @@ const audioMap = JSON.parse(
     "utf8"
   )
 );
+const originalRouletteMap = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "../../tools/viewer-draw/maps/original-marble-roulette-wheel-of-fortune.json"
+    ),
+    "utf8"
+  )
+);
+requireCondition(
+  originalRouletteMap.name === "Original Marble Roulette - Wheel of fortune"
+    && originalRouletteMap.world?.width === 1300
+    && originalRouletteMap.world?.height === 5650
+    && originalRouletteMap.components.length === 80
+    && originalRouletteMap.components.filter(
+      (component) => component.type === "ROTATIONAL_BODY"
+    ).length === 6
+    && originalRouletteMap.components.filter(
+      (component) => component.type === "SPAWN"
+    ).length === 1
+    && originalRouletteMap.components.filter(
+      (component) => component.type === "FINISH"
+    ).length === 1
+    && originalRouletteMap.source?.project === "lazygyu/roulette"
+    && originalRouletteMap.source?.license === "MIT",
+  "Original Marble Roulette Wheel of fortune port must stay current"
+);
+
 requireCondition(
   audioMap.world?.width === 8000
     && audioMap.world?.height === 4000
@@ -1391,7 +1419,12 @@ requireCondition(
   "Audio Marble mid walls must stay removed and lower fins must stay dense"
 );
 
-for (const bundledMap of [retroMap, jumpMap, audioMap]) {
+for (const bundledMap of [
+  retroMap,
+  jumpMap,
+  audioMap,
+  originalRouletteMap
+]) {
   const bundledErrors = Engine.validateDefinition(
     Engine.migrateDefinition(bundledMap)
   );
@@ -1509,6 +1542,10 @@ for (const source of [makerSource, localMakerSource]) {
 requireCondition(
   makerSource.includes("BUNDLED_AUDIO_URL")
     && localMakerSource.includes("BUNDLED_AUDIO_URL")
+    && makerSource.includes("BUNDLED_ORIGINAL_ROULETTE_URL")
+    && localMakerSource.includes("BUNDLED_ORIGINAL_ROULETTE_URL")
+    && makerSource.includes("loadOriginalRoulettePreset")
+    && localMakerSource.includes("loadOriginalRoulettePreset")
     && makerSource.includes("isSpawnerType")
     && localMakerSource.includes("isSpawnerType")
     && makerSource.includes("loadAudioPreset")
@@ -1522,6 +1559,7 @@ requireCondition(
       && html.includes('value="RETRO"')
       && html.includes('value="JUMP"')
       && html.includes('value="AUDIO"')
+      && html.includes('value="ORIGINAL"')
       && html.includes('id="launchModeLabel"')
       && html.includes("viewer-draw-bundled-maps.js")
       && !html.includes('name="launchMode"')
@@ -1532,7 +1570,11 @@ requireCondition(
   marbleSource.includes("function mapSpawner()")
     && marbleSource.includes("function launchConfig()")
     && marbleSource.includes("viewerDraw.bundledMapKey")
-    && marbleSource.includes("loadBundledMap"),
+    && marbleSource.includes("loadBundledMap")
+    && marbleSource.includes("function distanceToTarget(")
+    && marbleSource.includes("function compareGoalDistance(")
+    && marbleSource.includes(".sort(\n        compareGoalDistance")
+    && marbleSource.includes(".sort(\n          compareGoalDistance"),
   "Marble Draw runtime must derive start style and accept bundled map handoff"
 );
 
@@ -1541,6 +1583,7 @@ requireCondition(
     && viewerDrawHtml.includes('value="RETRO"')
     && viewerDrawHtml.includes('value="JUMP"')
     && viewerDrawHtml.includes('value="AUDIO"')
+    && viewerDrawHtml.includes('value="ORIGINAL"')
     && viewerDrawSource.includes("viewerDraw.bundledMapKey"),
   "Viewer Draw admin must hand off all bundled maps to Marble Draw"
 );
