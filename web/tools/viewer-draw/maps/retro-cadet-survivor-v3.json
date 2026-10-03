@@ -9,8 +9,8 @@
     "visualBackground": "#102758"
   },
   "drawRule": {
-    "type": "LAST_SURVIVOR",
-    "winnerCount": 1
+    "type": "RACE_FINISH",
+    "winnerCount": 0
   },
   "runPolicy": {
     "timeoutSeconds": 0,
@@ -416,7 +416,7 @@
     },
     {
       "id": "dad6e709-6840-4ad7-9021-bd8df547be5f",
-      "type": "ELIMINATION",
+      "type": "FINISH",
       "x": 590,
       "y": 2545,
       "rotation": 0,
@@ -424,7 +424,6 @@
       "height": 30,
       "radius": 0,
       "properties": {
-        "eliminationKey": "CENTER_DRAIN",
         "sensorTag": "CENTER_DRAIN",
         "soundMaterial": "metal",
         "instrument": "drum",
@@ -997,7 +996,8 @@
         "visualStroke": "#a6b0b8",
         "soundMaterial": "metal",
         "instrument": "none",
-        "audioNote": 60,        "audioGain": 1,
+        "audioNote": 60,
+        "audioGain": 1,
         "audioPan": 0
       }
     },
