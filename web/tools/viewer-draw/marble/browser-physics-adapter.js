@@ -1417,11 +1417,11 @@
         if (!previousWorld) continue;
 
         const position = marble.body.GetPosition();
-        const currentWorld = {
+        let currentWorld = {
           x: position.x * PIXELS_PER_METER,
           y: position.y * PIXELS_PER_METER
         };
-        const velocity = marble.body.GetLinearVelocity();
+        let velocity = marble.body.GetLinearVelocity();
 
         for (const wall of this.oneWayWalls) {
           const direction =
@@ -1543,6 +1543,11 @@
             new B.b2Vec2(vx, vy)
           );
           marble.body.SetAwake(true);
+          currentWorld = {
+            x: correctedWorldX,
+            y: correctedWorldY
+          };
+          velocity = marble.body.GetLinearVelocity();
         }
       }
     }
