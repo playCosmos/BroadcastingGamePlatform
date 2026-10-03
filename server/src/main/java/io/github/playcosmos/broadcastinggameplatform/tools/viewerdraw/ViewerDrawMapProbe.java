@@ -580,6 +580,53 @@ public final class ViewerDrawMapProbe {
                 "conditional output cycle must fail server validation"
             );
 
+            var burstSpawn = new ViewerDrawService.MachineComponent(
+                "burst-spawn-1",
+                "BURST_SPAWN",
+                640,
+                70,
+                0,
+                0,
+                0,
+                18,
+                Map.of(
+                    "marbleRadius", 11,
+                    "spawnRole", "BURST",
+                    "burstDirectionDegrees", 90,
+                    "burstSpreadDegrees", 20,
+                    "burstPower", 8,
+                    "burstPowerVariance", 0.2,
+                    "burstSizeMin", 3,
+                    "burstSizeMax", 6,
+                    "burstIntervalMs", 120
+                )
+            );
+            var burstDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Burst Spawn Probe",
+                    world,
+                    List.of(burstSpawn, finish)
+                );
+            require(
+                service.validateMachineMap(burstDefinition).isEmpty(),
+                "BURST_SPAWN must satisfy the single-spawner contract"
+            );
+
+            var duplicateSpawnDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Duplicate Spawn Probe",
+                    world,
+                    List.of(spawn, burstSpawn, finish)
+                );
+            require(
+                !service.validateMachineMap(
+                    duplicateSpawnDefinition
+                ).isEmpty(),
+                "multiple spawners must fail server validation"
+            );
+
             var invalid =
                 new ViewerDrawService.MachineMapDefinition(
                     "viewer-draw-machine-map/v0",
