@@ -451,6 +451,16 @@
     return [];
   }
 
+  function conditionalWallFields(component) {
+    if (component?.type !== "WALL") return [];
+    return [
+      "propCollisionMode",
+      ...(Engine.isOneWayWall(component)
+        ? ["propOneWayDirection"]
+        : [])
+    ];
+  }
+
   function applyInspectorSchema(component) {
     const inspector = $("componentInspector");
     if (!inspector) return;
@@ -468,6 +478,7 @@
 
     const basic = [
       ...(schema.basic || []),
+      ...conditionalWallFields(component),
       ...conditionalCurveFields(component),
       ...conditionalRotationFields(component),
       ...VISUAL_FIELDS
@@ -931,6 +942,29 @@
         ctx.setLineDash([7, 5]);
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
+      }
+      if (c.type === "WALL" && Engine.isOneWayWall(c)) {
+        const direction = Engine.oneWayDirection(c);
+        const length = Math.max(24, 42 * view.scale);
+        const head = Math.max(5, 8 * view.scale);
+        const endY = direction * length / 2;
+        const startY = -direction * length / 2;
+        ctx.save();
+        ctx.strokeStyle = "#d8f8ff";
+        ctx.fillStyle = "#d8f8ff";
+        ctx.lineWidth = Math.max(1.5, 2 * view.scale);
+        ctx.setLineDash([]);
+        ctx.beginPath();
+        ctx.moveTo(0, startY);
+        ctx.lineTo(0, endY);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, endY);
+        ctx.lineTo(-head, endY - direction * head);
+        ctx.lineTo(head, endY - direction * head);
+        ctx.closePath();
+        ctx.fill();
+        ctx.restore();
       }
       if (c.type === "CONVEYOR") {
         ctx.strokeStyle = "#d8f2ff";
@@ -1584,7 +1618,9 @@
         ? "BUMPER"
         : type === "PRESET_LAUNCH_WALL"
           ? "LAUNCH_WALL"
-          : type === "PRESET_ROTATOR"
+          : type === "PRESET_ONE_WAY_WALL"
+            ? "ONE_WAY_WALL"
+            : type === "PRESET_ROTATOR"
             ? "ROTATOR"
             : type === "PRESET_GATE"
               ? "GATE"
@@ -1719,6 +1755,9 @@
     $("propRadius").value = c.radius || 0;
     $("propRestitution").value = num(c.properties?.restitution, .35);
     $("propFriction").value = num(c.properties?.friction, .05);
+    $("propCollisionMode").value = Engine.wallCollisionMode(c);
+    $("propOneWayDirection").value =
+      String(Engine.oneWayDirection(c));
     $("propRotationMode").value = Engine.rotationMode(c);
     $("propAngularSpeed").value = num(c.properties?.angularSpeed, 90);
     $("propBladeCount").value = Math.trunc(
@@ -1956,6 +1995,11 @@
         0,
         num($("propBoost").value, 0)
       );
+    }
+    if (c.type === "WALL") {
+      c.properties.collisionMode = $("propCollisionMode").value;
+      c.properties.oneWayDirection =
+        Number($("propOneWayDirection").value) < 0 ? -1 : 1;
     }
     if (c.type === "ROTATIONAL_BODY") {
       c.properties.rotationMode = $("propRotationMode").value;
@@ -2853,13 +2897,18 @@
    "propBranchSetKey","propBranchSetValue",
    "propSlotKey","propSlotCapacity","propEliminationKey",
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
-   "propBoost","propMarbleRadius"]
+   "propBoost","propCollisionMode","propOneWayDirection","propMarbleRadius"]
     .forEach((id) => {
       const input = $(id);
       if (input) {
         input.addEventListener("change", () => {
           updateSelectedFromInspector();
-          if (id === "propRotationMode") syncAdvancedSettings();
+          if (
+            id === "propRotationMode"
+            || id === "propCollisionMode"
+          ) {
+            syncAdvancedSettings();
+          }
         });
       }
     });
