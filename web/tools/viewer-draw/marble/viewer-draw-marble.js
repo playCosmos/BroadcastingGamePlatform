@@ -1074,8 +1074,7 @@
           && marble.launched !== false
       )
       .sort(
-        (left, right) =>
-          progressValue(right) - progressValue(left)
+        compareGoalDistance
       );
     const queued = state.marbles.filter(
       (marble) =>
@@ -1240,6 +1239,38 @@
     });
   }
 
+  function distanceToTarget(marble, target) {
+    const dx = marble.x - target.x;
+    const dy = marble.y - target.y;
+    const angle = -(Number(target.rotation) || 0) * Math.PI / 180;
+    const cos = Math.cos(angle);
+    const sin = Math.sin(angle);
+    const localX = dx * cos - dy * sin;
+    const localY = dx * sin + dy * cos;
+    const radius = Math.max(0, Number(target.radius) || 0);
+    if (radius > 0) {
+      return Math.max(
+        0,
+        Math.hypot(localX, localY) - radius
+      );
+    }
+    const halfWidth = Math.max(
+      0,
+      Math.abs(Number(target.width) || 0) / 2
+    );
+    const halfHeight = Math.max(
+      0,
+      Math.abs(Number(target.height) || 0) / 2
+    );
+    if (halfWidth > 0 || halfHeight > 0) {
+      return Math.hypot(
+        Math.max(0, Math.abs(localX) - halfWidth),
+        Math.max(0, Math.abs(localY) - halfHeight)
+      );
+    }
+    return Math.hypot(dx, dy);
+  }
+
   function nearestFinishDistance(marble) {
     const rule = Engine.resolvedDrawRule(definition);
     if (rule.type === "LAST_SURVIVOR") return Infinity;
@@ -1270,12 +1301,22 @@
     if (!targets.length) return Infinity;
     return Math.min(
       ...targets.map((target) =>
-        Math.hypot(
-          marble.x - target.x,
-          marble.y - target.y
-        )
+        distanceToTarget(marble, target)
       )
     );
+  }
+
+  function compareGoalDistance(left, right) {
+    const leftDistance = nearestFinishDistance(left);
+    const rightDistance = nearestFinishDistance(right);
+    if (
+      Number.isFinite(leftDistance)
+      && Number.isFinite(rightDistance)
+      && Math.abs(leftDistance - rightDistance) > 0.001
+    ) {
+      return leftDistance - rightDistance;
+    }
+    return progressValue(right) - progressValue(left);
   }
 
   function winnerCountValue() {
@@ -1357,8 +1398,7 @@
           && marble.launched !== false
       )
       .sort(
-        (left, right) =>
-          progressValue(right) - progressValue(left)
+        compareGoalDistance
       );
     const leader = active[0];
     const threshold = Math.max(
@@ -1383,8 +1423,7 @@
             && marble.launched !== false
         )
         .sort(
-          (left, right) =>
-            progressValue(right) - progressValue(left)
+          compareGoalDistance
         );
       const target = active[0]
         || state.marbles.find((marble) => marble.rank === 1)
