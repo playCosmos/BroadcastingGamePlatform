@@ -1573,8 +1573,9 @@ requireCondition(
     && marbleSource.includes("loadBundledMap")
     && marbleSource.includes("function distanceToTarget(")
     && marbleSource.includes("function compareGoalDistance(")
-    && marbleSource.includes(".sort(\n        compareGoalDistance\n      )")
-    && marbleSource.includes(".sort(\n          compareGoalDistance\n        )"),
+    && (marbleSource.match(
+      /\.sort\(\s*compareGoalDistance\s*\)/g
+    ) || []).length >= 3,
   "Marble Draw runtime must derive start style and accept bundled map handoff"
 );
 
