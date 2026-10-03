@@ -442,15 +442,13 @@
           return;
         }
 
-        if (relativeAlongPass < 0) {
-          this.oneWayBlockingContacts.set(
-            marble.id + "\u0000" + meta.component.id,
-            {
-              nx: passNx,
-              ny: passNy
-            }
-          );
-        }
+        this.oneWayBlockingContacts.set(
+          marble.id + "\u0000" + meta.component.id,
+          {
+            nx: passNx,
+            ny: passNy
+          }
+        );
       };
 
       this.contactListener = listener;
