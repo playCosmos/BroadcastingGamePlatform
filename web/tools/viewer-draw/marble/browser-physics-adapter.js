@@ -1066,6 +1066,25 @@
       return best;
     }
 
+    capturePositions() {
+      return new Map(
+        this.marbles
+          .filter(
+            (marble) => !marble.finished && !marble.eliminated && !marble.dnf
+          )
+          .map((marble) => {
+            const position = marble.body.GetPosition();
+            return [
+              marble.id,
+              {
+                x: position.x * PIXELS_PER_METER,
+                y: position.y * PIXELS_PER_METER
+              }
+            ];
+          })
+      );
+    }
+
     captureVelocities() {
       return new Map(
         this.marbles
@@ -1447,6 +1466,7 @@
       let guard = 0;
       while (this.accumulator >= FIXED_DT && guard < 12) {
         this.releaseQueuedMarbles();
+        const beforePositions = this.capturePositions();
         const beforeVelocities = this.captureVelocities();
         this.updateMovingComponents(this.time);
         this.updateTorqueRotations();
@@ -1457,8 +1477,8 @@
         this.detectImpactSounds(beforeVelocities);
         this.applyColliderBoosts();
         this.applyConveyors();
-        this.detectTaggedSensors();
-        this.detectResults();
+        this.detectTaggedSensors(beforePositions);
+        this.detectResults(beforePositions);
         this.applyTimeout();
         this.accumulator -= FIXED_DT;
         guard += 1;
@@ -1738,7 +1758,7 @@
 
 
 
-    detectTaggedSensors() {
+    detectTaggedSensors(previousPositions = null) {
       const sensors = this.definition.components.filter(
         (component) =>
           ["FINISH","OUTPUT","SLOT","ELIMINATION"]
@@ -1753,7 +1773,15 @@
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
         for (const sensor of sensors) {
-          if (!this.pointInRect(x, y, sensor)) continue;
+          if (
+            !this.pointInRect(x, y, sensor)
+            && !this.segmentIntersectsRect(
+              previousPositions?.get(marble.id),
+              { x, y },
+              sensor,
+              marble.radius
+            )
+          ) continue;
           const tag = String(
             sensor.properties?.sensorTag || ""
           ).trim();
@@ -1775,7 +1803,7 @@
       );
     }
 
-    detectResults() {
+    detectResults(previousPositions = null) {
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
         this.definition
       );
@@ -1799,12 +1827,12 @@
           this.detectRandomOutputBucket();
           break;
         default:
-          this.detectFinishes();
+          this.detectFinishes(previousPositions);
           break;
       }
     }
 
-    detectFinishes() {
+    detectFinishes(previousPositions = null) {
       const finishes = this.definition.components.filter(
         (component) => component.type === "FINISH"
       );
@@ -1815,18 +1843,24 @@
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
 
-        if (!finishes.some((finish) => this.pointInRect(x, y, finish))) {
-          continue;
-        }
+        const finish = finishes.find(
+          (candidate) =>
+            this.pointInRect(x, y, candidate)
+            || this.segmentIntersectsRect(
+              previousPositions?.get(marble.id),
+              { x, y },
+              candidate,
+              marble.radius
+            )
+        );
+        if (!finish) continue;
 
         marble.finished = true;
         marble.rank = this.finishOrder.length + 1;
         marble.finishTime = this.time;
         this.finishOrder.push(marble.id);
         this.winnerOrder = this.finishOrder.slice();
-        this.queueSound("finish", 0.8, finishes.find(
-          (finish) => this.pointInRect(x, y, finish)
-        )?.id || "");
+        this.queueSound("finish", 0.8, finish.id || "");
         marble.body.SetLinearVelocity(
           new this.Box2D.b2Vec2(0, 0)
         );
@@ -2233,6 +2267,52 @@
           output
         );
       }
+    }
+
+    segmentIntersectsRect(
+      from,
+      to,
+      component,
+      padding = 0
+    ) {
+      if (!from || !to || !component) return false;
+
+      const angle = (component.rotation || 0) * Math.PI / 180;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
+      const toLocal = (point) => {
+        const dx = point.x - component.x;
+        const dy = point.y - component.y;
+        return {
+          x: dx * cos + dy * sin,
+          y: -dx * sin + dy * cos
+        };
+      };
+      const start = toLocal(from);
+      const end = toLocal(to);
+      const halfW = Math.abs(component.width || 0) / 2
+        + Math.max(0, Number(padding) || 0);
+      const halfH = Math.abs(component.height || 0) / 2
+        + Math.max(0, Number(padding) || 0);
+      let tMin = 0;
+      let tMax = 1;
+
+      for (const [origin, delta, extent] of [
+        [start.x, end.x - start.x, halfW],
+        [start.y, end.y - start.y, halfH]
+      ]) {
+        if (Math.abs(delta) < 1e-9) {
+          if (origin < -extent || origin > extent) return false;
+          continue;
+        }
+        let near = (-extent - origin) / delta;
+        let far = (extent - origin) / delta;
+        if (near > far) [near, far] = [far, near];
+        tMin = Math.max(tMin, near);
+        tMax = Math.min(tMax, far);
+        if (tMin > tMax) return false;
+      }
+      return tMax >= 0 && tMin <= 1;
     }
 
     pointInRect(x, y, component) {
