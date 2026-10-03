@@ -55,6 +55,22 @@
     return Number.isFinite(n) ? n : fallback;
   };
   const clamp = (v, min, max) => Math.max(min, Math.min(max, v));
+  function randomSeed() {
+    if (globalThis.crypto?.getRandomValues) {
+      const values = new Uint32Array(1);
+      do {
+        globalThis.crypto.getRandomValues(values);
+      } while (values[0] === 0);
+      return values[0];
+    }
+    return (
+      (
+        Date.now()
+        ^ Math.floor(performance.now() * 1000)
+        ^ Math.floor(Math.random() * 0xffffffff)
+      ) >>> 0
+    ) || 1;
+  }
   let workspaceLayout = {
     paletteWidth: null,
     inspectorWidth: null,
@@ -2766,13 +2782,14 @@
     if (!validateClient()) return;
 
     try {
+      const seed = randomSeed();
       previewEngine = new Engine.PreviewEngine(
         definition,
-        { seed: Math.trunc(num($("previewSeed").value, 1)) }
+        { seed }
       );
       previewSnapshot = previewEngine.reset(
         Math.trunc(num($("marbleCount").value, 16)),
-        Math.trunc(num($("previewSeed").value, 1))
+        seed
       );
       previewRunning = true;
       previewLastTime = performance.now();
@@ -2825,7 +2842,7 @@
     }
     previewSnapshot = previewEngine.reset(
       Math.trunc(num($("marbleCount").value, 16)),
-      Math.trunc(num($("previewSeed").value, 1))
+      randomSeed()
     );
     previewLastTime = performance.now();
     $("modeStatus").textContent = previewRunning
