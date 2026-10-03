@@ -286,8 +286,19 @@
           entries: sourceEntries
         })
       );
+      const bundledMapKey = String(
+        $("marbleMapPreset")?.value || "RETRO"
+      ).toUpperCase();
+      sessionStorage.setItem(
+        "viewerDraw.bundledMapKey",
+        bundledMapKey
+      );
+      const mapLabel =
+        $("marbleMapPreset")?.selectedOptions?.[0]?.textContent
+        || bundledMapKey;
       $("drawStatus").textContent =
-        sourceEntries.length + "명 Freeze · Marble Draw로 이동";
+        sourceEntries.length + "명 Freeze · "
+        + mapLabel + "로 이동";
       window.location.href = "/tools/viewer-draw/marble/";
     } catch (error) {
       $("drawStatus").textContent =
