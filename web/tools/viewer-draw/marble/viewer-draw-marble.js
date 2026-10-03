@@ -539,6 +539,10 @@
     }
     $("addEntry").disabled = locked;
     if ($("bundledMap")) $("bundledMap").disabled = locked;
+    if ($("resultMode")) $("resultMode").disabled = locked || !hasFinishSensor();
+    if ($("rankStart")) $("rankStart").disabled = locked || selectedResultMode() !== "RANK_RANGE";
+    if ($("rankEnd")) $("rankEnd").disabled = locked || selectedResultMode() !== "RANK_RANGE";
+    if ($("winnerCount")) $("winnerCount").disabled = locked || selectedResultMode() !== "LAST_SURVIVOR";
     if ($("importEntrySet")) $("importEntrySet").disabled = locked;
     if ($("exportEntrySet")) $("exportEntrySet").disabled = locked;
     refreshEntryRemoveButtons();
@@ -573,6 +577,76 @@
     $("cameraAuto").classList.toggle("active", !camera.locked);
   }
 
+  function hasFinishSensor() {
+    return definition.components.some(
+      (component) => component.type === "FINISH"
+    );
+  }
+
+  function selectedResultMode() {
+    if (!hasFinishSensor()) return "MAP";
+    const selected = String(
+      $("resultMode")?.value || "RANK_RANGE"
+    ).toUpperCase();
+    return ["RANK_RANGE","LAST_SURVIVOR"].includes(selected)
+      ? selected
+      : "MAP";
+  }
+
+  function rankRangeValue() {
+    const total = Math.max(
+      1,
+      entries.length || parseEntries().length || 1
+    );
+    const start = clamp(
+      Math.trunc(Number($("rankStart")?.value) || 1),
+      1,
+      total
+    );
+    const end = clamp(
+      Math.trunc(Number($("rankEnd")?.value) || start),
+      start,
+      total
+    );
+    return { start, end, count: end - start + 1 };
+  }
+
+  function effectiveRuleType() {
+    const mode = selectedResultMode();
+    if (mode === "LAST_SURVIVOR") return "LAST_SURVIVOR";
+    if (mode === "RANK_RANGE") return "RACE_FINISH";
+    return Engine.resolvedDrawRule(definition).type;
+  }
+
+  function updateResultControls() {
+    const finishAvailable = hasFinishSensor();
+    const modeSelect = $("resultMode");
+    if (modeSelect) {
+      modeSelect.disabled = running || !finishAvailable;
+      if (!finishAvailable) {
+        modeSelect.value = "MAP";
+      } else if (modeSelect.value === "MAP") {
+        modeSelect.value = "RANK_RANGE";
+      }
+    }
+    const mode = selectedResultMode();
+    const rankMode = mode === "RANK_RANGE";
+    const survivorMode = mode === "LAST_SURVIVOR";
+    if ($("rankStart")) $("rankStart").disabled = running || !rankMode;
+    if ($("rankEnd")) $("rankEnd").disabled = running || !rankMode;
+    if ($("winnerCount")) {
+      $("winnerCount").disabled = running || !survivorMode;
+    }
+    if ($("resultModeHelp")) {
+      $("resultModeHelp").textContent =
+        mode === "LAST_SURVIVOR"
+          ? "같은 FINISH를 탈락선으로 사용하고 남은 구슬 수가 설정값이 되면 당첨을 확정합니다."
+          : mode === "RANK_RANGE"
+            ? "같은 FINISH의 통과 순위를 기록하고 시작~끝 순위만 당첨자로 선택합니다."
+            : "OUTPUT/SLOT 등 맵 전용 판정 구조를 그대로 사용합니다.";
+    }
+  }
+
   function loadDefinition(next) {
     const migrated = Engine.migrateDefinition(next);
     const errors = Engine.validateDefinition(migrated);
@@ -585,7 +659,13 @@
     definition = structuredClone(migrated);
     adapter.loadMap(definition);
     const rule = Engine.resolvedDrawRule(definition);
-    if (rule.type !== "RACE_FINISH") {
+    if (hasFinishSensor()) {
+      $("resultMode").value = "RANK_RANGE";
+      $("rankStart").value = "1";
+      $("rankEnd").value = "1";
+      $("winnerCount").value = "1";
+    } else {
+      $("resultMode").value = "MAP";
       let target = rule.winnerCount;
       if (!target && rule.type === "ORDERED_OUTPUT") {
         target = definition.components.filter(
@@ -611,7 +691,7 @@
       }
       $("winnerCount").value = String(Math.max(1, target));
     }
-    $("winnerCount").disabled = rule.type !== "RACE_FINISH";
+    updateResultControls();
     $("mapName").textContent = definition.name;
     $("mapSchema").textContent = definition.schemaVersion;
     updateLaunchControls();
@@ -1171,7 +1251,7 @@
     root.replaceChildren();
 
     if (
-      Engine.resolvedDrawRule(definition).type === "LAST_SURVIVOR"
+      effectiveRuleType() === "LAST_SURVIVOR"
     ) {
       renderSurvivorSummary(root);
       return;
@@ -1182,7 +1262,7 @@
     orderedMarbles().forEach((marble, index) => {
       const row = document.createElement("div");
       row.className = "rank-row";
-      if (marble.finished && marble.rank <= winnerCount) {
+      if (marble.finished && isWinningRank(marble.rank)) {
         row.classList.add("winner");
       } else if (marble.eliminated) {
         row.classList.add("eliminated");
@@ -1215,7 +1295,7 @@
         marble.entry?.displayName || marble.id;
 
       const status = document.createElement("small");
-      const ruleType = Engine.resolvedDrawRule(definition).type;
+      const ruleType = effectiveRuleType();
       status.textContent = marble.eliminated
         ? "ELIMINATED"
         : marble.dnf
@@ -1273,9 +1353,12 @@
 
   function nearestFinishDistance(marble) {
     const rule = Engine.resolvedDrawRule(definition);
-    if (rule.type === "LAST_SURVIVOR") return Infinity;
+    const runtimeMode = selectedResultMode();
     const targetType =
-      rule.type === "SLOT_COLLECTION"
+      runtimeMode === "RANK_RANGE"
+      || runtimeMode === "LAST_SURVIVOR"
+        ? "FINISH"
+        : rule.type === "SLOT_COLLECTION"
         ? "SLOT"
         : [
             "ORDERED_OUTPUT",
@@ -1320,6 +1403,20 @@
   }
 
   function winnerCountValue() {
+    const mode = selectedResultMode();
+    if (mode === "RANK_RANGE") {
+      return rankRangeValue().count;
+    }
+    if (mode === "LAST_SURVIVOR") {
+      return Math.max(
+        1,
+        Math.min(
+          entries.length || 1,
+          Math.trunc(Number($("winnerCount").value) || 1)
+        )
+      );
+    }
+
     const rule = Engine.resolvedDrawRule(definition);
     let configured = rule.winnerCount;
     if (!configured && rule.type === "ORDERED_OUTPUT") {
@@ -1347,14 +1444,20 @@
     ) {
       configured = 1;
     }
-
-    const requested = rule.type === "RACE_FINISH"
-      ? Math.trunc(Number($("winnerCount").value) || 1)
-      : configured;
     return Math.max(
       1,
-      Math.min(entries.length || 1, requested || 1)
+      Math.min(entries.length || 1, configured || 1)
     );
+  }
+
+  function isWinningRank(rank) {
+    if (!Number.isFinite(Number(rank))) return false;
+    const mode = selectedResultMode();
+    if (mode === "RANK_RANGE") {
+      const range = rankRangeValue();
+      return rank >= range.start && rank <= range.end;
+    }
+    return rank <= winnerCountValue();
   }
 
   function updatePlaybackRate() {
@@ -1382,7 +1485,7 @@
     }
 
     if (
-      Engine.resolvedDrawRule(definition).type === "LAST_SURVIVOR"
+      effectiveRuleType() === "LAST_SURVIVOR"
     ) {
       finishSlowMotion = false;
       updatePlaybackRate();
@@ -1654,6 +1757,9 @@
       return;
     }
 
+    const range = rankRangeValue();
+    $("rankStart").value = String(range.start);
+    $("rankEnd").value = String(range.end);
     const winnerCount = winnerCountValue();
     $("winnerCount").value = String(winnerCount);
     await ensureAudioReady();
@@ -1669,6 +1775,9 @@
       seed,
       {
         winnerCount,
+        resultMode: selectedResultMode(),
+        rankStart: rankRangeValue().start,
+        rankEnd: rankRangeValue().end,
         launchMode: launchModeValue(),
         launchIntervalMs: launchIntervalValue()
       }
@@ -1732,6 +1841,9 @@
           Number($("seed").value) || 1,
           {
             winnerCount: winnerCountValue(),
+            resultMode: selectedResultMode(),
+            rankStart: rankRangeValue().start,
+            rankEnd: rankRangeValue().end,
             launchMode: launchModeValue(),
             launchIntervalMs: launchIntervalValue()
           }
@@ -1841,6 +1953,19 @@
     $("drawState").textContent = "READY · INPUT CHANGED";
     $("winnerBanner").hidden = true;
   });
+
+  $("resultMode")?.addEventListener("change", () => {
+    if (running) return;
+    updateResultControls();
+    resetDraw();
+  });
+  for (const id of ["rankStart","rankEnd","winnerCount"]) {
+    $(id)?.addEventListener("change", () => {
+      if (running) return;
+      updateResultControls();
+      resetDraw();
+    });
+  }
 
   $("bundledMap")?.addEventListener("change", () => {
     if (running) return;
