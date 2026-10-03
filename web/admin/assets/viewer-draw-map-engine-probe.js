@@ -1540,15 +1540,15 @@ for (const source of [makerSource, localMakerSource]) {
 
 requireCondition(
   !marbleHtml.includes('id="seed"')
-    && !localMarbleHtml.includes('id="seed"')
+    && !standaloneMarbleHtml.includes('id="seed"')
     && marbleSource.includes("function randomSeed()")
     && marbleSource.includes("activeSeed = randomSeed()")
     && !marbleSource.includes('$(\"seed\")'),
   "Marble Draw seed must be randomized internally and hidden from UI"
 );
 requireCondition(
-  !makerSource.includes('id="previewSeed"')
-    && !localMakerSource.includes('id="previewSeed"')
+  !serverMakerHtml.includes('id="previewSeed"')
+    && !localMakerHtml.includes('id="previewSeed"')
     && makerSource.includes("function randomSeed()")
     && localMakerSource.includes("function randomSeed()")
     && !makerSource.includes('$(\"previewSeed\")')
