@@ -1198,8 +1198,11 @@ requireCondition(
 const jumpPads = jumpMap.components
   .filter((component) => /^jump-pad-/.test(component.id || ""))
   .sort((a, b) => Number(b.y) - Number(a.y));
+const progressionPads = jumpPads.filter(
+  (component) => component.id !== "jump-pad-00-start"
+);
 const jumpPadLevels = [
-  ...new Set(jumpPads.map((component) => Number(component.y)))
+  ...new Set(progressionPads.map((component) => Number(component.y)))
 ].sort((a, b) => b - a);
 const jumpPadGaps = jumpPadLevels
   .slice(0, -1)
@@ -1216,10 +1219,35 @@ requireCondition(
     (component) =>
       component.properties?.collisionMode === "ONE_WAY"
       && Number(component.properties?.oneWayDirection) === -1
-      && Number(component.properties?.restitution) >= 0.9
-      && Number(component.properties?.boost) >= 2.4
+      && Number(component.properties?.restitution) >= 1
+      && Number(component.properties?.boost) >= 2.9
   ),
-  "Magic Mirror Jump pads must stay upward-pass one-way boosted mirrors"
+  "Magic Mirror Jump pads must stay strongly boosted upward-pass mirrors"
+);
+const jumpStartPad = jumpPads.find(
+  (component) => component.id === "jump-pad-00-start"
+);
+requireCondition(
+  jumpStartPad
+    && Number(jumpStartPad.y) === 4990
+    && Number(jumpStartPad.width) === 1440
+    && Number(jumpStartPad.height) === 20,
+  "Magic Mirror Jump must preserve the user-edited full-width lower wall"
+);
+const horizontalMovingJumpPads = jumpPads.filter(
+  (component) => component.type === "ELEVATOR"
+);
+requireCondition(
+  horizontalMovingJumpPads.length >= 4
+    && horizontalMovingJumpPads.every((component) => {
+      const p = component.properties || {};
+      return Number(p.axisAngle) === 0
+        && Number(p.travelMin) < 0
+        && Number(p.travelMax) > 0
+        && Number(p.motorSpeed) > 0
+        && Number(p.motorForce) > 0;
+    }),
+  "Magic Mirror Jump must retain horizontal one-way moving mirrors"
 );
 const movingJumpPads = jumpPads.filter(
   (component) => component.type === "ROTATIONAL_BODY"
