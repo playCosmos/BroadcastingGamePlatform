@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>방송 게임 플랫폼 · 추첨 실행</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/admin/assets/viewer-draw.css?v=20261001-soop3">
+  <link rel="stylesheet" href="/admin/assets/viewer-draw.css?v=20261003-marblemaps1">
 </head>
 <body>
   <main class="shell draw-admin">
@@ -70,10 +70,24 @@
                   <strong id="soopProviderStatus">SOOP: 확인 중</strong>
                   <span id="chatCollectionState">IDLE · 0명</span>
                 </div>
-                <button id="sendToMarble" class="small-button" type="button">현재 참가자를 Marble Draw로 전달</button>
               </div>
               <small id="entrySourceHelp">수동 입력만으로도 추첨이 완전히 동작합니다.</small>
             </div>
+          </div>
+          <div class="marble-map-card">
+            <div>
+              <strong>Marble Machine</strong>
+              <small>기본맵을 선택하면 참가자 목록과 함께 Marble Draw로 전달됩니다.</small>
+            </div>
+            <label class="field">
+              <span>기본맵</span>
+              <select id="marbleMapPreset">
+                <option value="RETRO">Retro Cadet Survivor V3</option>
+                <option value="JUMP">Magic Mirror Jump V1</option>
+                <option value="AUDIO">Audio Marble Machine V1</option>
+              </select>
+            </label>
+            <button id="sendToMarble" class="primary-button" type="button">현재 참가자로 Marble Draw 열기</button>
           </div>
         </section>
 
@@ -142,6 +156,6 @@
   </main>
 
   <script src="/admin/assets/viewer-draw-number.js"></script>
-  <script src="/admin/assets/viewer-draw.js?v=20261001-soop3"></script>
+  <script src="/admin/assets/viewer-draw.js?v=20261003-marblemaps1"></script>
 </body>
 </html>
