@@ -516,7 +516,7 @@
         height:18,
         properties:colliderProperties(
           {},
-          {restitution:.35,friction:.06}
+          {restitution:.35,friction:.02}
         )
       };
       case "CURVE_WALL": return {
