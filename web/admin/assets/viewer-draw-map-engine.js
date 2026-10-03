@@ -1787,13 +1787,30 @@
       return this.snapshot();
     }
 
+    effectiveTargetCount(){
+      const target=targetCountForDefinition(this.definition);
+      return Number.isFinite(target)
+        ? target
+        : this.marbles.length;
+    }
+
+    isComplete(){
+      const target=this.effectiveTargetCount();
+      return target>0 && this.finishOrder.length>=target;
+    }
+
     advance(realDt){
+      if(this.isComplete()) return this.snapshot();
       this.accumulator+=clamp(Number(realDt)||0,0,.05);
       let guard=0;
       while(this.accumulator>=this.fixedDt && guard<12){
         this.step(this.fixedDt);
         this.accumulator-=this.fixedDt;
         guard++;
+        if(this.isComplete()){
+          this.accumulator=0;
+          break;
+        }
       }
       return this.snapshot();
     }
@@ -1951,6 +1968,7 @@
     }
 
     step(dt){
+      if(this.isComplete()) return;
       let remaining=Math.max(0,finiteOr(dt,0));
       let guard=0;
       while(remaining>1e-9&&guard<24){
@@ -1958,13 +1976,18 @@
         this.stepPhysics(subDt);
         remaining-=subDt;
         guard+=1;
+        if(this.isComplete()){
+          remaining=0;
+          break;
+        }
       }
-      if(remaining>1e-9){
+      if(remaining>1e-9&&!this.isComplete()){
         this.stepPhysics(remaining);
       }
     }
 
     stepPhysics(dt){
+      if(this.isComplete()) return;
       const world=this.definition.world;
       const gravityScale=80;
       this.time+=dt;
@@ -2589,14 +2612,21 @@
         timedOut:this.timedOut,
         runStatus:this.timedOut
           ? "TIMEOUT"
-          : this.finishOrder.length>=targetCountForDefinition(this.definition)
+          : this.isComplete()
             ? "COMPLETED"
             : "RUNNING",
         selectedOutputKey:this.selectedOutputKey,
         finishedCount:this.finishOrder.length,
-        targetCount:Number.isFinite(targetCountForDefinition(this.definition))
-          ? targetCountForDefinition(this.definition)
-          : this.marbles.length,
+        targetCount:this.effectiveTargetCount(),
+        completionTime:this.isComplete() ? this.time : null,
+        winnerSplits:this.finishOrder.map((id,index)=>{
+          const marble=this.marbles.find(candidate=>candidate.id===id);
+          return {
+            rank:marble?.rank||index+1,
+            id,
+            time:marble?.finishTime??null
+          };
+        }),
         totalCount:this.marbles.length,
         components:[...this.rotationStates.entries()].map(
           ([id,state])=>{
