@@ -590,7 +590,13 @@
         branchSetKey:"",branchSetValue:"ON"
       }};
       case "SLOT": return {...base,width:180,height:70,properties:{slotKey:"SLOT1",slotCapacity:1,sensorTag:""}};
-      case "ELIMINATION": return {...base,width:180,height:70,properties:{eliminationKey:"OUT",sensorTag:""}};
+      case "ELIMINATION": return {
+        ...base,
+        type:"FINISH",
+        width:260,
+        height:56,
+        properties:{sensorTag:""}
+      };
       default: throw new Error("Unsupported component type: "+type);
     }
   }
