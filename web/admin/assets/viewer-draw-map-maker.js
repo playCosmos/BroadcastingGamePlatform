@@ -9,6 +9,10 @@
   const workspace = document.querySelector(".map-maker-grid");
   const ctx = canvas.getContext("2d");
   const WORKSPACE_LAYOUT_KEY = "viewerDrawMapMakerWorkspaceV1";
+  const BUNDLED_PINBALL_URL = new URL(
+    "../../tools/viewer-draw/maps/retro-cadet-survivor-v3.json",
+    document.currentScript?.src || location.href
+  ).href;
 
   let definition = Engine.defaultDefinition();
   let mapId = null;
@@ -2450,6 +2454,54 @@
     }
   }
 
+  async function loadPinballPreset() {
+    stopPreview();
+    try {
+      setStatus("핀볼 완성맵 불러오는 중...");
+      const response = await fetch(BUNDLED_PINBALL_URL, {
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      const migrated = Engine.migrateDefinition(
+        await response.json()
+      );
+      const errors = Engine.validateDefinition(migrated);
+      if (errors.length) throw new Error(errors.join(" · "));
+
+      definition = migrated;
+      editorZoom = 1;
+      editorPanX = 0;
+      editorPanY = 0;
+      updateZoomLabel();
+      mapId = null;
+      mapRevision = null;
+      mapHash = null;
+      lastSavedJson = null;
+      selectedId = null;
+      selectedIds.clear();
+      undoStack = [];
+      redoStack = [];
+      setHoverControl(null);
+      if ($("savedMaps")) $("savedMaps").value = "";
+      syncMapControls();
+      syncInspector();
+      updateEditButtons();
+      render();
+      validateClient(false);
+      setStatus(
+        "Retro Cadet Survivor V3 핀볼 완성맵을 불러왔습니다.",
+        "ok"
+      );
+    } catch (error) {
+      setStatus(
+        "핀볼 완성맵 불러오기 실패: " + error.message,
+        "error"
+      );
+    }
+  }
+
   function startPreview() {
     if (previewRunning) {
       stopPreview();
@@ -2839,6 +2891,9 @@
   $("validateMap").addEventListener("click", () => validateClient());
   $("exportMap").addEventListener("click", exportMap);
   $("importMap").addEventListener("click", () => $("importFile").click());
+  $("loadPinballPreset").addEventListener("click", () => {
+    void loadPinballPreset();
+  });
   $("importFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
     if (file) importFile(file);
