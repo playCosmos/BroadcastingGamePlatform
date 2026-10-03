@@ -16,8 +16,8 @@
     "visualBackground": "#101820"
   },
   "drawRule": {
-    "type": "LAST_SURVIVOR",
-    "winnerCount": 1
+    "type": "RACE_FINISH",
+    "winnerCount": 0
   },
   "runPolicy": {
     "timeoutSeconds": 240,
@@ -1837,7 +1837,7 @@
     },
     {
       "id": "original-roulette-elimination",
-      "type": "ELIMINATION",
+      "type": "FINISH",
       "x": 650,
       "y": 5600,
       "rotation": 0,
@@ -1845,7 +1845,6 @@
       "height": 100,
       "radius": 0,
       "properties": {
-        "eliminationKey": "ORIGINAL_GOAL_DROP",
         "sensorTag": "ORIGINAL_GOAL_DROP",
         "visualFill": "rgba(209,83,120,0.18)",
         "visualStroke": "#d15378",
