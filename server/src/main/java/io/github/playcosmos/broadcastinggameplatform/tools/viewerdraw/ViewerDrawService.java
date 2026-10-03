@@ -1496,7 +1496,7 @@ public final class ViewerDrawService {
                 );
             }
 
-            if ("SPAWN".equals(type)) spawnCount += 1;
+            if ("SPAWN".equals(type) || "BURST_SPAWN".equals(type)) spawnCount += 1;
             if ("FINISH".equals(type)) finishCount += 1;
 
             normalizedComponents.add(
@@ -1719,9 +1719,9 @@ public final class ViewerDrawService {
             }
         }
 
-        if (spawnCount < 1) {
+        if (spawnCount != 1) {
             throw new IllegalArgumentException(
-                "machine map requires at least one SPAWN"
+                "machine map requires exactly one SPAWN or BURST_SPAWN"
             );
         }
         if ("RACE_FINISH".equals(drawRuleType) && finishCount < 1) {
