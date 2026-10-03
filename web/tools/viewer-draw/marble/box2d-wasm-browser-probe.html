@@ -916,7 +916,7 @@
       audioDefinition.world?.width !== 8000
       || audioDefinition.world?.height !== 4000
       || audioDefinition.drawRule?.type !== "CASCADE_SELECTION"
-      || audioDefinition.components.length !== 420
+      || audioDefinition.components.length !== 680
       || audioSpawners.length !== 1
       || audioSpawners[0].type !== "BURST_SPAWN"
       || !audioDefinition.components.some(
@@ -927,6 +927,17 @@
         (component) =>
           String(component.properties?.instrument || "none") === "none"
           && component.properties?.soundMaterial
+      )
+      || audioDefinition.components.filter(
+        (component) => String(component.id || "").startsWith("peg-r")
+      ).length !== 620
+      || audioDefinition.components.filter(
+        (component) => String(component.id || "").startsWith("lower-fin-")
+      ).length !== 15
+      || audioDefinition.components.some(
+        (component) =>
+          String(component.id || "").startsWith("percussion-wall-")
+          || String(component.id || "").startsWith("bottom-lip-")
       )
     ) {
       throw new Error(
