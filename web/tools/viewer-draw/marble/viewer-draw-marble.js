@@ -31,6 +31,24 @@
   let finishSlowMotion = false;
   let stuckNudges = 0;
   let runStartedAt = null;
+  let activeSeed = 1;
+
+  function randomSeed() {
+    if (globalThis.crypto?.getRandomValues) {
+      const values = new Uint32Array(1);
+      do {
+        globalThis.crypto.getRandomValues(values);
+      } while (values[0] === 0);
+      return values[0];
+    }
+    return (
+      (
+        Date.now()
+        ^ Math.floor(performance.now() * 1000)
+        ^ Math.floor(Math.random() * 0xffffffff)
+      ) >>> 0
+    ) || 1;
+  }
 
   const FINISH_SLOW_RATE = 0.35;
   let stuckState = new Map();
@@ -547,10 +565,6 @@
     if ($("exportEntrySet")) $("exportEntrySet").disabled = locked;
     refreshEntryRemoveButtons();
     updateLaunchControls();
-    $("winnerCount").disabled =
-      locked
-      || Engine.resolvedDrawRule(definition).type !== "RACE_FINISH";
-    $("seed").disabled = locked;
     $("loadMapButton").disabled = locked;
     $("startDraw").disabled = locked;
   }
@@ -1708,7 +1722,7 @@
           definition: structuredClone(definition),
           entries: structuredClone(entries),
           state: structuredClone(state),
-          seed: Math.trunc(Number($("seed").value) || 1),
+          seed: activeSeed,
           startedAt: runStartedAt,
           completedAt: new Date().toISOString(),
           stuckNudges,
@@ -1774,12 +1788,12 @@
     // Freeze everything needed for result determination in browser memory.
     const frozenDefinition = structuredClone(definition);
     const frozenEntries = structuredClone(entries);
-    const seed = Math.trunc(Number($("seed").value) || 1);
+    activeSeed = randomSeed();
 
     adapter.loadMap(frozenDefinition);
     state = adapter.reset(
       frozenEntries,
-      seed,
+      activeSeed,
       {
         winnerCount,
         resultMode: selectedResultMode(),
@@ -1841,11 +1855,12 @@
     if (!adapter) return;
 
     entries = parseEntries();
+    activeSeed = randomSeed();
     adapter.loadMap(definition);
     state = entries.length
       ? adapter.reset(
           entries,
-          Number($("seed").value) || 1,
+          activeSeed,
           {
             winnerCount: winnerCountValue(),
             resultMode: selectedResultMode(),
@@ -1986,10 +2001,6 @@
   });
 
   $("winnerCount").addEventListener("change", renderRanks);
-  $("seed").addEventListener("change", () => {
-    if (!running) resetDraw();
-  });
-
   $("muteAudio")?.addEventListener("click", () => {
     void setAudioMuted(!audioMuted);
   });
