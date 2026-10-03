@@ -1539,6 +1539,24 @@ for (const source of [makerSource, localMakerSource]) {
 }
 
 requireCondition(
+  !marbleHtml.includes('id="seed"')
+    && !localMarbleHtml.includes('id="seed"')
+    && marbleSource.includes("function randomSeed()")
+    && marbleSource.includes("activeSeed = randomSeed()")
+    && !marbleSource.includes('$(\"seed\")'),
+  "Marble Draw seed must be randomized internally and hidden from UI"
+);
+requireCondition(
+  !makerSource.includes('id="previewSeed"')
+    && !localMakerSource.includes('id="previewSeed"')
+    && makerSource.includes("function randomSeed()")
+    && localMakerSource.includes("function randomSeed()")
+    && !makerSource.includes('$(\"previewSeed\")')
+    && !localMakerSource.includes('$(\"previewSeed\")'),
+  "Map Maker preview seed must be randomized internally and hidden from UI"
+);
+
+requireCondition(
   !makerSource.includes('data-tool="ELIMINATION"')
     && !localMakerSource.includes('data-tool="ELIMINATION"')
     && !makerSource.includes("drawRuleType")
