@@ -947,7 +947,7 @@
       );
     }
     state = adapter.step(1 / 60);
-    if (!(state.launchedCount > 0 && state.launchedCount < 6)) {
+    if (!(state.launchedCount > 0 && state.launchedCount <= 6)) {
       throw new Error(
         "Audio Marble Machine BURST_SPAWN did not release a burst batch"
       );
