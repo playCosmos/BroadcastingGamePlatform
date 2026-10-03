@@ -17,6 +17,10 @@
     "../../tools/viewer-draw/maps/magic-mirror-jump-v1.json",
     document.currentScript?.src || location.href
   ).href;
+  const BUNDLED_AUDIO_URL = new URL(
+    "../../tools/viewer-draw/maps/audio-marble-machine-v1.json",
+    document.currentScript?.src || location.href
+  ).href;
 
   let definition = Engine.defaultDefinition();
   let mapId = null;
@@ -1610,7 +1614,25 @@
       : tool === "SELECT" ? "default" : "crosshair";
   }
 
+  function isSpawnerType(type) {
+    return type === "SPAWN" || type === "BURST_SPAWN";
+  }
+
+  function hasSpawner() {
+    return definition.components.some(
+      (component) => isSpawnerType(component.type)
+    );
+  }
+
   function addComponent(type, x, y) {
+    if (isSpawnerType(type) && hasSpawner()) {
+      setStatus(
+        "스포너는 맵에 정확히 1개만 둘 수 있습니다. 기존 스포너를 삭제한 뒤 추가하세요.",
+        "error"
+      );
+      setTool("SELECT");
+      return;
+    }
     pushUndo();
     const presetName = type === "PRESET_CURVE_PARABOLA"
       ? "CURVE_PARABOLA"
@@ -1697,6 +1719,13 @@
   function duplicateSelected() {
     const selected = selectedComponents();
     if (!selected.length || previewRunning) return;
+    if (selected.some((component) => isSpawnerType(component.type))) {
+      setStatus(
+        "스포너는 복제할 수 없습니다. 맵에는 정확히 1개의 스포너만 허용됩니다.",
+        "error"
+      );
+      return;
+    }
     pushUndo();
     const copies = selected.map((component) => {
       const copy = clone(component);
@@ -2598,6 +2627,54 @@
     }
   }
 
+  async function loadAudioPreset() {
+    stopPreview();
+    try {
+      setStatus("오디오 마블머신 불러오는 중...");
+      const response = await fetch(BUNDLED_AUDIO_URL, {
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      const migrated = Engine.migrateDefinition(
+        await response.json()
+      );
+      const errors = Engine.validateDefinition(migrated);
+      if (errors.length) throw new Error(errors.join(" · "));
+
+      definition = migrated;
+      editorZoom = 1;
+      editorPanX = 0;
+      editorPanY = 0;
+      updateZoomLabel();
+      mapId = null;
+      mapRevision = null;
+      mapHash = null;
+      lastSavedJson = null;
+      selectedId = null;
+      selectedIds.clear();
+      undoStack = [];
+      redoStack = [];
+      setHoverControl(null);
+      if ($("savedMaps")) $("savedMaps").value = "";
+      syncMapControls();
+      syncInspector();
+      updateEditButtons();
+      render();
+      validateClient(false);
+      setStatus(
+        "Audio Marble Machine V1을 불러왔습니다.",
+        "ok"
+      );
+    } catch (error) {
+      setStatus(
+        "오디오 마블머신 불러오기 실패: " + error.message,
+        "error"
+      );
+    }
+  }
+
   function formatPreviewTime(seconds) {
     const totalMs = Math.max(
       0,
@@ -3082,6 +3159,9 @@
   });
   $("loadJumpPreset").addEventListener("click", () => {
     void loadJumpPreset();
+  });
+  $("loadAudioPreset").addEventListener("click", () => {
+    void loadAudioPreset();
   });
   $("importFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
