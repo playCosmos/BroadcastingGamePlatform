@@ -1182,6 +1182,72 @@ requireCondition(
   "moving one-way mirror must block and boost falling travel"
 );
 
+const jumpMap = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "../../tools/viewer-draw/maps/magic-mirror-jump-v1.json"
+    ),
+    "utf8"
+  )
+);
+requireCondition(
+  jumpMap.world?.height === 5000,
+  "Magic Mirror Jump world height must stay at 5000"
+);
+const jumpPads = jumpMap.components
+  .filter((component) => /^jump-pad-/.test(component.id || ""))
+  .sort((a, b) => Number(b.y) - Number(a.y));
+const jumpPadLevels = [
+  ...new Set(jumpPads.map((component) => Number(component.y)))
+].sort((a, b) => b - a);
+const jumpPadGaps = jumpPadLevels
+  .slice(0, -1)
+  .map((y, index) => y - jumpPadLevels[index + 1]);
+requireCondition(
+  jumpPadGaps.length >= 12
+    && jumpPadGaps.every(
+      (gap, index) => index === 0 || gap >= jumpPadGaps[index - 1]
+    ),
+  "Magic Mirror Jump pad spacing must widen toward the summit"
+);
+requireCondition(
+  jumpPads.every(
+    (component) =>
+      component.properties?.collisionMode === "ONE_WAY"
+      && Number(component.properties?.oneWayDirection) === -1
+      && Number(component.properties?.restitution) >= 0.9
+      && Number(component.properties?.boost) >= 2.4
+  ),
+  "Magic Mirror Jump pads must stay upward-pass one-way boosted mirrors"
+);
+const movingJumpPads = jumpPads.filter(
+  (component) => component.type === "ROTATIONAL_BODY"
+);
+requireCondition(
+  movingJumpPads.length >= 5
+    && movingJumpPads.every((component) => {
+      const start = Number(component.properties?.startAngle);
+      const end = Number(component.properties?.endAngle);
+      return component.properties?.rotationMode === "FORCE_OSCILLATE"
+        && Number.isFinite(start)
+        && Number.isFinite(end)
+        && Math.abs(end - start) <= 10;
+    }),
+  "Magic Mirror Jump summit mirrors must use small force oscillation ranges"
+);
+const jumpObstacleCounts = jumpMap.components.reduce((counts, component) => {
+  if (/^jump-pad-/.test(component.id || "")) return counts;
+  counts[component.type] = (counts[component.type] || 0) + 1;
+  return counts;
+}, {});
+requireCondition(
+  (jumpObstacleCounts.CIRCLE || 0) >= 12
+    && (jumpObstacleCounts.CURVE_WALL || 0) >= 4
+    && (jumpObstacleCounts.ROTATIONAL_BODY || 0) >= 6,
+  "Magic Mirror Jump must retain mixed static, curved, and rotating obstacles"
+);
+
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
