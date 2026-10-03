@@ -1737,12 +1737,10 @@
         ? selectionCount + "개 오브젝트 선택됨 · 드래그로 함께 이동할 수 있습니다."
         : "컴포넌트를 선택하세요.";
       inspectorComponentId = null;
-      advancedSettingsVisible = false;
       return;
     }
     if (inspectorComponentId !== c.id) {
       inspectorComponentId = c.id;
-      advancedSettingsVisible = false;
     }
 
     const presetLabel =
