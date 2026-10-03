@@ -64,6 +64,35 @@ requireCondition(
   new Set(snapshot.finishOrder).size === 8,
   "finish rank must contain unique marble ids"
 );
+requireCondition(
+  snapshot.runStatus === "COMPLETED"
+    && snapshot.targetCount === 8
+    && snapshot.completionTime === snapshot.time
+    && snapshot.winnerSplits.length === 8,
+  "completed preview must expose completion time and every winner split"
+);
+requireCondition(
+  snapshot.winnerSplits.every(
+    (split, index) =>
+      split.rank === index + 1
+      && Number.isFinite(split.time)
+      && (
+        index === 0
+        || split.time >= snapshot.winnerSplits[index - 1].time
+      )
+  ),
+  "winner splits must preserve stopwatch rank/time order"
+);
+const frozenCompletionTime = snapshot.time;
+physics.advance(1);
+physics.step(1);
+const frozenSnapshot = physics.snapshot();
+requireCondition(
+  frozenSnapshot.time === frozenCompletionTime
+    && frozenSnapshot.completionTime === frozenCompletionTime
+    && frozenSnapshot.finishedCount === 8,
+  "completed preview physics and simulation clock must stay frozen"
+);
 
 const goldbergTypes = [
   "WALL",
@@ -1300,6 +1329,20 @@ requireCondition(
     && localMakerSource.includes('num($("gridSize").value, 10)'),
   "Map Maker grid snap default and fallback must stay at 10"
 );
+requireCondition(
+  serverMakerHtml.includes('id="previewSplits"')
+    && localMakerHtml.includes('id="previewSplits"'),
+  "Map Maker must expose winner stopwatch split strips in both storage modes"
+);
+for (const source of [makerSource, localMakerSource]) {
+  requireCondition(
+    source.includes("function formatPreviewTime")
+      && source.includes("previewSnapshot.winnerSplits")
+      && source.includes('previewSnapshot.runStatus === "COMPLETED"')
+      && source.includes("finishCompletedPreview()"),
+    "Map Maker preview must freeze and render ranked stopwatch splits"
+  );
+}
 for (const source of [makerSource, localMakerSource]) {
   requireCondition(
     source.includes('mode: "marquee"')
