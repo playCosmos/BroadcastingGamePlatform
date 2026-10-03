@@ -131,10 +131,9 @@
           <span>판정·출력</span><span class="palette-group-chevron" aria-hidden="true">›</span>
         </button>
         <div class="palette-flyout" role="menu">
-          <button class="palette-item palette-preset" data-tool="FINISH" style="--preset-fill:#367c4d;--preset-stroke:#74d191" role="menuitem" data-tooltip="구슬이 들어오면 레이스 도착으로 판정하는 센서 영역입니다."><span>도착 지점</span><small>도착 판정</small></button>
+          <button class="palette-item palette-preset" data-tool="FINISH" style="--preset-fill:#367c4d;--preset-stroke:#74d191" role="menuitem" data-tooltip="단일 결승선 센서입니다. 도착 순위/탈락선 해석은 실제 시청자 뽑기에서 선택합니다."><span>결승선</span><small>실행 시 판정 선택</small></button>
           <button class="palette-item palette-preset" data-tool="OUTPUT" style="--preset-fill:#3f744c;--preset-stroke:#8bd3a1" role="menuitem" data-tooltip="조건과 순위에 따라 구슬을 결과 출력으로 확정하는 센서 영역입니다."><span>출력 구역</span><small>결과 확정</small></button>
           <button class="palette-item palette-preset" data-tool="SLOT" style="--preset-fill:#73503e;--preset-stroke:#dda57e" role="menuitem" data-tooltip="설정한 용량만큼 구슬을 수집하는 슬롯 영역입니다."><span>슬롯</span><small>용량 수집</small></button>
-          <button class="palette-item palette-preset" data-tool="ELIMINATION" style="--preset-fill:#713d50;--preset-stroke:#df789d" role="menuitem" data-tooltip="들어온 구슬을 탈락 처리하는 센서 영역입니다."><span>탈락 구역</span><small>탈락 판정</small></button>
         </div>
       </div>
 
@@ -158,22 +157,6 @@
         <label class="mini-field"><span>Y 중력</span><input id="gravityY" type="number" step=".5" value="12"></label>
         <label class="mini-field"><span>격자</span><input id="gridSize" type="number" value="10"></label>
         <label class="check-row"><input id="snapGrid" type="checkbox" checked><span>격자에 맞춤</span></label>
-      </div>
-
-      <div class="panel-section">
-        <p class="panel-title">추첨 규칙</p>
-        <label class="mini-field"><span>유형</span>
-          <select id="drawRuleType">
-            <option value="RACE_FINISH">도착 순서</option>
-            <option value="ORDERED_OUTPUT">순위별 출력</option>
-            <option value="SLOT_COLLECTION">슬롯 수집</option>
-            <option value="LAST_SURVIVOR">최후 생존</option>
-            <option value="CASCADE_SELECTION">연속 선택</option>
-            <option value="RANDOM_OUTPUT_BUCKET">랜덤 출력 버킷</option>
-            <option value="CONDITIONAL_OUTPUT">조건부 출력</option>
-          </select>
-        </label>
-        <label class="mini-field"><span>당첨자 수</span><input id="drawRuleWinnerCount" type="number" value="0"></label>
       </div>
 
       <div class="panel-section">
@@ -370,8 +353,8 @@
     </aside>
   </section>
 </main>
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261003-spawner1"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261003-unifiedfinish1"></script>
 <script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-rotation2"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261003-originalroulette1"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261003-finishruntime1"></script>
 </body>
 </html>
