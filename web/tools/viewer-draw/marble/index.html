@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 뽑기 · Marble Machine</title>
   <link rel="stylesheet" href="/assets/platform.css">
-  <link rel="stylesheet" href="/tools/viewer-draw/marble/viewer-draw-marble.css?v=20261001-soop3">
+  <link rel="stylesheet" href="/tools/viewer-draw/marble/viewer-draw-marble.css?v=20261003-readable1">
 </head>
 <body>
 <main class="marble-shell">
@@ -27,6 +27,15 @@
     <aside class="control-panel">
       <section>
         <p class="panel-title">MAP</p>
+        <label class="map-picker">
+          <span>기본맵</span>
+          <select id="bundledMap">
+            <option value="RETRO">Retro Cadet Survivor V3</option>
+            <option value="JUMP">Magic Mirror Jump V1</option>
+            <option value="AUDIO">Audio Marble Machine V1</option>
+            <option value="CUSTOM">사용자 / 맵 메이커 맵</option>
+          </select>
+        </label>
         <div class="file-row">
           <button id="loadMapButton" type="button">JSON 맵 불러오기</button>
           <input id="mapFile" type="file" accept=".json,application/json" hidden>
@@ -63,22 +72,15 @@
       </section>
 
       <section>
-        <p class="panel-title">START STYLE</p>
-        <div class="launch-mode-grid" role="radiogroup" aria-label="Marble 출발 방식">
-          <label class="launch-mode-option">
-            <input type="radio" name="launchMode" value="BUNCH">
-            <span><strong>동시 투입</strong><small>상단에서 한 번에 뭉쳐서 출발</small></span>
-          </label>
-          <label class="launch-mode-option">
-            <input type="radio" name="launchMode" value="BURST" checked>
-            <span><strong>버스트 발사</strong><small>좁은 입구에서 여러 Marble이 우르르 분출</small></span>
-          </label>
+        <p class="panel-title">START STYLE · MAP CONTROLLED</p>
+        <div class="launch-summary">
+          <strong id="launchModeLabel">맵 설정 확인 중</strong>
+          <span id="launchModeHelp">스포너 타입이 출발 방식을 결정합니다.</span>
+          <div class="launch-summary-meta">
+            <span>분출 간격</span>
+            <b id="launchIntervalLabel">-</b>
+          </div>
         </div>
-        <label class="launch-interval-row">
-          <span>분출 간격</span>
-          <input id="launchInterval" type="number" min="40" step="10" value="90">
-          <small>ms</small>
-        </label>
       </section>
 
       <section class="two-col">
@@ -159,10 +161,10 @@
   </section>
 </main>
 
-<script src="/admin/assets/viewer-draw-map-engine.js?v=20261003-grid10wall02"></script>
+<script src="/admin/assets/viewer-draw-map-engine.js?v=20261003-spawner1"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
-<script src="/tools/viewer-draw/marble/browser-physics-adapter.js?v=20261003-onewaybase2"></script>
-<script src="/tools/viewer-draw/marble/viewer-draw-marble.js?v=20261003-onewaybase2"></script>
+<script src="/tools/viewer-draw/marble/browser-physics-adapter.js?v=20261003-maplaunch1"></script>
+<script src="/tools/viewer-draw/marble/viewer-draw-marble.js?v=20261003-bundledmaps1"></script>
 <script src="/tools/viewer-draw/marble/viewer-draw-audit-sync.js?v=20261001-soop3"></script>
 </body>
 </html>
