@@ -1206,10 +1206,6 @@ requireCondition(
     && localMakerSource.includes('num($("gridSize").value, 10)'),
   "Map Maker grid snap default and fallback must stay at 10"
 );
-const localMakerSource = fs.readFileSync(
-  path.join(__dirname, "viewer-draw-map-maker-local.js"),
-  "utf8"
-);
 for (const source of [makerSource, localMakerSource]) {
   requireCondition(
     source.includes('mode: "marquee"')
