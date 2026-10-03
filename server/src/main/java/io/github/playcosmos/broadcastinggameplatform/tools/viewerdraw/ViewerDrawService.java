@@ -1015,6 +1015,9 @@ public final class ViewerDrawService {
                     "unsupported component type: " + type
                 );
             }
+            if ("ELIMINATION".equals(type)) {
+                type = "FINISH";
+            }
             componentTypes.put(id, type);
 
             requireFinite(rawComponent.x(), id + ".x");
@@ -1770,9 +1773,9 @@ public final class ViewerDrawService {
             int winners = drawRuleWinnerCount == 0
                 ? 1
                 : drawRuleWinnerCount;
-            if (eliminationCount < 1) {
+            if (finishCount < 1) {
                 throw new IllegalArgumentException(
-                    "LAST_SURVIVOR requires at least one ELIMINATION"
+                    "LAST_SURVIVOR requires at least one FINISH"
                 );
             }
             if (winners < 1 || winners > 64) {
