@@ -53,6 +53,7 @@
           <button class="palette-item palette-preset" data-tool="PRESET_LAUNCH_WALL" style="--preset-fill:#3e6675;--preset-stroke:#78bdd5" role="menuitem" data-tooltip="일반 벽과 같은 WALL이며 Boost 기본값만 높습니다.">
             <span>발사벽</span><small>Boost 프리셋</small>
           </button>
+          <button class="palette-item palette-preset" data-tool="PRESET_ONE_WAY_WALL" style="--preset-fill:#326579;--preset-stroke:#8de4ff" role="menuitem" data-tooltip="화살표 방향으로는 통과하고 반대 방향에서는 벽처럼 충돌하는 WALL 프리셋입니다."><span>단방향 벽</span><small>매직미러</small></button>
         </div>
       </div>
 
@@ -335,6 +336,18 @@
           <span>현재 음정</span>
           <button id="previewAudioNote" class="small-button" type="button" data-tooltip="현재 재질/악기와 MIDI 음정 설정을 실제 추첨용 사운드 뱅크로 재생합니다.">▶ 미리듣기</button>
         </div>
+        <label class="mini-field"><span>벽 충돌 모드</span>
+          <select id="propCollisionMode">
+            <option value="SOLID">양방향 벽</option>
+            <option value="ONE_WAY">단방향 벽</option>
+          </select>
+        </label>
+        <label class="mini-field"><span>단방향 통과</span>
+          <select id="propOneWayDirection">
+            <option value="1">화살표 방향 (+Y)</option>
+            <option value="-1">반대 화살표 (-Y)</option>
+          </select>
+        </label>
         <label class="mini-field"><span>추가 반발력</span><input id="propBoost" type="number" step=".05" min="0"></label>
         <label class="mini-field"><span>구슬 반지름</span><input id="propMarbleRadius" type="number" step="1" min="0"></label>
       </div>
