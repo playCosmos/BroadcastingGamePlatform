@@ -1493,6 +1493,17 @@ const standaloneMarbleHtml = fs.readFileSync(
   path.join(__dirname, "../../../marble.html"),
   "utf8"
 );
+const marbleCss = fs.readFileSync(
+  path.join(
+    __dirname,
+    "../../tools/viewer-draw/marble/viewer-draw-marble.css"
+  ),
+  "utf8"
+);
+const viewerDrawCss = fs.readFileSync(
+  path.join(__dirname, "viewer-draw.css"),
+  "utf8"
+);
 
 requireCondition(
   serverMakerHtml.includes('id="gridSize" type="number" value="10"')
@@ -1537,6 +1548,22 @@ for (const source of [makerSource, localMakerSource]) {
     "Map Maker advanced inspector state must persist across selections"
   );
 }
+
+requireCondition(
+  marbleCss.includes("/* 2026-10-03 large draw UI pass */")
+    && marbleCss.includes(".marble-header h1{font-size:46px")
+    && marbleCss.includes("grid-template-columns:390px minmax(720px,1fr) 360px")
+    && marbleCss.includes(".rank-row{")
+    && marbleCss.includes("font-size:16px"),
+  "Marble Draw UI must keep the enlarged readability layout"
+);
+requireCondition(
+  viewerDrawCss.includes("/* 2026-10-03 large viewer-draw UI pass */")
+    && viewerDrawCss.includes("grid-template-columns:minmax(390px,.82fr)")
+    && viewerDrawCss.includes(".mode-tab{")
+    && viewerDrawCss.includes("font-size:16px"),
+  "Viewer Draw setup UI must keep the enlarged readability layout"
+);
 
 requireCondition(
   !marbleHtml.includes('id="seed"')
