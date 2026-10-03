@@ -591,14 +591,14 @@
     if (
       launcher?.x !== 1295
       || launcher?.y !== 2480
-      || launcher?.properties?.burstPower !== 20
+      || launcher?.properties?.burstPower !== 21
       || launcher?.properties?.burstIntervalMs !== 150
       || pinballDefinition.world?.width !== 1440
       || pinballDefinition.world?.height !== 2560
       || oneWayHinge?.properties?.rotationMode !== "FREE"
       || oneWayHinge?.properties?.pivotRatio !== -0.48
-      || oneWayHinge?.properties?.startAngle !== -79.98
-      || oneWayHinge?.properties?.endAngle !== 0
+      || oneWayHinge?.properties?.startAngle !== 0
+      || oneWayHinge?.properties?.endAngle !== 80
       || cabinetArc?.properties?.curveMode !== "CIRCULAR_ARC"
     ) {
       throw new Error(
@@ -899,49 +899,52 @@
       jumpDefinition.world?.width !== 1440
       || jumpDefinition.world?.height !== 5000
       || jumpDefinition.drawRule?.type !== "RACE_FINISH"
-      || jumpDefinition.components.length !== 62
+      || jumpDefinition.components.length !== 53
     ) {
       throw new Error(
         "Magic Mirror Jump V1 structural contract changed"
       );
     }
 
-    const majorYs = [
-      4900, 4700, 4490, 4270, 4040, 3800, 3550, 3290,
-      3020, 2740, 2450, 2150, 1840, 1520, 1190, 850, 500
-    ];
-    const expectedGaps = [
-      200, 210, 220, 230, 240, 250, 260, 270,
-      280, 290, 300, 310, 320, 330, 340, 350
-    ];
-    const actualGaps = majorYs
+    const progressionMirrors = jumpDefinition.components.filter(
+      (component) =>
+        ["WALL", "ELEVATOR", "ROTATIONAL_BODY"].includes(component.type)
+        && component.properties?.collisionMode === "ONE_WAY"
+        && Number(component.properties?.oneWayDirection) === -1
+    );
+    const progressionLevels = [
+      ...new Set(progressionMirrors.map(
+        (component) => Number(component.y)
+      ))
+    ].sort((a, b) => b - a);
+    const actualGaps = progressionLevels
       .slice(0, -1)
-      .map((y, index) => y - majorYs[index + 1]);
+      .map((y, index) => y - progressionLevels[index + 1]);
     if (
-      actualGaps.length !== expectedGaps.length
+      progressionLevels.length !== 16
+      || actualGaps.length !== 15
       || actualGaps.some(
-        (gap, index) => gap !== expectedGaps[index]
+        (gap, index) => gap !== 210 + index * 10
       )
     ) {
       throw new Error(
-        "Magic Mirror Jump V1 pad spacing progression changed"
+        "Magic Mirror Jump V1 progression changed"
       );
     }
 
-    const movingMirrors = jumpDefinition.components.filter(
+    const movingMirrors = progressionMirrors.filter(
       (component) =>
         component.type === "ROTATIONAL_BODY"
-        && component.properties?.collisionMode === "ONE_WAY"
         && component.properties?.rotationMode === "FORCE_OSCILLATE"
     );
     if (
-      movingMirrors.length !== 5
+      movingMirrors.length !== 6
       || movingMirrors.some(
         (component) =>
-          Math.max(
-            Math.abs(component.properties?.startAngle || 0),
-            Math.abs(component.properties?.endAngle || 0)
-          ) > 5
+          Math.abs(
+            Number(component.properties?.endAngle)
+            - Number(component.properties?.startAngle)
+          ) > 10
       )
     ) {
       throw new Error(
