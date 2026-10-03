@@ -1652,6 +1652,14 @@
         const y = position.y * PIXELS_PER_METER;
 
         for (const conveyor of this.conveyors) {
+          if (
+            root.ViewerDrawMapEngine.isOneWayCollider(conveyor)
+            && !this.oneWayBlockingContacts.has(
+              marble.id + "\u0000" + conveyor.id
+            )
+          ) {
+            continue;
+          }
           const angle = (conveyor.rotation || 0) * Math.PI / 180;
           const co = Math.cos(angle);
           const si = Math.sin(angle);
