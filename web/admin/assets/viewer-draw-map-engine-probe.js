@@ -102,8 +102,7 @@ const goldbergTypes = [
   "CONVEYOR",
   "ELEVATOR",
   "OUTPUT",
-  "SLOT",
-  "ELIMINATION"
+  "SLOT"
 ];
 
 for (const [index, type] of goldbergTypes.entries()) {
@@ -546,10 +545,10 @@ const eliminationDefinition = {
       properties: { marbleRadius: 10 }
     },
     {
-      ...Engine.componentDefaults("ELIMINATION", 400, 520),
+      ...Engine.componentDefaults("FINISH", 400, 520),
       width: 600,
       height: 130,
-      properties: { eliminationKey: "PIT" }
+      properties: { sensorTag: "PIT" }
     }
   ]
 };
@@ -1540,6 +1539,16 @@ for (const source of [makerSource, localMakerSource]) {
 }
 
 requireCondition(
+  !makerSource.includes('data-tool="ELIMINATION"')
+    && !localMakerSource.includes('data-tool="ELIMINATION"')
+    && !makerSource.includes("drawRuleType")
+    && !localMakerSource.includes("drawRuleType")
+    && !makerSource.includes("drawRuleWinnerCount")
+    && !localMakerSource.includes("drawRuleWinnerCount"),
+  "Map Maker must not expose elimination or fixed finish-rule controls"
+);
+
+requireCondition(
   makerSource.includes("BUNDLED_AUDIO_URL")
     && localMakerSource.includes("BUNDLED_AUDIO_URL")
     && makerSource.includes("BUNDLED_ORIGINAL_ROULETTE_URL")
@@ -1561,6 +1570,9 @@ requireCondition(
       && html.includes('value="AUDIO"')
       && html.includes('value="ORIGINAL"')
       && html.includes('id="launchModeLabel"')
+      && html.includes('id="resultMode"')
+      && html.includes('id="rankStart"')
+      && html.includes('id="rankEnd"')
       && html.includes("viewer-draw-bundled-maps.js")
       && !html.includes('name="launchMode"')
   ),
@@ -1573,6 +1585,9 @@ requireCondition(
     && marbleSource.includes("loadBundledMap")
     && marbleSource.includes("function distanceToTarget(")
     && marbleSource.includes("function compareGoalDistance(")
+    && marbleSource.includes("function selectedResultMode(")
+    && marbleSource.includes("function rankRangeValue(")
+    && marbleSource.includes('resultMode: selectedResultMode()')
     && (marbleSource.match(
       /\.sort\(\s*compareGoalDistance\s*\)/g
     ) || []).length >= 3,
