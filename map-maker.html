@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="dark">
   <title>시청자 추첨 · 마블 맵 메이커</title>
   <link rel="stylesheet" href="./web/assets/platform.css">
-  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261001-palettecolor1">
+  <link rel="stylesheet" href="./web/admin/assets/viewer-draw-map-maker.css?v=20261003-stopwatch1">
 </head>
 <body data-storage-mode="local">
 <main class="shell map-maker-shell">
@@ -209,6 +209,12 @@
           <strong id="simStatus">0 / 0</strong>
         </div>
       </div>
+      <div
+        class="preview-splits"
+        id="previewSplits"
+        aria-label="당첨 순위별 확정 시간"
+        hidden
+      ></div>
       <div class="map-canvas-wrap" id="mapCanvasWrap">
         <canvas id="mapCanvas"></canvas>
       </div>
@@ -362,8 +368,8 @@
     </aside>
   </section>
 </main>
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261003-grid10wall02"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261003-stopwatch1"></script>
 <script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js?v=20261001-rotation2"></script>
-<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261003-grid10wall02"></script>
+<script src="./web/admin/assets/viewer-draw-map-maker-local.js?v=20261003-stopwatch1"></script>
 </body>
 </html>
