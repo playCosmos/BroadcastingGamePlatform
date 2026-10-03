@@ -13,6 +13,10 @@
     "../../tools/viewer-draw/maps/retro-cadet-survivor-v3.json",
     document.currentScript?.src || location.href
   ).href;
+  const BUNDLED_JUMP_URL = new URL(
+    "../../tools/viewer-draw/maps/magic-mirror-jump-v1.json",
+    document.currentScript?.src || location.href
+  ).href;
   const LOCAL_MAPS_KEY = "viewerDrawLocalMapsV1";
 
   function readLocalMaps() {
@@ -2603,6 +2607,54 @@
     }
   }
 
+  async function loadJumpPreset() {
+    stopPreview();
+    try {
+      setStatus("매직미러 점프맵 불러오는 중...");
+      const response = await fetch(BUNDLED_JUMP_URL, {
+        cache: "no-store"
+      });
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      const migrated = Engine.migrateDefinition(
+        await response.json()
+      );
+      const errors = Engine.validateDefinition(migrated);
+      if (errors.length) throw new Error(errors.join(" · "));
+
+      definition = migrated;
+      editorZoom = 1;
+      editorPanX = 0;
+      editorPanY = 0;
+      updateZoomLabel();
+      mapId = null;
+      mapRevision = null;
+      mapHash = null;
+      lastSavedJson = null;
+      selectedId = null;
+      selectedIds.clear();
+      undoStack = [];
+      redoStack = [];
+      setHoverControl(null);
+      if ($("savedMaps")) $("savedMaps").value = "";
+      syncMapControls();
+      syncInspector();
+      updateEditButtons();
+      render();
+      validateClient(false);
+      setStatus(
+        "Magic Mirror Jump V1을 불러왔습니다.",
+        "ok"
+      );
+    } catch (error) {
+      setStatus(
+        "매직미러 점프맵 불러오기 실패: " + error.message,
+        "error"
+      );
+    }
+  }
+
   function startPreview() {
     if (previewRunning) {
       stopPreview();
@@ -2999,6 +3051,9 @@
   $("importMap").addEventListener("click", () => $("importFile").click());
   $("loadPinballPreset").addEventListener("click", () => {
     void loadPinballPreset();
+  });
+  $("loadJumpPreset").addEventListener("click", () => {
+    void loadJumpPreset();
   });
   $("importFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
