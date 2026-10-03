@@ -13,6 +13,18 @@
   const Physics = window.ViewerDrawBrowserPhysics;
 
   try {
+    const pinballResponse = await fetch(
+      "/tools/viewer-draw/maps/retro-cadet-survivor-v3.json",
+      { cache: "no-store" }
+    );
+    if (!pinballResponse.ok) {
+      throw new Error(
+        "completed pinball map missing: HTTP "
+          + pinballResponse.status
+      );
+    }
+    const pinballDefinition = await pinballResponse.json();
+
     const adapter = new Physics.Box2dWasmPhysicsAdapter();
     await adapter.init();
 
@@ -531,6 +543,95 @@
       || state.rankedEntries.length !== 0
     ) {
       throw new Error("Box2D timeout/DNF contract failed");
+    }
+
+    const pinballErrors = Engine.validateDefinition(
+      pinballDefinition
+    );
+    if (pinballErrors.length) {
+      throw new Error(
+        "completed pinball map validation failed: "
+          + pinballErrors.join(" / ")
+      );
+    }
+    if (pinballDefinition.components.length !== 74) {
+      throw new Error(
+        "completed pinball map component count changed: "
+          + pinballDefinition.components.length
+      );
+    }
+
+    const launcher = pinballDefinition.components.find(
+      (component) =>
+        component.id ===
+        "0974d44a-a029-4667-bde8-b864f9e7e674"
+    );
+    const oneWayHinge = pinballDefinition.components.find(
+      (component) =>
+        component.id ===
+        "fadc5886-bcd8-41fb-a515-1fd9fa642c2b"
+    );
+    const cabinetArc = pinballDefinition.components.find(
+      (component) =>
+        component.id ===
+        "d3c7a90b-30ff-4a2a-ae48-54dc35a90c91"
+    );
+    if (
+      launcher?.x !== 1215
+      || launcher?.y !== 2480
+      || launcher?.properties?.burstPower !== 20
+      || oneWayHinge?.properties?.rotationMode !== "FREE"
+      || oneWayHinge?.properties?.pivotRatio !== -0.48
+      || oneWayHinge?.properties?.startAngle !== -79.9998
+      || oneWayHinge?.properties?.endAngle !== 0
+      || cabinetArc?.properties?.curveMode !== "CIRCULAR_ARC"
+    ) {
+      throw new Error(
+        "uploaded launcher/one-way hinge/cabinet geometry was modified"
+      );
+    }
+
+    adapter.loadMap(pinballDefinition);
+    state = adapter.reset(
+      entries.slice(0, 2),
+      1,
+      {
+        launchMode: "BURST",
+        launchIntervalMs: 90,
+        winnerCount: 1
+      }
+    );
+
+    let reachedUpperLane = false;
+    let enteredPlayfield = false;
+    for (let step = 0; step < 2400; step += 1) {
+      state = adapter.step(1 / 120);
+      for (const marble of state.marbles) {
+        if (!marble.launched) continue;
+        if (
+          marble.y < 1000
+          && marble.x > 1145
+        ) {
+          reachedUpperLane = true;
+        }
+        if (
+          marble.y < 950
+          && marble.x < 1140
+        ) {
+          enteredPlayfield = true;
+        }
+      }
+      if (reachedUpperLane && enteredPlayfield) break;
+    }
+    if (!reachedUpperLane) {
+      throw new Error(
+        "pinball launcher did not carry a marble up the shooter lane"
+      );
+    }
+    if (!enteredPlayfield) {
+      throw new Error(
+        "one-way hinge did not allow launcher-to-playfield entry"
+      );
     }
 
     document.body.dataset.status = "pass";
