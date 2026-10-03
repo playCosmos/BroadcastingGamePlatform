@@ -634,6 +634,92 @@
       );
     }
 
+    const oneWayWall = Engine.createPreset(
+      "ONE_WAY_WALL",
+      400,
+      300
+    );
+    oneWayWall.width = 360;
+    oneWayWall.height = 18;
+    const oneWayDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "One-Way Wall Box2D Probe",
+      world: {
+        width: 800,
+        height: 600,
+        gravityX: 0,
+        gravityY: 0
+      },
+      drawRule: {
+        type: "RACE_FINISH",
+        winnerCount: 0
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 120),
+          properties: { marbleRadius: 10 }
+        },
+        oneWayWall,
+        {
+          ...Engine.componentDefaults("FINISH", 760, 560),
+          width: 40,
+          height: 40
+        }
+      ]
+    };
+    if (Engine.validateDefinition(oneWayDefinition).length) {
+      throw new Error("one-way wall Box2D map failed validation");
+    }
+
+    adapter.loadMap(oneWayDefinition);
+    state = adapter.reset(entries.slice(0, 1), 201, {
+      launchMode: "BUNCH"
+    });
+    let body = adapter.marbles[0].body;
+    body.SetTransform(
+      new adapter.Box2D.b2Vec2(4, 2.4),
+      0
+    );
+    body.SetLinearVelocity(
+      new adapter.Box2D.b2Vec2(0, 12)
+    );
+    for (let step = 0; step < 16; step += 1) {
+      state = adapter.step(1 / 120);
+    }
+    let oneWayMarble = state.marbles[0];
+    if (!(oneWayMarble.y > 330)) {
+      throw new Error(
+        "one-way wall did not allow arrow-direction travel"
+      );
+    }
+
+    adapter.loadMap(oneWayDefinition);
+    state = adapter.reset(entries.slice(0, 1), 202, {
+      launchMode: "BUNCH"
+    });
+    body = adapter.marbles[0].body;
+    body.SetTransform(
+      new adapter.Box2D.b2Vec2(4, 3.6),
+      0
+    );
+    body.SetLinearVelocity(
+      new adapter.Box2D.b2Vec2(0, -12)
+    );
+    for (let step = 0; step < 10; step += 1) {
+      state = adapter.step(1 / 120);
+    }
+    oneWayMarble = state.marbles[0];
+    const reverseVelocity =
+      adapter.marbles[0].body.GetLinearVelocity();
+    if (
+      oneWayMarble.y < 318
+      || reverseVelocity.y <= 0
+    ) {
+      throw new Error(
+        "one-way wall did not block reverse travel"
+      );
+    }
+
     document.body.dataset.status = "pass";
     document.body.textContent = "PASS";
   } catch (error) {
