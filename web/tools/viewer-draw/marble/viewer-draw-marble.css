@@ -85,3 +85,199 @@ html,body{font-size:16px}
   .stage-wrap{min-height:340px}
   .minimap-canvas{width:150px;height:92px!important;left:8px;top:8px}
 }
+
+
+/* 2026-10-03 large draw UI pass */
+.marble-shell{max-width:2240px;padding:28px}
+.marble-header{gap:28px;margin-bottom:20px}
+.marble-header h1{font-size:46px;line-height:1.1}
+.marble-header p{font-size:18px;line-height:1.6}
+.marble-header>strong{padding:11px 15px;font-size:14px}
+
+.marble-grid{
+  grid-template-columns:390px minmax(720px,1fr) 360px;
+  gap:18px
+}
+.control-panel,.rank-panel{padding:20px}
+.control-panel section+section{margin-top:22px;padding-top:21px}
+.panel-title{margin-bottom:12px;font-size:15px;letter-spacing:.1em}
+.panel-title-row{margin-bottom:12px}
+
+.file-row button,.button-stack button{
+  min-height:46px;
+  padding:13px 15px;
+  font-size:16px
+}
+.compact-button{
+  min-height:40px;
+  padding:9px 12px!important;
+  font-size:14px!important
+}
+.control-panel textarea,
+.control-panel input,
+.control-panel select{
+  min-height:44px;
+  padding:11px 13px;
+  font-size:16px
+}
+.control-panel textarea{
+  min-height:210px;
+  line-height:1.55
+}
+.control-panel small{
+  margin-top:8px;
+  font-size:14px;
+  line-height:1.55
+}
+.two-col{gap:12px}
+.two-col label{gap:7px}
+.two-col span,
+.map-picker>span{
+  font-size:14px;
+  line-height:1.35
+}
+.result-extra-row{
+  display:grid;
+  gap:7px;
+  margin-top:12px
+}
+.result-extra-row span{
+  display:block;
+  margin-bottom:7px;
+  font-size:14px;
+  color:#8496a4;
+  font-weight:850
+}
+.meta-row{
+  grid-template-columns:70px minmax(0,1fr);
+  gap:10px;
+  margin-top:10px;
+  font-size:14px
+}
+.meta-row span,.meta-row strong{font-size:14px}
+.runtime-note{font-size:14px;line-height:1.65}
+
+.entry-set-tools{gap:9px;margin-bottom:12px}
+.entry-list{gap:10px}
+.entry-row{
+  grid-template-columns:minmax(0,1fr) 100px 30px 40px;
+  gap:9px
+}
+.entry-unit{font-size:14px}
+.entry-remove{
+  width:40px!important;
+  height:44px;
+  font-size:16px!important
+}
+
+.map-picker{gap:8px;margin-bottom:12px}
+.map-picker select{
+  min-height:46px;
+  padding:11px 13px;
+  font-size:16px
+}
+.launch-summary{gap:8px;padding:14px 15px}
+.launch-summary>strong{font-size:18px}
+.launch-summary>span{font-size:14px;line-height:1.55}
+.launch-summary-meta{padding-top:9px}
+.launch-summary-meta span{font-size:14px}
+.launch-summary-meta b{font-size:14px}
+
+.stage-top{
+  padding:14px 17px;
+  font-size:15px
+}
+.stage-top>div:first-child{gap:15px}
+.stage-tools{gap:10px}
+.stage-tool,.slow-motion-badge{
+  min-height:36px;
+  padding:9px 11px;
+  font-size:13px
+}
+.stage-wrap{min-height:720px}
+.minimap-canvas{
+  left:16px;
+  top:16px;
+  width:250px;
+  height:154px!important
+}
+
+.rank-help{
+  margin-bottom:14px;
+  font-size:14px;
+  line-height:1.6
+}
+.rank-list{gap:9px;max-height:820px}
+.rank-row{
+  grid-template-columns:48px minmax(0,1fr) auto;
+  gap:11px;
+  padding:12px 13px;
+  font-size:16px
+}
+.rank-row span{font-size:14px}
+.rank-row small{font-size:13px}
+.eyebrow{font-size:13px}
+
+.winner-banner{gap:12px;padding:28px 38px}
+.winner-banner span{font-size:14px}
+.result-podium{
+  min-width:min(680px,90%);
+  max-width:900px;
+  padding:28px 30px 24px
+}
+.podium-list{gap:14px;min-height:200px}
+.podium-card{
+  min-width:140px;
+  padding:16px 14px
+}
+.podium-card .podium-rank{font-size:15px}
+.podium-card strong{
+  max-width:210px;
+  font-size:20px
+}
+.podium-extra-row{
+  grid-template-columns:44px minmax(0,1fr);
+  gap:10px;
+  padding:10px 12px;
+  font-size:15px
+}
+.winner-summary{
+  max-width:800px;
+  font-size:16px!important;
+  line-height:1.55
+}
+
+@media(max-width:1600px){
+  .marble-grid{
+    grid-template-columns:340px minmax(650px,1fr);
+    gap:16px
+  }
+  .rank-panel{grid-column:1/-1}
+  .rank-list{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    max-height:520px
+  }
+  .stage-wrap{min-height:620px}
+}
+@media(max-width:1100px){
+  .marble-shell{padding:18px}
+  .marble-grid{grid-template-columns:300px minmax(0,1fr)}
+  .stage-wrap{min-height:500px}
+  .marble-header h1{font-size:40px}
+}
+@media(max-width:780px){
+  .marble-shell{padding:14px}
+  .marble-grid{grid-template-columns:1fr}
+  .marble-header h1{font-size:34px}
+  .marble-header p{font-size:16px}
+  .rank-list{grid-template-columns:1fr}
+  .stage-wrap{min-height:360px}
+  .stage-top{align-items:flex-start;flex-direction:column}
+  .stage-tools{justify-content:flex-start}
+  .minimap-canvas{
+    width:170px;
+    height:104px!important;
+    left:9px;
+    top:9px
+  }
+}
