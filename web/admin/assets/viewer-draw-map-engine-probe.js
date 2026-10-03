@@ -1089,6 +1089,93 @@ requireCondition(
   "one-way wall must block and bounce reverse travel"
 );
 
+const movingMirror = Engine.componentDefaults(
+  "ROTATIONAL_BODY",
+  200,
+  150
+);
+movingMirror.width = 240;
+movingMirror.height = 18;
+movingMirror.properties.collisionMode = "ONE_WAY";
+movingMirror.properties.oneWayDirection = -1;
+movingMirror.properties.rotationMode = "FORCE_OSCILLATE";
+movingMirror.properties.startAngle = -4;
+movingMirror.properties.endAngle = 4;
+movingMirror.properties.period = 4;
+movingMirror.properties.restitution = 1.05;
+movingMirror.properties.boost = 4;
+
+requireCondition(
+  Engine.isDirectionalCollider(movingMirror)
+    && Engine.isOneWayCollider(movingMirror)
+    && Engine.colliderCollisionMode(movingMirror) === "ONE_WAY",
+  "rotational body must inherit collider-base one-way mode"
+);
+
+const movingMirrorDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Moving One-Way Mirror Preview Probe",
+  world: {
+    width: 400,
+    height: 300,
+    gravityX: 0,
+    gravityY: 0
+  },
+  drawRule: { type: "RACE_FINISH", winnerCount: 0 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 200, 230),
+      properties: { marbleRadius: 11 }
+    },
+    movingMirror,
+    {
+      ...Engine.componentDefaults("FINISH", 380, 20),
+      width: 20,
+      height: 20
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(movingMirrorDefinition).length === 0,
+  "moving one-way mirror definition must validate"
+);
+
+const mirrorPass = new Engine.PreviewEngine(
+  movingMirrorDefinition,
+  { seed: 9 }
+);
+mirrorPass.reset(1, 9);
+const mirrorPassMarble = mirrorPass.marbles[0];
+mirrorPassMarble.x = 200;
+mirrorPassMarble.y = 215;
+mirrorPassMarble.vx = 0;
+mirrorPassMarble.vy = -1200;
+for (let step = 0; step < 18; step += 1) {
+  mirrorPass.step(1 / 120);
+}
+requireCondition(
+  mirrorPassMarble.y < 125 && mirrorPassMarble.vy < 0,
+  "moving one-way mirror must pass upward travel"
+);
+
+const mirrorBlock = new Engine.PreviewEngine(
+  movingMirrorDefinition,
+  { seed: 10 }
+);
+mirrorBlock.reset(1, 10);
+const mirrorBlockMarble = mirrorBlock.marbles[0];
+mirrorBlockMarble.x = 200;
+mirrorBlockMarble.y = 85;
+mirrorBlockMarble.vx = 0;
+mirrorBlockMarble.vy = 1200;
+for (let step = 0; step < 10; step += 1) {
+  mirrorBlock.step(1 / 120);
+}
+requireCondition(
+  mirrorBlockMarble.y <= 132 && mirrorBlockMarble.vy < 0,
+  "moving one-way mirror must block and boost falling travel"
+);
+
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
@@ -1106,6 +1193,8 @@ for (const source of [makerSource, localMakerSource]) {
       && source.includes("propArcStartAngle")
       && source.includes("propCurveStartPercent")
       && source.includes("propCollisionMode")
+      && source.includes("Engine.isDirectionalCollider")
+      && source.includes("Engine.isOneWayCollider")
       && source.includes("PRESET_ONE_WAY_WALL"),
     "Map Maker must support drag multi-selection in both storage modes"
   );
