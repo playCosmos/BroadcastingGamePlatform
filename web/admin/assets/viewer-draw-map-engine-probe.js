@@ -1320,6 +1320,50 @@ requireCondition(
   "Magic Mirror Jump uploaded fixed obstacle sizes must stay bounded"
 );
 
+const audioMap = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "../../tools/viewer-draw/maps/audio-marble-machine-v1.json"
+    ),
+    "utf8"
+  )
+);
+requireCondition(
+  audioMap.world?.width === 8000
+    && audioMap.world?.height === 4000
+    && audioMap.drawRule?.type === "CASCADE_SELECTION"
+    && audioMap.components.length === 165,
+  "Audio Marble Machine bundled map structure must stay current"
+);
+for (const bundledMap of [jumpMap, audioMap]) {
+  const bundledErrors = Engine.validateDefinition(
+    Engine.migrateDefinition(bundledMap)
+  );
+  requireCondition(
+    bundledErrors.length === 0,
+    bundledMap.name + " must pass client validation"
+  );
+  requireCondition(
+    bundledMap.components.filter(
+      (component) =>
+        component.type === "SPAWN"
+        || component.type === "BURST_SPAWN"
+    ).length === 1,
+    bundledMap.name + " must contain exactly one spawner"
+  );
+}
+const duplicateSpawnerMap = structuredClone(jumpMap);
+duplicateSpawnerMap.components.push(
+  Engine.componentDefaults("BURST_SPAWN", 100, 100)
+);
+requireCondition(
+  Engine.validateDefinition(duplicateSpawnerMap).some(
+    (message) => message.includes("정확히 1개")
+  ),
+  "client validation must reject maps with multiple spawners"
+);
+
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
@@ -1334,6 +1378,20 @@ const serverMakerHtml = fs.readFileSync(
 );
 const localMakerHtml = fs.readFileSync(
   path.join(__dirname, "../../../map-maker.html"),
+  "utf8"
+);
+const marbleSource = fs.readFileSync(
+  path.join(
+    __dirname,
+    "../../tools/viewer-draw/marble/viewer-draw-marble.js"
+  ),
+  "utf8"
+);
+const marbleHtml = fs.readFileSync(
+  path.join(
+    __dirname,
+    "../../tools/viewer-draw/marble/index.html"
+  ),
   "utf8"
 );
 
@@ -1380,5 +1438,31 @@ for (const source of [makerSource, localMakerSource]) {
     "Map Maker advanced inspector state must persist across selections"
   );
 }
+
+requireCondition(
+  makerSource.includes("BUNDLED_AUDIO_URL")
+    && localMakerSource.includes("BUNDLED_AUDIO_URL")
+    && makerSource.includes("isSpawnerType")
+    && localMakerSource.includes("isSpawnerType")
+    && makerSource.includes("loadAudioPreset")
+    && localMakerSource.includes("loadAudioPreset"),
+  "Map Maker must expose all bundled maps and guard against duplicate spawners"
+);
+requireCondition(
+  marbleHtml.includes('id="bundledMap"')
+    && marbleHtml.includes('value="RETRO"')
+    && marbleHtml.includes('value="JUMP"')
+    && marbleHtml.includes('value="AUDIO"')
+    && marbleHtml.includes('id="launchModeLabel"')
+    && !marbleHtml.includes('name="launchMode"'),
+  "Marble Draw must expose bundled maps and map-controlled start style"
+);
+requireCondition(
+  marbleSource.includes("function mapSpawner()")
+    && marbleSource.includes("function launchConfig()")
+    && marbleSource.includes("viewerDraw.bundledMapKey")
+    && marbleSource.includes("loadBundledMap"),
+  "Marble Draw runtime must derive start style and accept bundled map handoff"
+);
 
 console.log("Viewer Draw map engine probe passed.");
