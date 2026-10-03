@@ -1411,6 +1411,10 @@ const marbleHtml = fs.readFileSync(
   ),
   "utf8"
 );
+const standaloneMarbleHtml = fs.readFileSync(
+  path.join(__dirname, "../../../marble.html"),
+  "utf8"
+);
 
 requireCondition(
   serverMakerHtml.includes('id="gridSize" type="number" value="10"')
@@ -1466,12 +1470,16 @@ requireCondition(
   "Map Maker must expose all bundled maps and guard against duplicate spawners"
 );
 requireCondition(
-  marbleHtml.includes('id="bundledMap"')
-    && marbleHtml.includes('value="RETRO"')
-    && marbleHtml.includes('value="JUMP"')
-    && marbleHtml.includes('value="AUDIO"')
-    && marbleHtml.includes('id="launchModeLabel"')
-    && !marbleHtml.includes('name="launchMode"'),
+  [marbleHtml, standaloneMarbleHtml].every(
+    (html) =>
+      html.includes('id="bundledMap"')
+      && html.includes('value="RETRO"')
+      && html.includes('value="JUMP"')
+      && html.includes('value="AUDIO"')
+      && html.includes('id="launchModeLabel"')
+      && html.includes("viewer-draw-bundled-maps.js")
+      && !html.includes('name="launchMode"')
+  ),
   "Marble Draw must expose bundled maps and map-controlled start style"
 );
 requireCondition(
