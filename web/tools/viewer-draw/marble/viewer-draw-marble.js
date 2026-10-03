@@ -11,6 +11,21 @@
   const ctx = canvas.getContext("2d");
   const minimapCtx = minimapCanvas.getContext("2d");
 
+  const BUNDLED_MAPS = {
+    RETRO: new URL(
+      "../maps/retro-cadet-survivor-v3.json",
+      document.currentScript?.src || location.href
+    ).href,
+    JUMP: new URL(
+      "../maps/magic-mirror-jump-v1.json",
+      document.currentScript?.src || location.href
+    ).href,
+    AUDIO: new URL(
+      "../maps/audio-marble-machine-v1.json",
+      document.currentScript?.src || location.href
+    ).href
+  };
+
   const STUCK_DELAY_MS = 5000;
   const STUCK_DISTANCE_PX = 0.65;
 
@@ -473,36 +488,69 @@
     );
   }
 
+  function mapSpawner() {
+    return definition.components.find(
+      (component) =>
+        component.type === "SPAWN"
+        || component.type === "BURST_SPAWN"
+    ) || null;
+  }
+
+  function launchConfig() {
+    const spawner = mapSpawner();
+    const role = String(
+      spawner?.properties?.spawnRole || ""
+    ).toUpperCase();
+    const mode =
+      spawner?.type === "BURST_SPAWN"
+      || role === "BURST"
+        ? "BURST"
+        : "BUNCH";
+    const intervalMs = Math.max(
+      40,
+      Math.trunc(
+        Number(spawner?.properties?.burstIntervalMs) || 90
+      )
+    );
+    return { mode, intervalMs, spawner };
+  }
+
   function launchModeValue() {
-    return document.querySelector(
-      'input[name="launchMode"]:checked'
-    )?.value === "BUNCH"
-      ? "BUNCH"
-      : "BURST";
+    return launchConfig().mode;
   }
 
   function launchIntervalValue() {
-    return Math.max(
-      40,
-      Math.trunc(Number($("launchInterval")?.value) || 90)
-    );
+    return launchConfig().intervalMs;
   }
 
   function updateLaunchControls() {
-    const burst = launchModeValue() === "BURST";
-    $("launchInterval").disabled = running || !burst;
+    const config = launchConfig();
+    if ($("launchModeLabel")) {
+      $("launchModeLabel").textContent =
+        config.mode === "BURST"
+          ? "버스트 발사"
+          : "동시 투입";
+    }
+    if ($("launchModeHelp")) {
+      $("launchModeHelp").textContent =
+        config.mode === "BURST"
+          ? "BURST_SPAWN · 맵에 저장된 방향·세기·묶음 설정 사용"
+          : "SPAWN · 한 위치 주변에서 동시에 투입";
+    }
+    if ($("launchIntervalLabel")) {
+      $("launchIntervalLabel").textContent =
+        config.mode === "BURST"
+          ? config.intervalMs + " ms"
+          : "해당 없음";
+    }
   }
 
   function setRunControlsLocked(locked) {
     for (const input of $("entryRows").querySelectorAll("input")) {
       input.disabled = locked;
     }
-    for (const input of document.querySelectorAll(
-      'input[name="launchMode"]'
-    )) {
-      input.disabled = locked;
-    }
     $("addEntry").disabled = locked;
+    if ($("bundledMap")) $("bundledMap").disabled = locked;
     if ($("importEntrySet")) $("importEntrySet").disabled = locked;
     if ($("exportEntrySet")) $("exportEntrySet").disabled = locked;
     refreshEntryRemoveButtons();
@@ -578,8 +626,23 @@
     $("winnerCount").disabled = rule.type !== "RACE_FINISH";
     $("mapName").textContent = definition.name;
     $("mapSchema").textContent = definition.schemaVersion;
+    updateLaunchControls();
     resetCamera(true);
     resetDraw();
+  }
+
+  async function loadBundledMap(key) {
+    const normalized = String(key || "").toUpperCase();
+    const url = BUNDLED_MAPS[normalized];
+    if (!url) {
+      throw new Error("알 수 없는 기본맵입니다.");
+    }
+    const response = await fetch(url, { cache: "no-store" });
+    if (!response.ok) {
+      throw new Error("기본맵 HTTP " + response.status);
+    }
+    loadDefinition(await response.json());
+    if ($("bundledMap")) $("bundledMap").value = normalized;
   }
 
   async function createPhysicsAdapter() {
@@ -1719,6 +1782,7 @@
     if (!file || running) return;
     try {
       loadDefinition(JSON.parse(await file.text()));
+      if ($("bundledMap")) $("bundledMap").value = "CUSTOM";
     } catch (error) {
       alert("맵 불러오기 실패: " + error.message);
     }
@@ -1755,18 +1819,15 @@
     $("winnerBanner").hidden = true;
   });
 
-  document.querySelectorAll('input[name="launchMode"]').forEach(
-    (input) => input.addEventListener("change", () => {
-      updateLaunchControls();
-      if (!running) {
-            $("drawState").textContent = "READY · START STYLE CHANGED";
-      }
-    })
-  );
-
-  $("launchInterval").addEventListener("change", () => {
-    $("launchInterval").value = String(launchIntervalValue());
+  $("bundledMap")?.addEventListener("change", () => {
+    if (running) return;
+    const key = $("bundledMap").value;
+    if (key === "CUSTOM") return;
+    void loadBundledMap(key).catch((error) => {
+      alert("기본맵 불러오기 실패: " + error.message);
+    });
   });
+
   $("winnerCount").addEventListener("change", renderRanks);
   $("seed").addEventListener("change", () => {
     if (!running) resetDraw();
@@ -1844,7 +1905,6 @@
       }
     }
 
-    let initialDefinition = definition;
     const handedOff = sessionStorage.getItem(
       "viewerDrawMarbleMapDefinition"
     );
@@ -1853,7 +1913,9 @@
         "viewerDrawMarbleMapDefinition"
       );
       try {
-        initialDefinition = JSON.parse(handedOff);
+        loadDefinition(JSON.parse(handedOff));
+        if ($("bundledMap")) $("bundledMap").value = "CUSTOM";
+        return;
       } catch (error) {
         console.warn(
           "[viewer-draw] ignored invalid local map handoff",
@@ -1862,7 +1924,16 @@
       }
     }
 
-    loadDefinition(initialDefinition);
+    const requestedMap = String(
+      sessionStorage.getItem("viewerDraw.bundledMapKey")
+      || "RETRO"
+    ).toUpperCase();
+    sessionStorage.removeItem("viewerDraw.bundledMapKey");
+    await loadBundledMap(
+      Object.hasOwn(BUNDLED_MAPS, requestedMap)
+        ? requestedMap
+        : "RETRO"
+    );
   }
 
   boot().catch((error) => {
