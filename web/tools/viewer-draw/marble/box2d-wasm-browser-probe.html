@@ -723,6 +723,103 @@
       );
     }
 
+    const movingMirror = Engine.componentDefaults(
+      "ROTATIONAL_BODY",
+      400,
+      300
+    );
+    movingMirror.width = 360;
+    movingMirror.height = 18;
+    movingMirror.properties.collisionMode = "ONE_WAY";
+    movingMirror.properties.oneWayDirection = -1;
+    movingMirror.properties.rotationMode = "FORCE_OSCILLATE";
+    movingMirror.properties.startAngle = -4;
+    movingMirror.properties.endAngle = 4;
+    movingMirror.properties.period = 4;
+    movingMirror.properties.restitution = 1.05;
+    movingMirror.properties.boost = 4;
+
+    const movingMirrorDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Moving One-Way Mirror Box2D Probe",
+      world: {
+        width: 800,
+        height: 600,
+        gravityX: 0,
+        gravityY: 0
+      },
+      drawRule: {
+        type: "RACE_FINISH",
+        winnerCount: 0
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 380),
+          properties: { marbleRadius: 10 }
+        },
+        movingMirror,
+        {
+          ...Engine.componentDefaults("FINISH", 760, 40),
+          width: 40,
+          height: 40
+        }
+      ]
+    };
+    if (Engine.validateDefinition(movingMirrorDefinition).length) {
+      throw new Error(
+        "moving one-way mirror Box2D map failed validation"
+      );
+    }
+
+    adapter.loadMap(movingMirrorDefinition);
+    state = adapter.reset(entries.slice(0, 1), 203, {
+      launchMode: "BUNCH"
+    });
+    body = adapter.marbles[0].body;
+    body.SetTransform(
+      new adapter.Box2D.b2Vec2(4, 3.6),
+      0
+    );
+    body.SetLinearVelocity(
+      new adapter.Box2D.b2Vec2(0, -12)
+    );
+    for (let step = 0; step < 18; step += 1) {
+      state = adapter.step(1 / 120);
+    }
+    let movingMirrorMarble = state.marbles[0];
+    if (!(movingMirrorMarble.y < 250)) {
+      throw new Error(
+        "moving one-way mirror did not pass upward travel"
+      );
+    }
+
+    adapter.loadMap(movingMirrorDefinition);
+    state = adapter.reset(entries.slice(0, 1), 204, {
+      launchMode: "BUNCH"
+    });
+    body = adapter.marbles[0].body;
+    body.SetTransform(
+      new adapter.Box2D.b2Vec2(4, 2.4),
+      0
+    );
+    body.SetLinearVelocity(
+      new adapter.Box2D.b2Vec2(0, 12)
+    );
+    for (let step = 0; step < 12; step += 1) {
+      state = adapter.step(1 / 120);
+    }
+    movingMirrorMarble = state.marbles[0];
+    const movingMirrorVelocity =
+      adapter.marbles[0].body.GetLinearVelocity();
+    if (
+      movingMirrorMarble.y > 290
+      || movingMirrorVelocity.y >= 0
+    ) {
+      throw new Error(
+        "moving one-way mirror did not block and rebound falling travel"
+      );
+    }
+
     document.body.dataset.status = "pass";
     document.body.textContent = "PASS";
   } catch (error) {
