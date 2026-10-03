@@ -49,6 +49,18 @@
     }
     const audioDefinition = await audioResponse.json();
 
+    const originalResponse = await fetch(
+      "/tools/viewer-draw/maps/original-marble-roulette-wheel-of-fortune.json",
+      { cache: "no-store" }
+    );
+    if (!originalResponse.ok) {
+      throw new Error(
+        "Original Marble Roulette map missing: HTTP "
+          + originalResponse.status
+      );
+    }
+    const originalDefinition = await originalResponse.json();
+
     const adapter = new Physics.Box2dWasmPhysicsAdapter();
     await adapter.init();
 
@@ -998,6 +1010,75 @@
       throw new Error(
         "Audio Marble Machine finish lanes are blocked; maxY="
           + audioMaxY.toFixed(1)
+      );
+    }
+
+    const originalErrors = Engine.validateDefinition(
+      Engine.migrateDefinition(originalDefinition)
+    );
+    if (originalErrors.length) {
+      throw new Error(
+        "Original Marble Roulette validation failed: "
+          + originalErrors.join(" / ")
+      );
+    }
+    if (
+      originalDefinition.name
+        !== "Original Marble Roulette - Wheel of fortune"
+      || originalDefinition.components.length !== 80
+      || originalDefinition.components.filter(
+        (component) => component.type === "ROTATIONAL_BODY"
+      ).length !== 6
+      || originalDefinition.components.filter(
+        (component) => component.type === "SPAWN"
+      ).length !== 1
+      || originalDefinition.components.filter(
+        (component) => component.type === "FINISH"
+      ).length !== 1
+    ) {
+      throw new Error(
+        "Original Marble Roulette structural contract changed"
+      );
+    }
+
+    const originalEntries = Array.from(
+      { length: 10 },
+      (_, index) => ({
+        entryId: "original-" + (index + 1),
+        displayName: "Original " + (index + 1)
+      })
+    );
+    adapter.loadMap(originalDefinition);
+    state = adapter.reset(originalEntries, 2022, {
+      launchMode: "BURST",
+      winnerCount: 1
+    });
+    if (
+      state.launchedCount !== originalEntries.length
+      || state.marbles.some((marble) => marble.launched === false)
+    ) {
+      throw new Error(
+        "Original Marble Roulette SPAWN must use bunch launch"
+      );
+    }
+    let originalMaxY = Math.max(
+      ...state.marbles.map((marble) => marble.y)
+    );
+    for (
+      let step = 0;
+      step < 9000 && state.finishedCount < 1;
+      step += 1
+    ) {
+      state = adapter.step(1 / 60);
+      originalMaxY = Math.max(
+        originalMaxY,
+        ...state.marbles.map((marble) => marble.y)
+      );
+    }
+    if (state.finishedCount < 1) {
+      throw new Error(
+        "Original Marble Roulette produced no finisher; maxY="
+          + originalMaxY.toFixed(1)
       );
     }
 
