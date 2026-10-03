@@ -1304,6 +1304,27 @@ requireCondition(
     && (jumpObstacleCounts.ROTATIONAL_BODY || 0) >= 6,
   "Magic Mirror Jump must retain mixed static, curved, and rotating obstacles"
 );
+const fixedJumpObstacles = jumpMap.components.filter(
+  (component) =>
+    !/^jump-pad-/.test(component.id || "")
+    && ["WALL", "CURVE_WALL", "CIRCLE"].includes(component.type)
+);
+requireCondition(
+  fixedJumpObstacles.length <= 34,
+  "Magic Mirror Jump fixed obstacle density must stay reduced"
+);
+requireCondition(
+  fixedJumpObstacles.every((component) => {
+    if (component.type === "CIRCLE") {
+      return Number(component.radius) <= 38;
+    }
+    if (component.type === "CURVE_WALL") {
+      return Number(component.width) <= 315;
+    }
+    return Number(component.width) <= 240;
+  }),
+  "Magic Mirror Jump fixed obstacles must stay narrower"
+);
 
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
