@@ -489,11 +489,11 @@
     return [];
   }
 
-  function conditionalWallFields(component) {
-    if (component?.type !== "WALL") return [];
+  function conditionalColliderFields(component) {
+    if (!Engine.isDirectionalCollider(component)) return [];
     return [
       "propCollisionMode",
-      ...(Engine.isOneWayWall(component)
+      ...(Engine.isOneWayCollider(component)
         ? ["propOneWayDirection"]
         : [])
     ];
@@ -516,7 +516,7 @@
 
     const basic = [
       ...(schema.basic || []),
-      ...conditionalWallFields(component),
+      ...conditionalColliderFields(component),
       ...conditionalCurveFields(component),
       ...conditionalRotationFields(component),
       ...VISUAL_FIELDS
@@ -962,7 +962,7 @@
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
       }
-      if (c.type === "WALL" && Engine.isOneWayWall(c)) {
+      if (Engine.isOneWayCollider(c)) {
         const direction = Engine.oneWayDirection(c);
         const length = Math.max(24, 42 * view.scale);
         const head = Math.max(5, 8 * view.scale);
@@ -1774,7 +1774,8 @@
     $("propRadius").value = c.radius || 0;
     $("propRestitution").value = num(c.properties?.restitution, .35);
     $("propFriction").value = num(c.properties?.friction, .05);
-    $("propCollisionMode").value = Engine.wallCollisionMode(c);
+    $("propCollisionMode").value =
+      Engine.colliderCollisionMode(c);
     $("propOneWayDirection").value =
       String(Engine.oneWayDirection(c));
     $("propRotationMode").value = Engine.rotationMode(c);
@@ -2015,8 +2016,9 @@
         num($("propBoost").value, 0)
       );
     }
-    if (c.type === "WALL") {
-      c.properties.collisionMode = $("propCollisionMode").value;
+    if (Engine.isDirectionalCollider(c)) {
+      c.properties.collisionMode =
+        $("propCollisionMode").value;
       c.properties.oneWayDirection =
         Number($("propOneWayDirection").value) < 0 ? -1 : 1;
     }
