@@ -1623,6 +1623,10 @@
     const root = $("podiumList");
     root.replaceChildren();
 
+    const rankBase = selectedResultMode() === "RANK_RANGE"
+      ? rankRangeValue().start
+      : 1;
+    const actualRank = (index) => rankBase + index;
     const classByRank = ["first", "second", "third"];
     const top = winners.slice(0, 3);
     const displayOrder = top.length === 1
@@ -1634,12 +1638,14 @@
     for (const index of displayOrder) {
       const entry = top[index];
       if (!entry) continue;
+      const rankNumber = actualRank(index);
       const card = document.createElement("div");
       card.className =
-        "podium-card " + (classByRank[index] || "");
+        "podium-card "
+        + (classByRank[rankNumber - 1] || "");
       const rank = document.createElement("span");
       rank.className = "podium-rank";
-      rank.textContent = "#" + (index + 1);
+      rank.textContent = "#" + rankNumber;
       const name = document.createElement("strong");
       name.textContent = entry.displayName;
       card.append(rank, name);
@@ -1650,10 +1656,11 @@
       const extra = document.createElement("div");
       extra.className = "podium-extra";
       winners.slice(3).forEach((entry, offset) => {
+        const index = offset + 3;
         const row = document.createElement("div");
         row.className = "podium-extra-row";
         const rank = document.createElement("span");
-        rank.textContent = "#" + (offset + 4);
+        rank.textContent = "#" + actualRank(index);
         const name = document.createElement("strong");
         name.textContent = entry.displayName;
         row.append(rank, name);
@@ -1664,7 +1671,7 @@
 
     $("winnerText").textContent = winners
       .map((entry, index) =>
-        "#" + (index + 1) + " " + entry.displayName
+        "#" + actualRank(index) + " " + entry.displayName
       )
       .join(" · ");
   }
