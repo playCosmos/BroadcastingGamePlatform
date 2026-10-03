@@ -1378,6 +1378,13 @@ for (const source of [makerSource, localMakerSource]) {
       && source.includes("PRESET_ONE_WAY_WALL"),
     "Map Maker must support drag multi-selection in both storage modes"
   );
+  requireCondition(
+    (source.match(/advancedSettingsVisible\s*=\s*false/g) || []).length === 1
+      && source.includes(
+        'advancedSettingsVisible = !advancedSettingsVisible'
+      ),
+    "Map Maker advanced inspector state must persist across selections"
+  );
 }
 
 console.log("Viewer Draw map engine probe passed.");
