@@ -1990,7 +1990,8 @@
           const shapes=c.type==="ROTATIONAL_BODY"
             ? this.rotationShapes(c)
             : componentShapes(c,this.time);
-          for(const shape of shapes){
+          for(let shapeIndex=0;shapeIndex<shapes.length;shapeIndex++){
+            const shape=shapes[shapeIndex];
             if(isRectCollider(c)){
               const contact=isOneWayCollider(c)
                 ? this.resolveOneWayRect(
@@ -2003,7 +2004,8 @@
                       c,
                       m.x,
                       m.y
-                    )
+                    ),
+                    c.id+":"+shapeIndex
                   )
                 : this.resolveRect(
                     m,
@@ -2250,6 +2252,17 @@
     }
 
     colliderPointVelocity(component,x,y){
+      if(component?.type==="ELEVATOR"){
+        const now=elevatorPosition(component,this.time);
+        const next=elevatorPosition(
+          component,
+          this.time+this.fixedDt
+        );
+        return {
+          x:(next.x-now.x)/this.fixedDt,
+          y:(next.y-now.y)/this.fixedDt
+        };
+      }
       if(component?.type!=="ROTATIONAL_BODY"){
         return {x:0,y:0};
       }
@@ -2287,7 +2300,8 @@
       prevX,
       prevY,
       nextBoostContacts=null,
-      surfaceVelocity={x:0,y:0}
+      surfaceVelocity={x:0,y:0},
+      latchKey=c.id
     ){
       const direction=oneWayDirection(c);
       const angle=degToRad(c.rotation||0);
@@ -2312,7 +2326,7 @@
         m.vy-finiteOr(surfaceVelocity?.y,0);
       const localVy=
         (-relativeVx*si+relativeVy*co)*direction;
-      const key=c.id;
+      const key=latchKey;
       m.oneWayPassThrough ||= new Set();
 
       if(m.oneWayPassThrough.has(key)){
