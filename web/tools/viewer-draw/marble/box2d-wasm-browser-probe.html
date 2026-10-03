@@ -25,6 +25,18 @@
     }
     const pinballDefinition = await pinballResponse.json();
 
+    const jumpResponse = await fetch(
+      "/tools/viewer-draw/maps/magic-mirror-jump-v1.json",
+      { cache: "no-store" }
+    );
+    if (!jumpResponse.ok) {
+      throw new Error(
+        "Magic Mirror Jump V1 missing: HTTP "
+          + jumpResponse.status
+      );
+    }
+    const jumpDefinition = await jumpResponse.json();
+
     const adapter = new Physics.Box2dWasmPhysicsAdapter();
     await adapter.init();
 
@@ -817,6 +829,102 @@
     ) {
       throw new Error(
         "moving one-way mirror did not block and rebound falling travel"
+      );
+    }
+
+    const jumpErrors = Engine.validateDefinition(
+      Engine.migrateDefinition(jumpDefinition)
+    );
+    if (jumpErrors.length) {
+      throw new Error(
+        "Magic Mirror Jump V1 validation failed: "
+          + jumpErrors.join(" / ")
+      );
+    }
+    if (
+      jumpDefinition.world?.width !== 1440
+      || jumpDefinition.world?.height !== 5000
+      || jumpDefinition.drawRule?.type !== "RACE_FINISH"
+      || jumpDefinition.components.length !== 68
+    ) {
+      throw new Error(
+        "Magic Mirror Jump V1 structural contract changed"
+      );
+    }
+
+    const majorYs = [
+      4900, 4700, 4490, 4270, 4040, 3800, 3550, 3290,
+      3020, 2740, 2450, 2150, 1840, 1520, 1190, 850, 500
+    ];
+    const expectedGaps = [
+      200, 210, 220, 230, 240, 250, 260, 270,
+      280, 290, 300, 310, 320, 330, 340, 350
+    ];
+    const actualGaps = majorYs
+      .slice(0, -1)
+      .map((y, index) => y - majorYs[index + 1]);
+    if (
+      actualGaps.length !== expectedGaps.length
+      || actualGaps.some(
+        (gap, index) => gap !== expectedGaps[index]
+      )
+    ) {
+      throw new Error(
+        "Magic Mirror Jump V1 pad spacing progression changed"
+      );
+    }
+
+    const movingMirrors = jumpDefinition.components.filter(
+      (component) =>
+        component.type === "ROTATIONAL_BODY"
+        && component.properties?.collisionMode === "ONE_WAY"
+        && component.properties?.rotationMode === "FORCE_OSCILLATE"
+    );
+    if (
+      movingMirrors.length !== 5
+      || movingMirrors.some(
+        (component) =>
+          Math.max(
+            Math.abs(component.properties?.startAngle || 0),
+            Math.abs(component.properties?.endAngle || 0)
+          ) > 5
+      )
+    ) {
+      throw new Error(
+        "Magic Mirror Jump V1 moving mirror contract changed"
+      );
+    }
+
+    const jumpEntries = Array.from(
+      { length: 12 },
+      (_, index) => ({
+        entryId: "jump-" + (index + 1),
+        displayName: "Jump " + (index + 1)
+      })
+    );
+    adapter.loadMap(jumpDefinition);
+    state = adapter.reset(jumpEntries, 31, {
+      launchMode: "BUNCH",
+      winnerCount: 1
+    });
+
+    let bestJumpY = 5000;
+    for (
+      let step = 0;
+      step < 7200 && state.finishedCount < 1;
+      step += 1
+    ) {
+      state = adapter.step(1 / 60);
+      for (const marble of state.marbles) {
+        if (marble.launched !== false) {
+          bestJumpY = Math.min(bestJumpY, marble.y);
+        }
+      }
+    }
+    if (state.finishedCount < 1) {
+      throw new Error(
+        "Magic Mirror Jump V1 did not produce a finisher; bestY="
+          + bestJumpY.toFixed(1)
       );
     }
 
