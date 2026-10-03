@@ -320,7 +320,30 @@
       const listener = new B.JSContactListener();
 
       listener.BeginContact = () => {};
-      listener.EndContact = () => {};
+      listener.EndContact = (contactPtr) => {
+        const contact =
+          typeof contactPtr === "number"
+            ? B.wrapPointer(contactPtr, B.b2Contact)
+            : contactPtr;
+        if (!contact) return;
+
+        const fixtureA = contact.GetFixtureA();
+        const fixtureB = contact.GetFixtureB();
+        const metaA = this.oneWayFixtureMeta.get(
+          B.getPointer(fixtureA)
+        );
+        const metaB = this.oneWayFixtureMeta.get(
+          B.getPointer(fixtureB)
+        );
+        if (!metaA && !metaB) return;
+
+        const otherFixture = metaA ? fixtureB : fixtureA;
+        const meta = metaA || metaB;
+        const marble = this.marbleBodyMeta.get(
+          B.getPointer(otherFixture.GetBody())
+        );
+        marble?.oneWayPassThrough?.delete(meta.key);
+      };
       listener.PostSolve = () => {};
       listener.PreSolve = (contactPtr) => {
         const contact =
