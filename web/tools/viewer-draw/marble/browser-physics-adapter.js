@@ -197,6 +197,9 @@
       this.time = 0;
       this.seed = 1;
       this.runtimeWinnerCount = 0;
+      this.runtimeResultMode = "MAP";
+      this.runtimeRankStart = 1;
+      this.runtimeRankEnd = 1;
       this.launchMode = "BURST";
       this.launchIntervalSeconds = 0.09;
       this.nextLaunchIndex = 0;
@@ -1196,6 +1199,35 @@
           Math.trunc(Number(options?.winnerCount) || 0)
         )
       );
+      const hasFinish = this.definition.components.some(
+        (component) => component.type === "FINISH"
+      );
+      const requestedResultMode = String(
+        options?.resultMode || "MAP"
+      ).toUpperCase();
+      this.runtimeResultMode =
+        hasFinish
+        && ["RANK_RANGE","LAST_SURVIVOR"].includes(
+          requestedResultMode
+        )
+          ? requestedResultMode
+          : "MAP";
+      const requestedStart = Math.max(
+        1,
+        Math.trunc(Number(options?.rankStart) || 1)
+      );
+      const requestedEnd = Math.max(
+        requestedStart,
+        Math.trunc(Number(options?.rankEnd) || requestedStart)
+      );
+      this.runtimeRankStart = Math.min(
+        Math.max(1, this.entries.length || 1),
+        requestedStart
+      );
+      this.runtimeRankEnd = Math.min(
+        Math.max(1, this.entries.length || 1),
+        requestedEnd
+      );
       const mapSpawner = this.definition.components.find(
         (component) =>
           component.type === "SPAWN"
@@ -1816,6 +1848,15 @@
     }
 
     detectResults(previousPositions = null) {
+      if (this.runtimeResultMode === "LAST_SURVIVOR") {
+        this.detectEliminations(previousPositions);
+        return;
+      }
+      if (this.runtimeResultMode === "RANK_RANGE") {
+        this.detectFinishes(previousPositions);
+        return;
+      }
+
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
         this.definition
       );
@@ -1871,7 +1912,16 @@
         marble.rank = this.finishOrder.length + 1;
         marble.finishTime = this.time;
         this.finishOrder.push(marble.id);
-        this.winnerOrder = this.finishOrder.slice();
+        if (this.runtimeResultMode === "RANK_RANGE") {
+          if (
+            marble.rank >= this.runtimeRankStart
+            && marble.rank <= this.runtimeRankEnd
+          ) {
+            this.winnerOrder.push(marble.id);
+          }
+        } else {
+          this.winnerOrder = this.finishOrder.slice();
+        }
         this.queueSound("finish", 0.8, finish.id || "");
         marble.body.SetLinearVelocity(
           new this.Box2D.b2Vec2(0, 0)
@@ -1982,14 +2032,16 @@
       }
     }
 
-    detectEliminations() {
+    detectEliminations(previousPositions = null) {
       const zones = this.definition.components.filter(
-        (component) => component.type === "ELIMINATION"
+        (component) => component.type === "FINISH"
       );
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
         this.definition
       );
-      const winnerCount = rule.winnerCount || 1;
+      const winnerCount = this.runtimeWinnerCount
+        || rule.winnerCount
+        || 1;
 
       let remaining = this.marbles.filter(
         (marble) => !marble.finished && !marble.eliminated && !marble.dnf
@@ -2001,7 +2053,14 @@
         const x = position.x * PIXELS_PER_METER;
         const y = position.y * PIXELS_PER_METER;
         const zone = zones.find(
-          (candidate) => this.pointInRect(x, y, candidate)
+          (candidate) =>
+            this.pointInRect(x, y, candidate)
+            || this.segmentIntersectsRect(
+              previousPositions?.get(marble.id),
+              { x, y },
+              candidate,
+              marble.radius
+            )
         );
         if (!zone) continue;
 
@@ -2197,6 +2256,15 @@
     }
 
     targetCount() {
+      if (this.runtimeResultMode === "RANK_RANGE") {
+        return Math.max(
+          1,
+          this.runtimeRankEnd - this.runtimeRankStart + 1
+        );
+      }
+      if (this.runtimeResultMode === "LAST_SURVIVOR") {
+        return this.runtimeWinnerCount || 1;
+      }
       const rule = root.ViewerDrawMapEngine.resolvedDrawRule(
         this.definition
       );
