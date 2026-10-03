@@ -135,6 +135,12 @@ requireCondition(
   physicsSource.includes("body.SetBullet(true)"),
   "high-speed marbles must enable Box2D bullet CCD"
 );
+requireCondition(
+  physicsSource.includes("oneWayWalls")
+    && physicsSource.includes("applyOneWayWalls(beforePositions)")
+    && physicsSource.includes("oneWayPassThrough"),
+  "Box2D runtime must preserve directional one-way wall collision"
+);
 
 const controllerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-marble.js"),
