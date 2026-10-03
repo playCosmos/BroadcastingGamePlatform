@@ -1342,14 +1342,14 @@ requireCondition(
   audioMap.world?.width === 8000
     && audioMap.world?.height === 4000
     && audioMap.drawRule?.type === "CASCADE_SELECTION"
-    && audioMap.components.length === 420,
+    && audioMap.components.length === 680,
   "Audio Marble Machine bundled map structure must stay current"
 );
 const audioGridPegs = audioMap.components.filter(
   (component) => /^peg-r/.test(component.id || "")
 );
 requireCondition(
-  audioGridPegs.length === 366,
+  audioGridPegs.length === 620,
   "Audio Marble center lattice must keep the denser 50% spacing"
 );
 const audioGridXs = [
@@ -1364,10 +1364,12 @@ const audioGridYs = [
 ].sort((a, b) => a - b);
 requireCondition(
   audioGridXs.length >= 2
-    && audioGridXs[1] - audioGridXs[0] === 325
+    && audioGridXs[1] - audioGridXs[0] === 260
     && audioGridYs.length >= 2
-    && audioGridYs[1] - audioGridYs[0] === 100,
-  "Audio Marble lattice spacing must stay at 325x100"
+    && audioGridYs[1] - audioGridYs[0] === 80
+    && Math.min(...audioGridPegs.map((component) => Number(component.x))) === 200
+    && Math.max(...audioGridPegs.map((component) => Number(component.x))) === 7740,
+  "Audio Marble lattice spacing/side coverage must stay at 260x80"
 );
 requireCondition(
   !audioMap.components.some(
@@ -1376,6 +1378,17 @@ requireCondition(
       || /^bin-catcher-/.test(component.id || "")
   ),
   "Audio Marble finish visualization must not use blocking feeder/catcher geometry"
+);
+requireCondition(
+  !audioMap.components.some(
+    (component) =>
+      /^percussion-wall-/.test(component.id || "")
+      || /^bottom-lip-/.test(component.id || "")
+  )
+    && audioMap.components.filter(
+      (component) => /^lower-fin-/.test(component.id || "")
+    ).length === 15,
+  "Audio Marble mid walls must stay removed and lower fins must stay dense"
 );
 
 for (const bundledMap of [retroMap, jumpMap, audioMap]) {
