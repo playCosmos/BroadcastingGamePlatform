@@ -84,15 +84,37 @@
         </div>
       </section>
 
-      <section class="two-col">
-        <label>
-          <span>Winner Count</span>
-          <input id="winnerCount" type="number" min="1" value="1">
+      <section>
+        <p class="panel-title">RESULT MODE</p>
+        <label class="map-picker">
+          <span>결승선 판정</span>
+          <select id="resultMode">
+            <option value="RANK_RANGE">도착 순위 범위</option>
+            <option value="LAST_SURVIVOR">최후 생존</option>
+            <option value="MAP">맵 전용 판정</option>
+          </select>
         </label>
-        <label>
-          <span>Seed</span>
-          <input id="seed" type="number" value="1">
-        </label>
+        <div class="two-col">
+          <label>
+            <span>시작 순위</span>
+            <input id="rankStart" type="number" min="1" value="1">
+          </label>
+          <label>
+            <span>끝 순위</span>
+            <input id="rankEnd" type="number" min="1" value="1">
+          </label>
+        </div>
+        <div class="two-col result-extra-row">
+          <label>
+            <span>생존 당첨자 수</span>
+            <input id="winnerCount" type="number" min="1" value="1">
+          </label>
+          <label>
+            <span>Seed</span>
+            <input id="seed" type="number" value="1">
+          </label>
+        </div>
+        <small id="resultModeHelp">FINISH를 통과한 순위 중 선택한 범위를 당첨자로 확정합니다.</small>
       </section>
 
       <section class="button-stack">
@@ -148,10 +170,10 @@
   </section>
 </main>
 
-<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261003-spawner1"></script>
+<script src="./web/admin/assets/viewer-draw-map-engine.js?v=20261003-unifiedfinish1"></script>
 <script src="./web/tools/viewer-draw/marble/viewer-draw-sound-bank.js"></script>
-<script src="./web/tools/viewer-draw/marble/browser-physics-adapter.js?v=20261003-maplaunch1"></script>
-<script src="./web/tools/viewer-draw/marble/viewer-draw-bundled-maps.js?v=20261003-originalroulette1"></script>
-<script src="./web/tools/viewer-draw/marble/viewer-draw-marble.js?v=20261003-goalcamera1"></script>
+<script src="./web/tools/viewer-draw/marble/browser-physics-adapter.js?v=20261003-runtimefinish1"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-bundled-maps.js?v=20261003-unifiedfinish1"></script>
+<script src="./web/tools/viewer-draw/marble/viewer-draw-marble.js?v=20261003-runtimefinish1"></script>
 </body>
 </html>
