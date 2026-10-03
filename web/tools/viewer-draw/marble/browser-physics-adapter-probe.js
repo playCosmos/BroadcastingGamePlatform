@@ -136,10 +136,13 @@ requireCondition(
   "high-speed marbles must enable Box2D bullet CCD"
 );
 requireCondition(
-  physicsSource.includes("oneWayWalls")
-    && physicsSource.includes("applyOneWayWalls(beforePositions)")
+  physicsSource.includes("JSContactListener")
+    && physicsSource.includes("PreSolve")
+    && physicsSource.includes("oneWayFixtureMeta")
+    && physicsSource.includes("isOneWayCollider")
+    && physicsSource.includes("GetLinearVelocityFromWorldPoint")
     && physicsSource.includes("oneWayPassThrough"),
-  "Box2D runtime must preserve directional one-way wall collision"
+  "Box2D runtime must use pre-solve relative motion for one-way colliders"
 );
 
 const controllerSource = fs.readFileSync(
