@@ -36,3 +36,117 @@
 .marble-map-card>div{display:grid;gap:3px}.marble-map-card>div strong{font-size:14px;color:#cce8fb}.marble-map-card>div small{font-size:11px;line-height:1.5;color:#8298a8}
 .marble-map-card .field{margin-top:0}.marble-map-card select{width:100%;padding:10px 11px;border:1px solid #344956;border-radius:9px;background:#071018;color:#e2e8ee;font:inherit}
 .marble-map-card .primary-button{width:100%}
+
+
+/* 2026-10-03 large viewer-draw UI pass */
+.draw-layout{
+  grid-template-columns:minmax(390px,.82fr) minmax(620px,1.18fr);
+  gap:20px
+}
+.draw-panel,.draw-stage-panel{padding:24px}
+.mode-tabs{gap:9px;margin-bottom:22px}
+.mode-tab{
+  min-height:48px;
+  padding:13px 15px;
+  font-size:16px
+}
+.field{gap:9px;margin-top:16px}
+.field>span{
+  font-size:14px;
+  line-height:1.35
+}
+.field input,.field textarea,.field select{
+  min-height:44px;
+  padding:11px 13px;
+  font-size:16px;
+  line-height:1.45
+}
+.helper{font-size:14px;line-height:1.65}
+.inline-fields{gap:12px}
+.source-card{
+  min-height:82px;
+  padding:13px 15px;
+  gap:5px
+}
+.source-card span,.source-card small{font-size:13px}
+.source-card strong{font-size:15px}
+.source-card select,.source-card input{
+  min-height:42px;
+  padding:10px 11px;
+  font-size:15px
+}
+.chat-entry-controls{gap:10px;margin-top:9px;padding-top:11px}
+.chat-entry-controls label{gap:6px}
+.chat-entry-controls label span{font-size:13px}
+.chat-entry-actions{gap:8px}
+.chat-entry-actions .small-button{
+  min-height:40px;
+  padding:9px 10px;
+  font-size:14px
+}
+.chat-entry-state{
+  gap:10px;
+  padding:10px 11px;
+  font-size:13px
+}
+.chat-entry-state span{font-size:13px}
+.draw-actions{gap:10px;margin-top:22px}
+.primary-button{
+  min-height:46px;
+  padding:12px 18px;
+  font-size:16px
+}
+.status-line{
+  min-height:24px;
+  margin-top:14px;
+  font-size:14px;
+  line-height:1.5
+}
+.stage-head{gap:18px}
+.stage-head h2{font-size:28px}
+.draw-code{font-size:20px}
+.random-stage{min-height:360px;padding:26px}
+.random-spinner{font-size:clamp(28px,4.5vw,56px)}
+.winner-list{gap:9px;width:min(100%,560px)}
+.winner-item{
+  padding:13px 15px;
+  font-size:16px
+}
+.number-stage{min-height:360px}
+.number-stage canvas{height:285px}
+.number-pill{
+  min-width:52px;
+  padding:10px 12px;
+  font-size:21px
+}
+.overlay-box{margin-top:18px;padding-top:15px}
+.history-section{margin-top:30px}
+.draw-history{gap:9px}
+.history-row{
+  grid-template-columns:110px minmax(0,1fr) 120px 130px;
+  gap:12px;
+  padding:12px 14px;
+  font-size:14px
+}
+.history-row strong{font-size:15px}
+.marble-map-card{
+  gap:12px;
+  margin-top:18px;
+  padding:17px
+}
+.marble-map-card>div strong{font-size:17px}
+.marble-map-card>div small{font-size:13px;line-height:1.6}
+.marble-map-card select{
+  min-height:46px;
+  padding:11px 13px;
+  font-size:16px
+}
+@media(max-width:1000px){
+  .draw-layout{grid-template-columns:1fr}
+}
+@media(max-width:700px){
+  .draw-panel,.draw-stage-panel{padding:16px}
+  .inline-fields{grid-template-columns:1fr}
+  .stage-head h2{font-size:24px}
+  .history-row{grid-template-columns:80px 1fr}
+}
