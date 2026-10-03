@@ -75,6 +75,15 @@
       RECT_COLLIDER_TYPES.has(component.type)
       || component.type === "CURVE_WALL"
     ));
+  const wallCollisionMode = (component) =>
+    component?.type === "WALL"
+      ? String(component.properties?.collisionMode || "SOLID").toUpperCase()
+      : "SOLID";
+  const oneWayDirection = (component) =>
+    finiteOr(component?.properties?.oneWayDirection, 1) < 0 ? -1 : 1;
+  const isOneWayWall = (component) =>
+    component?.type === "WALL"
+    && wallCollisionMode(component) === "ONE_WAY";
 
   function resolvedDrawRule(def){
     const raw=def?.drawRule||{};
@@ -476,7 +485,10 @@
         ...base,
         width:260,
         height:18,
-        properties:colliderProperties({}, {restitution:.35,friction:.06})
+        properties:colliderProperties(
+          {collisionMode:"SOLID",oneWayDirection:1},
+          {restitution:.35,friction:.06}
+        )
       };
       case "CURVE_WALL": return {
         ...base,
@@ -557,6 +569,22 @@
   function createPreset(name,x=640,y=360){
     const preset=String(name||"").toUpperCase();
     if(preset==="WALL") return componentDefaults("WALL",x,y);
+    if(preset==="ONE_WAY_WALL"||preset==="MAGIC_MIRROR"){
+      const c=componentDefaults("WALL",x,y);
+      c.width=220;
+      c.height=18;
+      c.properties=colliderProperties(
+        {
+          ...c.properties,
+          collisionMode:"ONE_WAY",
+          oneWayDirection:1,
+          visualFill:"#326579",
+          visualStroke:"#8de4ff"
+        },
+        {restitution:.35,friction:.06}
+      );
+      return c;
+    }
     if(preset==="CURVE_PARABOLA"||preset==="PARABOLA"){
       const c=componentDefaults("CURVE_WALL",x,y);
       c.properties=colliderProperties(
@@ -1012,6 +1040,12 @@
       }else if(isCollider(c)){
         c.properties=migratedColliderProperties(c.properties);
       }
+      if(c.type==="WALL"){
+        const mode=String(c.properties?.collisionMode||"SOLID").toUpperCase();
+        c.properties.collisionMode=mode==="ONE_WAY"?"ONE_WAY":"SOLID";
+        c.properties.oneWayDirection=
+          finiteOr(c.properties?.oneWayDirection,1)<0?-1:1;
+      }
       migrated.push(c);
     }
 
@@ -1234,6 +1268,18 @@
         const value=Number(p[key]);
         if(!Number.isFinite(value)||value<0){
           errors.push(label+"은 0 이상이어야 합니다.");
+        }
+      }
+      if(c?.type==="WALL"){
+        const collisionMode=String(p.collisionMode||"SOLID").toUpperCase();
+        if(!["SOLID","ONE_WAY"].includes(collisionMode)){
+          errors.push("WALL collisionMode이 유효하지 않습니다.");
+        }
+        if(collisionMode==="ONE_WAY"){
+          const direction=Number(p.oneWayDirection);
+          if(direction!==1&&direction!==-1){
+            errors.push("ONE_WAY WALL oneWayDirection은 1 또는 -1이어야 합니다.");
+          }
         }
       }
       if(["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c?.type)){
@@ -1684,7 +1730,8 @@
           dnf:false,
           rank:0,
           finishTime:null,
-          boostContacts:new Set()
+          boostContacts:new Set(),
+          oneWayPassThrough:new Set()
         });
       }
       return this.snapshot();
@@ -1883,6 +1930,7 @@
         m.vy+=world.gravityY*gravityScale*dt;
         m.vx*=damping;
         m.vy*=damping;
+        const prevX=m.x,prevY=m.y;
         m.x+=m.vx*dt;
         m.y+=m.vy*dt;
 
@@ -1894,11 +1942,19 @@
             : componentShapes(c,this.time);
           for(const shape of shapes){
             if(isRectCollider(c)){
-              const contact=this.resolveRect(
-                m,
-                shape,
-                nextBoostContacts
-              );
+              const contact=isOneWayWall(c)
+                ? this.resolveOneWayRect(
+                    m,
+                    shape,
+                    prevX,
+                    prevY,
+                    nextBoostContacts
+                  )
+                : this.resolveRect(
+                    m,
+                    shape,
+                    nextBoostContacts
+                  );
               if(c.type==="ROTATIONAL_BODY"&&contact){
                 this.applyRotationImpact(c,contact);
               }
@@ -2138,6 +2194,106 @@
       if(m.y>w.height-m.radius){m.y=w.height-m.radius;if(m.vy>0)m.vy=-m.vy*e;}
     }
 
+    resolveOneWayRect(
+      m,
+      c,
+      prevX,
+      prevY,
+      nextBoostContacts=null
+    ){
+      const direction=oneWayDirection(c);
+      const angle=degToRad(c.rotation||0);
+      const co=Math.cos(angle),si=Math.sin(angle);
+      const toLocal=(x,y)=>{
+        const dx=x-c.x,dy=y-c.y;
+        return {
+          x:dx*co+dy*si,
+          y:-dx*si+dy*co
+        };
+      };
+      const previous=toLocal(prevX,prevY);
+      const current=toLocal(m.x,m.y);
+      const hw=Math.max(.001,Math.abs(c.width)/2);
+      const hh=Math.max(.001,Math.abs(c.height)/2);
+      const surface=hh+m.radius;
+      const prevDepth=previous.y*direction;
+      const currDepth=current.y*direction;
+      const localVy=(-m.vx*si+m.vy*co)*direction;
+      const key=c.id;
+      m.oneWayPassThrough ||= new Set();
+
+      if(m.oneWayPassThrough.has(key)){
+        if(
+          currDepth>=surface+.5
+          || currDepth<=-surface-.5
+        ){
+          m.oneWayPassThrough.delete(key);
+        }
+        return null;
+      }
+
+      if(
+        localVy>0
+        && prevDepth<=-surface
+        && currDepth>-surface
+      ){
+        m.oneWayPassThrough.add(key);
+        return null;
+      }
+
+      if(
+        localVy>=0
+        || prevDepth<surface
+        || currDepth>=surface
+      ){
+        return null;
+      }
+
+      const denom=prevDepth-currDepth;
+      const t=Math.abs(denom)>1e-9
+        ? clamp((prevDepth-surface)/denom,0,1)
+        : 0;
+      const hitX=previous.x+(current.x-previous.x)*t;
+      if(Math.abs(hitX)>hw+m.radius) return null;
+
+      const correctedY=direction*(surface+.25);
+      const correctedX=current.x;
+      m.x=c.x+correctedX*co-correctedY*si;
+      m.y=c.y+correctedX*si+correctedY*co;
+
+      const nx=-si*direction;
+      const ny=co*direction;
+      const vn=m.vx*nx+m.vy*ny;
+      if(vn<0){
+        const restitution=finiteOr(c.properties?.restitution,.35);
+        m.vx-=(1+restitution)*vn*nx;
+        m.vy-=(1+restitution)*vn*ny;
+        const friction=finiteOr(c.properties?.friction,.05);
+        const tx=-ny,ty=nx;
+        const vt=m.vx*tx+m.vy*ty;
+        m.vx-=vt*friction*tx;
+        m.vy-=vt*friction*ty;
+      }
+
+      const boost=finiteOr(c.properties?.boost,0);
+      if(boost!==0&&nextBoostContacts){
+        nextBoostContacts.add(c.id);
+        if(!m.boostContacts?.has(c.id)){
+          m.vx+=nx*boost*70;
+          m.vy+=ny*boost*70;
+        }
+      }
+
+      return {
+        contactX:c.x+hitX*co-direction*hh*si,
+        contactY:c.y+hitX*si+direction*hh*co,
+        normalX:nx,
+        normalY:ny,
+        incomingVx:m.vx,
+        incomingVy:m.vy
+      };
+    }
+
     resolveRect(m,c,nextBoostContacts=null){
       const incomingVx=m.vx;
       const incomingVy=m.vy;
@@ -2354,6 +2510,9 @@
     migrateDefinition,
     isCollider,
     isRectCollider,
+    wallCollisionMode,
+    oneWayDirection,
+    isOneWayWall,
     defaultVisualStyle,
     componentVisualStyle,
     defaultDefinition,
