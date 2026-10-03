@@ -321,10 +321,10 @@ public final class ViewerDrawMapProbe {
                     "audioPan", -0.2
                 )
             );
-            var elimination =
+            var survivorFinish =
                 new ViewerDrawService.MachineComponent(
-                    "elimination-1",
-                    "ELIMINATION",
+                    "survivor-finish-1",
+                    "FINISH",
                     640,
                     650,
                     0,
@@ -332,7 +332,7 @@ public final class ViewerDrawMapProbe {
                     100,
                     0,
                     Map.of(
-                        "eliminationKey", "PIT",
+                        "sensorTag", "PIT",
                         "soundMaterial", "stone",
                         "instrument", "drum",
                         "audioNote", 40
@@ -381,7 +381,7 @@ public final class ViewerDrawMapProbe {
                         "LAST_SURVIVOR",
                         1
                     ),
-                    List.of(spawn, elimination)
+                    List.of(spawn, survivorFinish)
                 );
             require(
                 service.validateMachineMap(survivorDefinition).isEmpty(),
