@@ -21,6 +21,10 @@
     "../../tools/viewer-draw/maps/audio-marble-machine-v1.json",
     document.currentScript?.src || location.href
   ).href;
+  const BUNDLED_ORIGINAL_ROULETTE_URL = new URL(
+    "../../tools/viewer-draw/maps/original-marble-roulette-wheel-of-fortune.json",
+    document.currentScript?.src || location.href
+  ).href;
   const LOCAL_MAPS_KEY = "viewerDrawLocalMapsV1";
 
   function readLocalMaps() {
@@ -2730,6 +2734,55 @@
     }
   }
 
+  async function loadOriginalRoulettePreset() {
+    stopPreview();
+    try {
+      setStatus("원본 마블 룰렛 맵 불러오는 중...");
+      const response = await fetch(
+        BUNDLED_ORIGINAL_ROULETTE_URL,
+        { cache: "no-store" }
+      );
+      if (!response.ok) {
+        throw new Error("HTTP " + response.status);
+      }
+      const migrated = Engine.migrateDefinition(
+        await response.json()
+      );
+      const errors = Engine.validateDefinition(migrated);
+      if (errors.length) throw new Error(errors.join(" · "));
+
+      definition = migrated;
+      editorZoom = 1;
+      editorPanX = 0;
+      editorPanY = 0;
+      updateZoomLabel();
+      mapId = null;
+      mapRevision = null;
+      mapHash = null;
+      lastSavedJson = null;
+      selectedId = null;
+      selectedIds.clear();
+      undoStack = [];
+      redoStack = [];
+      setHoverControl(null);
+      if ($("savedMaps")) $("savedMaps").value = "";
+      syncMapControls();
+      syncInspector();
+      updateEditButtons();
+      render();
+      validateClient(false);
+      setStatus(
+        "Original Marble Roulette - Wheel of fortune을 불러왔습니다.",
+        "ok"
+      );
+    } catch (error) {
+      setStatus(
+        "원본 마블 룰렛 맵 불러오기 실패: " + error.message,
+        "error"
+      );
+    }
+  }
+
   function formatPreviewTime(seconds) {
     const totalMs = Math.max(
       0,
@@ -3217,6 +3270,9 @@
   });
   $("loadAudioPreset").addEventListener("click", () => {
     void loadAudioPreset();
+  });
+  $("loadOriginalRoulettePreset").addEventListener("click", () => {
+    void loadOriginalRoulettePreset();
   });
   $("importFile").addEventListener("change", (event) => {
     const file = event.target.files?.[0];
