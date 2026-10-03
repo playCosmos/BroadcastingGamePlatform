@@ -445,11 +445,11 @@
       "height": 0,
       "radius": 20,
       "properties": {
-        "marbleRadius": 11,
+        "marbleRadius": 10,
         "spawnRole": "BURST",
         "burstDirectionDegrees": -90,
         "burstSpreadDegrees": 24,
-        "burstPower": 20,
+        "burstPower": 21,
         "burstPowerVariance": 0.22,
         "burstSizeMin": 3,
         "burstSizeMax": 7,
@@ -730,9 +730,9 @@
     {
       "id": "fadc5886-bcd8-41fb-a515-1fd9fa642c2b",
       "type": "ROTATIONAL_BODY",
-      "x": 1288.7846202409767,
-      "y": 766.1081457866455,
-      "rotation": -10,
+      "x": 1160,
+      "y": 660,
+      "rotation": -89.98,
       "width": 270,
       "height": 18,
       "radius": 0,
@@ -744,8 +744,8 @@
         "rotationMode": "FREE",
         "pivotRatio": -0.48,
         "angularSpeed": 0,
-        "startAngle": -79.98,
-        "endAngle": 0,
+        "startAngle": 0,
+        "endAngle": 80,
         "period": 3.2,
         "phase": 0,
         "motorTorque": 0,
@@ -757,7 +757,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -995,8 +997,7 @@
         "visualStroke": "#a6b0b8",
         "soundMaterial": "metal",
         "instrument": "none",
-        "audioNote": 60,
-        "audioGain": 1,
+        "audioNote": 60,        "audioGain": 1,
         "audioPan": 0
       }
     },
@@ -1344,8 +1345,8 @@
     {
       "id": "7fd9df2e-79b8-4f96-9e05-9bff7b1bdd2c",
       "type": "CURVE_WALL",
-      "x": 635,
-      "y": 240,
+      "x": 633.5,
+      "y": 238,
       "rotation": 0,
       "width": 1020,
       "height": 390,
