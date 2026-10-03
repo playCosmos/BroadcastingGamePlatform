@@ -1221,53 +1221,56 @@ const jumpMap = JSON.parse(
   )
 );
 requireCondition(
-  jumpMap.world?.height === 5000,
-  "Magic Mirror Jump world height must stay at 5000"
+  jumpMap.world?.height === 5000
+    && jumpMap.components.length === 53,
+  "Magic Mirror Jump uploaded structure must stay current"
 );
 const jumpPads = jumpMap.components
   .filter((component) => /^jump-pad-/.test(component.id || ""))
   .sort((a, b) => Number(b.y) - Number(a.y));
-const progressionPads = jumpPads.filter(
-  (component) => component.id !== "jump-pad-00-start"
-);
-const jumpPadLevels = [
-  ...new Set(progressionPads.map((component) => Number(component.y)))
-].sort((a, b) => b - a);
-const jumpPadGaps = jumpPadLevels
-  .slice(0, -1)
-  .map((y, index) => y - jumpPadLevels[index + 1]);
-requireCondition(
-  jumpPadGaps.length >= 12
-    && jumpPadGaps.every(
-      (gap, index) => index === 0 || gap >= jumpPadGaps[index - 1]
-    ),
-  "Magic Mirror Jump pad spacing must widen toward the summit"
-);
-requireCondition(
-  jumpPads.every(
-    (component) =>
-      component.properties?.collisionMode === "ONE_WAY"
-      && Number(component.properties?.oneWayDirection) === -1
-      && Number(component.properties?.restitution) >= 1
-      && Number(component.properties?.boost) >= 2.9
-  ),
-  "Magic Mirror Jump pads must stay strongly boosted upward-pass mirrors"
-);
 const jumpStartPad = jumpPads.find(
   (component) => component.id === "jump-pad-00-start"
 );
 requireCondition(
   jumpStartPad
+    && jumpStartPad.properties?.collisionMode === "SOLID"
     && Number(jumpStartPad.y) === 4990
     && Number(jumpStartPad.width) === 1440
-    && Number(jumpStartPad.height) === 20,
-  "Magic Mirror Jump must preserve the user-edited full-width lower wall"
+    && Number(jumpStartPad.height) === 20
+    && Number(jumpStartPad.properties?.boost) === 8,
+  "Magic Mirror Jump must preserve the uploaded launch floor"
 );
-const horizontalMovingJumpPads = jumpPads.filter(
+const progressionMirrors = jumpMap.components.filter((component) =>
+  ["WALL", "ELEVATOR", "ROTATIONAL_BODY"].includes(component.type)
+  && component.properties?.collisionMode === "ONE_WAY"
+  && Number(component.properties?.oneWayDirection) === -1
+);
+const progressionLevels = [
+  ...new Set(progressionMirrors.map((component) => Number(component.y)))
+].sort((a, b) => b - a);
+const progressionGaps = progressionLevels
+  .slice(0, -1)
+  .map((y, index) => y - progressionLevels[index + 1]);
+requireCondition(
+  progressionLevels.length === 16
+    && progressionGaps.length === 15
+    && progressionGaps.every(
+      (gap, index) => gap === 210 + index * 10
+    ),
+  "Magic Mirror Jump progression must preserve the uploaded widening climb"
+);
+requireCondition(
+  progressionMirrors.every((component) =>
+    Number(component.properties?.restitution) >= 1
+    && Number(component.properties?.boost) >= 3
+  ),
+  "Magic Mirror Jump progression mirrors must stay strongly boosted"
+);
+const horizontalMovingJumpPads = progressionMirrors.filter(
   (component) => component.type === "ELEVATOR"
 );
 requireCondition(
-  horizontalMovingJumpPads.length >= 4
+  horizontalMovingJumpPads.length === 4
     && horizontalMovingJumpPads.every((component) => {
       const p = component.properties || {};
       return Number(p.axisAngle) === 0
@@ -1276,54 +1279,45 @@ requireCondition(
         && Number(p.motorSpeed) > 0
         && Number(p.motorForce) > 0;
     }),
-  "Magic Mirror Jump must retain horizontal one-way moving mirrors"
+  "Magic Mirror Jump must retain four horizontal one-way moving mirrors"
 );
-const movingJumpPads = jumpPads.filter(
-  (component) => component.type === "ROTATIONAL_BODY"
+const oscillatingJumpMirrors = progressionMirrors.filter(
+  (component) =>
+    component.type === "ROTATIONAL_BODY"
+    && component.properties?.rotationMode === "FORCE_OSCILLATE"
 );
 requireCondition(
-  movingJumpPads.length >= 5
-    && movingJumpPads.every((component) => {
+  oscillatingJumpMirrors.length === 6
+    && oscillatingJumpMirrors.every((component) => {
       const start = Number(component.properties?.startAngle);
       const end = Number(component.properties?.endAngle);
-      return component.properties?.rotationMode === "FORCE_OSCILLATE"
-        && Number.isFinite(start)
+      return Number.isFinite(start)
         && Number.isFinite(end)
         && Math.abs(end - start) <= 10;
     }),
-  "Magic Mirror Jump summit mirrors must use small force oscillation ranges"
-);
-const jumpObstacleCounts = jumpMap.components.reduce((counts, component) => {
-  if (/^jump-pad-/.test(component.id || "")) return counts;
-  counts[component.type] = (counts[component.type] || 0) + 1;
-  return counts;
-}, {});
-requireCondition(
-  (jumpObstacleCounts.CIRCLE || 0) >= 12
-    && (jumpObstacleCounts.CURVE_WALL || 0) >= 4
-    && (jumpObstacleCounts.ROTATIONAL_BODY || 0) >= 6,
-  "Magic Mirror Jump must retain mixed static, curved, and rotating obstacles"
+  "Magic Mirror Jump must retain six small-range oscillating mirrors"
 );
 const fixedJumpObstacles = jumpMap.components.filter(
   (component) =>
-    !/^jump-pad-/.test(component.id || "")
+    !progressionMirrors.includes(component)
+    && component !== jumpStartPad
     && ["WALL", "CURVE_WALL", "CIRCLE"].includes(component.type)
 );
 requireCondition(
-  fixedJumpObstacles.length <= 34,
-  "Magic Mirror Jump fixed obstacle density must stay reduced"
+  fixedJumpObstacles.length === 17
+    && fixedJumpObstacles.filter((component) => component.type === "CIRCLE").length === 14
+    && fixedJumpObstacles.filter((component) => component.type === "WALL").length === 3
+    && fixedJumpObstacles.every((component) => component.type !== "CURVE_WALL"),
+  "Magic Mirror Jump fixed obstacle set must match the uploaded map"
 );
 requireCondition(
   fixedJumpObstacles.every((component) => {
     if (component.type === "CIRCLE") {
-      return Number(component.radius) <= 38;
+      return Number(component.radius) <= 20;
     }
-    if (component.type === "CURVE_WALL") {
-      return Number(component.width) <= 315;
-    }
-    return Number(component.width) <= 240;
+    return Number(component.width) <= 320;
   }),
-  "Magic Mirror Jump fixed obstacles must stay narrower"
+  "Magic Mirror Jump uploaded fixed obstacle sizes must stay bounded"
 );
 
 const makerSource = fs.readFileSync(
