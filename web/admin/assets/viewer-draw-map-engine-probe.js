@@ -1320,6 +1320,15 @@ requireCondition(
   "Magic Mirror Jump uploaded fixed obstacle sizes must stay bounded"
 );
 
+const retroMap = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "../../tools/viewer-draw/maps/retro-cadet-survivor-v3.json"
+    ),
+    "utf8"
+  )
+);
 const audioMap = JSON.parse(
   fs.readFileSync(
     path.join(
@@ -1336,7 +1345,7 @@ requireCondition(
     && audioMap.components.length === 165,
   "Audio Marble Machine bundled map structure must stay current"
 );
-for (const bundledMap of [jumpMap, audioMap]) {
+for (const bundledMap of [retroMap, jumpMap, audioMap]) {
   const bundledErrors = Engine.validateDefinition(
     Engine.migrateDefinition(bundledMap)
   );
@@ -1378,6 +1387,14 @@ const serverMakerHtml = fs.readFileSync(
 );
 const localMakerHtml = fs.readFileSync(
   path.join(__dirname, "../../../map-maker.html"),
+  "utf8"
+);
+const viewerDrawHtml = fs.readFileSync(
+  path.join(__dirname, "../tools/viewer-draw/index.html"),
+  "utf8"
+);
+const viewerDrawSource = fs.readFileSync(
+  path.join(__dirname, "viewer-draw.js"),
   "utf8"
 );
 const marbleSource = fs.readFileSync(
@@ -1463,6 +1480,15 @@ requireCondition(
     && marbleSource.includes("viewerDraw.bundledMapKey")
     && marbleSource.includes("loadBundledMap"),
   "Marble Draw runtime must derive start style and accept bundled map handoff"
+);
+
+requireCondition(
+  viewerDrawHtml.includes('id="marbleMapPreset"')
+    && viewerDrawHtml.includes('value="RETRO"')
+    && viewerDrawHtml.includes('value="JUMP"')
+    && viewerDrawHtml.includes('value="AUDIO"')
+    && viewerDrawSource.includes("viewerDraw.bundledMapKey"),
+  "Viewer Draw admin must hand off all bundled maps to Marble Draw"
 );
 
 console.log("Viewer Draw map engine probe passed.");
