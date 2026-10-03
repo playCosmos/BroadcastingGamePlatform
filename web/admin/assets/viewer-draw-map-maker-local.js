@@ -421,13 +421,6 @@
         "propSlotCapacity"
       ],
       advanced: ["propSensorTag"]
-    },
-    ELIMINATION: {
-      basic: [
-        ...RECT_BASIC,
-        "propEliminationKey"
-      ],
-      advanced: ["propSensorTag"]
     }
   };
 
@@ -969,7 +962,7 @@
       ctx.fillRect(-w / 2, -h / 2, w, h);
       ctx.strokeRect(-w / 2, -h / 2, w, h);
 
-      if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)) {
+      if (["FINISH","OUTPUT","SLOT"].includes(c.type)) {
         ctx.setLineDash([7, 5]);
         ctx.strokeStyle = "rgba(255,255,255,.8)";
         ctx.strokeRect(-w / 2 + 4, -h / 2 + 4, w - 8, h - 8);
@@ -1326,10 +1319,9 @@
       ELEVATOR: "엘리베이터",
       SPAWN: "뭉침 스포너",
       BURST_SPAWN: "버스트 스포너",
-      FINISH: "도착 지점",
+      FINISH: "결승선",
       OUTPUT: "출력 구역",
-      SLOT: "슬롯",
-      ELIMINATION: "탈락 구역"
+      SLOT: "슬롯"
     }[type] || type;
   }
 
@@ -1698,12 +1690,6 @@
       ).length + 1;
       c.properties.slotKey = "SLOT" + count;
     }
-    if (type === "ELIMINATION") {
-      const count = definition.components.filter(
-        (component) => component.type === "ELIMINATION"
-      ).length + 1;
-      c.properties.eliminationKey = "OUT" + count;
-    }
     definition.components.push(c);
     select(c.id);
     setTool("SELECT");
@@ -1907,7 +1893,6 @@
     $("propBranchSetValue").value = String(c.properties?.branchSetValue || "ON");
     $("propSlotKey").value = String(c.properties?.slotKey || "SLOT1");
     $("propSlotCapacity").value = Math.trunc(num(c.properties?.slotCapacity, 1));
-    $("propEliminationKey").value = String(c.properties?.eliminationKey || "OUT");
     const visualStyle = Engine.componentVisualStyle(c);
     $("propVisualFill").value = visualStyle.fill;
     $("propVisualStroke").value = visualStyle.stroke;
@@ -2020,7 +2005,7 @@
       -360,
       360
     );
-    if (["WALL", "CURVE_WALL", "FINISH", "ROTATIONAL_BODY", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT", "ELIMINATION"].includes(c.type)) {
+    if (["WALL", "CURVE_WALL", "FINISH", "ROTATIONAL_BODY", "CONVEYOR", "ELEVATOR", "OUTPUT", "SLOT"].includes(c.type)) {
       c.width = Math.max(0, num($("propWidth").value, c.width));
       c.height = Math.max(0, num($("propHeight").value, c.height));
     }
@@ -2207,7 +2192,7 @@
       c.properties.motorForce = num(c.properties.motorForce, 45);
       c.properties.startDirection = num(c.properties.startDirection, 1);
     }
-    if (["FINISH","OUTPUT","SLOT","ELIMINATION"].includes(c.type)) {
+    if (["FINISH","OUTPUT","SLOT"].includes(c.type)) {
       c.properties.sensorTag = $("propSensorTag").value.trim();
     }
     if (c.type === "OUTPUT") {
@@ -2249,9 +2234,6 @@
     if (c.type === "SLOT") {
       c.properties.slotKey = $("propSlotKey").value.trim() || "SLOT1";
       c.properties.slotCapacity = Math.trunc(num($("propSlotCapacity").value, 1));
-    }
-    if (c.type === "ELIMINATION") {
-      c.properties.eliminationKey = $("propEliminationKey").value.trim() || "OUT";
     }
     if (Engine.isCollider(c)) {
       c.properties.soundMaterial = $("propSoundMaterial").value;
@@ -3189,7 +3171,7 @@
    "propConditionClaims","propConditionSeconds","propConditionSensorTag",
    "propConditionBranchKey","propConditionBranchValue",
    "propBranchSetKey","propBranchSetValue",
-   "propSlotKey","propSlotCapacity","propEliminationKey",
+   "propSlotKey","propSlotCapacity",
    "propSoundMaterial","propInstrument","propAudioNote","propAudioGain","propAudioPan",
    "propBoost","propCollisionMode","propOneWayDirection","propMarbleRadius"]
     .forEach((id) => {
