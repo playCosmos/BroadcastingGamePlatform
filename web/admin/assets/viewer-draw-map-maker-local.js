@@ -626,7 +626,7 @@
 
   function snap(value) {
     if (!$("snapGrid").checked) return value;
-    const grid = Math.max(1, num($("gridSize").value, 20));
+    const grid = Math.max(1, num($("gridSize").value, 10));
     return Math.round(value / grid) * grid;
   }
 
@@ -715,7 +715,7 @@
   }
 
   function drawGrid(view) {
-    const grid = Math.max(5, num($("gridSize").value, 20));
+    const grid = Math.max(5, num($("gridSize").value, 10));
     const world = definition.world;
 
     ctx.save();
