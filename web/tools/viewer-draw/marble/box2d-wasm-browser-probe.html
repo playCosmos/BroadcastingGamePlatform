@@ -37,6 +37,18 @@
     }
     const jumpDefinition = await jumpResponse.json();
 
+    const audioResponse = await fetch(
+      "/tools/viewer-draw/maps/audio-marble-machine-v1.json",
+      { cache: "no-store" }
+    );
+    if (!audioResponse.ok) {
+      throw new Error(
+        "Audio Marble Machine V1 missing: HTTP "
+          + audioResponse.status
+      );
+    }
+    const audioDefinition = await audioResponse.json();
+
     const adapter = new Physics.Box2dWasmPhysicsAdapter();
     await adapter.init();
 
@@ -883,6 +895,74 @@
     ) {
       throw new Error(
         "moving one-way mirror did not block and rebound falling travel"
+      );
+    }
+
+    const audioErrors = Engine.validateDefinition(
+      Engine.migrateDefinition(audioDefinition)
+    );
+    if (audioErrors.length) {
+      throw new Error(
+        "Audio Marble Machine V1 validation failed: "
+          + audioErrors.join(" / ")
+      );
+    }
+    const audioSpawners = audioDefinition.components.filter(
+      (component) =>
+        component.type === "SPAWN"
+        || component.type === "BURST_SPAWN"
+    );
+    if (
+      audioDefinition.world?.width !== 8000
+      || audioDefinition.world?.height !== 4000
+      || audioDefinition.drawRule?.type !== "CASCADE_SELECTION"
+      || audioDefinition.components.length !== 165
+      || audioSpawners.length !== 1
+      || audioSpawners[0].type !== "BURST_SPAWN"
+      || !audioDefinition.components.some(
+        (component) =>
+          String(component.properties?.instrument || "none") !== "none"
+      )
+      || !audioDefinition.components.some(
+        (component) =>
+          String(component.properties?.instrument || "none") === "none"
+          && component.properties?.soundMaterial
+      )
+    ) {
+      throw new Error(
+        "Audio Marble Machine V1 structural/audio contract changed"
+      );
+    }
+
+    adapter.loadMap(audioDefinition);
+    state = adapter.reset(entries.slice(0, 6), 211, {
+      launchMode: "BUNCH"
+    });
+    if (
+      state.launchedCount !== 0
+      || state.marbles.some((marble) => marble.launched !== false)
+    ) {
+      throw new Error(
+        "map BURST_SPAWN must override requested BUNCH launch mode"
+      );
+    }
+    state = adapter.step(1 / 60);
+    if (!(state.launchedCount > 0 && state.launchedCount < 6)) {
+      throw new Error(
+        "Audio Marble Machine BURST_SPAWN did not release a burst batch"
+      );
+    }
+
+    adapter.loadMap(jumpDefinition);
+    state = adapter.reset(entries.slice(0, 6), 212, {
+      launchMode: "BURST"
+    });
+    if (
+      state.launchedCount !== 6
+      || state.marbles.some((marble) => marble.launched === false)
+    ) {
+      throw new Error(
+        "map SPAWN must override requested BURST launch mode"
       );
     }
 
