@@ -735,8 +735,7 @@
       target.fillRect(-width / 2, -height / 2, width, height);
       target.strokeRect(-width / 2, -height / 2, width, height);
       if (
-        component.type === "WALL"
-        && Engine.isOneWayWall(component)
+        Engine.isOneWayCollider(component)
         && !simplified
       ) {
         const direction = Engine.oneWayDirection(component);
