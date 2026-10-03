@@ -1012,6 +1012,83 @@ requireCondition(
   "preview adaptive substeps must stop a high-speed marble at an 18px wall"
 );
 
+const oneWayPreset = Engine.createPreset(
+  "ONE_WAY_WALL",
+  200,
+  150
+);
+requireCondition(
+  oneWayPreset.type === "WALL"
+    && oneWayPreset.properties.collisionMode === "ONE_WAY"
+    && Engine.isOneWayWall(oneWayPreset)
+    && Engine.oneWayDirection(oneWayPreset) === 1,
+  "one-way wall must remain a WALL preset with directional collision"
+);
+
+const oneWayDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "One-Way Wall Preview Probe",
+  world: {
+    width: 400,
+    height: 300,
+    gravityX: 0,
+    gravityY: 0
+  },
+  drawRule: { type: "RACE_FINISH", winnerCount: 0 },
+  components: [
+    {
+      ...Engine.componentDefaults("SPAWN", 200, 70),
+      properties: { marbleRadius: 11 }
+    },
+    oneWayPreset,
+    {
+      ...Engine.componentDefaults("FINISH", 380, 280),
+      width: 20,
+      height: 20
+    }
+  ]
+};
+requireCondition(
+  Engine.validateDefinition(oneWayDefinition).length === 0,
+  "one-way wall definition must validate"
+);
+
+const passPreview = new Engine.PreviewEngine(
+  oneWayDefinition,
+  { seed: 1 }
+);
+passPreview.reset(1, 1);
+const passMarble = passPreview.marbles[0];
+passMarble.x = 200;
+passMarble.y = 100;
+passMarble.vx = 0;
+passMarble.vy = 1200;
+for (let step = 0; step < 18; step += 1) {
+  passPreview.step(1 / 120);
+}
+requireCondition(
+  passMarble.y > 175 && passMarble.vy > 0,
+  "one-way wall must allow travel in the arrow direction"
+);
+
+const blockPreview = new Engine.PreviewEngine(
+  oneWayDefinition,
+  { seed: 1 }
+);
+blockPreview.reset(1, 1);
+const blockMarble = blockPreview.marbles[0];
+blockMarble.x = 200;
+blockMarble.y = 205;
+blockMarble.vx = 0;
+blockMarble.vy = -1200;
+for (let step = 0; step < 8; step += 1) {
+  blockPreview.step(1 / 120);
+}
+requireCondition(
+  blockMarble.y >= 169.5 && blockMarble.vy > 0,
+  "one-way wall must block and bounce reverse travel"
+);
+
 const makerSource = fs.readFileSync(
   path.join(__dirname, "viewer-draw-map-maker.js"),
   "utf8"
@@ -1027,7 +1104,9 @@ for (const source of [makerSource, localMakerSource]) {
       && source.includes("drawMarqueeSelection")
       && source.includes("selectedComponents()")
       && source.includes("propArcStartAngle")
-      && source.includes("propCurveStartPercent"),
+      && source.includes("propCurveStartPercent")
+      && source.includes("propCollisionMode")
+      && source.includes("PRESET_ONE_WAY_WALL"),
     "Map Maker must support drag multi-selection in both storage modes"
   );
 }
