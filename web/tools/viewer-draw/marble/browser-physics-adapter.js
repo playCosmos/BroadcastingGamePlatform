@@ -187,7 +187,10 @@
       this.movingComponents = [];
       this.reactiveComponents = [];
       this.elevators = [];
-      this.oneWayWalls = [];
+      this.oneWayFixtureMeta = new Map();
+      this.marbleBodyMeta = new Map();
+      this.oneWayBlockingContacts = new Set();
+      this.contactListener = null;
       this.soundEvents = [];
       this.soundSequence = 0;
       this.accumulator = 0;
@@ -256,7 +259,10 @@
       this.movingComponents = [];
       this.reactiveComponents = [];
       this.elevators = [];
-      this.oneWayWalls = [];
+      this.oneWayFixtureMeta = new Map();
+      this.marbleBodyMeta = new Map();
+      this.oneWayBlockingContacts = new Set();
+      this.contactListener = null;
       this.soundEvents = [];
       this.accumulator = 0;
       this.time = 0;
@@ -264,16 +270,13 @@
       this.nextLaunchAt = 0;
       this.launchedCount = 0;
 
+      this.installContactListener();
       this.createWorldBounds();
 
       for (const component of this.definition.components) {
         switch (component.type) {
           case "WALL":
-            if (root.ViewerDrawMapEngine.isOneWayWall(component)) {
-              this.oneWayWalls.push(component);
-            } else {
-              this.createStaticBox(component);
-            }
+            this.createStaticBox(component);
             break;
           case "CURVE_WALL":
             for (const shape of root.ViewerDrawMapEngine.componentShapes(
@@ -304,13 +307,166 @@
 
         if (
           root.ViewerDrawMapEngine.isCollider(component)
-          && !root.ViewerDrawMapEngine.isOneWayWall(component)
           && Math.max(0, property(component.properties, "boost", 0)) > 0
         ) {
           this.boostColliders.push(component);
         }
       }
 
+    }
+
+    installContactListener() {
+      const B = this.Box2D;
+      const listener = new B.JSContactListener();
+
+      listener.BeginContact = () => {};
+      listener.EndContact = () => {};
+      listener.PostSolve = () => {};
+      listener.PreSolve = (contactPtr) => {
+        const contact =
+          typeof contactPtr === "number"
+            ? B.wrapPointer(contactPtr, B.b2Contact)
+            : contactPtr;
+        if (!contact) return;
+
+        const fixtureA = contact.GetFixtureA();
+        const fixtureB = contact.GetFixtureB();
+        const metaA = this.oneWayFixtureMeta.get(
+          B.getPointer(fixtureA)
+        );
+        const metaB = this.oneWayFixtureMeta.get(
+          B.getPointer(fixtureB)
+        );
+        if (!metaA && !metaB) return;
+
+        const oneWayFixture = metaA ? fixtureA : fixtureB;
+        const otherFixture = metaA ? fixtureB : fixtureA;
+        const meta = metaA || metaB;
+        const marbleBody = otherFixture.GetBody();
+        const marble = this.marbleBodyMeta.get(
+          B.getPointer(marbleBody)
+        );
+        if (!marble) return;
+
+        const colliderBody = oneWayFixture.GetBody();
+        const colliderPosition = colliderBody.GetPosition();
+        const bodyAngle = colliderBody.GetAngle();
+        const localCenterX = meta.localCenterX || 0;
+        const localCenterY = meta.localCenterY || 0;
+        const bodyCos = Math.cos(bodyAngle);
+        const bodySin = Math.sin(bodyAngle);
+        const centerX =
+          colliderPosition.x
+          + localCenterX * bodyCos
+          - localCenterY * bodySin;
+        const centerY =
+          colliderPosition.y
+          + localCenterX * bodySin
+          + localCenterY * bodyCos;
+
+        const shapeAngle =
+          bodyAngle + (meta.localAngle || 0);
+        const direction =
+          root.ViewerDrawMapEngine.oneWayDirection(
+            meta.component
+          );
+        const passNx = -Math.sin(shapeAngle) * direction;
+        const passNy = Math.cos(shapeAngle) * direction;
+
+        const marblePosition = marbleBody.GetPosition();
+        const depth =
+          (marblePosition.x - centerX) * passNx
+          + (marblePosition.y - centerY) * passNy;
+        const surface =
+          meta.halfHeight
+          + marble.radius / PIXELS_PER_METER;
+
+        const marbleVelocity =
+          marbleBody.GetLinearVelocityFromWorldPoint(
+            marblePosition
+          );
+        const surfaceVelocity =
+          colliderBody.GetLinearVelocityFromWorldPoint(
+            marblePosition
+          );
+        const relativeAlongPass =
+          (marbleVelocity.x - surfaceVelocity.x) * passNx
+          + (marbleVelocity.y - surfaceVelocity.y) * passNy;
+
+        const latchKey = meta.key;
+        marble.oneWayPassThrough ||= new Set();
+        if (marble.oneWayPassThrough.has(latchKey)) {
+          if (
+            depth >= surface + 0.005
+            || depth <= -surface - 0.005
+          ) {
+            marble.oneWayPassThrough.delete(latchKey);
+          } else {
+            contact.SetEnabled(false);
+            return;
+          }
+        }
+
+        if (
+          depth < 0
+          || (
+            relativeAlongPass > 0
+            && depth < surface
+          )
+        ) {
+          marble.oneWayPassThrough.add(latchKey);
+          contact.SetEnabled(false);
+          return;
+        }
+
+        if (relativeAlongPass < 0) {
+          this.oneWayBlockingContacts.add(
+            marble.id + "\u0000" + meta.component.id
+          );
+        }
+      };
+
+      this.contactListener = listener;
+      this.world.SetContactListener(listener);
+    }
+
+    registerOneWayFixture(
+      fixture,
+      component,
+      {
+        localAngle = 0,
+        localCenterX = 0,
+        localCenterY = 0,
+        halfHeight = null,
+        index = 0
+      } = {}
+    ) {
+      if (
+        !fixture
+        || !root.ViewerDrawMapEngine.isOneWayCollider(
+          component
+        )
+      ) {
+        return;
+      }
+
+      this.oneWayFixtureMeta.set(
+        this.Box2D.getPointer(fixture),
+        {
+          component,
+          localAngle,
+          localCenterX,
+          localCenterY,
+          halfHeight:
+            halfHeight
+            ?? Math.max(
+              0.01,
+              Math.abs(component.height)
+                / PIXELS_PER_METER / 2
+            ),
+          key: component.id + ":" + index
+        }
+      );
     }
 
     createWorldBounds() {
@@ -402,7 +558,19 @@
         )
       );
       fixtureDef.set_shape(shape);
-      body.CreateFixture(fixtureDef);
+      const fixture = body.CreateFixture(fixtureDef);
+      this.registerOneWayFixture(
+        fixture,
+        component,
+        {
+          halfHeight:
+            Math.max(
+              0.01,
+              Math.abs(component.height)
+                / PIXELS_PER_METER / 2
+            )
+        }
+      );
     }
 
     createRotationFixtures(body, component) {
@@ -452,7 +620,23 @@
           localAngle
         );
         fixtureDef.set_shape(shape);
-        body.CreateFixture(fixtureDef);
+        const fixture = body.CreateFixture(fixtureDef);
+        this.registerOneWayFixture(
+          fixture,
+          component,
+          {
+            localAngle,
+            localCenterX:centerX,
+            localCenterY:centerY,
+            halfHeight:
+              Math.max(
+                0.01,
+                Math.abs(component.height)
+                  / PIXELS_PER_METER / 2
+              ),
+            index
+          }
+        );
       }
     }
 
@@ -687,7 +871,19 @@
       fixtureDef.set_friction(
         clamp(property(p, "friction", 0.08), 0, 0.5)
       );
-      body.CreateFixture(fixtureDef);
+      const fixture = body.CreateFixture(fixtureDef);
+      this.registerOneWayFixture(
+        fixture,
+        component,
+        {
+          halfHeight:
+            Math.max(
+              0.01,
+              Math.abs(component.height)
+                / PIXELS_PER_METER / 2
+            )
+        }
+      );
 
       const lower = clamp(
         property(p, "travelMin", -120),
@@ -843,29 +1039,6 @@
         }
       }
       return best;
-    }
-
-    capturePositions() {
-      return new Map(
-        this.marbles
-          .filter(
-            (marble) =>
-              !marble.finished
-              && !marble.eliminated
-              && !marble.dnf
-              && marble.launched !== false
-          )
-          .map((marble) => {
-            const position = marble.body.GetPosition();
-            return [
-              marble.id,
-              {
-                x: position.x * PIXELS_PER_METER,
-                y: position.y * PIXELS_PER_METER
-              }
-            ];
-          })
-      );
     }
 
     captureVelocities() {
@@ -1102,7 +1275,7 @@
           body.SetEnabled(false);
         }
 
-        return {
+        const marble = {
           id: "m" + (index + 1),
           entry,
           body,
@@ -1152,6 +1325,11 @@
             property(spawn.properties, "burstIntervalMs", 90)
           )
         };
+        this.marbleBodyMeta.set(
+          B.getPointer(body),
+          marble
+        );
+        return marble;
       });
 
       if (this.launchMode === "BUNCH") {
@@ -1244,14 +1422,13 @@
       let guard = 0;
       while (this.accumulator >= FIXED_DT && guard < 12) {
         this.releaseQueuedMarbles();
-        const beforePositions = this.capturePositions();
         const beforeVelocities = this.captureVelocities();
         this.updateMovingComponents(this.time);
         this.updateTorqueRotations();
         this.updateElevators();
+        this.oneWayBlockingContacts.clear();
         this.world.Step(FIXED_DT, 6, 2);
         this.time += FIXED_DT;
-        this.applyOneWayWalls(beforePositions);
         this.detectImpactSounds(beforeVelocities);
         this.applyColliderBoosts();
         this.applyConveyors();
@@ -1400,158 +1577,6 @@
       return best;
     }
 
-    applyOneWayWalls(beforePositions) {
-      if (!this.oneWayWalls.length) return;
-      const B = this.Box2D;
-
-      for (const marble of this.marbles) {
-        if (
-          marble.finished
-          || marble.eliminated
-          || marble.dnf
-          || marble.launched === false
-        ) {
-          continue;
-        }
-        const previousWorld = beforePositions.get(marble.id);
-        if (!previousWorld) continue;
-
-        const position = marble.body.GetPosition();
-        let currentWorld = {
-          x: position.x * PIXELS_PER_METER,
-          y: position.y * PIXELS_PER_METER
-        };
-        let velocity = marble.body.GetLinearVelocity();
-
-        for (const wall of this.oneWayWalls) {
-          const direction =
-            root.ViewerDrawMapEngine.oneWayDirection(wall);
-          const angle = (wall.rotation || 0) * Math.PI / 180;
-          const co = Math.cos(angle);
-          const si = Math.sin(angle);
-          const toLocal = (point) => {
-            const dx = point.x - wall.x;
-            const dy = point.y - wall.y;
-            return {
-              x: dx * co + dy * si,
-              y: -dx * si + dy * co
-            };
-          };
-
-          const previous = toLocal(previousWorld);
-          const current = toLocal(currentWorld);
-          const halfW = Math.max(1, Math.abs(wall.width || 0) / 2);
-          const halfH = Math.max(1, Math.abs(wall.height || 0) / 2);
-          const surface = halfH + marble.radius;
-          const prevDepth = previous.y * direction;
-          const currDepth = current.y * direction;
-          const passNx = -si * direction;
-          const passNy = co * direction;
-          const velocityAlongPass =
-            velocity.x * passNx + velocity.y * passNy;
-          const key = wall.id;
-          marble.oneWayPassThrough ||= new Set();
-
-          if (marble.oneWayPassThrough.has(key)) {
-            if (
-              currDepth >= surface + 0.5
-              || currDepth <= -surface - 0.5
-            ) {
-              marble.oneWayPassThrough.delete(key);
-            }
-            continue;
-          }
-
-          if (
-            velocityAlongPass > 0
-            && prevDepth <= -surface
-            && currDepth > -surface
-          ) {
-            marble.oneWayPassThrough.add(key);
-            continue;
-          }
-
-          if (
-            velocityAlongPass >= 0
-            || prevDepth < surface
-            || currDepth >= surface
-          ) {
-            continue;
-          }
-
-          const denom = prevDepth - currDepth;
-          const t = Math.abs(denom) > 1e-9
-            ? clamp((prevDepth - surface) / denom, 0, 1)
-            : 0;
-          const hitX =
-            previous.x + (current.x - previous.x) * t;
-          if (Math.abs(hitX) > halfW + marble.radius) {
-            continue;
-          }
-
-          const correctedLocalY =
-            direction * (surface + 0.25);
-          const correctedX = current.x;
-          const correctedWorldX =
-            wall.x + correctedX * co - correctedLocalY * si;
-          const correctedWorldY =
-            wall.y + correctedX * si + correctedLocalY * co;
-
-          marble.body.SetTransform(
-            new B.b2Vec2(
-              correctedWorldX / PIXELS_PER_METER,
-              correctedWorldY / PIXELS_PER_METER
-            ),
-            marble.body.GetAngle()
-          );
-
-          let vx = velocity.x;
-          let vy = velocity.y;
-          const vn = vx * passNx + vy * passNy;
-          if (vn < 0) {
-            const restitution = property(
-              wall.properties,
-              "restitution",
-              0.35
-            );
-            vx -= (1 + restitution) * vn * passNx;
-            vy -= (1 + restitution) * vn * passNy;
-
-            const tx = -passNy;
-            const ty = passNx;
-            const friction = property(
-              wall.properties,
-              "friction",
-              0.05
-            );
-            const vt = vx * tx + vy * ty;
-            vx -= vt * friction * tx;
-            vy -= vt * friction * ty;
-          }
-
-          const boost = Math.max(
-            0,
-            property(wall.properties, "boost", 0)
-          );
-          if (boost > 0) {
-            const extra = boost * 70 / PIXELS_PER_METER;
-            vx += passNx * extra;
-            vy += passNy * extra;
-          }
-
-          marble.body.SetLinearVelocity(
-            new B.b2Vec2(vx, vy)
-          );
-          marble.body.SetAwake(true);
-          currentWorld = {
-            x: correctedWorldX,
-            y: correctedWorldY
-          };
-          velocity = marble.body.GetLinearVelocity();
-        }
-      }
-    }
-
     applyColliderBoosts() {
       if (!this.boostColliders.length) return;
       const B = this.Box2D;
@@ -1569,6 +1594,14 @@
             property(component.properties, "boost", 0)
           );
           if (boost <= 0) continue;
+          if (
+            root.ViewerDrawMapEngine.isOneWayCollider(component)
+            && !this.oneWayBlockingContacts.has(
+              marble.id + "\u0000" + component.id
+            )
+          ) {
+            continue;
+          }
 
           const contact = this.boostContact(
             x,
