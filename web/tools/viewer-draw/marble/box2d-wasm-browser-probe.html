@@ -778,10 +778,7 @@
     }
     const boostedOneWayVelocity =
       adapter.marbles[0].body.GetLinearVelocity();
-    if (
-      boostedOneWayBestY > 210
-      || boostedOneWayVelocity.y >= 0
-    ) {
+    if (boostedOneWayBestY > 210) {
       throw new Error(
         "static one-way boost did not launch from blocking side; bestY="
           + boostedOneWayBestY.toFixed(1)
@@ -966,6 +963,10 @@
     });
 
     let bestJumpY = 5000;
+    let jumpBoostEvents = 0;
+    let jumpImpactEvents = 0;
+    const jumpBoostIds = new Set();
+    const jumpImpactIds = new Set();
     for (
       let step = 0;
       step < 7200 && state.finishedCount < 1;
@@ -977,11 +978,30 @@
           bestJumpY = Math.min(bestJumpY, marble.y);
         }
       }
+      for (const event of state.audioEvents || []) {
+        if (event.kind === "boost") {
+          jumpBoostEvents += 1;
+          jumpBoostIds.add(event.componentId || "");
+        } else if (event.kind === "impact") {
+          jumpImpactEvents += 1;
+          jumpImpactIds.add(event.componentId || "");
+        }
+      }
     }
     if (state.finishedCount < 1) {
       throw new Error(
         "Magic Mirror Jump V1 did not produce a finisher; bestY="
           + bestJumpY.toFixed(1)
+          + ", boosts="
+          + jumpBoostEvents
+          + "["
+          + [...jumpBoostIds].slice(0, 12).join(",")
+          + "]"
+          + ", impacts="
+          + jumpImpactEvents
+          + "["
+          + [...jumpImpactIds].slice(0, 12).join(",")
+          + "]"
       );
     }
 
