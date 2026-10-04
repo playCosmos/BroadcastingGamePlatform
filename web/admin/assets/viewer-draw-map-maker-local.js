@@ -1240,39 +1240,18 @@
       const label = marble.finished
         ? "#" + marble.rank + " " + baseName
         : baseName;
-      const labelY = p.y - r - fontSize * .72;
 
       ctx.font =
         `900 ${fontSize}px Inter,Pretendard,system-ui,sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      const width =
-        ctx.measureText(label).width + Math.max(12, fontSize * .5);
-      const height = fontSize + Math.max(8, fontSize * .28);
-      ctx.fillStyle = "rgba(5,10,14,.82)";
-      ctx.strokeStyle = "rgba(218,236,248,.48)";
-      ctx.lineWidth = 1;
-      if (typeof ctx.roundRect === "function") {
-        ctx.beginPath();
-        ctx.roundRect(
-          p.x - width / 2,
-          labelY - height / 2,
-          width,
-          height,
-          Math.max(4, fontSize * .22)
-        );
-        ctx.fill();
-        ctx.stroke();
-      } else {
-        ctx.fillRect(
-          p.x - width / 2,
-          labelY - height / 2,
-          width,
-          height
-        );
-      }
-      ctx.fillStyle = marble.finished ? "#d7ffe1" : "#f4fbff";
-      ctx.fillText(label, p.x, labelY);
+      ctx.lineJoin = "round";
+      ctx.miterLimit = 2;
+      ctx.strokeStyle = "rgba(3,8,12,.92)";
+      ctx.lineWidth = Math.max(1.2, fontSize * .08);
+      ctx.strokeText(label, p.x, p.y);
+      ctx.fillStyle = marble.finished ? "#e2ffe9" : "#f7fcff";
+      ctx.fillText(label, p.x, p.y);
       ctx.restore();
     }
   }
