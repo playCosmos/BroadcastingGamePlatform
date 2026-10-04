@@ -1530,8 +1530,10 @@ for (const source of [makerSource, localMakerSource]) {
   requireCondition(
     source.includes("Math.max(21, r * 2.4)")
       && source.includes("marble.entry?.displayName")
-      && source.includes("ctx.measureText(label)"),
-    "Map Maker preview marble labels must stay at 3x size and show full labels"
+      && source.includes('ctx.strokeText(label, p.x, p.y)')
+      && source.includes('ctx.fillText(label, p.x, p.y)')
+      && !source.includes("labelY = p.y - r"),
+    "Map Maker preview labels must stay 3x, centered, full-name, and outline-only"
   );
 }
 
@@ -1568,9 +1570,12 @@ requireCondition(
     && marbleCss.includes(".draw-menu-panel{")
     && marbleCss.includes(".draw-menu:hover .draw-menu-panel")
     && marbleCss.includes(".draw-menu.open .draw-menu-panel")
-    && marbleCss.includes("body.draw-running .control-panel")
+    && marbleCss.includes("/* 2026-10-04 hamburger settings drawer */")
+    && marbleCss.includes(".draw-menu-start{")
+    && marbleCss.includes(".draw-menu-settings-slot{")
+    && marbleCss.includes("body.draw-running .draw-menu-panel")
     && marbleCss.includes(".result-return-button"),
-  "Marble Draw UI must keep fullscreen stage, no rank panel, and hamburger navigation"
+  "Marble Draw UI must keep fullscreen stage, hamburger settings drawer, and persistent start action"
 );
 requireCondition(
   viewerDrawCss.includes("/* 2026-10-03 large viewer-draw UI pass */")
@@ -1636,6 +1641,8 @@ requireCondition(
       && html.includes('id="returnSetup"')
       && html.includes('id="drawMenuToggle"')
       && html.includes('id="drawMenuPanel"')
+      && html.includes('id="drawMenuActionSlot"')
+      && html.includes('id="drawMenuSettingsSlot"')
       && html.includes("viewer-draw-bundled-maps.js")
       && !html.includes('START STYLE')
       && !html.includes('id="launchModeLabel"')
@@ -1660,12 +1667,18 @@ requireCondition(
     && marbleSource.includes("function syncAutoCameraTarget(")
     && marbleSource.includes("syncAutoCameraTarget(true)")
     && marbleSource.includes('classList.toggle("draw-running"')
+    && marbleSource.includes("function mountDrawMenuControls(")
+    && marbleSource.includes('actionSlot.appendChild(startButton)')
+    && marbleSource.includes('settingsSlot.appendChild(controls)')
     && marbleSource.includes("function setDrawMenuOpen(")
     && marbleSource.includes('$("drawMenuToggle")?.addEventListener("click"')
     && marbleSource.includes('$("returnSetup")?.addEventListener("click", resetDraw)')
     && marbleSource.includes('resultMode: selectedResultMode()')
     && marbleSource.includes("Math.max(21, radius * 2.16)")
+    && marbleSource.includes('target.strokeText(text, p.x, p.y)')
+    && marbleSource.includes('target.fillText(text, p.x, p.y)')
     && !marbleSource.includes("displayName?.slice(0, 2)")
+    && !marbleSource.includes("boxWidth = metrics.width")
     && (marbleSource.match(
       /\.sort\(\s*compareGoalDistance\s*\)/g
     ) || []).length >= 3,
