@@ -1551,11 +1551,15 @@ for (const source of [makerSource, localMakerSource]) {
 
 requireCondition(
   marbleCss.includes("/* 2026-10-03 large draw UI pass */")
+    && marbleCss.includes("/* 2026-10-04 fullscreen overlay draw layout */")
     && marbleCss.includes(".marble-header h1{font-size:46px")
-    && marbleCss.includes("grid-template-columns:390px minmax(720px,1fr) 360px")
-    && marbleCss.includes(".rank-row{")
-    && marbleCss.includes("font-size:16px"),
-  "Marble Draw UI must keep the enlarged readability layout"
+    && marbleCss.includes(".stage-panel{")
+    && marbleCss.includes("position:fixed;")
+    && marbleCss.includes("body.draw-running .marble-header")
+    && marbleCss.includes("body.draw-running .control-panel")
+    && marbleCss.includes("body.draw-running .rank-panel")
+    && marbleCss.includes(".result-return-button"),
+  "Marble Draw UI must keep the enlarged fullscreen overlay layout"
 );
 requireCondition(
   viewerDrawCss.includes("/* 2026-10-03 large viewer-draw UI pass */")
@@ -1618,6 +1622,7 @@ requireCondition(
       && html.includes('id="resultMode"')
       && html.includes('id="rankStart"')
       && html.includes('id="rankEnd"')
+      && html.includes('id="returnSetup"')
       && html.includes("viewer-draw-bundled-maps.js")
       && !html.includes('name="launchMode"')
   ),
@@ -1632,6 +1637,9 @@ requireCondition(
     && marbleSource.includes("function compareGoalDistance(")
     && marbleSource.includes("function selectedResultMode(")
     && marbleSource.includes("function rankRangeValue(")
+    && marbleSource.includes("function setDrawFocusMode(")
+    && marbleSource.includes('classList.toggle("draw-running"')
+    && marbleSource.includes('$("returnSetup")?.addEventListener("click", resetDraw)')
     && marbleSource.includes('resultMode: selectedResultMode()')
     && (marbleSource.match(
       /\.sort\(\s*compareGoalDistance\s*\)/g
