@@ -345,6 +345,12 @@ body{
   box-shadow:0 10px 34px rgba(0,0,0,.34);
   backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
+  opacity:.2;
+  transition:opacity .18s ease;
+}
+.stage-top:hover,
+.stage-top:focus-within{
+  opacity:1;
 }
 .stage-top>div:first-child{
   align-items:center;
@@ -509,10 +515,6 @@ body.draw-running .stage-top{
   background:rgba(5,12,18,.7);
   border-color:rgba(91,132,161,.28);
 }
-body.draw-running .stage-top #launchStatus,
-body.draw-running .stage-top #stuckCount{
-  display:none;
-}
 body.draw-running .minimap-canvas{
   left:14px;
   top:14px;
@@ -530,9 +532,6 @@ body.draw-completed .result-return-button{
 }
 body.draw-completed .rank-panel{
   opacity:.78;
-}
-body.draw-completed .stage-top{
-  opacity:.7;
 }
 
 @media(max-width:1450px){

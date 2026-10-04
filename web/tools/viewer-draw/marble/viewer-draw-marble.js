@@ -1709,9 +1709,6 @@
       ? 1
       : fastForwardActive ? 2 : slow ? FINISH_SLOW_RATE : 1;
     $("slowMotionBadge").hidden = !slow;
-    if (running) {
-      $("drawState").textContent = slow ? "SLOW MOTION" : "RUNNING";
-    }
   }
 
   function updateFinishSlowMotion() {
@@ -2089,8 +2086,6 @@
       if (previous.stuckMs >= STUCK_DELAY_MS) {
         if (adapter.shakeMarble(marble.id)) {
           stuckNudges += 1;
-          $("stuckCount").textContent =
-            "NUDGE " + stuckNudges;
         }
         previous.stuckMs = 0;
       }
@@ -2186,8 +2181,6 @@
     setFastForward(false);
     updatePlaybackRate();
     const winners = state.rankedEntries.slice(0, winnerCount);
-    $("drawState").textContent =
-      state.timedOut ? "TIMEOUT" : "COMPLETED";
     $("timeoutBadge").hidden = !state.timedOut;
     renderPodium(winners);
     if (!winners.length && state.timedOut) {
@@ -2245,9 +2238,6 @@
       `${state.finishedCount} / ${state.targetCount || state.totalCount}`;
     $("elapsed").textContent =
       state.time.toFixed(1) + "s";
-    $("launchStatus").textContent =
-      "LAUNCH " + (state.launchedCount || 0)
-      + "/" + (state.totalCount || entries.length);
     $("timeoutBadge").hidden = !state.timedOut;
     renderRanks();
     render();
@@ -2316,11 +2306,6 @@
     resetCamera(true);
     syncAutoCameraTarget(true);
 
-    $("launchStatus").textContent =
-      "LAUNCH " + (state.launchedCount || 0)
-      + "/" + (state.totalCount || entries.length);
-    $("stuckCount").textContent = "NUDGE 0";
-    $("drawState").textContent = "RUNNING";
     $("timeoutBadge").hidden = true;
     $("slowMotionBadge").hidden = true;
     $("podiumList").replaceChildren();
@@ -2372,11 +2357,6 @@
       : null;
 
     resetCamera(true);
-    $("launchStatus").textContent =
-      "LAUNCH " + (state?.launchedCount || 0)
-      + "/" + (state?.totalCount || entries.length);
-    $("stuckCount").textContent = "NUDGE 0";
-    $("drawState").textContent = "READY";
     $("timeoutBadge").hidden = true;
     $("progress").textContent = `0 / ${entries.length}`;
     $("elapsed").textContent = "0.0s";
@@ -2440,8 +2420,6 @@
         throw new Error("유효한 참가자가 없습니다.");
       }
       replaceEntryRows(items);
-      $("drawState").textContent =
-        "READY · ENTRY SET " + items.length + " ITEMS";
       $("winnerBanner").hidden = true;
     } catch (error) {
       alert("참가자 목록 불러오기 실패: " + error.message);
@@ -2476,7 +2454,6 @@
     }
     updateEntryCount();
     if (!running) {
-        $("drawState").textContent = "READY · INPUT CHANGED";
       $("winnerBanner").hidden = true;
     }
   });
@@ -2494,7 +2471,6 @@
   $("addEntry").addEventListener("click", () => {
     if (running) return;
     addEntryRow("", 1);
-    $("drawState").textContent = "READY · INPUT CHANGED";
     $("winnerBanner").hidden = true;
   });
 
@@ -2643,7 +2619,6 @@
       error
     );
     $("engineBadge").textContent = "BOX2D-WASM ERROR";
-    $("drawState").textContent = "ERROR";
     $("startDraw").disabled = true;
     alert(
       "Box2D-WASM 초기화에 실패해 Marble 추첨을 시작할 수 없습니다: "
