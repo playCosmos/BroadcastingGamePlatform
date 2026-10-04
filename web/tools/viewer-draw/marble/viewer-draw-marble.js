@@ -551,6 +551,21 @@
     }
   }
 
+  function setDrawFocusMode(active) {
+    const enabled = Boolean(active);
+    document.body.classList.toggle("draw-running", enabled);
+    document.body.classList.toggle("draw-setup", !enabled);
+    $("stageWrap")?.setAttribute(
+      "aria-label",
+      enabled
+        ? "Marble 추첨 진행 화면"
+        : "Marble 추첨 미리보기 및 설정 화면"
+    );
+    requestAnimationFrame(() => {
+      render();
+    });
+  }
+
   function setRunControlsLocked(locked) {
     for (const input of $("entryRows").querySelectorAll("input")) {
       input.disabled = locked;
@@ -1702,6 +1717,7 @@
 
     completed = true;
     running = false;
+    document.body.classList.add("draw-completed");
     finishSlowMotion = false;
     setFastForward(false);
     updatePlaybackRate();
@@ -1808,6 +1824,7 @@
 
     running = true;
     completed = false;
+    setDrawFocusMode(true);
     stuckNudges = 0;
     runStartedAt = new Date().toISOString();
     stuckState = new Map();
@@ -1843,6 +1860,8 @@
     frameId = 0;
     running = false;
     completed = false;
+    setDrawFocusMode(false);
+    document.body.classList.remove("draw-completed");
     speedMultiplier = 1;
     fastForwardActive = false;
     finishSlowMotion = false;
@@ -2050,6 +2069,7 @@
   new ResizeObserver(render).observe(wrap);
 
   async function boot() {
+    setDrawFocusMode(false);
     updateMuteButton();
     updateEntryCount();
     refreshEntryRemoveButtons();
