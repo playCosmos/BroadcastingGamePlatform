@@ -1682,7 +1682,9 @@ requireCondition(
     && marbleSource.includes("function launchWinnerConfetti(")
     && marbleSource.includes("function stopWinnerConfetti(")
     && marbleSource.includes("winnerConfettiForRun = confettiOptionEnabled()")
-    && marbleSource.includes("if (winners.length) {\n      launchWinnerConfetti();")
+    && /if\s*\(winners\.length\)\s*\{\s*launchWinnerConfetti\(\);/.test(
+      marbleSource
+    )
     && marbleSource.includes('$("drawMenuToggle")?.addEventListener("click"')
     && marbleSource.includes('$("returnSetup")?.addEventListener("click", resetDraw)')
     && marbleSource.includes('resultMode: selectedResultMode()')
