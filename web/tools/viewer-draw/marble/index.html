@@ -112,6 +112,13 @@
           </label>
         </div>
         <small id="resultModeHelp">같은 FINISH를 탈락선으로 사용하고 마지막 생존자를 당첨자로 확정합니다.</small>
+        <label class="effect-toggle">
+          <input id="winnerConfetti" type="checkbox" checked>
+          <span>
+            <strong>승자 컨페티</strong>
+            <small>승자 확정 시 좌우 하단에서 컨페티 폭죽을 발사합니다.</small>
+          </span>
+        </label>
       </section>
 
       <section class="button-stack">
@@ -165,6 +172,12 @@
           title="클릭: 카메라 고정 · 더블클릭: 자동 추적"
         ></canvas>
       </div>
+
+      <canvas
+        id="confettiCanvas"
+        class="winner-confetti-canvas"
+        aria-hidden="true"
+      ></canvas>
 
       <div class="winner-banner result-podium" id="winnerBanner" hidden>
         <span>RESULT</span>
