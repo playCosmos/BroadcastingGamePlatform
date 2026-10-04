@@ -643,3 +643,161 @@ body.draw-completed .stage-top{
     max-width:none;
   }
 }
+
+
+/* 2026-10-04 simplified draw HUD + hamburger */
+.rank-panel{display:none!important}
+
+.marble-header{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr) auto;
+  align-items:center;
+  gap:12px;
+}
+.marble-title{
+  min-width:0;
+}
+.marble-title h1{
+  margin:0;
+  font-size:23px;
+  line-height:1.08;
+}
+.marble-title .eyebrow{
+  margin:0 0 3px;
+  font-size:10px;
+  line-height:1.2;
+}
+.marble-header>strong{
+  position:static;
+  justify-self:end;
+  white-space:nowrap;
+}
+.draw-menu{
+  position:relative;
+  z-index:80;
+}
+.draw-menu-toggle{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  gap:8px;
+  min-width:82px;
+  min-height:42px;
+  padding:9px 12px;
+  border:1px solid rgba(105,151,181,.52);
+  border-radius:10px;
+  background:rgba(13,28,38,.92);
+  color:#e5f4ff;
+  font-size:14px;
+  font-weight:900;
+  cursor:pointer;
+}
+.draw-menu-toggle>span:first-child{
+  font-size:20px;
+  line-height:1;
+}
+.draw-menu-toggle:hover,
+.draw-menu-toggle:focus-visible,
+.draw-menu.open .draw-menu-toggle{
+  border-color:#7fbbe2;
+  background:#173449;
+}
+.draw-menu-panel{
+  position:absolute;
+  left:0;
+  top:calc(100% + 8px);
+  display:grid;
+  gap:5px;
+  width:210px;
+  padding:8px;
+  border:1px solid rgba(92,139,170,.52);
+  border-radius:11px;
+  background:rgba(5,13,19,.97);
+  box-shadow:0 18px 50px rgba(0,0,0,.48);
+  opacity:0;
+  visibility:hidden;
+  transform:translateY(-6px) scale(.98);
+  transform-origin:top left;
+  pointer-events:none;
+  transition:
+    opacity .13s ease,
+    transform .13s ease,
+    visibility .13s linear;
+}
+.draw-menu-panel a{
+  display:block;
+  padding:11px 12px;
+  border-radius:8px;
+  color:#cfe8f8;
+  font-size:14px;
+  font-weight:850;
+  text-decoration:none;
+}
+.draw-menu-panel a:hover,
+.draw-menu-panel a:focus-visible{
+  background:#173145;
+  color:#fff;
+  outline:none;
+}
+.draw-menu:hover .draw-menu-panel,
+.draw-menu:focus-within .draw-menu-panel,
+.draw-menu.open .draw-menu-panel{
+  opacity:1;
+  visibility:visible;
+  transform:translateY(0) scale(1);
+  pointer-events:auto;
+}
+.draw-menu::after{
+  content:"";
+  position:absolute;
+  left:0;
+  top:100%;
+  width:220px;
+  height:10px;
+}
+
+.stage-top{
+  max-width:calc(100vw - 460px);
+}
+body.draw-running .stage-top{
+  max-width:calc(100vw - 32px);
+}
+body.draw-running .minimap-canvas{
+  left:14px;
+}
+body.draw-running .marble-header,
+body.draw-running .control-panel{
+  display:none;
+}
+body.draw-completed .marble-header,
+body.draw-completed .control-panel{
+  display:none;
+}
+
+@media(max-width:1050px){
+  .stage-top{
+    left:calc(50% + 130px);
+    max-width:calc(100vw - 390px);
+  }
+  body.draw-running .stage-top{
+    left:50%;
+    max-width:calc(100vw - 24px);
+  }
+}
+@media(max-width:780px){
+  .marble-header{
+    grid-template-columns:auto minmax(0,1fr);
+  }
+  .marble-header>strong{
+    display:none;
+  }
+  .draw-menu-panel{
+    width:min(240px,calc(100vw - 28px));
+  }
+  .stage-top,
+  body.draw-running .stage-top{
+    left:12px;
+    right:12px;
+    max-width:none;
+  }
+}
