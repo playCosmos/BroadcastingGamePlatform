@@ -801,3 +801,130 @@ body.draw-completed .control-panel{
     max-width:none;
   }
 }
+
+
+/* 2026-10-04 hamburger settings drawer */
+.marble-grid>.control-panel{
+  display:none!important;
+}
+.draw-menu{
+  display:flex;
+  align-items:center;
+  gap:9px;
+}
+.draw-menu-action-slot{
+  display:flex;
+  align-items:center;
+}
+.draw-menu-start{
+  min-width:118px!important;
+  min-height:42px!important;
+  margin:0!important;
+  padding:9px 15px!important;
+  border-radius:10px!important;
+  font-size:15px!important;
+  white-space:nowrap;
+  box-shadow:0 10px 28px rgba(39,134,196,.24);
+}
+.draw-menu-panel{
+  width:min(460px,calc(100vw - 32px));
+  max-height:calc(100vh - 88px);
+  padding:10px;
+  overflow:auto;
+  overscroll-behavior:contain;
+  scrollbar-width:thin;
+}
+.draw-menu-panel>a{
+  display:inline-flex;
+  width:auto;
+  margin:0 4px 8px 0;
+}
+.draw-menu-settings-slot{
+  display:block;
+  margin-top:4px;
+  padding-top:8px;
+  border-top:1px solid rgba(91,132,161,.32);
+}
+.draw-menu-panel .control-panel{
+  position:static;
+  display:block!important;
+  width:100%;
+  max-height:none;
+  margin:0;
+  padding:4px 2px 2px;
+  overflow:visible;
+  border:0;
+  border-radius:0;
+  background:transparent;
+  box-shadow:none;
+  backdrop-filter:none;
+  -webkit-backdrop-filter:none;
+  opacity:1;
+  visibility:visible;
+  transform:none;
+}
+.draw-menu-panel .control-panel section+section{
+  margin-top:16px;
+  padding-top:16px;
+}
+.draw-menu-panel .runtime-note{
+  margin-bottom:4px;
+}
+.draw-menu-panel .button-stack{
+  gap:8px;
+}
+.draw-menu-panel #resetDraw,
+.draw-menu-panel #exportAudit,
+.draw-menu-panel #uploadAudit,
+.draw-menu-panel #refreshAuditHistory{
+  width:100%;
+}
+
+body.draw-running .marble-header,
+body.draw-completed .marble-header{
+  display:block!important;
+  width:auto!important;
+  left:14px!important;
+  top:14px!important;
+  padding:0!important;
+  border:0!important;
+  background:transparent!important;
+  box-shadow:none!important;
+  opacity:1!important;
+  visibility:visible!important;
+  pointer-events:auto!important;
+  transform:none!important;
+}
+body.draw-running .marble-header .marble-title,
+body.draw-running .marble-header>strong,
+body.draw-running .draw-menu-toggle,
+body.draw-completed .marble-header .marble-title,
+body.draw-completed .marble-header>strong{
+  display:none!important;
+}
+body.draw-running .draw-menu-panel{
+  display:none!important;
+}
+body.draw-running .draw-menu-start{
+  opacity:.72;
+}
+body.draw-completed .draw-menu-toggle{
+  display:none!important;
+}
+body.draw-completed .draw-menu-panel{
+  display:none!important;
+}
+
+@media(max-width:780px){
+  .draw-menu{
+    gap:7px;
+  }
+  .draw-menu-start{
+    min-width:106px!important;
+    padding-inline:12px!important;
+  }
+  .draw-menu-panel{
+    width:min(94vw,460px);
+    max-height:calc(100vh - 82px);
+  }
+}
