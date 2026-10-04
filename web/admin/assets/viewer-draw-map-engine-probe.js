@@ -1577,8 +1577,11 @@ requireCondition(
     && !marbleCss.includes(".draw-menu-settings-slot{")
     && !marbleCss.includes(".marble-grid>.control-panel{\n  display:none!important;")
     && marbleCss.includes(".control-panel{")
-    && marbleCss.includes(".result-return-button"),
-  "Marble Draw UI must keep fullscreen stage, standalone settings overlay, and hamburger navigation"
+    && marbleCss.includes(".result-return-button")
+    && marbleCss.includes("/* 2026-10-04 winner confetti option */")
+    && marbleCss.includes(".winner-confetti-canvas{")
+    && marbleCss.includes(".effect-toggle{"),
+  "Marble Draw UI must keep standalone settings overlay, navigation, and optional winner confetti"
 );
 requireCondition(
   viewerDrawCss.includes("/* 2026-10-03 large viewer-draw UI pass */")
@@ -1644,7 +1647,11 @@ requireCondition(
       && html.includes('id="returnSetup"')
       && html.includes('id="drawMenuToggle"')
       && html.includes('id="drawMenuPanel"')
+      && html.includes('id="winnerConfetti"')
+      && html.includes('id="confettiCanvas"')
       && html.includes("viewer-draw-bundled-maps.js")
+      && !html.includes('id="drawMenuSettingsSlot"')
+      && !html.includes('id="drawMenuActionSlot"')
       && !html.includes('START STYLE')
       && !html.includes('id="launchModeLabel"')
       && !html.includes('class="rank-panel"')
@@ -1671,6 +1678,11 @@ requireCondition(
     && !marbleSource.includes("function mountDrawMenuControls(")
     && !marbleSource.includes('settingsSlot.appendChild(controls)')
     && marbleSource.includes("function setDrawMenuOpen(")
+    && !marbleSource.includes("function mountDrawMenuControls(")
+    && marbleSource.includes("function launchWinnerConfetti(")
+    && marbleSource.includes("function stopWinnerConfetti(")
+    && marbleSource.includes("winnerConfettiForRun = confettiOptionEnabled()")
+    && marbleSource.includes("if (winners.length) {\n      launchWinnerConfetti();")
     && marbleSource.includes('$("drawMenuToggle")?.addEventListener("click"')
     && marbleSource.includes('$("returnSetup")?.addEventListener("click", resetDraw)')
     && marbleSource.includes('resultMode: selectedResultMode()')
