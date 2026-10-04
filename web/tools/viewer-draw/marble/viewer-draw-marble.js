@@ -1957,27 +1957,6 @@
     };
   }
 
-  function mountDrawMenuControls() {
-    const panel = $("drawMenuPanel");
-    const settingsSlot = $("drawMenuSettingsSlot");
-    const actionSlot = $("drawMenuActionSlot");
-    const controls = document.querySelector(".marble-grid > .control-panel");
-    const startButton = $("startDraw");
-    if (!panel || !settingsSlot || !actionSlot || !controls || !startButton) {
-      return;
-    }
-
-    const startSection = startButton.closest("section");
-    actionSlot.appendChild(startButton);
-    startButton.classList.add("draw-menu-start");
-
-    if (startSection && startSection.childElementCount === 0) {
-      startSection.remove();
-    }
-    settingsSlot.appendChild(controls);
-    controls.classList.add("draw-menu-control-panel");
-  }
-
   function setDrawMenuOpen(open) {
     const menu = $("drawMenu");
     const toggle = $("drawMenuToggle");
@@ -2151,7 +2130,6 @@
   new ResizeObserver(render).observe(wrap);
 
   async function boot() {
-    mountDrawMenuControls();
     setDrawFocusMode(false);
     updateMuteButton();
     updateEntryCount();
