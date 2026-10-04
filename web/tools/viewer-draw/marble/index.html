@@ -11,14 +11,27 @@
 <body>
 <main class="marble-shell">
   <header class="marble-header">
-    <div>
-      <p class="eyebrow">VIEWER DRAW / MARBLE MACHINE / BROWSER ONLY</p>
-      <h1>시청자 뽑기</h1>
-      <p>참가자를 Marble로 생성하고 맵·물리·도착 판정·당첨자 결정까지 현재 브라우저에서 처리합니다.</p>
-      <div class="hero-actions">
-        <a class="secondary" href="/">← 플랫폼 홈</a>
-        <a class="secondary" href="/tools/viewer-draw/number.html">숫자 뽑기 →</a>
+    <nav class="draw-menu" id="drawMenu">
+      <button
+        id="drawMenuToggle"
+        class="draw-menu-toggle"
+        type="button"
+        aria-haspopup="true"
+        aria-expanded="false"
+        aria-controls="drawMenuPanel"
+      >
+        <span aria-hidden="true">☰</span>
+        <span>메뉴</span>
+      </button>
+      <div id="drawMenuPanel" class="draw-menu-panel" role="menu">
+        <a href="/" role="menuitem">플랫폼 홈</a>
+        <a href="/tools/viewer-draw/number.html" role="menuitem">숫자 뽑기</a>
+        <a href="/admin/tools/viewer-draw/map-maker/" role="menuitem">맵 메이커</a>
       </div>
+    </nav>
+    <div class="marble-title">
+      <p class="eyebrow">VIEWER DRAW / MARBLE MACHINE</p>
+      <h1>시청자 뽑기</h1>
     </div>
     <strong id="engineBadge">BROWSER_PHYSICS_V0</strong>
   </header>
@@ -73,24 +86,12 @@
       </section>
 
       <section>
-        <p class="panel-title">START STYLE · MAP CONTROLLED</p>
-        <div class="launch-summary">
-          <strong id="launchModeLabel">맵 설정 확인 중</strong>
-          <span id="launchModeHelp">스포너 타입이 출발 방식을 결정합니다.</span>
-          <div class="launch-summary-meta">
-            <span>분출 간격</span>
-            <b id="launchIntervalLabel">-</b>
-          </div>
-        </div>
-      </section>
-
-      <section>
         <p class="panel-title">RESULT MODE</p>
         <label class="map-picker">
           <span>결승선 판정</span>
           <select id="resultMode">
             <option value="RANK_RANGE">도착 순위 범위</option>
-            <option value="LAST_SURVIVOR">최후 생존</option>
+            <option value="LAST_SURVIVOR" selected>최후 생존</option>
             <option value="MAP">맵 전용 판정</option>
           </select>
         </label>
@@ -110,7 +111,7 @@
             <input id="winnerCount" type="number" min="1" value="1">
           </label>
         </div>
-        <small id="resultModeHelp">FINISH를 통과한 순위 중 선택한 범위를 당첨자로 확정합니다.</small>
+        <small id="resultModeHelp">같은 FINISH를 탈락선으로 사용하고 마지막 생존자를 당첨자로 확정합니다.</small>
       </section>
 
       <section class="button-stack">
@@ -173,11 +174,6 @@
       </div>
     </section>
 
-    <aside class="rank-panel">
-      <p class="panel-title">RANK</p>
-      <p class="rank-help">완주자는 확정 순위, 진행 중 구슬은 중력 진행축 기준 임시 순위입니다.</p>
-      <div id="rankList" class="rank-list"></div>
-    </aside>
   </section>
 </main>
 
