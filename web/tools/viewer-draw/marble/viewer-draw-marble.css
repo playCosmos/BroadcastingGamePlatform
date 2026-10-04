@@ -739,8 +739,9 @@ body.draw-completed .stage-top{
   color:#fff;
   outline:none;
 }
-.draw-menu:hover .draw-menu-panel,
-.draw-menu:focus-within .draw-menu-panel,
+.draw-menu-toggle:hover ~ .draw-menu-panel,
+.draw-menu-toggle:focus-visible ~ .draw-menu-panel,
+.draw-menu-panel:hover,
 .draw-menu.open .draw-menu-panel{
   opacity:1;
   visibility:visible;
