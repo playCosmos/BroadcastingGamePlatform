@@ -802,3 +802,47 @@ body.draw-completed .control-panel{
     max-width:none;
   }
 }
+
+
+/* 2026-10-04 winner confetti option */
+.effect-toggle{
+  display:grid;
+  grid-template-columns:auto minmax(0,1fr);
+  gap:10px;
+  align-items:start;
+  margin-top:12px;
+  padding:11px 12px;
+  border:1px solid #2e4351;
+  border-radius:10px;
+  background:#0b1720;
+  cursor:pointer;
+}
+.effect-toggle input{
+  width:18px;
+  height:18px;
+  min-height:0;
+  margin:2px 0 0;
+  accent-color:#69b6e8;
+}
+.effect-toggle>span{
+  display:grid;
+  gap:3px;
+}
+.effect-toggle strong{
+  font-size:14px;
+  color:#dff2ff;
+}
+.effect-toggle small{
+  margin:0;
+  font-size:13px;
+  line-height:1.45;
+  color:#8197a7;
+}
+.winner-confetti-canvas{
+  position:fixed;
+  inset:0;
+  z-index:58;
+  width:100vw;
+  height:100vh;
+  pointer-events:none;
+}
