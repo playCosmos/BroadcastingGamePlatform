@@ -1011,45 +1011,22 @@
             ? "#" + marble.rank + " "
             : "";
       const text = prefix + name;
-      const labelY = p.y - radius - fontSize * 0.72;
 
       target.font =
         `900 ${fontSize}px Inter,Pretendard,system-ui,sans-serif`;
       target.textAlign = "center";
       target.textBaseline = "middle";
-      const metrics = target.measureText(text);
-      const boxWidth = metrics.width + Math.max(12, fontSize * 0.5);
-      const boxHeight = fontSize + Math.max(8, fontSize * 0.28);
-
-      target.fillStyle = "rgba(5,10,14,.82)";
-      target.strokeStyle = "rgba(218,236,248,.52)";
-      target.lineWidth = 1;
-      target.beginPath();
-      target.roundRect?.(
-        p.x - boxWidth / 2,
-        labelY - boxHeight / 2,
-        boxWidth,
-        boxHeight,
-        Math.max(4, fontSize * 0.22)
-      );
-      if (typeof target.roundRect === "function") {
-        target.fill();
-        target.stroke();
-      } else {
-        target.fillRect(
-          p.x - boxWidth / 2,
-          labelY - boxHeight / 2,
-          boxWidth,
-          boxHeight
-        );
-      }
-
+      target.lineJoin = "round";
+      target.miterLimit = 2;
+      target.strokeStyle = "rgba(3,8,12,.92)";
+      target.lineWidth = Math.max(1.2, fontSize * 0.08);
+      target.strokeText(text, p.x, p.y);
       target.fillStyle = marble.eliminated
-        ? "#b9c0c5"
+        ? "#c7cdd2"
         : marble.finished
-          ? "#d9ffe3"
-          : "#f4fbff";
-      target.fillText(text, p.x, labelY);
+          ? "#e2ffe9"
+          : "#f7fcff";
+      target.fillText(text, p.x, p.y);
     }
     target.restore();
   }
@@ -1838,6 +1815,7 @@
   }
 
   async function startDraw() {
+    setDrawMenuOpen(false);
     if (!adapter) {
       alert("물리 엔진 초기화가 아직 완료되지 않았습니다.");
       return;
@@ -1977,6 +1955,27 @@
         definition.world.height
       )
     };
+  }
+
+  function mountDrawMenuControls() {
+    const panel = $("drawMenuPanel");
+    const settingsSlot = $("drawMenuSettingsSlot");
+    const actionSlot = $("drawMenuActionSlot");
+    const controls = document.querySelector(".marble-grid > .control-panel");
+    const startButton = $("startDraw");
+    if (!panel || !settingsSlot || !actionSlot || !controls || !startButton) {
+      return;
+    }
+
+    const startSection = startButton.closest("section");
+    actionSlot.appendChild(startButton);
+    startButton.classList.add("draw-menu-start");
+
+    if (startSection && startSection.childElementCount === 0) {
+      startSection.remove();
+    }
+    settingsSlot.appendChild(controls);
+    controls.classList.add("draw-menu-control-panel");
   }
 
   function setDrawMenuOpen(open) {
@@ -2152,6 +2151,7 @@
   new ResizeObserver(render).observe(wrap);
 
   async function boot() {
+    mountDrawMenuControls();
     setDrawFocusMode(false);
     updateMuteButton();
     updateEntryCount();
