@@ -615,7 +615,7 @@
   function selectedResultMode() {
     if (!hasFinishSensor()) return "MAP";
     const selected = String(
-      $("resultMode")?.value || "RANK_RANGE"
+      $("resultMode")?.value || "LAST_SURVIVOR"
     ).toUpperCase();
     return ["RANK_RANGE","LAST_SURVIVOR"].includes(selected)
       ? selected
@@ -655,7 +655,7 @@
       if (!finishAvailable) {
         modeSelect.value = "MAP";
       } else if (modeSelect.value === "MAP") {
-        modeSelect.value = "RANK_RANGE";
+        modeSelect.value = "LAST_SURVIVOR";
       }
     }
     const mode = selectedResultMode();
@@ -689,7 +689,7 @@
     adapter.loadMap(definition);
     const rule = Engine.resolvedDrawRule(definition);
     if (hasFinishSensor()) {
-      $("resultMode").value = "RANK_RANGE";
+      $("resultMode").value = "LAST_SURVIVOR";
       $("rankStart").value = "1";
       $("rankEnd").value = "1";
       $("winnerCount").value = "1";
@@ -997,19 +997,59 @@
     target.stroke();
 
     if (!simplified && label) {
-      target.fillStyle = "#13222c";
+      const fontSize = Math.max(21, radius * 2.16);
+      const name = String(
+        marble.entry?.displayName
+        || marble.displayName
+        || marble.id
+      );
+      const prefix = marble.eliminated
+        ? "× "
+        : marble.dnf
+          ? "DNF "
+          : marble.finished
+            ? "#" + marble.rank + " "
+            : "";
+      const text = prefix + name;
+      const labelY = p.y - radius - fontSize * 0.72;
+
       target.font =
-        `800 ${Math.max(7, radius * 0.72)}px ui-monospace,monospace`;
+        `900 ${fontSize}px Inter,Pretendard,system-ui,sans-serif`;
       target.textAlign = "center";
       target.textBaseline = "middle";
-      const text = marble.eliminated
-        ? "×"
-        : marble.dnf
-          ? "D"
-          : marble.finished
-            ? String(marble.rank)
-            : marble.entry?.displayName?.slice(0, 2) || marble.id;
-      target.fillText(text, p.x, p.y);
+      const metrics = target.measureText(text);
+      const boxWidth = metrics.width + Math.max(12, fontSize * 0.5);
+      const boxHeight = fontSize + Math.max(8, fontSize * 0.28);
+
+      target.fillStyle = "rgba(5,10,14,.82)";
+      target.strokeStyle = "rgba(218,236,248,.52)";
+      target.lineWidth = 1;
+      target.beginPath();
+      target.roundRect?.(
+        p.x - boxWidth / 2,
+        labelY - boxHeight / 2,
+        boxWidth,
+        boxHeight,
+        Math.max(4, fontSize * 0.22)
+      );
+      if (typeof target.roundRect === "function") {
+        target.fill();
+        target.stroke();
+      } else {
+        target.fillRect(
+          p.x - boxWidth / 2,
+          labelY - boxHeight / 2,
+          boxWidth,
+          boxHeight
+        );
+      }
+
+      target.fillStyle = marble.eliminated
+        ? "#b9c0c5"
+        : marble.finished
+          ? "#d9ffe3"
+          : "#f4fbff";
+      target.fillText(text, p.x, labelY);
     }
     target.restore();
   }
@@ -1056,9 +1096,8 @@
     });
 
     if (state) {
-      const showLabels = state.marbles.length <= 120;
       for (const marble of state.marbles) {
-        drawMarble(ctx, marble, view, { label: showLabels });
+        drawMarble(ctx, marble, view, { label: true });
       }
     }
 
@@ -1277,6 +1316,7 @@
 
   function renderRanks() {
     const root = $("rankList");
+    if (!root) return;
     root.replaceChildren();
 
     if (
@@ -1544,36 +1584,51 @@
     updatePlaybackRate();
   }
 
-  function updateCamera(deltaSeconds) {
-    if (!camera.locked && state?.marbles?.length) {
-      const active = state.marbles
-        .filter(
-          (marble) =>
-            !marble.finished
-            && !marble.eliminated
-            && !marble.dnf
-            && marble.launched !== false
-        )
-        .sort(
-          compareGoalDistance
-        );
-      const target = active[0]
-        || state.marbles.find((marble) => marble.rank === 1)
-        || state.marbles[0];
+  function autoCameraTarget() {
+    if (!state?.marbles?.length) return null;
+    const active = state.marbles
+      .filter(
+        (marble) =>
+          !marble.finished
+          && !marble.eliminated
+          && !marble.dnf
+          && marble.launched !== false
+      )
+      .sort(compareGoalDistance);
+    return active[0]
+      || state.marbles.find((marble) => marble.rank === 1)
+      || state.marbles[0]
+      || null;
+  }
 
-      if (target) {
-        camera.targetX = target.x;
-        camera.targetY = target.y;
-        const finishDistance = nearestFinishDistance(target);
-        const nearGoalThreshold =
-          Math.max(
-            definition.world.width,
-            definition.world.height
-          ) * 0.24;
-        camera.targetZoom = running
-          ? (finishDistance < nearGoalThreshold ? 2.15 : 1.35)
-          : (completed ? 1.65 : 1);
-      }
+  function syncAutoCameraTarget(immediate = false) {
+    if (camera.locked) return false;
+    const target = autoCameraTarget();
+    if (!target) return false;
+
+    camera.targetX = target.x;
+    camera.targetY = target.y;
+    const finishDistance = nearestFinishDistance(target);
+    const nearGoalThreshold =
+      Math.max(
+        definition.world.width,
+        definition.world.height
+      ) * 0.24;
+    camera.targetZoom = running
+      ? (finishDistance < nearGoalThreshold ? 2.15 : 1.35)
+      : (completed ? 1.65 : 1);
+
+    if (immediate) {
+      camera.x = camera.targetX;
+      camera.y = camera.targetY;
+      camera.zoom = camera.targetZoom;
+    }
+    return true;
+  }
+
+  function updateCamera(deltaSeconds) {
+    if (!camera.locked) {
+      syncAutoCameraTarget(false);
     }
 
     const positionFactor =
@@ -1835,7 +1890,7 @@
 
     setRunControlsLocked(true);
     resetCamera(true);
-    camera.targetZoom = 1.35;
+    syncAutoCameraTarget(true);
 
     $("launchStatus").textContent =
       "LAUNCH " + (state.launchedCount || 0)
@@ -1923,6 +1978,29 @@
       )
     };
   }
+
+  function setDrawMenuOpen(open) {
+    const menu = $("drawMenu");
+    const toggle = $("drawMenuToggle");
+    if (!menu || !toggle) return;
+    const active = Boolean(open);
+    menu.classList.toggle("open", active);
+    toggle.setAttribute("aria-expanded", String(active));
+  }
+
+  $("drawMenuToggle")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+    setDrawMenuOpen(!$("drawMenu")?.classList.contains("open"));
+  });
+  $("drawMenu")?.addEventListener("click", (event) => {
+    event.stopPropagation();
+  });
+  document.addEventListener("click", () => {
+    setDrawMenuOpen(false);
+  });
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") setDrawMenuOpen(false);
+  });
 
   $("importEntrySet")?.addEventListener("click", () => {
     if (!running) $("entrySetFile")?.click();
@@ -2029,7 +2107,9 @@
   $("returnSetup")?.addEventListener("click", resetDraw);
   $("cameraAuto").addEventListener("click", () => {
     camera.locked = false;
+    syncAutoCameraTarget(true);
     updateCameraLabel();
+    render();
   });
 
   $("fastForward").addEventListener("pointerdown", (event) => {
@@ -2064,7 +2144,9 @@
   });
   minimapCanvas.addEventListener("dblclick", () => {
     camera.locked = false;
+    syncAutoCameraTarget(true);
     updateCameraLabel();
+    render();
   });
 
   new ResizeObserver(render).observe(wrap);
