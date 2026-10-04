@@ -1528,6 +1528,15 @@ for (const source of [makerSource, localMakerSource]) {
 }
 for (const source of [makerSource, localMakerSource]) {
   requireCondition(
+    source.includes("Math.max(21, r * 2.4)")
+      && source.includes("marble.entry?.displayName")
+      && source.includes("ctx.measureText(label)"),
+    "Map Maker preview marble labels must stay at 3x size and show full labels"
+  );
+}
+
+for (const source of [makerSource, localMakerSource]) {
+  requireCondition(
     source.includes('mode: "marquee"')
       && source.includes("selectedIds = new Set()")
       && source.includes("drawMarqueeSelection")
@@ -1552,14 +1561,16 @@ for (const source of [makerSource, localMakerSource]) {
 requireCondition(
   marbleCss.includes("/* 2026-10-03 large draw UI pass */")
     && marbleCss.includes("/* 2026-10-04 fullscreen overlay draw layout */")
-    && marbleCss.includes(".marble-header h1{font-size:46px")
+    && marbleCss.includes("/* 2026-10-04 simplified draw HUD + hamburger */")
     && marbleCss.includes(".stage-panel{")
     && marbleCss.includes("position:fixed;")
-    && marbleCss.includes("body.draw-running .marble-header")
+    && marbleCss.includes(".rank-panel{display:none!important}")
+    && marbleCss.includes(".draw-menu-panel{")
+    && marbleCss.includes(".draw-menu:hover .draw-menu-panel")
+    && marbleCss.includes(".draw-menu.open .draw-menu-panel")
     && marbleCss.includes("body.draw-running .control-panel")
-    && marbleCss.includes("body.draw-running .rank-panel")
     && marbleCss.includes(".result-return-button"),
-  "Marble Draw UI must keep the enlarged fullscreen overlay layout"
+  "Marble Draw UI must keep fullscreen stage, no rank panel, and hamburger navigation"
 );
 requireCondition(
   viewerDrawCss.includes("/* 2026-10-03 large viewer-draw UI pass */")
@@ -1618,15 +1629,20 @@ requireCondition(
       && html.includes('value="JUMP"')
       && html.includes('value="AUDIO"')
       && html.includes('value="ORIGINAL"')
-      && html.includes('id="launchModeLabel"')
       && html.includes('id="resultMode"')
+      && html.includes('value="LAST_SURVIVOR" selected')
       && html.includes('id="rankStart"')
       && html.includes('id="rankEnd"')
       && html.includes('id="returnSetup"')
+      && html.includes('id="drawMenuToggle"')
+      && html.includes('id="drawMenuPanel"')
       && html.includes("viewer-draw-bundled-maps.js")
+      && !html.includes('START STYLE')
+      && !html.includes('id="launchModeLabel"')
+      && !html.includes('class="rank-panel"')
       && !html.includes('name="launchMode"')
   ),
-  "Marble Draw must expose bundled maps and map-controlled start style"
+  "Marble Draw must hide start style/rank panel and default to last survivor with hamburger navigation"
 );
 requireCondition(
   marbleSource.includes("function mapSpawner()")
@@ -1636,15 +1652,24 @@ requireCondition(
     && marbleSource.includes("function distanceToTarget(")
     && marbleSource.includes("function compareGoalDistance(")
     && marbleSource.includes("function selectedResultMode(")
+    && marbleSource.includes('$("resultMode")?.value || "LAST_SURVIVOR"')
+    && marbleSource.includes('$("resultMode").value = "LAST_SURVIVOR"')
     && marbleSource.includes("function rankRangeValue(")
     && marbleSource.includes("function setDrawFocusMode(")
+    && marbleSource.includes("function autoCameraTarget(")
+    && marbleSource.includes("function syncAutoCameraTarget(")
+    && marbleSource.includes("syncAutoCameraTarget(true)")
     && marbleSource.includes('classList.toggle("draw-running"')
+    && marbleSource.includes("function setDrawMenuOpen(")
+    && marbleSource.includes('$("drawMenuToggle")?.addEventListener("click"')
     && marbleSource.includes('$("returnSetup")?.addEventListener("click", resetDraw)')
     && marbleSource.includes('resultMode: selectedResultMode()')
+    && marbleSource.includes("Math.max(21, radius * 2.16)")
+    && !marbleSource.includes("displayName?.slice(0, 2)")
     && (marbleSource.match(
       /\.sort\(\s*compareGoalDistance\s*\)/g
     ) || []).length >= 3,
-  "Marble Draw runtime must derive start style and accept bundled map handoff"
+  "Marble Draw runtime must default survivor mode, restore CAM AUTO, hamburger menu, and 3x full-name labels"
 );
 
 requireCondition(
