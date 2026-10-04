@@ -1482,6 +1482,13 @@ const marbleSource = fs.readFileSync(
   ),
   "utf8"
 );
+const browserPhysicsSource = fs.readFileSync(
+  path.join(
+    __dirname,
+    "../../tools/viewer-draw/marble/browser-physics-adapter.js"
+  ),
+  "utf8"
+);
 const marbleHtml = fs.readFileSync(
   path.join(
     __dirname,
@@ -1659,6 +1666,27 @@ requireCondition(
   ),
   "Marble Draw must hide start style/rank panel and default to last survivor with hamburger navigation"
 );
+requireCondition(
+  browserPhysicsSource.includes("this.staticColliderBodies = new Set()")
+    && browserPhysicsSource.includes("this.drivenRotationBodies = new Set()")
+    && browserPhysicsSource.includes(
+      "isDrivenRotationVsStaticCollision(fixtureA, fixtureB)"
+    )
+    && browserPhysicsSource.includes(
+      "this.staticColliderBodies.add(B.getPointer(body))"
+    )
+    && browserPhysicsSource.includes(
+      'if (mode !== "FREE")'
+    )
+    && browserPhysicsSource.includes(
+      "this.drivenRotationBodies.add(B.getPointer(body))"
+    )
+    && browserPhysicsSource.includes(
+      "contact.SetEnabled(false);"
+    ),
+  "Driven torque rotators must ignore static-map collision blocking while FREE hinges remain reactive"
+);
+
 requireCondition(
   marbleSource.includes("function mapSpawner()")
     && marbleSource.includes("function launchConfig()")

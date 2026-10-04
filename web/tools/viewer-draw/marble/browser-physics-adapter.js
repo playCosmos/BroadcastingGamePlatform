@@ -190,6 +190,8 @@
       this.oneWayFixtureMeta = new Map();
       this.marbleBodyMeta = new Map();
       this.oneWayBlockingContacts = new Map();
+      this.staticColliderBodies = new Set();
+      this.drivenRotationBodies = new Set();
       this.contactListener = null;
       this.soundEvents = [];
       this.soundSequence = 0;
@@ -265,6 +267,8 @@
       this.oneWayFixtureMeta = new Map();
       this.marbleBodyMeta = new Map();
       this.oneWayBlockingContacts = new Map();
+      this.staticColliderBodies = new Set();
+      this.drivenRotationBodies = new Set();
       this.contactListener = null;
       this.soundEvents = [];
       this.accumulator = 0;
@@ -357,6 +361,15 @@
 
         const fixtureA = contact.GetFixtureA();
         const fixtureB = contact.GetFixtureB();
+        if (
+          this.isDrivenRotationVsStaticCollision(
+            fixtureA,
+            fixtureB
+          )
+        ) {
+          contact.SetEnabled(false);
+          return;
+        }
         const metaA = this.oneWayFixtureMeta.get(
           B.getPointer(fixtureA)
         );
@@ -458,6 +471,22 @@
       this.world.SetContactListener(listener);
     }
 
+    isDrivenRotationVsStaticCollision(fixtureA, fixtureB) {
+      if (!fixtureA || !fixtureB) return false;
+      const B = this.Box2D;
+      const bodyA = fixtureA.GetBody();
+      const bodyB = fixtureB.GetBody();
+      const pointerA = B.getPointer(bodyA);
+      const pointerB = B.getPointer(bodyB);
+      return (
+        this.drivenRotationBodies.has(pointerA)
+        && this.staticColliderBodies.has(pointerB)
+      ) || (
+        this.drivenRotationBodies.has(pointerB)
+        && this.staticColliderBodies.has(pointerA)
+      );
+    }
+
     registerOneWayFixture(
       fixture,
       component,
@@ -554,6 +583,7 @@
       );
 
       const body = this.world.CreateBody(bodyDef);
+      this.staticColliderBodies.add(B.getPointer(body));
       body.SetTransform(
         body.GetPosition(),
         (component.rotation || 0) * Math.PI / 180
@@ -764,6 +794,9 @@
         body.GetPosition(),
         (component.rotation || 0) * Math.PI / 180
       );
+      if (mode !== "FREE") {
+        this.drivenRotationBodies.add(B.getPointer(body));
+      }
       this.createRotationFixtures(body, component);
 
       const jointDef = new B.b2RevoluteJointDef();
@@ -1150,6 +1183,7 @@
       );
 
       const body = this.world.CreateBody(bodyDef);
+      this.staticColliderBodies.add(B.getPointer(body));
       const shape = new B.b2CircleShape();
       shape.set_m_radius(
         Math.max(0.01, component.radius / PIXELS_PER_METER)
