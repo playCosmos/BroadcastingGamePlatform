@@ -1231,15 +1231,48 @@
       ctx.arc(p.x, p.y, r, 0, Math.PI * 2);
       ctx.fill();
       ctx.stroke();
-      ctx.fillStyle = "#17242d";
-      ctx.font = `800 ${Math.max(7, r * .8)}px ui-monospace,monospace`;
+      const fontSize = Math.max(21, r * 2.4);
+      const baseName = String(
+        marble.entry?.displayName
+        || marble.displayName
+        || marble.id
+      );
+      const label = marble.finished
+        ? "#" + marble.rank + " " + baseName
+        : baseName;
+      const labelY = p.y - r - fontSize * .72;
+
+      ctx.font =
+        `900 ${fontSize}px Inter,Pretendard,system-ui,sans-serif`;
       ctx.textAlign = "center";
       ctx.textBaseline = "middle";
-      ctx.fillText(
-        marble.finished ? String(marble.rank) : marble.id.slice(1),
-        p.x,
-        p.y
-      );
+      const width =
+        ctx.measureText(label).width + Math.max(12, fontSize * .5);
+      const height = fontSize + Math.max(8, fontSize * .28);
+      ctx.fillStyle = "rgba(5,10,14,.82)";
+      ctx.strokeStyle = "rgba(218,236,248,.48)";
+      ctx.lineWidth = 1;
+      if (typeof ctx.roundRect === "function") {
+        ctx.beginPath();
+        ctx.roundRect(
+          p.x - width / 2,
+          labelY - height / 2,
+          width,
+          height,
+          Math.max(4, fontSize * .22)
+        );
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        ctx.fillRect(
+          p.x - width / 2,
+          labelY - height / 2,
+          width,
+          height
+        );
+      }
+      ctx.fillStyle = marble.finished ? "#d7ffe1" : "#f4fbff";
+      ctx.fillText(label, p.x, labelY);
       ctx.restore();
     }
   }
