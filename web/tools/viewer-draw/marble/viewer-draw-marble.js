@@ -2026,6 +2026,7 @@
 
   $("startDraw").addEventListener("click", startDraw);
   $("resetDraw").addEventListener("click", resetDraw);
+  $("returnSetup")?.addEventListener("click", resetDraw);
   $("cameraAuto").addEventListener("click", () => {
     camera.locked = false;
     updateCameraLabel();
