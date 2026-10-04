@@ -422,7 +422,10 @@
     targetY: definition.world.height / 2,
     zoom: 1,
     targetZoom: 1,
-    locked: false
+    locked: false,
+    winnerFocusId: null,
+    winnerFocusUntil: 0,
+    lastRankedCount: 0
   };
 
   function clamp(value, min, max) {
@@ -782,6 +785,9 @@
     camera.targetY = y;
     camera.targetZoom = 1;
     camera.locked = false;
+    camera.winnerFocusId = null;
+    camera.winnerFocusUntil = 0;
+    camera.lastRankedCount = state?.rankedEntries?.length || 0;
     if (force) {
       camera.x = x;
       camera.y = y;
@@ -1752,21 +1758,264 @@
     updatePlaybackRate();
   }
 
-  function autoCameraTarget() {
+  function cameraTrackingProfile() {
+    const resultMode = selectedResultMode();
+    const ruleType = effectiveRuleType();
+
+    if (
+      resultMode === "LAST_SURVIVOR"
+      || ruleType === "LAST_SURVIVOR"
+    ) {
+      return {
+        strategy: "SURVIVOR",
+        coverage: 0.94,
+        padding: 1.5,
+        maxZoom: 2.05
+      };
+    }
+
+    if (
+      resultMode === "RANK_RANGE"
+      || ruleType === "RACE_FINISH"
+    ) {
+      return {
+        strategy: "RACE",
+        coverage: 0.9,
+        padding: 1.38,
+        maxZoom: 2.45
+      };
+    }
+
+    if (
+      [
+        "ORDERED_OUTPUT",
+        "SLOT_COLLECTION",
+        "CASCADE_SELECTION",
+        "RANDOM_OUTPUT_BUCKET",
+        "CONDITIONAL_OUTPUT"
+      ].includes(ruleType)
+    ) {
+      return {
+        strategy: "OUTPUT",
+        coverage: 0.96,
+        padding: 1.5,
+        maxZoom: 2.15
+      };
+    }
+
+    return {
+      strategy: "FIELD",
+      coverage: 0.94,
+      padding: 1.45,
+      maxZoom: 2.2
+    };
+  }
+
+  function activeCameraMarbles() {
+    if (!state?.marbles?.length) return [];
+    return state.marbles.filter(
+      (marble) =>
+        !marble.finished
+        && !marble.eliminated
+        && !marble.dnf
+        && marble.launched !== false
+    );
+  }
+
+  function medianValue(values) {
+    if (!values.length) return 0;
+    const sorted = values.slice().sort((left, right) => left - right);
+    const middle = Math.floor(sorted.length / 2);
+    return sorted.length % 2
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2;
+  }
+
+  function dominantCameraGroup(marbles, coverage) {
+    if (marbles.length <= 6) return marbles.slice();
+
+    const medianX = medianValue(marbles.map((marble) => marble.x));
+    const medianY = medianValue(marbles.map((marble) => marble.y));
+    const width = Math.max(1, definition.world.width);
+    const height = Math.max(1, definition.world.height);
+    const keepCount = Math.max(
+      6,
+      Math.min(
+        marbles.length,
+        Math.ceil(marbles.length * coverage)
+      )
+    );
+
+    return marbles
+      .map((marble) => ({
+        marble,
+        distance: Math.hypot(
+          (marble.x - medianX) / width,
+          (marble.y - medianY) / height
+        )
+      }))
+      .sort((left, right) => left.distance - right.distance)
+      .slice(0, keepCount)
+      .map((item) => item.marble);
+  }
+
+  function cameraFrameForMarbles(marbles, profile) {
+    if (!marbles.length) return null;
+
+    const group = dominantCameraGroup(
+      marbles,
+      profile.coverage
+    );
+    const radii = group.map(
+      (marble) => Math.max(0, Number(marble.radius) || 0)
+    );
+    const radius = Math.max(10, ...radii);
+    const xs = group.map((marble) => marble.x);
+    const ys = group.map((marble) => marble.y);
+    const minX = Math.min(...xs);
+    const maxX = Math.max(...xs);
+    const minY = Math.min(...ys);
+    const maxY = Math.max(...ys);
+
+    const minimumSpanX = Math.max(
+      radius * 10,
+      definition.world.width * 0.1
+    );
+    const minimumSpanY = Math.max(
+      radius * 10,
+      definition.world.height * 0.075
+    );
+    const spanX = Math.max(
+      minimumSpanX,
+      maxX - minX + radius * 5
+    );
+    const spanY = Math.max(
+      minimumSpanY,
+      maxY - minY + radius * 5
+    );
+
+    const rect = canvas.getBoundingClientRect();
+    const baseScale = Math.max(
+      0.0001,
+      Math.min(
+        rect.width / definition.world.width,
+        rect.height / definition.world.height
+      )
+    );
+    const desiredScale = Math.min(
+      rect.width / Math.max(1, spanX * profile.padding),
+      rect.height / Math.max(1, spanY * profile.padding)
+    );
+    let zoom = clamp(
+      desiredScale / baseScale,
+      1,
+      profile.maxZoom
+    );
+
+    if (
+      running
+      && entries.length >= 20
+      && group.length < Math.min(6, entries.length * 0.12)
+    ) {
+      zoom = Math.min(zoom, 1.45);
+    }
+
+    return {
+      x: (minX + maxX) / 2,
+      y: (minY + maxY) / 2,
+      zoom
+    };
+  }
+
+  function cameraInterestMarbles(profile) {
+    const active = activeCameraMarbles();
+    if (!active.length) return [];
+
+    if (profile.strategy !== "RACE") {
+      return active;
+    }
+
+    const byGoal = active.slice().sort(compareGoalDistance);
+    if (active.length > 18) {
+      return active;
+    }
+
+    const leaderCount = Math.max(
+      3,
+      Math.ceil(active.length * 0.72)
+    );
+    return byGoal.slice(0, leaderCount);
+  }
+
+  function newestWinningMarble() {
     if (!state?.marbles?.length) return null;
-    const active = state.marbles
+    return state.marbles
       .filter(
         (marble) =>
-          !marble.finished
-          && !marble.eliminated
-          && !marble.dnf
-          && marble.launched !== false
+          Number.isFinite(Number(marble.rank))
+          && isWinningRank(Number(marble.rank))
       )
-      .sort(compareGoalDistance);
-    return active[0]
+      .sort((left, right) => right.rank - left.rank)[0]
+      || null;
+  }
+
+  function updateWinnerCameraFocus(now = performance.now()) {
+    const rankedCount = state?.rankedEntries?.length || 0;
+    if (rankedCount <= camera.lastRankedCount) {
+      return false;
+    }
+
+    camera.lastRankedCount = rankedCount;
+    const winner = newestWinningMarble();
+    if (!winner) return false;
+
+    camera.winnerFocusId = winner.id;
+    camera.winnerFocusUntil = now + 1500;
+    return true;
+  }
+
+  function winnerCameraTarget(now = performance.now()) {
+    if (!camera.winnerFocusId || !state?.marbles?.length) {
+      return null;
+    }
+    if (!completed && now >= camera.winnerFocusUntil) {
+      camera.winnerFocusId = null;
+      camera.winnerFocusUntil = 0;
+      return null;
+    }
+    return state.marbles.find(
+      (marble) => marble.id === camera.winnerFocusId
+    ) || null;
+  }
+
+  function autoCameraTarget() {
+    if (!state?.marbles?.length) return null;
+
+    const focusedWinner = winnerCameraTarget();
+    if (focusedWinner) {
+      return {
+        x: focusedWinner.x,
+        y: focusedWinner.y,
+        zoom: completed ? 2.15 : 2.3
+      };
+    }
+
+    const profile = cameraTrackingProfile();
+    const interest = cameraInterestMarbles(profile);
+    const frame = cameraFrameForMarbles(interest, profile);
+    if (frame) return frame;
+
+    const ranked = newestWinningMarble()
       || state.marbles.find((marble) => marble.rank === 1)
       || state.marbles[0]
       || null;
+    return ranked
+      ? {
+          x: ranked.x,
+          y: ranked.y,
+          zoom: completed ? 2.15 : 1.35
+        }
+      : null;
   }
 
   function syncAutoCameraTarget(immediate = false) {
@@ -1776,15 +2025,7 @@
 
     camera.targetX = target.x;
     camera.targetY = target.y;
-    const finishDistance = nearestFinishDistance(target);
-    const nearGoalThreshold =
-      Math.max(
-        definition.world.width,
-        definition.world.height
-      ) * 0.24;
-    camera.targetZoom = running
-      ? (finishDistance < nearGoalThreshold ? 2.15 : 1.35)
-      : (completed ? 1.65 : 1);
+    camera.targetZoom = target.zoom;
 
     if (immediate) {
       camera.x = camera.targetX;
@@ -1800,9 +2041,9 @@
     }
 
     const positionFactor =
-      1 - Math.exp(-Math.max(0, deltaSeconds) * 5);
+      1 - Math.exp(-Math.max(0, deltaSeconds) * 4.2);
     const zoomFactor =
-      1 - Math.exp(-Math.max(0, deltaSeconds) * 4);
+      1 - Math.exp(-Math.max(0, deltaSeconds) * 2.8);
     camera.x += (camera.targetX - camera.x) * positionFactor;
     camera.y += (camera.targetY - camera.y) * positionFactor;
     camera.zoom +=
@@ -1954,6 +2195,14 @@
     }
     $("winnerBanner").hidden = false;
     if (winners.length) {
+      const finalWinner = newestWinningMarble();
+      if (finalWinner) {
+        camera.winnerFocusId = finalWinner.id;
+        camera.winnerFocusUntil = Infinity;
+        camera.lastRankedCount = state.rankedEntries.length;
+        syncAutoCameraTarget(true);
+        render();
+      }
       launchWinnerConfetti();
     }
     cancelAnimationFrame(frameId);
@@ -1989,6 +2238,7 @@
     playAudioEvents(state.audioEvents);
     updateStuckWatchdog(simulationDelta * 1000);
     updateFinishSlowMotion();
+    updateWinnerCameraFocus(now);
     updateCamera(wallDelta);
 
     $("progress").textContent =
