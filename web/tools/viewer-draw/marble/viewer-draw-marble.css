@@ -281,3 +281,365 @@ html,body{font-size:16px}
     top:9px
   }
 }
+
+
+/* 2026-10-04 fullscreen overlay draw layout */
+html,body{
+  width:100%;
+  height:100%;
+  overflow:hidden;
+}
+body{
+  background:#05090d;
+}
+.marble-shell{
+  position:relative;
+  width:100vw;
+  height:100vh;
+  max-width:none;
+  margin:0;
+  padding:0;
+  overflow:hidden;
+}
+.marble-grid{
+  display:block;
+  width:100%;
+  height:100%;
+}
+.stage-panel{
+  position:fixed;
+  inset:0;
+  z-index:1;
+  width:100vw;
+  height:100vh;
+  border:0;
+  border-radius:0;
+  background:#05090d;
+  overflow:hidden;
+}
+.stage-wrap{
+  position:absolute;
+  inset:0;
+  width:100%;
+  height:100%;
+  min-height:0;
+  aspect-ratio:auto;
+  background:#05090d;
+}
+#stageCanvas{
+  width:100%;
+  height:100%;
+}
+.stage-top{
+  position:fixed;
+  top:18px;
+  left:50%;
+  z-index:30;
+  width:max-content;
+  max-width:calc(100vw - 880px);
+  transform:translateX(-50%);
+  padding:11px 14px;
+  border:1px solid rgba(99,137,164,.38);
+  border-radius:12px;
+  background:rgba(5,12,18,.82);
+  box-shadow:0 10px 34px rgba(0,0,0,.34);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+}
+.stage-top>div:first-child{
+  align-items:center;
+}
+.stage-tools{
+  flex-wrap:wrap;
+}
+.minimap-canvas{
+  position:fixed;
+  left:438px;
+  top:92px;
+  z-index:24;
+  width:220px;
+  height:136px!important;
+  opacity:.92;
+}
+.marble-header{
+  position:fixed;
+  top:18px;
+  left:20px;
+  z-index:40;
+  width:400px;
+  margin:0;
+  padding:13px 15px;
+  border:1px solid rgba(88,125,151,.34);
+  border-radius:14px;
+  background:rgba(7,15,21,.84);
+  box-shadow:0 16px 44px rgba(0,0,0,.32);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.marble-header h1{
+  margin:0 0 4px;
+  font-size:24px;
+}
+.marble-header p:not(.eyebrow){
+  display:none;
+}
+.marble-header .eyebrow{
+  margin:0 0 4px;
+  font-size:11px;
+}
+.marble-header .hero-actions{
+  display:flex;
+  gap:8px;
+  margin-top:9px;
+}
+.marble-header .hero-actions a{
+  padding:7px 9px;
+  font-size:12px;
+}
+.marble-header>strong{
+  position:absolute;
+  right:12px;
+  top:12px;
+  font-size:10px;
+}
+.control-panel{
+  position:fixed;
+  left:20px;
+  top:132px;
+  bottom:20px;
+  z-index:35;
+  width:400px;
+  padding:18px;
+  overflow:auto;
+  border:1px solid rgba(88,125,151,.38);
+  border-radius:16px;
+  background:rgba(7,15,21,.88);
+  box-shadow:0 18px 54px rgba(0,0,0,.38);
+  backdrop-filter:blur(18px);
+  -webkit-backdrop-filter:blur(18px);
+  scrollbar-width:thin;
+}
+.rank-panel{
+  position:fixed;
+  top:20px;
+  right:20px;
+  bottom:20px;
+  z-index:35;
+  width:350px;
+  padding:18px;
+  overflow:hidden;
+  border:1px solid rgba(88,125,151,.38);
+  border-radius:16px;
+  background:rgba(7,15,21,.84);
+  box-shadow:0 18px 54px rgba(0,0,0,.34);
+  backdrop-filter:blur(16px);
+  -webkit-backdrop-filter:blur(16px);
+}
+.rank-panel .rank-list{
+  height:calc(100% - 74px);
+  max-height:none;
+  overflow:auto;
+}
+.winner-banner{
+  position:fixed;
+  z-index:60;
+}
+.result-return-button{
+  min-width:180px;
+  min-height:44px;
+  padding:11px 18px;
+  border:1px solid #6f8aa0;
+  border-radius:10px;
+  background:#132331;
+  color:#e8f4fc;
+  font-size:15px;
+  font-weight:900;
+  cursor:pointer;
+}
+.result-return-button:hover{
+  background:#1b3245;
+}
+body.draw-running .marble-header,
+body.draw-running .control-panel{
+  opacity:0;
+  visibility:hidden;
+  pointer-events:none;
+  transform:translateX(-22px);
+}
+.marble-header,
+.control-panel{
+  transition:
+    opacity .18s ease,
+    transform .18s ease,
+    visibility .18s linear;
+}
+body.draw-running .rank-panel{
+  top:72px;
+  right:16px;
+  bottom:16px;
+  width:310px;
+  padding:14px;
+  background:rgba(5,12,18,.72);
+  border-color:rgba(91,132,161,.28);
+  box-shadow:0 10px 36px rgba(0,0,0,.26);
+}
+body.draw-running .rank-panel .rank-help{
+  display:none;
+}
+body.draw-running .rank-panel .panel-title{
+  margin-bottom:9px;
+}
+body.draw-running .rank-panel .rank-list{
+  height:calc(100% - 30px);
+}
+body.draw-running .rank-row{
+  padding:9px 10px;
+  font-size:14px;
+}
+body.draw-running .rank-row span{
+  font-size:12px;
+}
+body.draw-running .rank-row small{
+  font-size:11px;
+}
+body.draw-running .stage-top{
+  top:14px;
+  max-width:calc(100vw - 360px);
+  padding:9px 12px;
+  background:rgba(5,12,18,.7);
+  border-color:rgba(91,132,161,.28);
+}
+body.draw-running .stage-top #launchStatus,
+body.draw-running .stage-top #stuckCount{
+  display:none;
+}
+body.draw-running .minimap-canvas{
+  left:14px;
+  top:14px;
+  width:180px;
+  height:110px!important;
+  opacity:.72;
+}
+body.draw-running .result-return-button{
+  display:none;
+}
+body.draw-completed .result-return-button{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+}
+body.draw-completed .rank-panel{
+  opacity:.78;
+}
+body.draw-completed .stage-top{
+  opacity:.7;
+}
+
+@media(max-width:1450px){
+  .control-panel{
+    width:360px;
+  }
+  .marble-header{
+    width:360px;
+  }
+  .rank-panel{
+    width:310px;
+  }
+  .minimap-canvas{
+    left:392px;
+  }
+  .stage-top{
+    max-width:calc(100vw - 740px);
+  }
+}
+@media(max-width:1050px){
+  .control-panel{
+    width:330px;
+    left:12px;
+    top:118px;
+    bottom:12px;
+  }
+  .marble-header{
+    left:12px;
+    top:12px;
+    width:330px;
+  }
+  .rank-panel{
+    right:12px;
+    top:12px;
+    bottom:12px;
+    width:270px;
+  }
+  .minimap-canvas{
+    left:354px;
+    top:82px;
+    width:170px;
+    height:104px!important;
+  }
+  .stage-top{
+    left:52%;
+    max-width:calc(100vw - 650px);
+  }
+  body.draw-running .rank-panel{
+    width:260px;
+  }
+}
+@media(max-width:780px){
+  html,body{
+    overflow:auto;
+  }
+  .marble-shell{
+    min-height:100vh;
+    height:auto;
+    overflow:visible;
+  }
+  .stage-panel{
+    position:relative;
+    width:100%;
+    height:100vh;
+  }
+  .stage-wrap{
+    position:absolute;
+  }
+  .marble-header,
+  .control-panel,
+  .rank-panel{
+    position:fixed;
+  }
+  .marble-header{
+    width:calc(100vw - 24px);
+    right:12px;
+  }
+  .control-panel{
+    width:calc(100vw - 24px);
+    top:118px;
+    max-height:calc(100vh - 130px);
+  }
+  .rank-panel{
+    display:none;
+  }
+  .stage-top{
+    left:12px;
+    right:12px;
+    top:auto;
+    bottom:12px;
+    width:auto;
+    max-width:none;
+    transform:none;
+  }
+  .minimap-canvas{
+    left:auto;
+    right:12px;
+    top:12px;
+  }
+  body.draw-running .rank-panel{
+    display:none;
+  }
+  body.draw-running .stage-top{
+    left:12px;
+    right:12px;
+    top:auto;
+    bottom:12px;
+    max-width:none;
+  }
+}
