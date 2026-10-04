@@ -8,8 +8,10 @@
   const canvas = $("stageCanvas");
   const wrap = $("stageWrap");
   const minimapCanvas = $("minimapCanvas");
+  const confettiCanvas = $("confettiCanvas");
   const ctx = canvas.getContext("2d");
   const minimapCtx = minimapCanvas.getContext("2d");
+  const confettiCtx = confettiCanvas?.getContext("2d") || null;
 
   const BUNDLED_MAPS =
     window.ViewerDrawBundledMaps || {};
@@ -32,6 +34,9 @@
   let stuckNudges = 0;
   let runStartedAt = null;
   let activeSeed = 1;
+  let winnerConfettiForRun = true;
+  let confettiFrameId = 0;
+  let confettiParticles = [];
 
   function randomSeed() {
     if (globalThis.crypto?.getRandomValues) {
@@ -48,6 +53,191 @@
         ^ Math.floor(Math.random() * 0xffffffff)
       ) >>> 0
     ) || 1;
+  }
+
+  const CONFETTI_COLORS = [
+    "#ffcf4a",
+    "#ff6b8a",
+    "#7fd7ff",
+    "#8df3a6",
+    "#c999ff",
+    "#ffffff"
+  ];
+
+  function confettiOptionEnabled() {
+    return $("winnerConfetti")?.checked !== false;
+  }
+
+  function resizeConfettiCanvas() {
+    if (!confettiCanvas || !confettiCtx) {
+      return { width: 0, height: 0 };
+    }
+    const rect = confettiCanvas.getBoundingClientRect();
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    const width = Math.max(1, Math.round(rect.width * dpr));
+    const height = Math.max(1, Math.round(rect.height * dpr));
+    if (
+      confettiCanvas.width !== width
+      || confettiCanvas.height !== height
+    ) {
+      confettiCanvas.width = width;
+      confettiCanvas.height = height;
+    }
+    confettiCtx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    return {
+      width: Math.max(1, rect.width),
+      height: Math.max(1, rect.height)
+    };
+  }
+
+  function stopWinnerConfetti() {
+    if (confettiFrameId) {
+      cancelAnimationFrame(confettiFrameId);
+      confettiFrameId = 0;
+    }
+    confettiParticles = [];
+    if (confettiCtx && confettiCanvas) {
+      const rect = confettiCanvas.getBoundingClientRect();
+      confettiCtx.clearRect(0, 0, rect.width, rect.height);
+    }
+  }
+
+  function confettiRandom(min, max) {
+    return min + Math.random() * (max - min);
+  }
+
+  function launchWinnerConfetti() {
+    if (
+      !winnerConfettiForRun
+      || !confettiCanvas
+      || !confettiCtx
+    ) {
+      return;
+    }
+
+    stopWinnerConfetti();
+    const size = resizeConfettiCanvas();
+    if (!size.width || !size.height) return;
+
+    const startAt = performance.now();
+    const origins = [
+      { x: size.width * 0.06, direction: 1 },
+      { x: size.width * 0.94, direction: -1 }
+    ];
+
+    for (const origin of origins) {
+      for (let index = 0; index < 150; index += 1) {
+        const speedX = confettiRandom(100, 520);
+        confettiParticles.push({
+          type: index % 5 === 0 ? "spark" : "paper",
+          x: origin.x,
+          y: size.height * 0.985,
+          vx:
+            origin.direction * speedX
+            + confettiRandom(-80, 80),
+          vy: -confettiRandom(560, 1050),
+          gravity: confettiRandom(680, 900),
+          drag: confettiRandom(0.985, 0.995),
+          rotation: confettiRandom(0, Math.PI * 2),
+          spin: confettiRandom(-8, 8),
+          width: confettiRandom(5, 11),
+          height: confettiRandom(9, 18),
+          color:
+            CONFETTI_COLORS[
+              Math.floor(
+                Math.random() * CONFETTI_COLORS.length
+              )
+            ],
+          delay: confettiRandom(0, 0.42),
+          age: 0,
+          ttl: confettiRandom(2.8, 4.4)
+        });
+      }
+    }
+
+    let previous = startAt;
+    const frame = (now) => {
+      const dt = Math.min(
+        0.033,
+        Math.max(0, (now - previous) / 1000)
+      );
+      previous = now;
+      confettiCtx.clearRect(
+        0,
+        0,
+        size.width,
+        size.height
+      );
+
+      let alive = 0;
+      for (const particle of confettiParticles) {
+        particle.age += dt;
+        if (particle.age < particle.delay) {
+          alive += 1;
+          continue;
+        }
+        const visibleAge = particle.age - particle.delay;
+        if (visibleAge >= particle.ttl) continue;
+        alive += 1;
+
+        particle.vx *= Math.pow(
+          particle.drag,
+          dt * 60
+        );
+        particle.vy += particle.gravity * dt;
+        particle.x += particle.vx * dt;
+        particle.y += particle.vy * dt;
+        particle.rotation += particle.spin * dt;
+
+        const fadeStart = particle.ttl * 0.72;
+        const alpha = visibleAge <= fadeStart
+          ? 1
+          : Math.max(
+              0,
+              1 - (
+                (visibleAge - fadeStart)
+                / Math.max(0.01, particle.ttl - fadeStart)
+              )
+            );
+
+        confettiCtx.save();
+        confettiCtx.globalAlpha = alpha;
+        confettiCtx.translate(
+          particle.x,
+          particle.y
+        );
+        confettiCtx.rotate(particle.rotation);
+        confettiCtx.fillStyle = particle.color;
+
+        if (particle.type === "spark") {
+          confettiCtx.beginPath();
+          confettiCtx.arc(
+            0,
+            0,
+            particle.width * 0.45,
+            0,
+            Math.PI * 2
+          );
+          confettiCtx.fill();
+        } else {
+          confettiCtx.fillRect(
+            -particle.width / 2,
+            -particle.height / 2,
+            particle.width,
+            particle.height
+          );
+        }
+        confettiCtx.restore();
+      }
+
+      if (alive > 0 && now - startAt < 5200) {
+        confettiFrameId = requestAnimationFrame(frame);
+      } else {
+        stopWinnerConfetti();
+      }
+    };
+
+    confettiFrameId = requestAnimationFrame(frame);
   }
 
   const FINISH_SLOW_RATE = 0.35;
@@ -576,6 +766,7 @@
     if ($("rankStart")) $("rankStart").disabled = locked || selectedResultMode() !== "RANK_RANGE";
     if ($("rankEnd")) $("rankEnd").disabled = locked || selectedResultMode() !== "RANK_RANGE";
     if ($("winnerCount")) $("winnerCount").disabled = locked || selectedResultMode() !== "LAST_SURVIVOR";
+    if ($("winnerConfetti")) $("winnerConfetti").disabled = locked;
     if ($("importEntrySet")) $("importEntrySet").disabled = locked;
     if ($("exportEntrySet")) $("exportEntrySet").disabled = locked;
     refreshEntryRemoveButtons();
@@ -1762,6 +1953,9 @@
       $("winnerText").textContent = "TIMEOUT · NO WINNER";
     }
     $("winnerBanner").hidden = false;
+    if (winners.length) {
+      launchWinnerConfetti();
+    }
     cancelAnimationFrame(frameId);
 
     window.dispatchEvent(
@@ -1832,6 +2026,8 @@
     $("rankEnd").value = String(range.end);
     const winnerCount = winnerCountValue();
     $("winnerCount").value = String(winnerCount);
+    winnerConfettiForRun = confettiOptionEnabled();
+    stopWinnerConfetti();
     await ensureAudioReady();
 
     // Freeze everything needed for result determination in browser memory.
@@ -1890,6 +2086,7 @@
 
   function resetDraw() {
     cancelAnimationFrame(frameId);
+    stopWinnerConfetti();
     frameId = 0;
     running = false;
     completed = false;
@@ -2128,6 +2325,11 @@
   });
 
   new ResizeObserver(render).observe(wrap);
+  window.addEventListener("resize", () => {
+    if (confettiFrameId) {
+      stopWinnerConfetti();
+    }
+  });
 
   async function boot() {
     setDrawFocusMode(false);
