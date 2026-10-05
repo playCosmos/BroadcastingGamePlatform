@@ -191,7 +191,7 @@
       this.marbleBodyMeta = new Map();
       this.oneWayBlockingContacts = new Map();
       this.staticColliderBodies = new Set();
-      this.drivenRotationBodies = new Set();
+      this.rotationalColliderBodies = new Set();
       this.contactListener = null;
       this.soundEvents = [];
       this.soundSequence = 0;
@@ -268,7 +268,7 @@
       this.marbleBodyMeta = new Map();
       this.oneWayBlockingContacts = new Map();
       this.staticColliderBodies = new Set();
-      this.drivenRotationBodies = new Set();
+      this.rotationalColliderBodies = new Set();
       this.contactListener = null;
       this.soundEvents = [];
       this.accumulator = 0;
@@ -362,7 +362,7 @@
         const fixtureA = contact.GetFixtureA();
         const fixtureB = contact.GetFixtureB();
         if (
-          this.isDrivenRotationVsStaticCollision(
+          this.isRotationalBodyVsStaticCollision(
             fixtureA,
             fixtureB
           )
@@ -471,7 +471,7 @@
       this.world.SetContactListener(listener);
     }
 
-    isDrivenRotationVsStaticCollision(fixtureA, fixtureB) {
+    isRotationalBodyVsStaticCollision(fixtureA, fixtureB) {
       if (!fixtureA || !fixtureB) return false;
       const B = this.Box2D;
       const bodyA = fixtureA.GetBody();
@@ -479,10 +479,10 @@
       const pointerA = B.getPointer(bodyA);
       const pointerB = B.getPointer(bodyB);
       return (
-        this.drivenRotationBodies.has(pointerA)
+        this.rotationalColliderBodies.has(pointerA)
         && this.staticColliderBodies.has(pointerB)
       ) || (
-        this.drivenRotationBodies.has(pointerB)
+        this.rotationalColliderBodies.has(pointerB)
         && this.staticColliderBodies.has(pointerA)
       );
     }
@@ -728,6 +728,7 @@
         root.ViewerDrawMapEngine.motionRotation(component, 0)
           * Math.PI / 180
       );
+      this.rotationalColliderBodies.add(B.getPointer(body));
       this.createRotationFixtures(body, component);
 
       this.movingComponents.push({
@@ -794,9 +795,7 @@
         body.GetPosition(),
         (component.rotation || 0) * Math.PI / 180
       );
-      if (mode !== "FREE") {
-        this.drivenRotationBodies.add(B.getPointer(body));
-      }
+      this.rotationalColliderBodies.add(B.getPointer(body));
       this.createRotationFixtures(body, component);
 
       const jointDef = new B.b2RevoluteJointDef();

@@ -1328,6 +1328,19 @@ const retroMap = JSON.parse(
     "utf8"
   )
 );
+const retroFreeHinge = retroMap.components.find(
+  (component) =>
+    component.type === "ROTATIONAL_BODY"
+    && component.properties?.rotationMode === "FREE"
+);
+requireCondition(
+  retroFreeHinge
+    && retroFreeHinge.properties?.rotationPreset === "HINGE"
+    && Number(retroFreeHinge.rotation) === -10
+    && Number(retroFreeHinge.properties?.endAngle) === 0,
+  "Retro pinball entry hinge must keep its preview close target"
+);
+
 const audioMap = JSON.parse(
   fs.readFileSync(
     path.join(
@@ -1681,23 +1694,25 @@ requireCondition(
 );
 requireCondition(
   browserPhysicsSource.includes("this.staticColliderBodies = new Set()")
-    && browserPhysicsSource.includes("this.drivenRotationBodies = new Set()")
+    && browserPhysicsSource.includes("this.rotationalColliderBodies = new Set()")
     && browserPhysicsSource.includes(
-      "isDrivenRotationVsStaticCollision(fixtureA, fixtureB)"
+      "isRotationalBodyVsStaticCollision(fixtureA, fixtureB)"
     )
     && browserPhysicsSource.includes(
       "this.staticColliderBodies.add(B.getPointer(body))"
     )
-    && browserPhysicsSource.includes(
+    && (
+      browserPhysicsSource.match(
+        /this\.rotationalColliderBodies\.add\(B\.getPointer\(body\)\)/g
+      ) || []
+    ).length >= 2
+    && !browserPhysicsSource.includes(
       'if (mode !== "FREE")'
-    )
-    && browserPhysicsSource.includes(
-      "this.drivenRotationBodies.add(B.getPointer(body))"
     )
     && browserPhysicsSource.includes(
       "contact.SetEnabled(false);"
     ),
-  "Driven torque rotators must ignore static-map collision blocking while FREE hinges remain reactive"
+  "All rotational bodies, including FREE hinges, must ignore static-map collision blocking like PreviewEngine"
 );
 
 requireCondition(
