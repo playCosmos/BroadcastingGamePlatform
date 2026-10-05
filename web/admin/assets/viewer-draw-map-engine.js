@@ -322,19 +322,19 @@
 
   function rotationLimitRange(component){
     const p=component?.properties||{};
+    const base=finiteOr(component?.rotation,0);
     const start=finiteOr(p.startAngle,-70);
     const end=finiteOr(p.endAngle,70);
-    const lower=Math.min(start,end);
-    const upper=Math.max(start,end);
+    return {
+      min:base+Math.min(start,end),
+      max:base+Math.max(start,end)
+    };
+  }
 
-    // FREE hinge limits are authored as absolute world angles so a hinge
-    // can start anywhere inside the range and fall toward either stop.
-    if(rotationMode(component)==="FREE"){
-      return {min:lower,max:upper};
-    }
-
+  function rotationInitialAngle(component){
     const base=finiteOr(component?.rotation,0);
-    return {min:base+lower,max:base+upper};
+    if(rotationMode(component)!=="FREE") return base;
+    return base+finiteOr(component?.properties?.startAngle,-70);
   }
 
   function componentPivotLocal(c){
@@ -1731,7 +1731,7 @@
         if(mode.startsWith("FORCE_")) continue;
         const speed=finiteOr(component.properties?.angularSpeed,0);
         this.rotationStates.set(component.id,{
-          angle:finiteOr(component.rotation,0),
+          angle:rotationInitialAngle(component),
           angularVelocity:mode==="TORQUE_CONTINUOUS" ? speed : 0,
           direction:speed<0 ? -1 : 1
         });
@@ -2713,6 +2713,7 @@
     pivotedComponentShape,
     rotationMode,
     rotationLimitRange,
+    rotationInitialAngle,
     motionRotation,
     resolvedDrawRule,
     resolvedRunPolicy,
