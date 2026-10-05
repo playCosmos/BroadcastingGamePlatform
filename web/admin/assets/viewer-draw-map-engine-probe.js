@@ -1599,6 +1599,19 @@ requireCondition(
 );
 
 requireCondition(
+  !marbleHtml.includes('id="drawState"')
+    && !standaloneMarbleHtml.includes('id="drawState"')
+    && !marbleHtml.includes('id="launchStatus"')
+    && !standaloneMarbleHtml.includes('id="launchStatus"')
+    && !marbleHtml.includes('id="stuckCount"')
+    && !standaloneMarbleHtml.includes('id="stuckCount"')
+    && !marbleSource.includes('$("drawState")')
+    && !marbleSource.includes('$("launchStatus")')
+    && !marbleSource.includes('$("stuckCount")'),
+  "Marble Draw must not expose READY, LAUNCH, or NUDGE HUD status"
+);
+
+requireCondition(
   !marbleHtml.includes('id="seed"')
     && !standaloneMarbleHtml.includes('id="seed"')
     && marbleSource.includes("function randomSeed()")
