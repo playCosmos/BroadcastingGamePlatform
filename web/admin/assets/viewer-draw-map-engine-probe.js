@@ -1548,6 +1548,13 @@ for (const source of [makerSource, localMakerSource]) {
 }
 for (const source of [makerSource, localMakerSource]) {
   requireCondition(
+    source.includes("editorZoom = clamp(nextZoom, .35, 6)"),
+    "Map Maker editor zoom must allow up to 600%"
+  );
+}
+
+for (const source of [makerSource, localMakerSource]) {
+  requireCondition(
     source.includes("Math.max(21, r * 2.4)")
       && source.includes("marble.entry?.displayName")
       && source.includes('ctx.strokeText(label, p.x, p.y)')
@@ -1713,6 +1720,27 @@ requireCondition(
       "contact.SetEnabled(false);"
     ),
   "All rotational bodies, including FREE hinges, must ignore static-map collision blocking like PreviewEngine"
+);
+
+requireCondition(
+  marbleSource.includes("const CAMERA_MAX_ZOOM = 6")
+    && (
+      marbleSource.match(/maxZoom: CAMERA_MAX_ZOOM/g) || []
+    ).length === 4
+    && marbleSource.includes(
+      "camera.zoom = clamp(camera.zoom, 1, CAMERA_MAX_ZOOM)"
+    ),
+  "Marble Draw camera must allow up to 600% zoom"
+);
+requireCondition(
+  marbleSource.includes("function shouldRenderMarble(marble)")
+    && marbleSource.includes(
+      'selectedResultMode() === "LAST_SURVIVOR"'
+    )
+    && marbleSource.includes("&& marble.eliminated")
+    && marbleSource.includes("if (!shouldRenderMarble(marble)) continue;")
+    && marbleSource.includes("if (!shouldRenderMarble(marble)) return;"),
+  "LAST_SURVIVOR eliminated marbles must disappear from main and minimap rendering"
 );
 
 requireCondition(
