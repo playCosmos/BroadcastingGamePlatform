@@ -1737,7 +1737,10 @@ requireCondition(
     && marbleSource.includes(
       'selectedResultMode() === "LAST_SURVIVOR"'
     )
-    && marbleSource.includes("&& marble.eliminated")
+    && marbleSource.includes(
+      'effectiveRuleType() === "LAST_SURVIVOR"'
+    )
+    && marbleSource.includes("survivorMode && marble.eliminated")
     && marbleSource.includes("if (!shouldRenderMarble(marble)) continue;")
     && marbleSource.includes("if (!shouldRenderMarble(marble)) return;"),
   "LAST_SURVIVOR eliminated marbles must disappear from main and minimap rendering"
