@@ -320,6 +320,23 @@
       : "FORCE_CONTINUOUS";
   }
 
+  function rotationLimitRange(component){
+    const p=component?.properties||{};
+    const start=finiteOr(p.startAngle,-70);
+    const end=finiteOr(p.endAngle,70);
+    const lower=Math.min(start,end);
+    const upper=Math.max(start,end);
+
+    // FREE hinge limits are authored as absolute world angles so a hinge
+    // can start anywhere inside the range and fall toward either stop.
+    if(rotationMode(component)==="FREE"){
+      return {min:lower,max:upper};
+    }
+
+    const base=finiteOr(component?.rotation,0);
+    return {min:base+lower,max:base+upper};
+  }
+
   function componentPivotLocal(c){
     const ratio=finiteOr(c?.properties?.pivotRatio,0);
     const width=finiteOr(c?.width,0);
@@ -1895,10 +1912,9 @@
             maxDelta
           );
         }else if(mode==="TORQUE_OSCILLATE"){
-          const start=finiteOr(p.startAngle,-30);
-          const end=finiteOr(p.endAngle,30);
-          const minAngle=finiteOr(component.rotation,0)+Math.min(start,end);
-          const maxAngle=finiteOr(component.rotation,0)+Math.max(start,end);
+          const limits=rotationLimitRange(component);
+          const minAngle=limits.min;
+          const maxAngle=limits.max;
 
           if(state.angle<=minAngle+.25) state.direction=1;
           if(state.angle>=maxAngle-.25) state.direction=-1;
@@ -1915,10 +1931,9 @@
         state.angle+=state.angularVelocity*dt;
 
         if(mode==="FREE"||mode==="TORQUE_OSCILLATE"){
-          const start=finiteOr(p.startAngle,-70);
-          const end=finiteOr(p.endAngle,70);
-          const minAngle=finiteOr(component.rotation,0)+Math.min(start,end);
-          const maxAngle=finiteOr(component.rotation,0)+Math.max(start,end);
+          const limits=rotationLimitRange(component);
+          const minAngle=limits.min;
+          const maxAngle=limits.max;
 
           if(state.angle<minAngle){
             state.angle=minAngle;
@@ -2697,6 +2712,7 @@
     componentPivotWorld,
     pivotedComponentShape,
     rotationMode,
+    rotationLimitRange,
     motionRotation,
     resolvedDrawRule,
     resolvedRunPolicy,
