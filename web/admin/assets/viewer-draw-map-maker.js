@@ -688,7 +688,7 @@
     const sy = clientY == null ? rect.height / 2 : clientY - rect.top;
     const worldX = (sx - oldView.ox) / oldView.scale;
     const worldY = (sy - oldView.oy) / oldView.scale;
-    editorZoom = clamp(nextZoom, .35, 4);
+    editorZoom = clamp(nextZoom, .35, 6);
     const baseScale = Math.min(
       rect.width / definition.world.width,
       rect.height / definition.world.height
