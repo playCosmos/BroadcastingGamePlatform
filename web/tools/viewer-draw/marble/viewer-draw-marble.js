@@ -1232,10 +1232,10 @@
 
   function shouldRenderMarble(marble) {
     if (!marble) return false;
-    return !(
+    const survivorMode =
       selectedResultMode() === "LAST_SURVIVOR"
-      && marble.eliminated
-    );
+      || effectiveRuleType() === "LAST_SURVIVOR";
+    return !(survivorMode && marble.eliminated);
   }
 
   function render() {
