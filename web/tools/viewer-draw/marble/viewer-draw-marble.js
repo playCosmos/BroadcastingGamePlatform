@@ -415,6 +415,8 @@
     }
   }
 
+  const CAMERA_MAX_ZOOM = 6;
+
   const camera = {
     x: definition.world.width / 2,
     y: definition.world.height / 2,
@@ -1228,6 +1230,14 @@
     target.restore();
   }
 
+  function shouldRenderMarble(marble) {
+    if (!marble) return false;
+    return !(
+      selectedResultMode() === "LAST_SURVIVOR"
+      && marble.eliminated
+    );
+  }
+
   function render() {
     const view = fit();
     ctx.clearRect(0, 0, view.width, view.height);
@@ -1271,6 +1281,7 @@
 
     if (state) {
       for (const marble of state.marbles) {
+        if (!shouldRenderMarble(marble)) continue;
         drawMarble(ctx, marble, view, { label: true });
       }
     }
@@ -1349,6 +1360,7 @@
 
     if (state) {
       state.marbles.forEach((marble) => {
+        if (!shouldRenderMarble(marble)) return;
         drawMarble(
           minimapCtx,
           marble,
@@ -1767,7 +1779,7 @@
         strategy: "SURVIVOR",
         coverage: 0.94,
         padding: 1.5,
-        maxZoom: 2.05
+        maxZoom: CAMERA_MAX_ZOOM
       };
     }
 
@@ -1779,7 +1791,7 @@
         strategy: "RACE",
         coverage: 0.9,
         padding: 1.38,
-        maxZoom: 2.45
+        maxZoom: CAMERA_MAX_ZOOM
       };
     }
 
@@ -1796,7 +1808,7 @@
         strategy: "OUTPUT",
         coverage: 0.96,
         padding: 1.5,
-        maxZoom: 2.15
+        maxZoom: CAMERA_MAX_ZOOM
       };
     }
 
@@ -1804,7 +1816,7 @@
       strategy: "FIELD",
       coverage: 0.94,
       padding: 1.45,
-      maxZoom: 2.2
+      maxZoom: CAMERA_MAX_ZOOM
     };
   }
 
@@ -2045,7 +2057,7 @@
     camera.y += (camera.targetY - camera.y) * positionFactor;
     camera.zoom +=
       (camera.targetZoom - camera.zoom) * zoomFactor;
-    camera.zoom = clamp(camera.zoom, 1, 3);
+    camera.zoom = clamp(camera.zoom, 1, CAMERA_MAX_ZOOM);
   }
 
   function updateStuckWatchdog(wallDeltaMs) {
