@@ -274,9 +274,12 @@ closingFreeHinge.properties.endAngle = 0;
 closingFreeHinge.properties.jointFriction = 0.6;
 const closingLimits = Engine.rotationLimitRange(closingFreeHinge);
 requireCondition(
-  Math.abs(closingLimits.min + 79.8) < 0.0001
-    && Math.abs(closingLimits.max) < 0.0001,
-  "FREE hinge limits must be absolute world angles"
+  Math.abs(closingLimits.min + 89.8) < 0.0001
+    && Math.abs(closingLimits.max + 10) < 0.0001
+    && Math.abs(
+      Engine.rotationInitialAngle(closingFreeHinge) + 89.8
+    ) < 0.0001,
+  "FREE hinge must use base rotation plus relative start/end angles"
 );
 const closingDefinition = {
   schemaVersion: Engine.SCHEMA_VERSION,
@@ -300,10 +303,10 @@ const closingAfter = closingPreview.snapshot()
   .components.find((component) => component.id === "closing-free-hinge")
   .runtimeRotation;
 requireCondition(
-  closingBefore === -10
+  Math.abs(closingBefore + 89.8) < 0.0001
     && closingAfter > closingBefore
-    && closingAfter <= 0,
-  "FREE hinge starting at -10 degrees must fall toward its 0 degree close stop"
+    && closingAfter <= -10,
+  "FREE hinge must start at base+start and fall toward base+end"
 );
 
 const pegPreset = Engine.createPreset("PEG", 300, 300);
@@ -1767,12 +1770,18 @@ requireCondition(
       "rotationLimitRange(component)"
     )
     && browserPhysicsSource.includes(
+      "rotationInitialAngle(component)"
+    )
+    && browserPhysicsSource.includes(
+      "const referenceAngle = initialRotation;"
+    )
+    && browserPhysicsSource.includes(
       "(absoluteLimits.min - referenceAngle) * Math.PI / 180"
     )
     && browserPhysicsSource.includes(
       "(absoluteLimits.max - referenceAngle) * Math.PI / 180"
     ),
-  "All rotational bodies must ignore static blocking and FREE hinge limits must match absolute preview angles"
+  "All rotational bodies must ignore static blocking and FREE hinges must share relative-angle semantics"
 );
 
 requireCondition(
