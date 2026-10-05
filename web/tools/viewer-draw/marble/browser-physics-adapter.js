@@ -791,9 +791,13 @@
         )
       );
       const body = this.world.CreateBody(bodyDef);
+      const initialRotation =
+        mode === "FREE"
+          ? root.ViewerDrawMapEngine.rotationInitialAngle(component)
+          : (Number(component.rotation) || 0);
       body.SetTransform(
         body.GetPosition(),
-        (component.rotation || 0) * Math.PI / 180
+        initialRotation * Math.PI / 180
       );
       this.rotationalColliderBodies.add(B.getPointer(body));
       this.createRotationFixtures(body, component);
@@ -829,7 +833,7 @@
       if (mode === "FREE" || mode === "TORQUE_OSCILLATE") {
         const absoluteLimits =
           root.ViewerDrawMapEngine.rotationLimitRange(component);
-        const referenceAngle = Number(component.rotation) || 0;
+        const referenceAngle = initialRotation;
         jointDef.set_enableLimit(true);
         jointDef.set_lowerAngle(
           (absoluteLimits.min - referenceAngle) * Math.PI / 180
