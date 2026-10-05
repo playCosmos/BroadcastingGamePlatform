@@ -37,7 +37,9 @@
         "audioGain": 0.62,
         "audioPan": 0.45,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -59,7 +61,9 @@
         "audioGain": 0.62,
         "audioPan": 0.415745789630079,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -81,7 +85,9 @@
         "audioGain": 0.62,
         "audioPan": 0.3181980515339464,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -103,7 +109,9 @@
         "audioGain": 0.62,
         "audioPan": 0.17220754456429044,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -125,7 +133,9 @@
         "audioGain": 0.62,
         "audioPan": 2.7554552980815448e-17,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -147,7 +157,9 @@
         "audioGain": 0.62,
         "audioPan": -0.17220754456429038,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -169,7 +181,9 @@
         "audioGain": 0.62,
         "audioPan": -0.31819805153394637,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -191,7 +205,9 @@
         "audioGain": 0.62,
         "audioPan": -0.415745789630079,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -213,7 +229,9 @@
         "audioGain": 0.62,
         "audioPan": -0.45,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -235,7 +253,9 @@
         "audioGain": 0.62,
         "audioPan": -0.4157457896300791,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -257,7 +277,9 @@
         "audioGain": 0.62,
         "audioPan": -0.3181980515339465,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -279,7 +301,9 @@
         "audioGain": 0.62,
         "audioPan": -0.17220754456429066,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -301,7 +325,9 @@
         "audioGain": 0.62,
         "audioPan": -8.266365894244634e-17,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -323,7 +349,9 @@
         "audioGain": 0.62,
         "audioPan": 0.1722075445642905,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -345,7 +373,9 @@
         "audioGain": 0.62,
         "audioPan": 0.3181980515339463,
         "visualFill": "#6bd6ff",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -367,7 +397,9 @@
         "audioGain": 0.62,
         "audioPan": 0.41574578963007897,
         "visualFill": "#f0c436",
-        "visualStroke": "#fff1a3"
+        "visualStroke": "#fff1a3",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -389,7 +421,9 @@
         "audioGain": 0.85,
         "audioPan": -0.05,
         "visualFill": "#238eae",
-        "visualStroke": "#72dcf5"
+        "visualStroke": "#72dcf5",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -411,7 +445,9 @@
         "audioGain": 0.6,
         "audioPan": -0.05,
         "visualFill": "#42b9d4",
-        "visualStroke": "#b0f5ff"
+        "visualStroke": "#b0f5ff",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -482,7 +518,9 @@
         "audioGain": 1,
         "audioPan": 0,
         "arcStartAngle": 184,
-        "arcEndAngle": 4
+        "arcEndAngle": 4,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -504,7 +542,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -526,7 +566,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -548,7 +590,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -570,7 +614,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -592,7 +638,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -614,7 +662,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -636,7 +686,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -658,7 +710,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -680,7 +734,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -702,7 +758,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -724,14 +782,16 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
       "id": "fadc5886-bcd8-41fb-a515-1fd9fa642c2b",
       "type": "ROTATIONAL_BODY",
-      "x": 1288.7846202409767,
-      "y": 766.1081457866455,
+      "x": 1290,
+      "y": 770,
       "rotation": -10,
       "width": 270,
       "height": 18,
@@ -744,7 +804,7 @@
         "rotationMode": "FREE",
         "pivotRatio": -0.48,
         "angularSpeed": 0,
-        "startAngle": -79.98,
+        "startAngle": -79.8,
         "endAngle": 0,
         "period": 3.2,
         "phase": 0,
@@ -757,7 +817,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -789,7 +851,10 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1,
+        "phase": 0
       }
     },
     {
@@ -821,7 +886,10 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1,
+        "phase": 0
       }
     },
     {
@@ -843,7 +911,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -865,7 +935,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -887,7 +959,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -909,7 +983,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -931,7 +1007,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -953,7 +1031,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -975,7 +1055,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -997,7 +1079,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1019,7 +1103,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1041,7 +1127,9 @@
         "instrument": "none",
         "audioNote": 60,
         "audioGain": 1,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1098,7 +1186,9 @@
         "audioGain": 0.9,
         "audioPan": -0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1120,7 +1210,9 @@
         "audioGain": 0.9,
         "audioPan": 0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1142,7 +1234,9 @@
         "audioGain": 0.6,
         "audioPan": -0.2,
         "visualFill": "#f0d450",
-        "visualStroke": "#fff0a1"
+        "visualStroke": "#fff0a1",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1164,7 +1258,9 @@
         "audioGain": 0.6,
         "audioPan": -0.1,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1186,7 +1282,9 @@
         "audioGain": 0.6,
         "audioPan": 0,
         "visualFill": "#f0d450",
-        "visualStroke": "#fff0a1"
+        "visualStroke": "#fff0a1",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1208,7 +1306,9 @@
         "audioGain": 0.6,
         "audioPan": 0.1,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1230,7 +1330,9 @@
         "audioGain": 0.6,
         "audioPan": 0.2,
         "visualFill": "#f0d450",
-        "visualStroke": "#fff0a1"
+        "visualStroke": "#fff0a1",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1287,7 +1389,9 @@
         "audioGain": 0.9,
         "audioPan": 0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1344,7 +1448,9 @@
         "audioGain": 0.9,
         "audioPan": -0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1371,7 +1477,9 @@
         "audioGain": 1,
         "audioPan": 0,
         "arcStartAngle": 300,
-        "arcEndAngle": 355
+        "arcEndAngle": 355,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1474,7 +1582,9 @@
         "instrument": "click",
         "audioNote": 62,
         "audioGain": 0.75,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1496,7 +1606,9 @@
         "audioGain": 0.9,
         "audioPan": -0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1518,7 +1630,9 @@
         "audioGain": 0.9,
         "audioPan": 0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1551,7 +1665,9 @@
         "instrument": "click",
         "audioNote": 62,
         "audioGain": 0.75,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1573,7 +1689,9 @@
         "audioGain": 0.9,
         "audioPan": 0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1606,7 +1724,9 @@
         "instrument": "click",
         "audioNote": 62,
         "audioGain": 0.75,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1639,7 +1759,9 @@
         "instrument": "click",
         "audioNote": 62,
         "audioGain": 0.75,
-        "audioPan": 0
+        "audioPan": 0,
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1661,7 +1783,9 @@
         "audioGain": 0.9,
         "audioPan": 0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     },
     {
@@ -1683,7 +1807,9 @@
         "audioGain": 0.9,
         "audioPan": 0.25,
         "visualFill": "#e45d69",
-        "visualStroke": "#ffb0b6"
+        "visualStroke": "#ffb0b6",
+        "collisionMode": "SOLID",
+        "oneWayDirection": 1
       }
     }
   ]
