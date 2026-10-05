@@ -266,6 +266,46 @@ requireCondition(
   "FREE rotation must react to gravity/physics"
 );
 
+const closingFreeHinge = Engine.createPreset("HINGE", 720, 260);
+closingFreeHinge.id = "closing-free-hinge";
+closingFreeHinge.rotation = -10;
+closingFreeHinge.properties.startAngle = -79.8;
+closingFreeHinge.properties.endAngle = 0;
+closingFreeHinge.properties.jointFriction = 0.6;
+const closingLimits = Engine.rotationLimitRange(closingFreeHinge);
+requireCondition(
+  Math.abs(closingLimits.min + 79.8) < 0.0001
+    && Math.abs(closingLimits.max) < 0.0001,
+  "FREE hinge limits must be absolute world angles"
+);
+const closingDefinition = {
+  schemaVersion: Engine.SCHEMA_VERSION,
+  name: "Closing Free Hinge Probe",
+  world: { width: 900, height: 600, gravityX: 0, gravityY: 12 },
+  components: [
+    { ...Engine.componentDefaults("SPAWN", 80, 60) },
+    closingFreeHinge,
+    { ...Engine.componentDefaults("FINISH", 450, 550) }
+  ]
+};
+const closingPreview = new Engine.PreviewEngine(
+  closingDefinition,
+  { seed: 23 }
+);
+const closingBefore = closingPreview.reset(1, 23)
+  .components.find((component) => component.id === "closing-free-hinge")
+  .runtimeRotation;
+closingPreview.advance(0.05);
+const closingAfter = closingPreview.snapshot()
+  .components.find((component) => component.id === "closing-free-hinge")
+  .runtimeRotation;
+requireCondition(
+  closingBefore === -10
+    && closingAfter > closingBefore
+    && closingAfter <= 0,
+  "FREE hinge starting at -10 degrees must fall toward its 0 degree close stop"
+);
+
 const pegPreset = Engine.createPreset("PEG", 300, 300);
 const bumperPreset = Engine.createPreset("BUMPER", 300, 300);
 const launchWallPreset = Engine.createPreset("LAUNCH_WALL", 300, 300);
@@ -1336,9 +1376,13 @@ const retroFreeHinge = retroMap.components.find(
 requireCondition(
   retroFreeHinge
     && retroFreeHinge.properties?.rotationPreset === "HINGE"
+    && Number(retroFreeHinge.x) === 1290
+    && Number(retroFreeHinge.y) === 770
     && Number(retroFreeHinge.rotation) === -10
-    && Number(retroFreeHinge.properties?.endAngle) === 0,
-  "Retro pinball entry hinge must keep its preview close target"
+    && Number(retroFreeHinge.properties?.startAngle) === -79.8
+    && Number(retroFreeHinge.properties?.endAngle) === 0
+    && Number(retroFreeHinge.properties?.jointFriction) === 0.6,
+  "Retro pinball entry hinge must match the latest maker export and close target"
 );
 
 const audioMap = JSON.parse(
@@ -1718,8 +1762,17 @@ requireCondition(
     )
     && browserPhysicsSource.includes(
       "contact.SetEnabled(false);"
+    )
+    && browserPhysicsSource.includes(
+      "rotationLimitRange(component)"
+    )
+    && browserPhysicsSource.includes(
+      "(absoluteLimits.min - referenceAngle) * Math.PI / 180"
+    )
+    && browserPhysicsSource.includes(
+      "(absoluteLimits.max - referenceAngle) * Math.PI / 180"
     ),
-  "All rotational bodies, including FREE hinges, must ignore static-map collision blocking like PreviewEngine"
+  "All rotational bodies must ignore static blocking and FREE hinge limits must match absolute preview angles"
 );
 
 requireCondition(
