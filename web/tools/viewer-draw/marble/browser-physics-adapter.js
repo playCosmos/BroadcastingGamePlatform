@@ -809,12 +809,12 @@
         property(p, "startAngle", -70),
         -360,
         360
-      ) * Math.PI / 180;
+      );
       const end = clamp(
         property(p, "endAngle", 70),
         -360,
         360
-      ) * Math.PI / 180;
+      );
       const speed =
         property(p, "angularSpeed", 90) * Math.PI / 180;
       const torque = Math.max(
@@ -827,9 +827,16 @@
       );
 
       if (mode === "FREE" || mode === "TORQUE_OSCILLATE") {
+        const absoluteLimits =
+          root.ViewerDrawMapEngine.rotationLimitRange(component);
+        const referenceAngle = Number(component.rotation) || 0;
         jointDef.set_enableLimit(true);
-        jointDef.set_lowerAngle(Math.min(start, end));
-        jointDef.set_upperAngle(Math.max(start, end));
+        jointDef.set_lowerAngle(
+          (absoluteLimits.min - referenceAngle) * Math.PI / 180
+        );
+        jointDef.set_upperAngle(
+          (absoluteLimits.max - referenceAngle) * Math.PI / 180
+        );
       }
 
       if (mode === "FREE") {
