@@ -844,9 +844,12 @@
       }
 
       if (mode === "FREE") {
-        jointDef.set_enableMotor(frictionTorque > 0);
+        // PreviewEngine treats jointFriction as velocity damping, not
+        // static holding torque. A zero-speed motor can completely lock a
+        // nearly vertical gravity hinge, so FREE joints must remain unpowered.
+        jointDef.set_enableMotor(false);
         jointDef.set_motorSpeed(0);
-        jointDef.set_maxMotorTorque(frictionTorque);
+        jointDef.set_maxMotorTorque(0);
       } else {
         jointDef.set_enableMotor(torque > 0);
         jointDef.set_motorSpeed(speed);
@@ -868,6 +871,27 @@
         direction: speed < 0 ? -1 : 1,
         speed: Math.abs(speed)
       });
+    }
+
+    applyFreeHingeDamping() {
+      for (const item of this.reactiveComponents) {
+        if (item.rotationMode !== "FREE") continue;
+        const friction = Math.max(
+          0,
+          property(
+            item.component.properties,
+            "jointFriction",
+            0.15
+          )
+        );
+        if (friction <= 0) continue;
+        const damping = Math.exp(
+          -friction * FIXED_DT * 2.5
+        );
+        item.body.SetAngularVelocity(
+          item.body.GetAngularVelocity() * damping
+        );
+      }
     }
 
     updateTorqueRotations() {
@@ -1561,6 +1585,7 @@
         this.updateElevators();
         this.oneWayBlockingContacts.clear();
         this.world.Step(FIXED_DT, 6, 2);
+        this.applyFreeHingeDamping();
         this.time += FIXED_DT;
         this.detectImpactSounds(beforeVelocities);
         this.applyColliderBoosts();
