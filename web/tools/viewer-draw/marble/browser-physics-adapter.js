@@ -868,6 +868,13 @@
       });
     }
 
+    wakeFreeHinges() {
+      for (const item of this.reactiveComponents) {
+        if (item.rotationMode !== "FREE") continue;
+        item.body.SetAwake(true);
+      }
+    }
+
     applyFreeHingeDamping() {
       for (const item of this.reactiveComponents) {
         if (item.rotationMode !== "FREE") continue;
@@ -1578,6 +1585,7 @@
         this.updateMovingComponents(this.time);
         this.updateTorqueRotations();
         this.updateElevators();
+        this.wakeFreeHinges();
         this.oneWayBlockingContacts.clear();
         this.world.Step(FIXED_DT, 6, 2);
         this.applyFreeHingeDamping();
