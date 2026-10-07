@@ -825,11 +825,6 @@
         0,
         property(p, "motorTorque", 30)
       );
-      const frictionTorque = Math.max(
-        0,
-        property(p, "jointFriction", 0.15)
-      );
-
       if (mode === "FREE" || mode === "TORQUE_OSCILLATE") {
         const absoluteLimits =
           root.ViewerDrawMapEngine.rotationLimitRange(component);
