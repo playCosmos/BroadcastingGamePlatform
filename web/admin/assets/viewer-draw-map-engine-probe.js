@@ -1798,6 +1798,15 @@ requireCondition(
     )
     && browserPhysicsSource.includes(
       "this.applyFreeHingeDamping();"
+    )
+    && browserPhysicsSource.includes(
+      "wakeFreeHinges()"
+    )
+    && browserPhysicsSource.includes(
+      "item.body.SetAwake(true);"
+    )
+    && browserPhysicsSource.includes(
+      "this.wakeFreeHinges();"
     ),
   "All rotational bodies must ignore static blocking and FREE hinges must use preview-style damping without holding torque"
 );
