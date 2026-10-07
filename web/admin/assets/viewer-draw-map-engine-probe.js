@@ -1780,8 +1780,26 @@ requireCondition(
     )
     && browserPhysicsSource.includes(
       "(absoluteLimits.max - referenceAngle) * Math.PI / 180"
+    )
+    && browserPhysicsSource.includes(
+      'if (mode === "FREE") {'
+    )
+    && browserPhysicsSource.includes(
+      "jointDef.set_enableMotor(false);"
+    )
+    && browserPhysicsSource.includes(
+      "jointDef.set_maxMotorTorque(0);"
+    )
+    && browserPhysicsSource.includes(
+      "applyFreeHingeDamping()"
+    )
+    && browserPhysicsSource.includes(
+      "-friction * FIXED_DT * 2.5"
+    )
+    && browserPhysicsSource.includes(
+      "this.applyFreeHingeDamping();"
     ),
-  "All rotational bodies must ignore static blocking and FREE hinges must share relative-angle semantics"
+  "All rotational bodies must ignore static blocking and FREE hinges must use preview-style damping without holding torque"
 );
 
 requireCondition(
