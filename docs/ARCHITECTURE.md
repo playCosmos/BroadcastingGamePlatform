@@ -37,6 +37,9 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 토큰 직접 입력
    - 10분 유효 6자리 승인 요청
    - 12시간 HttpOnly 관리자 세션
+   - 로컬 서버 관리 plane은 loopback-only로 강제한다.
+   - 브라우저의 관리 POST는 로컬 동일 Origin만 허용한다.
+   - bootstrap token이 포함된 Admin URL은 일반 상태 API나 로그에 기록하지 않는다.
 
 ## 웹 경로
 
