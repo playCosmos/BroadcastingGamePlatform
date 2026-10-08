@@ -80,28 +80,15 @@ public final class BoardGameDatabase implements DatabaseAccess {
         }
 
         while (version < CURRENT_SCHEMA_VERSION) {
-            applyMigration(connection, MIGRATIONS[version]);
-            version += 1;
-            try (var statement = connection.createStatement()) {
-                statement.execute("PRAGMA user_version=" + version);
-            }
-        }
-    }
-
-    private static void applyMigration(Connection connection, String resource) throws IOException, SQLException {
-        try (var stream = BoardGameDatabase.class.getResourceAsStream(resource)) {
-            if (stream == null) throw new IOException("missing board migration resource: " + resource);
-            var sql = new String(stream.readAllBytes(), StandardCharsets.UTF_8);
+            int nextVersion = version + 1;
             connection.setAutoCommit(false);
             try {
-                for (var statementSql : sql.split(";")) {
-                    var trimmed = statementSql.trim();
-                    if (trimmed.isEmpty()) continue;
-                    try (var statement = connection.createStatement()) {
-                        statement.execute(trimmed);
-                    }
+                applyMigration(connection, MIGRATIONS[version]);
+                try (var statement = connection.createStatement()) {
+                    statement.execute("PRAGMA user_version=" + nextVersion);
                 }
                 connection.commit();
+                version = nextVersion;
             } catch (Exception error) {
                 connection.rollback();
                 if (error instanceof SQLException sqlError) throw sqlError;
@@ -109,6 +96,30 @@ public final class BoardGameDatabase implements DatabaseAccess {
                 throw new SQLException("board migration failed", error);
             } finally {
                 connection.setAutoCommit(true);
+            }
+        }
+    }
+
+    private static void applyMigration(
+        Connection connection,
+        String resource
+    ) throws IOException, SQLException {
+        try (var stream = BoardGameDatabase.class.getResourceAsStream(resource)) {
+            if (stream == null) {
+                throw new IOException(
+                    "missing board migration resource: " + resource
+                );
+            }
+            var sql = new String(
+                stream.readAllBytes(),
+                StandardCharsets.UTF_8
+            );
+            for (var statementSql : sql.split(";")) {
+                var trimmed = statementSql.trim();
+                if (trimmed.isEmpty()) continue;
+                try (var statement = connection.createStatement()) {
+                    statement.execute(trimmed);
+                }
             }
         }
     }
