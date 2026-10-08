@@ -17,6 +17,11 @@ import org.java_websocket.server.WebSocketServer;
 public final class BoardGameWebSocketServer extends WebSocketServer {
     private static final Pattern CODE_PATTERN =
         Pattern.compile("[A-HJ-NP-Z2-9]{6}");
+    private static final int MAX_TOTAL_CONNECTIONS = 256;
+    private static final int MAX_BOARD_CONNECTIONS_PER_ROOM = 32;
+    private static final int MAX_DRAWING_CONNECTIONS_PER_CODE = 24;
+    private static final int MAX_DRAWER_CONNECTIONS_PER_CODE = 2;
+    private static final int MAX_RESOURCE_DESCRIPTOR_CHARS = 4096;
 
     private enum ChannelKind {
         BOARD,
@@ -71,10 +76,13 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 connection.close(1008, "valid committed room code required");
                 return;
             }
-            register(
+            if (!registerIfCapacity(
                 connection,
                 new Channel(ChannelKind.BOARD, roomCode, null, false)
-            );
+            )) {
+                connection.close(1013, "room connection capacity reached");
+                return;
+            }
             System.out.println(
                 "[platform-ws] board connected room=" + roomCode
                     + ": " + connection.getRemoteSocketAddress()
@@ -100,7 +108,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 return;
             }
 
-            register(
+            if (!registerIfCapacity(
                 connection,
                 new Channel(
                     ChannelKind.DRAWING,
@@ -108,7 +116,10 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                     drawerToken,
                     canWrite
                 )
-            );
+            )) {
+                connection.close(1013, "drawing connection capacity reached");
+                return;
+            }
 
             for (String event : drawingSync.history(drawingCode)) {
                 if (!connection.isOpen()) break;
@@ -126,9 +137,52 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         connection.close(1008, "valid board room or drawing code required");
     }
 
-    private void register(WebSocket connection, Channel channel) {
+    private synchronized boolean registerIfCapacity(
+        WebSocket connection,
+        Channel channel
+    ) {
+        if (connectedClients.get() >= MAX_TOTAL_CONNECTIONS) {
+            return false;
+        }
+
+        int channelConnections = 0;
+        int drawerConnections = 0;
+        for (Channel active : channelByConnection.values()) {
+            if (
+                active.kind() != channel.kind()
+                || !active.code().equals(channel.code())
+            ) {
+                continue;
+            }
+            channelConnections += 1;
+            if (active.kind() == ChannelKind.DRAWING && active.canWrite()) {
+                drawerConnections += 1;
+            }
+        }
+
+        if (
+            channel.kind() == ChannelKind.BOARD
+                && channelConnections >= MAX_BOARD_CONNECTIONS_PER_ROOM
+        ) {
+            return false;
+        }
+        if (
+            channel.kind() == ChannelKind.DRAWING
+                && channelConnections >= MAX_DRAWING_CONNECTIONS_PER_CODE
+        ) {
+            return false;
+        }
+        if (
+            channel.kind() == ChannelKind.DRAWING
+                && channel.canWrite()
+                && drawerConnections >= MAX_DRAWER_CONNECTIONS_PER_CODE
+        ) {
+            return false;
+        }
+
         channelByConnection.put(connection, channel);
         connectedClients.incrementAndGet();
+        return true;
     }
 
     @Override
@@ -269,7 +323,12 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         if (handshake == null) return Map.of();
 
         String resource = handshake.getResourceDescriptor();
-        if (resource == null) return Map.of();
+        if (
+            resource == null
+                || resource.length() > MAX_RESOURCE_DESCRIPTOR_CHARS
+        ) {
+            return Map.of();
+        }
 
         int queryIndex = resource.indexOf('?');
         if (queryIndex < 0 || queryIndex >= resource.length() - 1) {
