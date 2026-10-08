@@ -2349,7 +2349,11 @@
     try {
       const saved = await api("/api/v1/tools/viewer-draw/maps", {
         method: "POST",
-        body: JSON.stringify({ mapId, definition })
+        body: JSON.stringify({
+          mapId,
+          expectedRevision: mapId ? mapRevision : null,
+          definition
+        })
       });
       mapId = saved.mapId;
       mapRevision = saved.revision;
