@@ -905,6 +905,7 @@ MachineMapDefinition
 브라우저는 v0 JSON을 읽을 때 `migrateDefinition()`으로 v1으로 변환한다. 서버는 기존 저장 데이터 호환을 위해 v0와 v1을 모두 검증할 수 있지만 신규 Map Maker 저장은 v1을 사용한다.
 
 DB revision/history 구조는 유지하며, 기존 맵을 편집 후 저장하면 migration된 v1 정의가 새 revision으로 저장된다.
+동일 맵을 여러 편집 세션에서 저장할 때는 클라이언트가 `expectedRevision`을 함께 보내며, 서버는 현재 revision과 일치할 때만 갱신한다. 오래된 편집본은 `409 Conflict`로 거부하여 최신 revision을 조용히 덮어쓰지 않는다.
 ### 13.6.2 Physics Preview Engine V1
 
 Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니라 실제 간이 물리 시뮬레이션이다.
@@ -947,16 +948,16 @@ Preview Physics Engine
 
 으로 실행하므로 에디터에서 보이는 정의와 Preview 실행 정의가 동일하다.
 
-현재 V0 브라우저 Marble Draw는 이 물리 코어를 Browser Physics Adapter로 감싸 실제 로컬 추첨에도 사용한다.
+실제 Marble Draw Authority는 Preview Engine이 아니라 `Box2dWasmPhysicsAdapter`다.
 
 현재 역할:
 
 - 맵 제작 Preview
 - 배치/충돌/경로 확인
 - Spawn/Finish 확인
-- 브라우저 로컬 Marble Draw Authority V0
+- Map Maker/계약 회귀 검증
 
-후속 단계에서는 동일 Browser Physics Adapter 계약을 구현하는 `box2d-wasm` 어댑터로 교체/확장한다.
+Preview와 실제 Box2D는 별도 구현이므로 결과 권위를 공유하지 않는다. 대신 두 엔진은 같은 fixed timestep(1/120s), 중력 스케일, Spawn 초기 배치, 기본 선형 감쇠, 컴포넌트 restitution/friction 의미를 유지하도록 browser parity probe로 계약한다. Free-motion과 component material parity가 어긋나면 Windows 패키지 CI의 실제 headless browser smoke가 실패한다.
 
 
 ### 13.6.3 Browser Marble Draw Runtime V0 — IMPLEMENTED
