@@ -1867,7 +1867,7 @@ requireCondition(
     && marbleSource.includes("function launchWinnerConfetti(")
     && marbleSource.includes("function stopWinnerConfetti(")
     && marbleSource.includes("winnerConfettiForRun = confettiOptionEnabled()")
-    && /if\s*\(winners\.length\)\s*\{\s*launchWinnerConfetti\(\);/.test(
+    && /if\s*\(winners\.length\)\s*\{[\s\S]{0,1200}?launchWinnerConfetti\(\);/.test(
       marbleSource
     )
     && marbleSource.includes('$("drawMenuToggle")?.addEventListener("click"')
