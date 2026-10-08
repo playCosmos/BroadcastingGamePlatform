@@ -239,11 +239,28 @@ public final class ViewerDrawMapProbe {
 
             var updated = service.saveMachineMap(
                 saved.mapId(),
+                saved.revision(),
                 updatedDefinition
             );
             require(
                 updated.revision() == 2,
                 "map update must increment revision"
+            );
+            boolean staleRejected = false;
+            try {
+                service.saveMachineMap(
+                    saved.mapId(),
+                    saved.revision(),
+                    definition
+                );
+            } catch (
+                ViewerDrawService.MachineMapConflictException expected
+            ) {
+                staleRejected = true;
+            }
+            require(
+                staleRejected,
+                "stale machine map revision must be rejected"
             );
             require(
                 !saved.definitionHash().equals(
