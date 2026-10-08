@@ -85,7 +85,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
         this.server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
 
         server.createContext("/health", exchange -> {
-            cors(exchange);
+            if (!requireLoopback(exchange)) return;
             if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(204, -1);
                 exchange.close();
@@ -100,7 +100,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
         });
 
         server.createContext("/api/state", exchange -> {
-            cors(exchange);
+            if (!requireLoopback(exchange)) return;
             if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(204, -1);
                 exchange.close();
@@ -127,7 +127,6 @@ public final class BoardGameHttpServer implements AutoCloseable {
             );
             payload.put("clientPort", this.config.server().clientPort());
             payload.put("websocketPort", this.config.server().websocketPort());
-            payload.put("remoteAdminUrl", remoteAdminUrl.get());
             payload.put("remoteAdminSessionHours", 12);
             try {
                 var activeRooms = roomService.listActiveRoomSummaries();
@@ -175,6 +174,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
         IntSupplier websocketClientCount,
         Supplier<Map<String, Object>> soopState
     ) throws IOException {
+        if (!requireTrustedManagementRequest(exchange)) return;
         String method = exchange.getRequestMethod();
         if ("GET".equalsIgnoreCase(method)) {
             sendJson(
@@ -518,6 +518,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
     }
 
     private void serveStatic(HttpExchange exchange) throws IOException {
+        if (!requireLoopback(exchange)) return;
         if (
             !"GET".equalsIgnoreCase(exchange.getRequestMethod())
             && !"HEAD".equalsIgnoreCase(exchange.getRequestMethod())
@@ -646,10 +647,61 @@ public final class BoardGameHttpServer implements AutoCloseable {
         return "application/octet-stream";
     }
 
-    private static void cors(HttpExchange exchange) {
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
+    private boolean requireTrustedManagementRequest(
+        HttpExchange exchange
+    ) throws IOException {
+        if (!requireLoopback(exchange)) return false;
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) {
+            return true;
+        }
+
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (origin == null || origin.isBlank()) {
+            return true;
+        }
+
+        try {
+            URI uri = URI.create(origin.trim());
+            String host = uri.getHost();
+            boolean localHost = host != null && (
+                "127.0.0.1".equals(host)
+                    || "::1".equals(host)
+                    || "localhost".equalsIgnoreCase(host)
+            );
+            if (
+                localHost
+                    && "http".equalsIgnoreCase(uri.getScheme())
+                    && uri.getPort() == config.server().port()
+            ) {
+                return true;
+            }
+        } catch (RuntimeException ignored) {
+        }
+
+        sendJson(
+            exchange,
+            403,
+            Map.of("error", "management request origin is not trusted")
+        );
+        return false;
+    }
+
+    private static boolean requireLoopback(
+        HttpExchange exchange
+    ) throws IOException {
+        if (
+            exchange.getRemoteAddress() != null
+                && exchange.getRemoteAddress().getAddress() != null
+                && exchange.getRemoteAddress().getAddress().isLoopbackAddress()
+        ) {
+            return true;
+        }
+        sendJson(
+            exchange,
+            403,
+            Map.of("error", "server management is loopback-only")
+        );
+        return false;
     }
 
     private static void sendJson(HttpExchange exchange, int status, Object payload) throws IOException {
