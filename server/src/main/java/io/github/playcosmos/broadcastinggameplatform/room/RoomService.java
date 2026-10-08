@@ -1314,7 +1314,11 @@ public final class RoomService {
     }
 
     private static long nextSeed() {
-        return ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
+        long seed;
+        do {
+            seed = ROOM_CODE_RANDOM.nextLong() & Long.MAX_VALUE;
+        } while (seed == 0);
+        return seed;
     }
 
     private static String normalizeText(String value, String fallback) {
