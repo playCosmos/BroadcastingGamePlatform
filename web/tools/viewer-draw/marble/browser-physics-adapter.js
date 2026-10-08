@@ -4,6 +4,9 @@
   const PIXELS_PER_METER = 100;
   const FIXED_DT = 1 / 120;
   const GRAVITY_SCALE = 80 / PIXELS_PER_METER;
+  const PREVIEW_LINEAR_DAMPING_FACTOR = 0.9995;
+  const PREVIEW_LINEAR_DAMPING =
+    (1 / PREVIEW_LINEAR_DAMPING_FACTOR - 1) / FIXED_DT;
 
   const ADAPTER_SCRIPT_URL =
     typeof document !== "undefined"
@@ -361,6 +364,11 @@
 
         const fixtureA = contact.GetFixtureA();
         const fixtureB = contact.GetFixtureB();
+        this.applyPreviewContactMaterial(
+          contact,
+          fixtureA,
+          fixtureB
+        );
         if (
           this.isRotationalBodyVsStaticCollision(
             fixtureA,
@@ -469,6 +477,35 @@
 
       this.contactListener = listener;
       this.world.SetContactListener(listener);
+    }
+
+    applyPreviewContactMaterial(
+      contact,
+      fixtureA,
+      fixtureB
+    ) {
+      if (!contact || !fixtureA || !fixtureB) return;
+      const B = this.Box2D;
+      const marbleA = this.marbleBodyMeta.has(
+        B.getPointer(fixtureA.GetBody())
+      );
+      const marbleB = this.marbleBodyMeta.has(
+        B.getPointer(fixtureB.GetBody())
+      );
+      if (marbleA === marbleB) return;
+
+      const colliderFixture = marbleA ? fixtureB : fixtureA;
+      const restitution = Number(
+        colliderFixture.GetRestitution()
+      );
+      if (Number.isFinite(restitution)) {
+        contact.SetRestitution(Math.max(0, restitution));
+      }
+
+      const friction = Number(colliderFixture.GetFriction());
+      if (Number.isFinite(friction)) {
+        contact.SetFriction(Math.max(0, friction));
+      }
     }
 
     isRotationalBodyVsStaticCollision(fixtureA, fixtureB) {
@@ -1398,8 +1435,12 @@
               Math.sqrt((localIndex % 9) + 1) * radius * 0.55
             );
 
+        const spreadYScale =
+          spawn.type === "BURST_SPAWN" ? 0.45 : 1;
         const x = spawn.x + Math.cos(angle) * spread;
-        const y = spawn.y + Math.sin(angle) * spread * 0.45;
+        const y =
+          spawn.y
+          + Math.sin(angle) * spread * spreadYScale;
         const B = this.Box2D;
         const bodyDef = new B.b2BodyDef();
         bodyDef.set_type(B.b2_dynamicBody);
@@ -1412,6 +1453,7 @@
 
         const body = this.world.CreateBody(bodyDef);
         body.SetBullet(true);
+        body.SetLinearDamping(PREVIEW_LINEAR_DAMPING);
         const shape = new B.b2CircleShape();
         shape.set_m_radius(radius / PIXELS_PER_METER);
         const fixtureDef = new B.b2FixtureDef();
