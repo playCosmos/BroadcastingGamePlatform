@@ -552,6 +552,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             ));
             return;
         }
+        if (!requireTrustedAdminMutationOrigin(exchange)) return;
 
         try {
             String roomsBase = "/api/v1/games/drawing-guess/rooms";
@@ -912,6 +913,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             ));
             return;
         }
+        if (!requireTrustedAdminMutationOrigin(exchange)) return;
 
         String createPath =
             "/api/v1/games/drawing-guess/prototype/session";
@@ -1049,6 +1051,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             ));
             return;
         }
+        if (!requireTrustedAdminMutationOrigin(exchange)) return;
 
         String collectionBase =
             "/api/v1/tools/viewer-draw/entry-collection";
@@ -1770,6 +1773,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             exchange.close();
             return;
         }
+        if (!requireTrustedAdminMutationOrigin(exchange)) return;
         String returnTo = normalizedAdminReturnPath(
             queryParameter(
                 exchange.getRequestURI().getRawQuery(),
@@ -1919,6 +1923,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     }
 
     private void proxyToLocalAdmin(HttpExchange exchange) throws IOException {
+        if (!requireTrustedAdminMutationOrigin(exchange)) return;
         byte[] requestBody = exchange.getRequestBody()
             .readNBytes(MAX_PROXY_BODY_BYTES + 1);
         if (requestBody.length > MAX_PROXY_BODY_BYTES) {
@@ -2155,6 +2160,102 @@ public final class GameClientHttpServer implements AutoCloseable {
             || relative.startsWith("games/board/")
             || relative.startsWith("games/drawing-guess/")
             || relative.startsWith("tools/viewer-draw/");
+    }
+
+    private boolean requireTrustedAdminMutationOrigin(
+        HttpExchange exchange
+    ) throws IOException {
+        String method = exchange.getRequestMethod();
+        if (
+            "GET".equalsIgnoreCase(method)
+                || "HEAD".equalsIgnoreCase(method)
+                || "OPTIONS".equalsIgnoreCase(method)
+        ) {
+            return true;
+        }
+
+        String origin = exchange.getRequestHeaders().getFirst(
+            "Origin"
+        );
+        if (origin == null || origin.isBlank()) {
+            return true;
+        }
+
+        final URI supplied;
+        try {
+            supplied = URI.create(origin.trim());
+        } catch (RuntimeException error) {
+            sendJson(
+                exchange,
+                403,
+                Map.of("error", "administrator request origin is invalid")
+            );
+            return false;
+        }
+
+        URI expected = expectedPublicOrigin(exchange);
+        if (sameOrigin(supplied, expected)) {
+            return true;
+        }
+
+        sendJson(
+            exchange,
+            403,
+            Map.of("error", "administrator request origin is not trusted")
+        );
+        return false;
+    }
+
+    private URI expectedPublicOrigin(HttpExchange exchange) {
+        String configured = config.server().publicBaseUrl();
+        if (configured != null && !configured.isBlank()) {
+            try {
+                return URI.create(configured);
+            } catch (RuntimeException ignored) {
+                // Fall through to the concrete request host.
+            }
+        }
+
+        String host = exchange.getRequestHeaders().getFirst("Host");
+        if (host == null || host.isBlank()) {
+            host = "127.0.0.1:" + config.server().clientPort();
+        }
+        String scheme = isSecurePublicRequest(exchange)
+            ? "https"
+            : "http";
+        try {
+            return URI.create(scheme + "://" + host.trim());
+        } catch (RuntimeException ignored) {
+            return URI.create(
+                scheme
+                    + "://127.0.0.1:"
+                    + config.server().clientPort()
+            );
+        }
+    }
+
+    private static boolean sameOrigin(URI left, URI right) {
+        if (left == null || right == null) return false;
+        String leftScheme = left.getScheme();
+        String rightScheme = right.getScheme();
+        String leftHost = left.getHost();
+        String rightHost = right.getHost();
+        if (
+            leftScheme == null
+                || rightScheme == null
+                || leftHost == null
+                || rightHost == null
+                || !leftScheme.equalsIgnoreCase(rightScheme)
+                || !leftHost.equalsIgnoreCase(rightHost)
+        ) {
+            return false;
+        }
+        return effectivePort(left) == effectivePort(right);
+    }
+
+    private static int effectivePort(URI uri) {
+        if (uri.getPort() >= 0) return uri.getPort();
+        return "https".equalsIgnoreCase(uri.getScheme()) ? 443 : 80;
     }
 
     private String resolvedWebSocketUrl(HttpExchange exchange) {
