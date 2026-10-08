@@ -951,6 +951,7 @@ public final class GameClientHttpServer implements AutoCloseable {
 
     private record ViewerDrawMapSaveRequest(
         String mapId,
+        Integer expectedRevision,
         ViewerDrawService.MachineMapDefinition definition
     ) {}
 
@@ -1246,9 +1247,18 @@ public final class GameClientHttpServer implements AutoCloseable {
                     );
                     var saved = viewerDraw.saveMachineMap(
                         request.mapId(),
+                        request.expectedRevision(),
                         request.definition()
                     );
                     sendJson(exchange, 200, saved);
+                } catch (
+                    ViewerDrawService.MachineMapConflictException error
+                ) {
+                    sendJson(
+                        exchange,
+                        409,
+                        Map.of("error", safeMessage(error))
+                    );
                 } catch (Exception error) {
                     sendJson(
                         exchange,
