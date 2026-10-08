@@ -198,6 +198,13 @@ public final class ViewerDrawService {
         String createdAt
     ) {}
 
+    public static final class MachineMapConflictException
+        extends IllegalStateException {
+        public MachineMapConflictException(String message) {
+            super(message);
+        }
+    }
+
     public record MarbleAudit(
         String auditId,
         String publicCode,
@@ -656,6 +663,33 @@ public final class ViewerDrawService {
         String mapId,
         MachineMapDefinition definition
     ) throws SQLException {
+        return saveMachineMapInternal(
+            mapId,
+            null,
+            definition,
+            false
+        );
+    }
+
+    public MachineMap saveMachineMap(
+        String mapId,
+        Integer expectedRevision,
+        MachineMapDefinition definition
+    ) throws SQLException {
+        return saveMachineMapInternal(
+            mapId,
+            expectedRevision,
+            definition,
+            true
+        );
+    }
+
+    private MachineMap saveMachineMapInternal(
+        String mapId,
+        Integer expectedRevision,
+        MachineMapDefinition definition,
+        boolean requireExpectedRevision
+    ) throws SQLException {
         MachineMapDefinition normalized = normalizeMachineMap(definition);
         String id = mapId == null || mapId.isBlank()
             ? UUID.randomUUID().toString()
@@ -680,6 +714,32 @@ public final class ViewerDrawService {
                             currentRevision = rows.getInt("revision");
                             createdAt = rows.getString("created_at");
                         }
+                    }
+                }
+
+                if (requireExpectedRevision) {
+                    if (
+                        currentRevision > 0
+                        && (
+                            expectedRevision == null
+                            || expectedRevision != currentRevision
+                        )
+                    ) {
+                        throw new MachineMapConflictException(
+                            "machine map revision conflict: expected "
+                                + expectedRevision
+                                + ", current " + currentRevision
+                        );
+                    }
+                    if (
+                        currentRevision == 0
+                        && expectedRevision != null
+                        && expectedRevision != 0
+                    ) {
+                        throw new MachineMapConflictException(
+                            "machine map does not exist at expected revision "
+                                + expectedRevision
+                        );
                     }
                 }
 
@@ -711,7 +771,7 @@ public final class ViewerDrawService {
                             definition_json = ?,
                             definition_hash = ?,
                             updated_at = ?
-                        WHERE map_id = ?
+                        WHERE map_id = ? AND revision = ?
                         """)) {
                         statement.setString(1, normalized.name());
                         statement.setString(2, normalized.schemaVersion());
@@ -719,8 +779,9 @@ public final class ViewerDrawService {
                         statement.setString(4, hash);
                         statement.setString(5, now);
                         statement.setString(6, id);
+                        statement.setInt(7, currentRevision);
                         if (statement.executeUpdate() != 1) {
-                            throw new IllegalStateException(
+                            throw new MachineMapConflictException(
                                 "machine map changed before save"
                             );
                         }
@@ -745,6 +806,9 @@ public final class ViewerDrawService {
                 connection.commit();
             } catch (Exception error) {
                 connection.rollback();
+                if (error instanceof MachineMapConflictException conflict) {
+                    throw conflict;
+                }
                 if (error instanceof SQLException sql) throw sql;
                 throw new SQLException("failed to save machine map", error);
             } finally {
