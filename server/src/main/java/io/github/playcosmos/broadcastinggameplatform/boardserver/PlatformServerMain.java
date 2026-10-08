@@ -298,14 +298,22 @@ public final class PlatformServerMain {
         String serverManagementUrl = "http://127.0.0.1:"
             + config.server().port() + "/";
         System.out.println("[server-management] " + serverManagementUrl);
-        System.out.println("[platform-admin] " + adminUrl);
+        System.out.println(
+            "[platform-admin] http://127.0.0.1:"
+                + config.server().clientPort()
+                + "/admin/ (bootstrap token omitted from logs)"
+        );
         System.out.println(
             "[platform-client] http://" + config.server().clientHost()
                 + ":" + config.server().clientPort()
         );
-        System.out.println(
-            "[remote-admin] " + clientHttp.adminBootstrapUrl()
-        );
+        if (!config.server().publicBaseUrl().isBlank()) {
+            System.out.println(
+                "[remote-admin] "
+                    + config.server().publicBaseUrl()
+                    + "/admin/ (bootstrap token omitted from logs)"
+            );
+        }
         if (!config.server().publicBaseUrl().isBlank()) {
             System.out.println(
                 "[platform-public] " + config.server().publicBaseUrl()
