@@ -9,10 +9,17 @@ import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.Comparator;
 import java.util.Locale;
 
 public final class FileLog implements AutoCloseable {
-    private static final DateTimeFormatter FILE_TIME = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final DateTimeFormatter FILE_TIME =
+        DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+    private static final int MAX_RETAINED_LOG_FILES = 30;
+    private static final String LOG_PREFIX =
+        "broadcasting-game-platform-";
+    private static final String LEGACY_LOG_PREFIX =
+        "roulette-bridge-";
 
     private final PrintStream originalOut;
     private final PrintStream originalErr;
@@ -34,12 +41,17 @@ public final class FileLog implements AutoCloseable {
         Path root = directory.toAbsolutePath().normalize();
         Files.createDirectories(root);
         hideDirectoryOnWindows(root);
-        Path path = root.resolve("roulette-bridge-" + LocalDateTime.now().format(FILE_TIME) + ".log");
+        Path path = root.resolve(
+            LOG_PREFIX
+                + LocalDateTime.now().format(FILE_TIME)
+                + ".log"
+        );
         var stream = Files.newOutputStream(
             path,
             StandardOpenOption.CREATE_NEW,
             StandardOpenOption.WRITE
         );
+        pruneOldLogs(root, path);
         var file = new PrintStream(stream, true, StandardCharsets.UTF_8);
         var log = new FileLog(System.out, System.err, file, path);
         System.setOut(log.teeOut);
@@ -49,6 +61,56 @@ public final class FileLog implements AutoCloseable {
             + " console-err=" + log.originalErr.charset()
             + " file=UTF-8");
         return log;
+    }
+
+    private static void pruneOldLogs(
+        Path root,
+        Path current
+    ) {
+        try (var files = Files.list(root)) {
+            var candidates = files
+                .filter(Files::isRegularFile)
+                .filter(FileLog::isManagedLog)
+                .sorted(
+                    Comparator.comparingLong(
+                        FileLog::lastModifiedMillis
+                    ).reversed()
+                )
+                .toList();
+
+            for (
+                int index = MAX_RETAINED_LOG_FILES;
+                index < candidates.size();
+                index += 1
+            ) {
+                Path candidate = candidates.get(index);
+                if (candidate.equals(current)) continue;
+                try {
+                    Files.deleteIfExists(candidate);
+                } catch (IOException ignored) {
+                    // Logging must not fail because retention cleanup failed.
+                }
+            }
+        } catch (IOException ignored) {
+            // Logging must not fail because retention cleanup failed.
+        }
+    }
+
+    private static boolean isManagedLog(Path path) {
+        String name = path.getFileName().toString();
+        return name.endsWith(".log")
+            && (
+                name.startsWith(LOG_PREFIX)
+                || name.startsWith(LEGACY_LOG_PREFIX)
+            );
+    }
+
+    private static long lastModifiedMillis(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException ignored) {
+            return Long.MIN_VALUE;
+        }
     }
 
     private static void hideDirectoryOnWindows(Path root) {
