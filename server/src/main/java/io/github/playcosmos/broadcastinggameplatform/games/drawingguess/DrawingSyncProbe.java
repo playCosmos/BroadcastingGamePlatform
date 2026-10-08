@@ -102,6 +102,65 @@ public final class DrawingSyncProbe {
         }
         require(unsupported, "unsupported drawing event type must fail");
 
+        boolean oversized = false;
+        try {
+            service.append(
+                session.drawingCode(),
+                session.drawerToken(),
+                "{\"type\":\"canvas.clear\",\"payload\":{\"padding\":\""
+                    + "x".repeat(9 * 1024)
+                    + "\"}}"
+            );
+        } catch (IllegalArgumentException expected) {
+            oversized = true;
+        }
+        require(
+            oversized,
+            "oversized drawing websocket payload must fail"
+        );
+
+        var pointBatch = new StringBuilder(
+            "{\"type\":\"canvas.stroke.points\","
+                + "\"payload\":{\"strokeId\":\"s1\",\"points\":["
+        );
+        for (int index = 0; index < 129; index += 1) {
+            if (index > 0) pointBatch.append(',');
+            pointBatch.append("{\"x\":0.5,\"y\":0.5}");
+        }
+        pointBatch.append("]}}");
+
+        boolean tooManyPoints = false;
+        try {
+            service.append(
+                session.drawingCode(),
+                session.drawerToken(),
+                pointBatch.toString()
+            );
+        } catch (IllegalArgumentException expected) {
+            tooManyPoints = true;
+        }
+        require(
+            tooManyPoints,
+            "oversized drawing point batch must fail"
+        );
+
+        boolean invalidCoordinate = false;
+        try {
+            service.append(
+                session.drawingCode(),
+                session.drawerToken(),
+                "{\"type\":\"canvas.stroke.points\","
+                    + "\"payload\":{\"strokeId\":\"s1\","
+                    + "\"points\":[{\"x\":1.5,\"y\":0.5}]}}"
+            );
+        } catch (IllegalArgumentException expected) {
+            invalidCoordinate = true;
+        }
+        require(
+            invalidCoordinate,
+            "out-of-range drawing coordinates must fail"
+        );
+
         System.out.println("Drawing sync probe passed.");
     }
 
