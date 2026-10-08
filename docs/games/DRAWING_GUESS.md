@@ -407,7 +407,18 @@ v1은 구현 단순성을 위해 다음을 우선한다.
 vector stroke history + bounded history
 ```
 
-필요 시 후속 단계에서 bitmap snapshot을 추가한다.
+현재 서버 경계:
+
+- WebSocket drawing event: 최대 8 KiB
+- `canvas.stroke.points`: event당 최대 128 points
+- 정규화 좌표 `x/y`와 선택적 `pressure`: 0..1 유한값만 허용
+- retained history: 최대 20,000 events이면서 동시에 최대 8 MiB
+- SQLite와 메모리 history는 동일한 최근 retained window를 유지
+- Drawing WebSocket: code당 최대 24 connections
+- 쓰기 가능한 Drawer connection: code당 최대 2
+- 전체 Board/Drawing WebSocket connection: 최대 256
+
+따라서 재접속 시 vector history를 재생하지만 무제한 history나 무제한 fan-out을 허용하지 않는다. 필요 시 후속 단계에서 bitmap snapshot을 추가한다.
 
 ---
 
@@ -830,6 +841,7 @@ drawing_guess_canvas_event
 - 서버 프로세스 시작 시 ACTIVE Canvas session의 Token을 강제로 회전한다.
 - 기존 프로세스에서 발급된 Token은 재시작 후 쓸 수 없다.
 - 인증된 운영자만 `drawer-recovery` API를 통해 새 Token과 Private Prompt를 교환한다.
+- Drawer 쓰기 payload와 WebSocket 연결 수는 위 Canvas 상태 동기화 절의 서버 상한을 적용한다.
 
 복구 흐름:
 
