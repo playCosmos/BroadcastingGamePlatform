@@ -30,6 +30,7 @@ public final class DrawingSyncService {
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Duration SESSION_TTL = Duration.ofHours(6);
     private static final int MAX_HISTORY = 20_000;
+    private static final long MAX_HISTORY_BYTES = 8L * 1024 * 1024;
     private static final int MAX_MESSAGE_CHARS = 8 * 1024;
     private static final int MAX_POINTS_PER_EVENT = 128;
     private static final java.util.Set<String> ALLOWED_TYPES =
@@ -65,6 +66,7 @@ public final class DrawingSyncService {
         private final Instant expiresAt;
         private final AtomicLong sequence = new AtomicLong();
         private final ArrayList<String> history = new ArrayList<>();
+        private long historyBytes;
 
         private State(
             String roundId,
@@ -253,15 +255,22 @@ public final class DrawingSyncService {
             event.add("payload", payload.deepCopy());
 
             String canonical = GSON.toJson(event);
-            persistEvent(state, sequence, canonical, createdAt);
+            long firstRetainedSequence =
+                firstRetainedSequenceAfterAppend(
+                    state,
+                    sequence,
+                    canonical
+                );
+            persistEvent(
+                state,
+                sequence,
+                canonical,
+                createdAt,
+                firstRetainedSequence
+            );
 
             state.sequence.set(sequence);
-            state.history.add(canonical);
-            if (state.history.size() > MAX_HISTORY) {
-                int removeCount =
-                    state.history.size() - MAX_HISTORY;
-                state.history.subList(0, removeCount).clear();
-            }
+            appendHistory(state, canonical);
             return canonical;
         }
     }
@@ -389,6 +398,52 @@ public final class DrawingSyncService {
             );
         }
         return number;
+    }
+
+    private static long historyBytes(String eventJson) {
+        return eventJson.getBytes(StandardCharsets.UTF_8).length;
+    }
+
+    private static long firstRetainedSequenceAfterAppend(
+        State state,
+        long nextSequence,
+        String canonical
+    ) {
+        long bytes = state.historyBytes + historyBytes(canonical);
+        int retained = state.history.size() + 1;
+        int removeIndex = 0;
+
+        while (
+            retained > MAX_HISTORY
+                || bytes > MAX_HISTORY_BYTES
+        ) {
+            if (removeIndex >= state.history.size()) {
+                break;
+            }
+            bytes -= historyBytes(
+                state.history.get(removeIndex)
+            );
+            removeIndex += 1;
+            retained -= 1;
+        }
+
+        return nextSequence - retained + 1;
+    }
+
+    private static void appendHistory(
+        State state,
+        String canonical
+    ) {
+        state.history.add(canonical);
+        state.historyBytes += historyBytes(canonical);
+
+        while (
+            state.history.size() > MAX_HISTORY
+                || state.historyBytes > MAX_HISTORY_BYTES
+        ) {
+            String removed = state.history.remove(0);
+            state.historyBytes -= historyBytes(removed);
+        }
     }
 
     public List<String> history(String code) {
@@ -579,27 +634,45 @@ public final class DrawingSyncService {
     }
 
     private void restoreHistory(State state) throws SQLException {
+        var newestFirst = new ArrayList<String>();
+        long retainedBytes = 0;
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
                  SELECT event_json
                  FROM drawing_guess_canvas_event
                  WHERE round_id = ?
-                 ORDER BY sequence
+                 ORDER BY sequence DESC
+                 LIMIT ?
                  """)) {
             statement.setString(1, state.roundId);
+            statement.setInt(2, MAX_HISTORY);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
-                    state.history.add(
-                        rows.getString("event_json")
-                    );
+                    String eventJson = rows.getString("event_json");
+                    long eventBytes = historyBytes(eventJson);
+                    if (
+                        !newestFirst.isEmpty()
+                            && retainedBytes + eventBytes
+                                > MAX_HISTORY_BYTES
+                    ) {
+                        break;
+                    }
+                    newestFirst.add(eventJson);
+                    retainedBytes += eventBytes;
                 }
             }
         }
-        if (state.history.size() > MAX_HISTORY) {
-            int removeCount =
-                state.history.size() - MAX_HISTORY;
-            state.history.subList(0, removeCount).clear();
-        }
+
+        Collections.reverse(newestFirst);
+        state.history.addAll(newestFirst);
+        state.historyBytes = retainedBytes;
+
+        long firstRetainedSequence =
+            state.sequence.get() - state.history.size() + 1;
+        prunePersistedHistory(
+            state.roundId,
+            Math.max(1, firstRetainedSequence)
+        );
     }
 
     private boolean persistNewState(State state) {
@@ -637,7 +710,8 @@ public final class DrawingSyncService {
         State state,
         long sequence,
         String eventJson,
-        Instant createdAt
+        Instant createdAt,
+        long firstRetainedSequence
     ) {
         if (database == null || state.roundId == null) return;
 
@@ -670,14 +744,13 @@ public final class DrawingSyncService {
                     }
                 }
 
-                long cutoff = sequence - MAX_HISTORY;
-                if (cutoff > 0) {
+                if (firstRetainedSequence > 1) {
                     try (var statement = connection.prepareStatement("""
                         DELETE FROM drawing_guess_canvas_event
-                        WHERE round_id = ? AND sequence <= ?
+                        WHERE round_id = ? AND sequence < ?
                         """)) {
                         statement.setString(1, state.roundId);
-                        statement.setLong(2, cutoff);
+                        statement.setLong(2, firstRetainedSequence);
                         statement.executeUpdate();
                     }
                 }
@@ -694,6 +767,22 @@ public final class DrawingSyncService {
                 "failed to persist drawing event",
                 error
             );
+        }
+    }
+
+    private void prunePersistedHistory(
+        String roundId,
+        long firstRetainedSequence
+    ) throws SQLException {
+        if (database == null || roundId == null) return;
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 DELETE FROM drawing_guess_canvas_event
+                 WHERE round_id = ? AND sequence < ?
+                 """)) {
+            statement.setString(1, roundId);
+            statement.setLong(2, firstRetainedSequence);
+            statement.executeUpdate();
         }
     }
 
