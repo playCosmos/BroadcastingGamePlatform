@@ -10,7 +10,6 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public final class BoardGameDatabase implements DatabaseAccess {
-    private static final int CURRENT_SCHEMA_VERSION = 19;
     private static final String[] MIGRATIONS = {
         "/db/migration/V4__board_rooms.sql",
         "/db/migration/V5__board_room_live_status.sql",
@@ -75,11 +74,14 @@ public final class BoardGameDatabase implements DatabaseAccess {
             version = rows.next() ? rows.getInt(1) : 0;
         }
 
-        if (version > CURRENT_SCHEMA_VERSION) {
-            throw new SQLException("board database schema is newer than this application: " + version);
+        if (version > MIGRATIONS.length) {
+            throw new SQLException(
+                "board database schema is newer than this application: "
+                    + version
+            );
         }
 
-        while (version < CURRENT_SCHEMA_VERSION) {
+        while (version < MIGRATIONS.length) {
             int nextVersion = version + 1;
             connection.setAutoCommit(false);
             try {
