@@ -12,7 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.Set;
-import java.util.concurrent.ThreadLocalRandom;
+import java.security.SecureRandom;
 import java.util.function.IntSupplier;
 
 import static io.github.playcosmos.broadcastinggameplatform.room.RoomModels.*;
@@ -36,6 +36,8 @@ public final class RoomService {
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int ROOM_CODE_LENGTH = 6;
     private static final int ROOM_CODE_ATTEMPTS = 64;
+    private static final SecureRandom ROOM_CODE_RANDOM =
+        new SecureRandom();
 
     private final DatabaseAccess database;
     private final RoomLayoutGenerator layoutGenerator = new RoomLayoutGenerator();
@@ -729,7 +731,7 @@ public final class RoomService {
         for (int attempt = 0; attempt < ROOM_CODE_ATTEMPTS; attempt += 1) {
             var code = new StringBuilder(ROOM_CODE_LENGTH);
             for (int i = 0; i < ROOM_CODE_LENGTH; i += 1) {
-                int index = ThreadLocalRandom.current().nextInt(
+                int index = ROOM_CODE_RANDOM.nextInt(
                     ROOM_CODE_ALPHABET.length()
                 );
                 code.append(ROOM_CODE_ALPHABET.charAt(index));
