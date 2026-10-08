@@ -21,6 +21,9 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private static final int MAX_BOARD_CONNECTIONS_PER_ROOM = 32;
     private static final int MAX_DRAWING_CONNECTIONS_PER_CODE = 24;
     private static final int MAX_DRAWER_CONNECTIONS_PER_CODE = 2;
+    private static final int MAX_DRAWING_MESSAGES_PER_SECOND = 120;
+    private static final long DRAWING_RATE_WINDOW_NANOS =
+        1_000_000_000L;
     private static final int MAX_RESOURCE_DESCRIPTOR_CHARS = 4096;
 
     private enum ChannelKind {
@@ -35,8 +38,28 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         boolean canWrite
     ) {}
 
+    private static final class MessageRateWindow {
+        private long startedAtNanos = System.nanoTime();
+        private int count;
+
+        synchronized boolean allow() {
+            long now = System.nanoTime();
+            if (
+                now - startedAtNanos
+                    >= DRAWING_RATE_WINDOW_NANOS
+            ) {
+                startedAtNanos = now;
+                count = 0;
+            }
+            count += 1;
+            return count <= MAX_DRAWING_MESSAGES_PER_SECOND;
+        }
+    }
+
     private final AtomicInteger connectedClients = new AtomicInteger();
     private final Map<WebSocket, Channel> channelByConnection =
+        new ConcurrentHashMap<>();
+    private final Map<WebSocket, MessageRateWindow> drawingWriteRates =
         new ConcurrentHashMap<>();
     private final Predicate<String> roomCodeValidator;
     private final DrawingSyncService drawingSync;
@@ -181,6 +204,15 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
 
         channelByConnection.put(connection, channel);
+        if (
+            channel.kind() == ChannelKind.DRAWING
+                && channel.canWrite()
+        ) {
+            drawingWriteRates.put(
+                connection,
+                new MessageRateWindow()
+            );
+        }
         connectedClients.incrementAndGet();
         return true;
     }
@@ -193,6 +225,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         boolean remote
     ) {
         Channel channel = channelByConnection.remove(connection);
+        drawingWriteRates.remove(connection);
         int count = connectedClients.get();
         if (channel != null) {
             count = Math.max(0, connectedClients.decrementAndGet());
@@ -226,6 +259,15 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
         if (!channel.canWrite()) {
             connection.close(1008, "drawing overlay is read-only");
+            return;
+        }
+
+        MessageRateWindow rate = drawingWriteRates.computeIfAbsent(
+            connection,
+            ignored -> new MessageRateWindow()
+        );
+        if (!rate.allow()) {
+            connection.close(1008, "drawing write rate exceeded");
             return;
         }
 
