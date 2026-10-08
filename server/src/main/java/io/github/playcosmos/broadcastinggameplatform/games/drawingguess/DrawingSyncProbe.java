@@ -161,6 +161,36 @@ public final class DrawingSyncProbe {
             "out-of-range drawing coordinates must fail"
         );
 
+        var bounded = new DrawingSyncService();
+        var boundedSession = bounded.createSession();
+        String padding = "x".repeat(7000);
+        for (int index = 0; index < 1300; index += 1) {
+            bounded.append(
+                boundedSession.drawingCode(),
+                boundedSession.drawerToken(),
+                "{\"type\":\"canvas.clear\",\"payload\":{\"padding\":\""
+                    + padding
+                    + "\"}}"
+            );
+        }
+        var boundedHistory = bounded.history(
+            boundedSession.drawingCode()
+        );
+        long retainedBytes = boundedHistory.stream()
+            .mapToLong(value ->
+                value.getBytes(java.nio.charset.StandardCharsets.UTF_8)
+                    .length
+            )
+            .sum();
+        require(
+            retainedBytes <= 8L * 1024 * 1024,
+            "drawing history must stay within retained byte budget"
+        );
+        require(
+            boundedHistory.size() < 1300,
+            "drawing history byte budget must evict oldest events"
+        );
+
         System.out.println("Drawing sync probe passed.");
     }
 
