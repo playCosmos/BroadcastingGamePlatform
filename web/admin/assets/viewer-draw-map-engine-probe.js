@@ -7,6 +7,21 @@ require("./viewer-draw-map-engine.js");
 
 const Engine = globalThis.ViewerDrawMapEngine;
 
+const bundledRetroDefinition = JSON.parse(
+  fs.readFileSync(
+    path.join(
+      __dirname,
+      "../../tools/viewer-draw/maps/retro-cadet-survivor-v3.json"
+    ),
+    "utf8"
+  )
+);
+requireCondition(
+  JSON.stringify(Engine.defaultDefinition())
+    === JSON.stringify(bundledRetroDefinition),
+  "Map Engine default definition must match the authoritative bundled Retro map"
+);
+
 const defaultWall = Engine.componentDefaults("WALL", 100, 100);
 requireCondition(
   defaultWall.properties?.friction === 0.02,
