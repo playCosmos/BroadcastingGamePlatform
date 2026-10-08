@@ -135,6 +135,153 @@
       throw new Error("ranked entries mismatch");
     }
 
+    const parityDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Preview Box2D Motion Parity",
+      world: {
+        width: 800,
+        height: 2000,
+        gravityX: 0,
+        gravityY: 12
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 100),
+          properties: { marbleRadius: 10 }
+        },
+        {
+          ...Engine.componentDefaults("FINISH", 400, 1900),
+          width: 500,
+          height: 60
+        }
+      ]
+    };
+    const parityPreview = new Engine.PreviewEngine(
+      parityDefinition,
+      { seed: 123 }
+    );
+    parityPreview.reset(1, 123);
+    adapter.loadMap(parityDefinition);
+    adapter.reset(entries.slice(0, 1), 123, {
+      launchMode: "BUNCH"
+    });
+
+    const previewStart = parityPreview.marbles[0];
+    const boxStart = adapter.marbles[0].body.GetPosition();
+    if (
+      Math.abs(previewStart.x - boxStart.x * 100) > 0.01
+      || Math.abs(previewStart.y - boxStart.y * 100) > 0.01
+    ) {
+      throw new Error(
+        "preview/Box2D BUNCH spawn position mismatch"
+      );
+    }
+
+    for (let step = 0; step < 120; step += 1) {
+      parityPreview.step(1 / 120);
+      adapter.step(1 / 120);
+    }
+
+    const previewMotion = parityPreview.marbles[0];
+    const boxMotion = adapter.marbles[0];
+    const boxMotionPosition = boxMotion.body.GetPosition();
+    const boxMotionVelocity = boxMotion.body.GetLinearVelocity();
+    if (
+      Math.abs(previewMotion.x - boxMotionPosition.x * 100) > 1.5
+      || Math.abs(previewMotion.y - boxMotionPosition.y * 100) > 1.5
+      || Math.abs(previewMotion.vx - boxMotionVelocity.x * 100) > 2
+      || Math.abs(previewMotion.vy - boxMotionVelocity.y * 100) > 2
+    ) {
+      throw new Error(
+        "preview/Box2D free-motion parity drifted"
+      );
+    }
+
+    const bounceWall = Engine.componentDefaults(
+      "WALL",
+      400,
+      420
+    );
+    bounceWall.width = 500;
+    bounceWall.height = 20;
+    bounceWall.properties = {
+      ...bounceWall.properties,
+      restitution: 0.2,
+      friction: 0,
+      boost: 0
+    };
+    const bounceDefinition = {
+      schemaVersion: Engine.SCHEMA_VERSION,
+      name: "Preview Box2D Material Parity",
+      world: {
+        width: 800,
+        height: 800,
+        gravityX: 0,
+        gravityY: 0
+      },
+      components: [
+        {
+          ...Engine.componentDefaults("SPAWN", 400, 200),
+          properties: { marbleRadius: 10 }
+        },
+        bounceWall,
+        {
+          ...Engine.componentDefaults("FINISH", 400, 760),
+          width: 500,
+          height: 40
+        }
+      ]
+    };
+    const bouncePreview = new Engine.PreviewEngine(
+      bounceDefinition,
+      { seed: 7 }
+    );
+    bouncePreview.reset(1, 7);
+    bouncePreview.marbles[0].x = 400;
+    bouncePreview.marbles[0].y = 300;
+    bouncePreview.marbles[0].vx = 0;
+    bouncePreview.marbles[0].vy = 600;
+
+    adapter.loadMap(bounceDefinition);
+    adapter.reset(entries.slice(0, 1), 7, {
+      launchMode: "BUNCH"
+    });
+    const bounceBox = adapter.marbles[0];
+    bounceBox.body.SetTransform(
+      new adapter.Box2D.b2Vec2(4, 3),
+      0
+    );
+    bounceBox.body.SetLinearVelocity(
+      new adapter.Box2D.b2Vec2(0, 6)
+    );
+
+    let previewBounceVelocity = 0;
+    let boxBounceVelocity = 0;
+    for (let step = 0; step < 90; step += 1) {
+      bouncePreview.step(1 / 120);
+      adapter.step(1 / 120);
+      previewBounceVelocity = bouncePreview.marbles[0].vy;
+      boxBounceVelocity =
+        bounceBox.body.GetLinearVelocity().y * 100;
+      if (
+        previewBounceVelocity < 0
+        && boxBounceVelocity < 0
+      ) {
+        break;
+      }
+    }
+    if (
+      previewBounceVelocity >= 0
+      || boxBounceVelocity >= 0
+      || Math.abs(
+        previewBounceVelocity - boxBounceVelocity
+      ) > 25
+    ) {
+      throw new Error(
+        "preview/Box2D component restitution mismatch"
+      );
+    }
+
     const forceRotation = Engine.createPreset(
       "ROTATOR",
       330,
