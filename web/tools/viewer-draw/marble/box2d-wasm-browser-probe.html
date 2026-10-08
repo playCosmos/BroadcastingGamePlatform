@@ -831,14 +831,16 @@
     if (
       launcher?.x !== 1295
       || launcher?.y !== 2480
-      || launcher?.properties?.burstPower !== 21
+      || launcher?.properties?.burstPower !== 20
       || launcher?.properties?.burstIntervalMs !== 150
       || pinballDefinition.world?.width !== 1440
       || pinballDefinition.world?.height !== 2560
+      || oneWayHinge?.x !== 1290
+      || oneWayHinge?.y !== 770
       || oneWayHinge?.properties?.rotationMode !== "FREE"
       || oneWayHinge?.properties?.pivotRatio !== -0.48
-      || oneWayHinge?.properties?.startAngle !== 0
-      || oneWayHinge?.properties?.endAngle !== 80
+      || oneWayHinge?.properties?.startAngle !== -79.8
+      || oneWayHinge?.properties?.endAngle !== 0
       || cabinetArc?.properties?.curveMode !== "CIRCULAR_ARC"
     ) {
       throw new Error(
