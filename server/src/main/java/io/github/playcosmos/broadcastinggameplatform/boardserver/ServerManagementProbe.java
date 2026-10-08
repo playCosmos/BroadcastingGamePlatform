@@ -181,6 +181,42 @@ public final class ServerManagementProbe {
                 "server management state must be readable"
             );
             require(
+                state.headers().firstValue("Access-Control-Allow-Origin")
+                    .isEmpty(),
+                "local management API must not opt into cross-origin reads"
+            );
+
+            var publicState = client.send(
+                HttpRequest.newBuilder(base.resolve("/api/state"))
+                    .GET()
+                    .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                publicState.statusCode() == 200
+                    && !publicState.body().contains("token=old")
+                    && !publicState.body().contains("remoteAdminUrl"),
+                "general state endpoint must not expose administrator bootstrap credentials"
+            );
+
+            var crossOriginMutation = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/server-management")
+                )
+                    .header("Content-Type", "application/json")
+                    .header("Origin", "https://attacker.example")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                        "{\"action\":\"revokeAdminSessions\"}"
+                    ))
+                    .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                crossOriginMutation.statusCode() == 403
+                    && activeSessions.get() == 3,
+                "cross-origin browser management mutation must be rejected"
+            );
+            require(
                 state.body().contains(
                     "\"activeAdminSessions\":3"
                 ),
