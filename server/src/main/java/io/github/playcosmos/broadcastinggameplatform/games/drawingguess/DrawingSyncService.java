@@ -30,7 +30,8 @@ public final class DrawingSyncService {
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final Duration SESSION_TTL = Duration.ofHours(6);
     private static final int MAX_HISTORY = 20_000;
-    private static final int MAX_MESSAGE_CHARS = 96 * 1024;
+    private static final int MAX_MESSAGE_CHARS = 8 * 1024;
+    private static final int MAX_POINTS_PER_EVENT = 128;
     private static final java.util.Set<String> ALLOWED_TYPES =
         java.util.Set.of(
             "canvas.stroke.begin",
@@ -238,6 +239,7 @@ public final class DrawingSyncService {
         JsonElement payload = incoming.has("payload")
             ? incoming.get("payload")
             : new JsonObject();
+        validatePayload(type, payload);
 
         synchronized (state) {
             long sequence = state.sequence.get() + 1L;
@@ -262,6 +264,131 @@ public final class DrawingSyncService {
             }
             return canonical;
         }
+    }
+
+    private static void validatePayload(
+        String type,
+        JsonElement payload
+    ) {
+        if (payload == null || !payload.isJsonObject()) {
+            throw new IllegalArgumentException(
+                "drawing event payload must be an object"
+            );
+        }
+
+        JsonObject object = payload.getAsJsonObject();
+        switch (type) {
+            case "canvas.stroke.begin" -> {
+                JsonElement rawStroke = object.get("stroke");
+                if (rawStroke == null || !rawStroke.isJsonObject()) {
+                    throw new IllegalArgumentException(
+                        "stroke.begin requires a stroke object"
+                    );
+                }
+                JsonObject stroke = rawStroke.getAsJsonObject();
+                requiredText(stroke, "strokeId", 128);
+                validatePoints(stroke.get("points"), 1);
+            }
+            case "canvas.stroke.points" -> {
+                requiredText(object, "strokeId", 128);
+                validatePoints(object.get("points"), 1);
+            }
+            case "canvas.stroke.end" ->
+                requiredText(object, "strokeId", 128);
+            case "canvas.undo", "canvas.redo", "canvas.clear" -> {
+                // No additional payload fields are required.
+            }
+            default -> throw new IllegalArgumentException(
+                "unsupported drawing event type"
+            );
+        }
+    }
+
+    private static String requiredText(
+        JsonObject object,
+        String key,
+        int maxLength
+    ) {
+        JsonElement value = object.get(key);
+        if (
+            value == null
+                || !value.isJsonPrimitive()
+                || !value.getAsJsonPrimitive().isString()
+        ) {
+            throw new IllegalArgumentException(
+                key + " must be a string"
+            );
+        }
+        String text = value.getAsString().trim();
+        if (text.isEmpty() || text.length() > maxLength) {
+            throw new IllegalArgumentException(
+                key + " length is invalid"
+            );
+        }
+        return text;
+    }
+
+    private static void validatePoints(
+        JsonElement rawPoints,
+        int minimum
+    ) {
+        if (rawPoints == null || !rawPoints.isJsonArray()) {
+            throw new IllegalArgumentException(
+                "drawing points must be an array"
+            );
+        }
+        var points = rawPoints.getAsJsonArray();
+        if (
+            points.size() < minimum
+                || points.size() > MAX_POINTS_PER_EVENT
+        ) {
+            throw new IllegalArgumentException(
+                "drawing point batch must contain "
+                    + minimum + ".." + MAX_POINTS_PER_EVENT
+                    + " points"
+            );
+        }
+
+        for (JsonElement rawPoint : points) {
+            if (rawPoint == null || !rawPoint.isJsonObject()) {
+                throw new IllegalArgumentException(
+                    "drawing point must be an object"
+                );
+            }
+            JsonObject point = rawPoint.getAsJsonObject();
+            requireUnitNumber(point, "x");
+            requireUnitNumber(point, "y");
+            if (point.has("pressure")) {
+                requireUnitNumber(point, "pressure");
+            }
+        }
+    }
+
+    private static double requireUnitNumber(
+        JsonObject object,
+        String key
+    ) {
+        JsonElement value = object.get(key);
+        if (value == null || !value.isJsonPrimitive()) {
+            throw new IllegalArgumentException(
+                key + " must be numeric"
+            );
+        }
+
+        final double number;
+        try {
+            number = value.getAsDouble();
+        } catch (RuntimeException error) {
+            throw new IllegalArgumentException(
+                key + " must be numeric"
+            );
+        }
+        if (!Double.isFinite(number) || number < 0 || number > 1) {
+            throw new IllegalArgumentException(
+                key + " must be within 0..1"
+            );
+        }
+        return number;
     }
 
     public List<String> history(String code) {
