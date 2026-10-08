@@ -536,6 +536,10 @@ public final class ClientBoundaryProbe {
                     base.resolve("/api/board/rooms")
                 )
                 .header("Cookie", sessionCookie)
+                .header(
+                    "Origin",
+                    "http://127.0.0.1:" + clientPort
+                )
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString("{}"))
                 .build(),
@@ -549,11 +553,31 @@ public final class ClientBoundaryProbe {
                 "authenticated mutation must proxy to local admin"
             );
 
+            var crossOriginBoardPost = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/board/rooms")
+                )
+                .header("Cookie", sessionCookie)
+                .header("Origin", "https://attacker.example")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}"))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                crossOriginBoardPost.statusCode() == 403,
+                "cross-origin authenticated board mutation must be rejected"
+            );
+
             var viewerDrawCreate = client.send(
                 HttpRequest.newBuilder(
                     base.resolve("/api/v1/tools/viewer-draw/sessions")
                 )
                 .header("Cookie", sessionCookie)
+                .header(
+                    "Origin",
+                    "http://127.0.0.1:" + clientPort
+                )
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.ofString(
                     "{\"name\":\"Boundary Number Draw\",\"mode\":\"NUMBER\","
@@ -565,6 +589,25 @@ public final class ClientBoundaryProbe {
             require(
                 viewerDrawCreate.statusCode() == 201,
                 "authenticated viewer draw session must be created"
+            );
+
+            var crossOriginViewerDraw = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/tools/viewer-draw/sessions")
+                )
+                .header("Cookie", sessionCookie)
+                .header("Origin", "https://attacker.example")
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"mode\":\"NUMBER\","
+                        + "\"config\":{\"maxNumber\":45,\"drawCount\":7}}"
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                crossOriginViewerDraw.statusCode() == 403,
+                "cross-origin authenticated viewer draw mutation must be rejected"
             );
             var viewerDrawJson = JsonParser.parseString(
                 viewerDrawCreate.body()
