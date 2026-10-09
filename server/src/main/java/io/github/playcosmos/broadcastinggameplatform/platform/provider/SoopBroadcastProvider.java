@@ -4,6 +4,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.ChannelEven
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventPayloads;
 import io.github.playcosmos.broadcastinggameplatform.soop.SoopBridgeAdapter;
 import io.github.playcosmos.broadcastinggameplatform.soop.SoopRuntimeState;
 import java.util.Map;
@@ -50,7 +51,9 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
                             chat.senderId(),
                             chat.senderNickname(),
                             chat.message(),
-                            chat.raw(),
+                            PlatformEventPayloads.boundedRawPayload(
+                                chat.raw()
+                            ),
                             chat.timestamp()
                         )
                     );
@@ -72,7 +75,9 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
                         event == null
                             ? "unknown"
                             : event.getClass().getSimpleName(),
-                        String.valueOf(event),
+                        PlatformEventPayloads.boundedRawPayload(
+                            String.valueOf(event)
+                        ),
                         System.currentTimeMillis()
                     )
                 );
