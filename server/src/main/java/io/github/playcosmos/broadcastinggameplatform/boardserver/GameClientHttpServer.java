@@ -53,6 +53,10 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static final int MAX_APPROVAL_RATE_KEYS = 1024;
     private static final long APPROVAL_RATE_WINDOW_NANOS =
         Duration.ofMinutes(1).toNanos();
+    private static final int MAX_PUBLIC_LOOKUPS_PER_WINDOW = 120;
+    private static final int MAX_PUBLIC_LOOKUP_RATE_KEYS = 4096;
+    private static final long PUBLIC_LOOKUP_RATE_WINDOW_NANOS =
+        Duration.ofSeconds(10).toNanos();
     private static final String APPROVAL_ALPHABET =
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int MAX_PROXY_BODY_BYTES = 1024 * 1024;
@@ -74,6 +78,8 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final AtomicReference<String> adminBootstrapToken;
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
+    private final LinkedHashMap<String, PublicLookupRateWindow>
+        publicLookupRates = new LinkedHashMap<>();
 
     private static final class ApprovalRateWindow {
         private long startedAtNanos = System.nanoTime();
@@ -94,6 +100,28 @@ public final class GameClientHttpServer implements AutoCloseable {
         private boolean expired(long nowNanos) {
             return nowNanos - startedAtNanos
                 >= APPROVAL_RATE_WINDOW_NANOS;
+        }
+    }
+
+    private static final class PublicLookupRateWindow {
+        private long startedAtNanos = System.nanoTime();
+        private int count;
+
+        private boolean allow(long nowNanos) {
+            if (
+                nowNanos - startedAtNanos
+                    >= PUBLIC_LOOKUP_RATE_WINDOW_NANOS
+            ) {
+                startedAtNanos = nowNanos;
+                count = 0;
+            }
+            count += 1;
+            return count <= MAX_PUBLIC_LOOKUPS_PER_WINDOW;
+        }
+
+        private boolean expired(long nowNanos) {
+            return nowNanos - startedAtNanos
+                >= PUBLIC_LOOKUP_RATE_WINDOW_NANOS;
         }
     }
 
@@ -542,6 +570,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             if (!requireGetOrHead(exchange)) return;
+            if (!requirePublicLookupCapacity(exchange)) return;
 
             String roomId = path.substring(publicPrefix.length())
                 .trim()
@@ -918,6 +947,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             if (!requireGetOrHead(exchange)) return;
+            if (!requirePublicLookupCapacity(exchange)) return;
 
             String code = path.substring(publicPrefix.length())
                 .trim()
@@ -1000,6 +1030,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             if (!requireGetOrHead(exchange)) return;
+            if (!requirePublicLookupCapacity(exchange)) return;
             String code = path.substring(publicPrefix.length())
                 .trim()
                 .toUpperCase(Locale.ROOT);
@@ -1031,6 +1062,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             if (!requireGetOrHead(exchange)) return;
+            if (!requirePublicLookupCapacity(exchange)) return;
             String code = path.substring(publicAuditPrefix.length())
                 .trim()
                 .toUpperCase(Locale.ROOT);
@@ -1535,6 +1567,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             "GET".equalsIgnoreCase(method)
             || "HEAD".equalsIgnoreCase(method)
         ) {
+            if (!requirePublicLookupCapacity(exchange)) return;
             readRoom(exchange);
             return;
         }
@@ -1987,6 +2020,46 @@ public final class GameClientHttpServer implements AutoCloseable {
             ignored -> new ApprovalRateWindow()
         );
         return window.allow(nowNanos);
+    }
+
+    private synchronized boolean allowPublicLookup(
+        HttpExchange exchange
+    ) {
+        long nowNanos = System.nanoTime();
+        String key = remoteAddressKey(exchange);
+
+        publicLookupRates.entrySet().removeIf(
+            entry -> entry.getValue().expired(nowNanos)
+        );
+        if (
+            !publicLookupRates.containsKey(key)
+                && publicLookupRates.size() >= MAX_PUBLIC_LOOKUP_RATE_KEYS
+        ) {
+            var iterator = publicLookupRates.entrySet().iterator();
+            if (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
+
+        PublicLookupRateWindow window = publicLookupRates.computeIfAbsent(
+            key,
+            ignored -> new PublicLookupRateWindow()
+        );
+        return window.allow(nowNanos);
+    }
+
+    private boolean requirePublicLookupCapacity(
+        HttpExchange exchange
+    ) throws IOException {
+        if (allowPublicLookup(exchange)) return true;
+        exchange.getResponseHeaders().set("Retry-After", "10");
+        sendJson(
+            exchange,
+            429,
+            Map.of("error", "public lookup rate exceeded")
+        );
+        return false;
     }
 
     private static String remoteAddressKey(HttpExchange exchange) {
