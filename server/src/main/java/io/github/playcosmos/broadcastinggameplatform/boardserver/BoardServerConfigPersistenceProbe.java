@@ -92,6 +92,48 @@ public final class BoardServerConfigPersistenceProbe {
                 );
             }
 
+            boolean invalidPublicBaseRejected = false;
+            try {
+                new BoardServerConfig.Server(
+                    "127.0.0.1",
+                    17830,
+                    17831,
+                    false,
+                    "0.0.0.0",
+                    17832,
+                    "javascript:alert(1)",
+                    ""
+                ).normalized();
+            } catch (IllegalArgumentException expected) {
+                invalidPublicBaseRejected = true;
+            }
+            if (!invalidPublicBaseRejected) {
+                throw new IllegalStateException(
+                    "invalid publicBaseUrl scheme must be rejected"
+                );
+            }
+
+            boolean invalidPublicWsRejected = false;
+            try {
+                new BoardServerConfig.Server(
+                    "127.0.0.1",
+                    17830,
+                    17831,
+                    false,
+                    "0.0.0.0",
+                    17832,
+                    "https://example.test",
+                    "https://example.test/ws"
+                ).normalized();
+            } catch (IllegalArgumentException expected) {
+                invalidPublicWsRejected = true;
+            }
+            if (!invalidPublicWsRejected) {
+                throw new IllegalStateException(
+                    "publicWebSocketUrl must require ws/wss scheme"
+                );
+            }
+
             System.out.println(
                 "Board server config persistence probe passed."
             );
