@@ -32,6 +32,10 @@ jobs:
         shell: pwsh
         run: ./server/smoke-browser-physics.ps1
 
+      - name: Smoke board layouts in browser
+        shell: pwsh
+        run: ./server/smoke-board-layouts.ps1
+
       - name: Build platform server
         working-directory: server
         run: mvn --batch-mode --no-transfer-progress clean package
