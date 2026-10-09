@@ -1020,10 +1020,21 @@ public final class ViewerDrawService {
                 ORDER BY revision DESC
                 LIMIT ?
               )
+              AND revision NOT IN (
+                SELECT MAX(revision)
+                FROM viewer_draw_machine_map_revision
+                WHERE map_id = ?
+                  AND definition_hash IN (
+                    SELECT definition_hash
+                    FROM viewer_draw_marble_audit
+                  )
+                GROUP BY definition_hash
+              )
             """)) {
             statement.setString(1, mapId);
             statement.setString(2, mapId);
             statement.setInt(3, MAX_MACHINE_REVISIONS_PER_MAP);
+            statement.setString(4, mapId);
             statement.executeUpdate();
         }
     }
