@@ -1975,22 +1975,15 @@ public final class ViewerDrawService {
                     "CONDITIONAL_OUTPUT requires an independently activatable root condition"
                 );
             }
-            var visiting = new java.util.LinkedHashSet<String>();
-            var visited = new java.util.LinkedHashSet<String>();
-            for (String key : outputsByKey.keySet()) {
-                if (
-                    hasConditionalOutputCycle(
-                        key,
-                        outputsByKey,
-                        normalizedComponents,
-                        visiting,
-                        visited
-                    )
-                ) {
-                    throw new IllegalArgumentException(
-                        "conditional output dependency contains a cycle"
-                    );
-                }
+            if (
+                hasConditionalOutputCycle(
+                    outputsByKey,
+                    normalizedComponents
+                )
+            ) {
+                throw new IllegalArgumentException(
+                    "conditional output dependency contains a cycle"
+                );
             }
         }
 
@@ -2127,42 +2120,69 @@ public final class ViewerDrawService {
     }
 
     private static boolean hasConditionalOutputCycle(
-        String key,
         Map<String, MachineComponent> outputsByKey,
-        List<MachineComponent> components,
-        java.util.Set<String> visiting,
-        java.util.Set<String> visited
+        List<MachineComponent> components
     ) {
-        if (visiting.contains(key)) return true;
-        if (visited.contains(key)) return false;
+        var indegree = new java.util.LinkedHashMap<String, Integer>();
+        var edges =
+            new java.util.LinkedHashMap<String, List<String>>();
+        for (String key : outputsByKey.keySet()) {
+            indegree.put(key, 0);
+        }
 
-        visiting.add(key);
-        MachineComponent component = outputsByKey.get(key);
-        if (component != null) {
+        for (var entry : outputsByKey.entrySet()) {
+            var uniqueDependencies =
+                new java.util.LinkedHashSet<String>();
             for (
                 String next : conditionalOutputDependencies(
-                    component,
+                    entry.getValue(),
                     outputsByKey,
                     components
                 )
             ) {
                 if (
-                    outputsByKey.containsKey(next)
-                    && hasConditionalOutputCycle(
-                        next,
-                        outputsByKey,
-                        components,
-                        visiting,
-                        visited
-                    )
+                    next != null
+                        && outputsByKey.containsKey(next)
                 ) {
-                    return true;
+                    uniqueDependencies.add(next);
+                }
+            }
+            var dependencies =
+                List.copyOf(uniqueDependencies);
+            edges.put(entry.getKey(), dependencies);
+            for (String next : dependencies) {
+                indegree.put(
+                    next,
+                    indegree.getOrDefault(next, 0) + 1
+                );
+            }
+        }
+
+        var ready = new java.util.ArrayDeque<String>();
+        for (var entry : indegree.entrySet()) {
+            if (entry.getValue() == 0) {
+                ready.addLast(entry.getKey());
+            }
+        }
+
+        int visitedCount = 0;
+        while (!ready.isEmpty()) {
+            String key = ready.removeFirst();
+            visitedCount += 1;
+            for (
+                String next : edges.getOrDefault(
+                    key,
+                    List.of()
+                )
+            ) {
+                int remaining = indegree.get(next) - 1;
+                indegree.put(next, remaining);
+                if (remaining == 0) {
+                    ready.addLast(next);
                 }
             }
         }
-        visiting.remove(key);
-        visited.add(key);
-        return false;
+        return visitedCount != outputsByKey.size();
     }
 
     private static List<String> conditionalOutputDependencies(
