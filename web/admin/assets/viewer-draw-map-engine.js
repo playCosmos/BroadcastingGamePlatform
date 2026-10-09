@@ -1537,20 +1537,33 @@
       if(outputs.length&&!starter){
         errors.push("CONDITIONAL_OUTPUT에는 독립적으로 활성화 가능한 root 조건이 필요합니다.");
       }
-      const visiting=new Set(),visited=new Set();
-      const hasCycle=(key)=>{
-        if(visiting.has(key)) return true;
-        if(visited.has(key)) return false;
-        visiting.add(key);
-        const c=outputByKey.get(key);
-        for(const next of dependencies(c)){
-          if(next&&outputByKey.has(next)&&hasCycle(next)) return true;
+      const indegree=new Map();
+      const edges=new Map();
+      for(const key of outputByKey.keys()) indegree.set(key,0);
+      for(const [key,c] of outputByKey.entries()){
+        const nextKeys=[...new Set(
+          dependencies(c).filter(next=>next&&outputByKey.has(next))
+        )];
+        edges.set(key,nextKeys);
+        for(const next of nextKeys){
+          indegree.set(next,(indegree.get(next)||0)+1);
         }
-        visiting.delete(key);
-        visited.add(key);
-        return false;
-      };
-      if(outputs.some(c=>hasCycle(String(c.properties?.outputKey||"")))){
+      }
+      const ready=[];
+      for(const [key,count] of indegree.entries()){
+        if(count===0) ready.push(key);
+      }
+      let visitedCount=0;
+      for(let index=0;index<ready.length;index+=1){
+        const key=ready[index];
+        visitedCount+=1;
+        for(const next of edges.get(key)||[]){
+          const remaining=(indegree.get(next)||0)-1;
+          indegree.set(next,remaining);
+          if(remaining===0) ready.push(next);
+        }
+      }
+      if(visitedCount!==outputByKey.size){
         errors.push("Conditional Output dependency에 순환 참조가 있습니다.");
       }
     }
