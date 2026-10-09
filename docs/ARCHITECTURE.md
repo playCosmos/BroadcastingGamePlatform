@@ -81,7 +81,7 @@ CHZZK Provider가 공용 Event Bus에 이벤트를 발행하고, 게임 모듈�
 현재 룸 생성 UI는 SOOP만 허용하지만 DB는 Provider 범위 사용자 ID를 지원하므로 CHZZK 추가 시 동일 문자열 ID 충돌을 피할 수 있다.
 
 공개 Board HTTP/WS 계약에는 Provider userId를 노출하지 않는다. 공개 Overlay는 룸 내부 순번 기반 `P1`, `P2`… player key와 displayName/profileImage만 사용하며, 후원자 userId/nickname도 public `board.turn`에서 제거한다.
-6자리 room/drawing/audit code로 조회하는 공개 capability API는 원격 주소당 10초 120회로 제한하며 초과 시 `429`와 `Retry-After: 10`을 반환한다. 관리자/DB 내부 모델은 원래 Provider identity를 유지한다.
+6자리 room/drawing/audit code로 조회하는 공개 HTTP capability API와 WebSocket capability handshake는 원격 주소당 10초 120회로 제한한다. HTTP 초과는 `429`와 `Retry-After: 10`, WebSocket 초과는 `1013` close로 처리한다. loopback reverse proxy에서 온 요청만 `X-Forwarded-For`를 신뢰하며, rate key는 forwarded chain의 마지막 주소를 사용한다. 외부 직접 요청의 forwarded 헤더는 무시한다. 관리자/DB 내부 모델은 원래 Provider identity를 유지한다.
 
 기존 보드 DB의 provider 정보가 없는 참가자는 마이그레이션/런타임에서 `SOOP`으로 처리한다.
 
