@@ -45,6 +45,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 10분 유효 6자리 승인 요청
    - 고정 12시간 TTL의 HttpOnly 관리자 세션 (`Path=/`, `SameSite=Strict`; HTTPS에서는 `Secure`)
    - 로컬 서버 관리 plane은 loopback-only로 강제한다.
+   - `server.host`는 `127.0.0.1`, `::1`, `localhost`만 허용하며 `0.0.0.0` 같은 외부 bind 설정은 거부한다.
    - 브라우저의 관리 POST는 로컬 동일 Origin만 허용한다.
    - bootstrap token이 포함된 Admin URL은 일반 상태 API나 로그에 기록하지 않는다.
    - 미인증 승인 코드 요청은 원격 주소당 1분 4회로 제한하고, pending 요청은 최대 32개만 유지한다.
