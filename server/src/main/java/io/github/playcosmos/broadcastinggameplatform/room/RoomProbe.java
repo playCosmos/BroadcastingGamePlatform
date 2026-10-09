@@ -139,6 +139,75 @@ public final class RoomProbe {
                 null
             );
 
+            var oversizedTextRequest = new CreateRoomRequest(
+                "x".repeat(81),
+                List.of(
+                    new PlayerInput(
+                        "u".repeat(129),
+                        "d".repeat(129),
+                        "https://example.test/" + "p".repeat(2048),
+                        100
+                    )
+                ),
+                new BoardInput("dimensions", 8, 6, null, "rounded"),
+                new MovementInput("dice", 1, true, true, true),
+                new RulesInput("destinationOnly", true, true),
+                List.of(
+                    new InstructionInput(
+                        "I".repeat(65),
+                        "L".repeat(257),
+                        new AllocationInput("count", 1),
+                        false,
+                        JsonParser.parseString(
+                            "{\"type\":\"display\",\"text\":\"probe\"}"
+                        )
+                    )
+                ),
+                null
+            );
+            var oversizedTextErrors =
+                rooms.validate(oversizedTextRequest).errors();
+            require(
+                oversizedTextErrors.stream()
+                    .anyMatch(error -> "name".equals(error.field())),
+                "room name above 80 characters must be rejected"
+            );
+            require(
+                oversizedTextErrors.stream()
+                    .anyMatch(error ->
+                        "players[0].soopId".equals(error.field())
+                    ),
+                "provider user id above 128 characters must be rejected"
+            );
+            require(
+                oversizedTextErrors.stream()
+                    .anyMatch(error ->
+                        "players[0].displayName".equals(error.field())
+                    ),
+                "display name above 128 characters must be rejected"
+            );
+            require(
+                oversizedTextErrors.stream()
+                    .anyMatch(error ->
+                        "players[0].profileImageUrl".equals(error.field())
+                    ),
+                "profile image URL above 2048 characters must be rejected"
+            );
+            require(
+                oversizedTextErrors.stream()
+                    .anyMatch(error ->
+                        "instructions[0].id".equals(error.field())
+                    ),
+                "instruction id above 64 characters must be rejected"
+            );
+            require(
+                oversizedTextErrors.stream()
+                    .anyMatch(error ->
+                        "instructions[0].label".equals(error.field())
+                    ),
+                "instruction label above 256 characters must be rejected"
+            );
+
             var invalidRetention = new CreateRoomRequest(
                 request.name(),
                 request.players(),
