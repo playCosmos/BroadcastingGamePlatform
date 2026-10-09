@@ -33,7 +33,19 @@ public final class PlatformEventBus {
         }
 
         for (var subscription : subscriptions) {
-            subscription.accept(event);
+            try {
+                subscription.accept(event);
+            } catch (RuntimeException error) {
+                System.err.println(
+                    "[platform-events] subscriber failed"
+                        + " type=" + event.type()
+                        + ": " + (
+                            error.getMessage() == null
+                                ? error.getClass().getSimpleName()
+                                : error.getMessage()
+                        )
+                );
+            }
         }
     }
 
