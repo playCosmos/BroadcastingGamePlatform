@@ -774,6 +774,107 @@ public final class ClientBoundaryProbe {
                 "authenticated machine map must reload"
             );
 
+            var missingArchiveRevision = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/maps/"
+                            + machineMapId
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header(
+                    "Origin",
+                    "http://127.0.0.1:" + clientPort
+                )
+                .DELETE()
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                missingArchiveRevision.statusCode() == 400,
+                "machine map archive must require expectedRevision"
+            );
+
+            var savedMapJson = JsonParser.parseString(
+                machineMapSave.body()
+            ).getAsJsonObject();
+            var updatePayload =
+                new com.google.gson.JsonObject();
+            updatePayload.addProperty("mapId", machineMapId);
+            updatePayload.addProperty("expectedRevision", 1);
+            updatePayload.add(
+                "definition",
+                savedMapJson.get("definition").deepCopy()
+            );
+
+            var machineMapUpdate = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/v1/tools/viewer-draw/maps")
+                )
+                .header("Cookie", sessionCookie)
+                .header(
+                    "Origin",
+                    "http://127.0.0.1:" + clientPort
+                )
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    updatePayload.toString()
+                ))
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                machineMapUpdate.statusCode() == 200
+                    && machineMapUpdate.body().contains(
+                        "\"revision\":2"
+                    ),
+                "machine map update must advance revision"
+            );
+
+            var staleArchive = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/maps/"
+                            + machineMapId
+                            + "?expectedRevision=1"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header(
+                    "Origin",
+                    "http://127.0.0.1:" + clientPort
+                )
+                .DELETE()
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                staleArchive.statusCode() == 409,
+                "stale machine map archive must return 409"
+            );
+
+            var currentArchive = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/maps/"
+                            + machineMapId
+                            + "?expectedRevision=2"
+                    )
+                )
+                .header("Cookie", sessionCookie)
+                .header(
+                    "Origin",
+                    "http://127.0.0.1:" + clientPort
+                )
+                .DELETE()
+                .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                currentArchive.statusCode() == 204,
+                "current machine map revision must archive"
+            );
+
             var drawingSessionCreate = client.send(
                 HttpRequest.newBuilder(
                     base.resolve(
