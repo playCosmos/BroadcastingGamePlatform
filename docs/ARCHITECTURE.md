@@ -12,10 +12,13 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - SOOP: 현재 구현
    - CHZZK: 추후 구현
    - 방송 서비스별 연결/재연결/채팅/후원 수집을 담당한다.
+   - SOOP 사용자 검색은 connect 5초 / request 8초 timeout과 응답 512 KiB 상한을 둔다.
+   - SOOP 방송 상태 probe는 8초 timeout, chat join/reconnect는 30초 timeout으로 실패를 격리한다.
 2. **Platform Event Bus**
    - Provider가 수집한 이벤트를 `ChatMessageEvent`, `DonationEvent`, `ChannelEvent`로 정규화한다.
    - 게임 모듈은 특정 SDK에 직접 의존하지 않고 Event Bus를 구독한다.
    - 최근 이벤트는 메모리에서 최대 256개까지만 유지한다.
+   - 한 subscriber의 RuntimeException은 다른 subscriber 전파를 중단시키지 않는다.
 3. **Platform API**
    - `/api/v1/platform`: 플랫폼/게임/Provider 기능 조회
    - `/api/v1/providers`: 인증된 운영자의 Provider 상태 조회
@@ -26,6 +29,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - Drawing Guess: Classic Guess D0~D6 구현, HTML5 Canvas 기반 그림 퀴즈
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
+   - Board pause 중 처리되지 않는 후원 감사 레코드는 룸당 최근 256건만 유지한다.
 5. **Broadcast Tool**
    - Viewer Draw: Random/Number + Marble Map Maker + Browser Box2D-WASM Marble Draw V0 구현
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
@@ -108,6 +112,7 @@ Drawing Guess는 현재 Classic Guess D0~D5가 구현된 게임 모듈이다.
 - OBS는 roomId 고정 URL로 현재 drawingCode를 자동 추적
 - Round 종료 후에만 대표 정답을 공개 Reveal 데이터로 노출
 - Canvas session/history는 SQLite에 영속화해 서버 재시작 후 동일 drawingCode/sequence를 복구
+- Canvas 영속 history는 ACTIVE Round 복구용으로만 유지하며 Round 완료/만료 시 session/event를 삭제
 - Drawer Token은 평문 저장하지 않고 hash만 영속화하며 프로세스 재시작 시 강제 회전
 - 인증된 관리자 Drawer View는 active Round 복구 시 새 Token과 Private Prompt를 재교환
 - 후원은 Drawing Guess 필수 규칙으로 사용하지 않음
