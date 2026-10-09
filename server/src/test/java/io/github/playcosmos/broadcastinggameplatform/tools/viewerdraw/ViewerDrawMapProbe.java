@@ -818,6 +818,34 @@ public final class ViewerDrawMapProbe {
                 "invalid map save must be rejected"
             );
 
+            service.saveMarbleAudit(
+                Map.of(
+                    "schemaVersion", "viewer-draw-run-audit/v0",
+                    "resultStatus", "COMPLETED",
+                    "qualification", Map.of(
+                        "status", "QUALIFIED",
+                        "reasons", List.of()
+                    ),
+                    "map", Map.of(
+                        "name", saved.name(),
+                        "definitionHash", saved.definitionHash()
+                    ),
+                    "entries", Map.of(
+                        "count", 1,
+                        "snapshotHash", "c".repeat(64)
+                    ),
+                    "engine", Map.of(
+                        "id", "BOX2D_WASM"
+                    ),
+                    "run", Map.of(
+                        "seed", 1
+                    ),
+                    "result", Map.of(
+                        "winners", List.of()
+                    )
+                )
+            );
+
             var retentionCurrent = updated;
             for (int index = 0; index < 50; index += 1) {
                 retentionCurrent = service.saveMachineMap(
@@ -841,14 +869,21 @@ public final class ViewerDrawMapProbe {
             }
             require(
                 revision2Pruned,
-                "machine map history must prune revisions older than latest 50"
+                "duplicate old revisions outside the latest 50 must still prune"
+            );
+            require(
+                service.findMachineMapRevision(
+                    saved.mapId(),
+                    1
+                ).revision() == 1,
+                "audit-referenced machine definition must remain recoverable"
             );
             require(
                 service.findMachineMapRevision(
                     saved.mapId(),
                     3
                 ).revision() == 3,
-                "machine map history must retain exactly the latest 50 revisions"
+                "machine map history must retain the latest 50 revisions"
             );
 
             boolean staleArchiveRejected = false;
