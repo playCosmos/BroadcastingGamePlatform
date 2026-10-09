@@ -309,6 +309,30 @@ public final class BoardGameRuntimeProbe {
             require(replayIgnored.duplicateRooms() == 1, "ignored donation replay must stay ignored");
             require(dispatched.size() == 3, "ignored replay must not dispatch");
 
+            runtime.pauseRoom(created.roomId(), "IGNORE", 0);
+            for (int index = 0; index < 260; index += 1) {
+                var ignoredBurst = runtime.process(
+                    new DonationEvent(
+                        "soop-a",
+                        "viewer-a",
+                        "A",
+                        100,
+                        4,
+                        "runtime-probe-ignore-bulk-" + index,
+                        10_000L + index
+                    )
+                );
+                require(
+                    ignoredBurst.ignoredRooms() == 1,
+                    "bulk paused donation must remain ignored"
+                );
+            }
+            require(
+                countIgnoredDeferred(database, created.roomId()) == 256,
+                "ignored deferred donation audit must retain only the latest 256 rows"
+            );
+            runtime.resumeRoom(created.roomId());
+
             var resumedSnapshot = runtime.snapshot(created.roomId());
             require(resumedSnapshot.sequence() == 3, "queue processing must advance runtime sequence to three");
             require(resumedSnapshot.players().get(0).position() == 22, "FIFO probe must finish at cell 22");
@@ -478,6 +502,23 @@ public final class BoardGameRuntimeProbe {
                 } catch (Exception ignored) {
                     // best effort probe cleanup
                 }
+            }
+        }
+    }
+
+    private static int countIgnoredDeferred(
+        BoardGameDatabase database,
+        String roomId
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT COUNT(*)
+                 FROM board_game_deferred_donation
+                 WHERE room_id = ? AND state = 'IGNORED'
+                 """)) {
+            statement.setString(1, roomId);
+            try (var rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : 0;
             }
         }
     }
