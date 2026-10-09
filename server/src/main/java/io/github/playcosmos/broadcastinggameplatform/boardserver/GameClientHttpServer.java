@@ -48,6 +48,10 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static final Duration SESSION_TTL = Duration.ofHours(12);
     private static final Duration APPROVAL_TTL = Duration.ofMinutes(10);
     private static final int MAX_PENDING_APPROVALS = 32;
+    private static final int MAX_APPROVAL_REQUESTS_PER_MINUTE = 4;
+    private static final int MAX_APPROVAL_RATE_KEYS = 1024;
+    private static final long APPROVAL_RATE_WINDOW_NANOS =
+        Duration.ofMinutes(1).toNanos();
     private static final String APPROVAL_ALPHABET =
         "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
     private static final int MAX_PROXY_BODY_BYTES = 1024 * 1024;
@@ -66,6 +70,30 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final DrawingSyncService drawingSync;
     private final DrawingGuessGameService drawingGame;
     private final AtomicReference<String> adminBootstrapToken;
+    private final LinkedHashMap<String, ApprovalRateWindow>
+        approvalRequestRates = new LinkedHashMap<>();
+
+    private static final class ApprovalRateWindow {
+        private long startedAtNanos = System.nanoTime();
+        private int count;
+
+        private boolean allow(long nowNanos) {
+            if (
+                nowNanos - startedAtNanos
+                    >= APPROVAL_RATE_WINDOW_NANOS
+            ) {
+                startedAtNanos = nowNanos;
+                count = 0;
+            }
+            count += 1;
+            return count <= MAX_APPROVAL_REQUESTS_PER_MINUTE;
+        }
+
+        private boolean expired(long nowNanos) {
+            return nowNanos - startedAtNanos
+                >= APPROVAL_RATE_WINDOW_NANOS;
+        }
+    }
 
     public GameClientHttpServer(
         BoardServerConfig config,
@@ -1787,6 +1815,13 @@ public final class GameClientHttpServer implements AutoCloseable {
             ));
             return;
         }
+        if (!allowAdminApprovalRequest(exchange)) {
+            exchange.getResponseHeaders().set("Retry-After", "60");
+            sendJson(exchange, 429, Map.of(
+                "error", "administrator approval request rate exceeded"
+            ));
+            return;
+        }
 
         try {
             Instant now = Instant.now();
@@ -1834,6 +1869,42 @@ public final class GameClientHttpServer implements AutoCloseable {
                 "error", "administrator approval storage failed"
             ));
         }
+    }
+
+    private synchronized boolean allowAdminApprovalRequest(
+        HttpExchange exchange
+    ) {
+        long nowNanos = System.nanoTime();
+        String key = remoteAddressKey(exchange);
+
+        approvalRequestRates.entrySet().removeIf(
+            entry -> entry.getValue().expired(nowNanos)
+        );
+        if (
+            !approvalRequestRates.containsKey(key)
+                && approvalRequestRates.size() >= MAX_APPROVAL_RATE_KEYS
+        ) {
+            var iterator = approvalRequestRates.entrySet().iterator();
+            if (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
+
+        ApprovalRateWindow window = approvalRequestRates.computeIfAbsent(
+            key,
+            ignored -> new ApprovalRateWindow()
+        );
+        return window.allow(nowNanos);
+    }
+
+    private static String remoteAddressKey(HttpExchange exchange) {
+        var remote = exchange.getRemoteAddress();
+        if (remote == null) return "unknown";
+        if (remote.getAddress() != null) {
+            return remote.getAddress().getHostAddress();
+        }
+        return remote.getHostString();
     }
 
     private void pollAdminApprovalRequest(
