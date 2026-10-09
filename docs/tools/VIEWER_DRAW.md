@@ -1138,18 +1138,25 @@ Output별 설정:
 
 사용자 제작 Machine은 시작 전에 검증한다.
 
-검증 후보:
+현재 Browser/Server 공통 validation은 다음 실행 안전 경계를 강제한다.
 
-- spawn이 유효한가
-- output/finish가 존재하는가
+- SPAWN/BURST_SPAWN은 정확히 1개이며 drawRule별 FINISH/OUTPUT/SLOT 구조가 유효해야 한다.
+- component는 최대 5,000개다. 현재 가장 큰 내장 Audio Marble Machine은 680개다.
+- world width/height는 0보다 크고 100,000 이하여야 한다.
+- gravity 절대값은 1,000 이하여야 한다.
+- component x/y 절대값은 200,000 이하, width/height/radius는 100,000 이하여야 한다.
+- collider restitution/friction은 0..10, boost는 0..10,000 범위다.
+- Conditional Output dependency cycle은 Browser/Server 모두 반복형 위상 정렬로 검증하여 긴 dependency chain이 call stack을 소진하지 않게 한다.
+- winnerCount/output capacity/predicate target 등 drawRule 계약을 검증한다.
+
+추가 분석 후보:
+
 - Marble이 영구 격리될 수 있는 영역이 있는가
-- 물리 body 수가 상한 이내인가
-- moving component 속도가 안전 범위인가
-- winnerCount를 만들 수 있는 구조인가
+- moving component의 개별 동력/속도 값이 실제 장치 규모에 비해 과도한가
 - 동일 참가자에 구조적 편향이 있는가
 - simulation timeout 가능성이 과도하지 않은가
 
-완전한 수학적 공정성 증명까지 요구하지는 않지만, 명백한 invalid machine은 실행을 막는다.
+완전한 수학적 공정성 증명까지 요구하지는 않지만, 명백한 invalid machine과 수치 폭발 가능 정의는 실행을 막는다.
 
 공식 내장 Machine은 대량 Monte Carlo 시뮬레이션으로 slot/spawn별 결과 편향을 측정한다.
 
