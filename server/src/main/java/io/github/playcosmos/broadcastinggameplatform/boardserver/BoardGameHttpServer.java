@@ -545,6 +545,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
         }
 
         long bodyLength = Files.size(requested);
+        applySecurityHeaders(exchange);
         exchange.getResponseHeaders().set("Content-Type", contentType(requested));
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
         exchange.getResponseHeaders().set(
@@ -553,6 +554,11 @@ public final class BoardGameHttpServer implements AutoCloseable {
         );
         if ("HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(200, -1);
+            exchange.close();
+            return;
+        }
+        if (!"GET".equalsIgnoreCase(exchange.getRequestMethod())) {
+            exchange.sendResponseHeaders(405, -1);
             exchange.close();
             return;
         }
@@ -714,6 +720,7 @@ public final class BoardGameHttpServer implements AutoCloseable {
     }
 
     private static void sendJson(HttpExchange exchange, int status, Object payload) throws IOException {
+        applySecurityHeaders(exchange);
         byte[] body = GSON.toJson(payload).getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
@@ -721,6 +728,23 @@ public final class BoardGameHttpServer implements AutoCloseable {
         try (var output = exchange.getResponseBody()) {
             output.write(body);
         }
+    }
+
+    private static void applySecurityHeaders(
+        HttpExchange exchange
+    ) {
+        exchange.getResponseHeaders().set(
+            "Referrer-Policy",
+            "no-referrer"
+        );
+        exchange.getResponseHeaders().set(
+            "X-Content-Type-Options",
+            "nosniff"
+        );
+        exchange.getResponseHeaders().set(
+            "X-Frame-Options",
+            "DENY"
+        );
     }
 
     @Override
