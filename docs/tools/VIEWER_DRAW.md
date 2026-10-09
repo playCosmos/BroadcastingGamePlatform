@@ -906,7 +906,7 @@ MachineMapDefinition
 
 DB revision/history 구조는 유지하며, 기존 맵을 편집 후 저장하면 migration된 v1 정의가 새 revision으로 저장된다.
 동일 맵을 여러 편집 세션에서 저장하거나 보관 처리할 때는 클라이언트가 `expectedRevision`을 함께 보내며, 서버는 현재 revision과 일치할 때만 변경한다. 오래된 편집본의 저장/보관 요청은 `409 Conflict`로 거부하여 최신 revision을 조용히 덮어쓰거나 숨기지 않는다.
-맵 revision history는 기본적으로 맵당 최신 50개를 유지한다. 다만 현재 보존 중인 Marble Audit이 `definitionHash`로 참조하는 고유 정의는 최신 50개 밖이어도 hash당 최소 1개 revision을 추가 보존한다. 저장 시 같은 transaction 안에서 중복·불필요 revision을 prune하며, V25 migration은 기존 DB의 오래된 revision을 기본 50개 정책으로 정리한다.
+맵 revision history는 기본적으로 맵당 최신 50개를 유지한다. 다만 현재 보존 중인 Marble Audit이 `definitionHash`로 참조하는 고유 정의는 최신 50개 밖이어도 hash당 최소 1개 revision을 추가 보존한다. 저장 시 같은 transaction 안에서 중복·불필요 revision을 prune하며, V25 migration도 먼저 Audit을 최신 200개로 정리한 뒤 retained Audit이 참조하는 고유 정의를 보호하면서 기존 revision을 같은 정책으로 정리한다.
 저장되는 Machine Map definition JSON은 UTF-8 기준 최대 1 MiB다. HTTP body 상한과 서비스 저장 상한을 동일하게 적용해 내부 호출도 과대 revision을 남길 수 없게 한다.
 ### 13.6.2 Physics Preview Engine V1
 
