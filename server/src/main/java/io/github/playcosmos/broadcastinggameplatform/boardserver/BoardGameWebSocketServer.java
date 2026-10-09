@@ -22,6 +22,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private static final int MAX_DRAWING_CONNECTIONS_PER_CODE = 24;
     private static final int MAX_DRAWER_CONNECTIONS_PER_CODE = 2;
     private static final int MAX_DRAWING_MESSAGES_PER_SECOND = 120;
+    private static final int MAX_INBOUND_MESSAGE_CHARS = 8 * 1024;
     private static final long DRAWING_RATE_WINDOW_NANOS =
         1_000_000_000L;
     private static final int MAX_RESOURCE_DESCRIPTOR_CHARS = 4096;
@@ -242,6 +243,14 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
     @Override
     public void onMessage(WebSocket connection, String message) {
+        if (
+            message == null
+                || message.length() > MAX_INBOUND_MESSAGE_CHARS
+        ) {
+            connection.close(1009, "websocket message too large");
+            return;
+        }
+
         if ("ping".equalsIgnoreCase(message.trim())) {
             connection.send("pong");
             return;
