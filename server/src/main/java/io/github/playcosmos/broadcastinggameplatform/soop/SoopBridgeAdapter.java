@@ -22,6 +22,7 @@ import java.util.function.BiConsumer;
 import java.util.function.Consumer;
 
 public final class SoopBridgeAdapter implements AutoCloseable {
+    private static final long LIVE_PROBE_TIMEOUT_SECONDS = 8;
     private static final long JOIN_TIMEOUT_SECONDS = 30;
 
     private volatile SoopProviderConfig config;
@@ -198,7 +199,13 @@ public final class SoopBridgeAdapter implements AutoCloseable {
         attachListeners(nextClient, currentGeneration);
         state.status("PROBING");
 
-        nextClient.live().detail(streamerId).whenComplete((detail, error) -> {
+        nextClient.live()
+            .detail(streamerId)
+            .orTimeout(
+                LIVE_PROBE_TIMEOUT_SECONDS,
+                TimeUnit.SECONDS
+            )
+            .whenComplete((detail, error) -> {
             if (!isCurrentAttempt(currentGeneration, attempt)) return;
             if (error != null) {
                 state.status("OFFLINE_OR_UNAVAILABLE");
