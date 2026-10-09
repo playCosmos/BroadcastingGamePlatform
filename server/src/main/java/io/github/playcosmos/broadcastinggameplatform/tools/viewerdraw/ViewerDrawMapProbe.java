@@ -644,6 +644,19 @@ public final class ViewerDrawMapProbe {
                 "multiple spawners must fail server validation"
             );
 
+            var oversized =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Oversized",
+                    world,
+                    java.util.Collections.nCopies(5001, spawn)
+                );
+            require(
+                service.validateMachineMap(oversized).stream()
+                    .anyMatch(message -> message.contains("5000")),
+                "server must reject maps above 5000 components"
+            );
+
             var invalid =
                 new ViewerDrawService.MachineMapDefinition(
                     "viewer-draw-machine-map/v0",
