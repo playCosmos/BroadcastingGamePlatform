@@ -40,6 +40,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 로컬 서버 관리 plane은 loopback-only로 강제한다.
    - 브라우저의 관리 POST는 로컬 동일 Origin만 허용한다.
    - bootstrap token이 포함된 Admin URL은 일반 상태 API나 로그에 기록하지 않는다.
+   - 미인증 승인 코드 요청은 원격 주소당 1분 4회로 제한하고, pending 요청은 최대 32개만 유지한다.
 
 ## 웹 경로
 
