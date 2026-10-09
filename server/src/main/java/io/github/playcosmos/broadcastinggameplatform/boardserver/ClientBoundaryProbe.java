@@ -254,6 +254,15 @@ public final class ClientBoundaryProbe {
                     ),
                 "committed room code must authorize room snapshot reads"
             );
+            require(
+                roomCodeRead.body().contains("\"playerId\":\"P1\"")
+                    && !roomCodeRead.body().contains("\"soopId\"")
+                    && !roomCodeRead.body().contains("\"provider\"")
+                    && !roomCodeRead.body().contains(
+                        "\"balloonTrigger\""
+                    ),
+                "public room snapshot must hide provider identities"
+            );
 
             var runtimeCodeRead = client.send(
                 HttpRequest.newBuilder(
@@ -270,6 +279,13 @@ public final class ClientBoundaryProbe {
                         "\"roomId\":\"" + roomCode + "\""
                     ),
                 "committed room code must authorize runtime reads"
+            );
+            require(
+                runtimeCodeRead.body().contains(
+                    "\"playerId\":\"P1\""
+                )
+                    && !runtimeCodeRead.body().contains("\"soopId\""),
+                "public runtime snapshot must use anonymous player keys"
             );
 
             var landingResponse = client.send(
