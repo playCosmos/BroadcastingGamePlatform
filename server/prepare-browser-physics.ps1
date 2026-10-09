@@ -9,9 +9,9 @@ $Vendor = Join-Path $WebRoot "vendor\box2d-wasm"
 
 Push-Location $WebRoot
 try {
-    npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+    npm ci --ignore-scripts --no-audit --no-fund
     if ($LASTEXITCODE -ne 0) {
-        throw "npm install for box2d-wasm failed with exit code $LASTEXITCODE"
+        throw "npm ci for box2d-wasm failed with exit code $LASTEXITCODE"
     }
 }
 finally {
