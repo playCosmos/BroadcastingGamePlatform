@@ -31,6 +31,41 @@ requireCondition(
   "Map Engine must reject definitions above 5000 components"
 );
 
+const hugeWorldDefinition = Engine.defaultDefinition();
+hugeWorldDefinition.world.width = 100001;
+requireCondition(
+  Engine.validateDefinition(hugeWorldDefinition).length > 0,
+  "Map Engine must reject oversized world dimensions"
+);
+
+const hugeGravityDefinition = Engine.defaultDefinition();
+hugeGravityDefinition.world.gravityY = 1001;
+requireCondition(
+  Engine.validateDefinition(hugeGravityDefinition).length > 0,
+  "Map Engine must reject excessive gravity"
+);
+
+const hugeCoordinateDefinition = Engine.defaultDefinition();
+hugeCoordinateDefinition.components[0].x = 200001;
+requireCondition(
+  Engine.validateDefinition(hugeCoordinateDefinition).length > 0,
+  "Map Engine must reject excessive component coordinates"
+);
+
+const hugeMaterialDefinition = Engine.defaultDefinition();
+const materialComponent = hugeMaterialDefinition.components.find(
+  (component) => component.type === "WALL"
+);
+requireCondition(
+  Boolean(materialComponent),
+  "default map must provide a wall for material limit probe"
+);
+materialComponent.properties.restitution = 11;
+requireCondition(
+  Engine.validateDefinition(hugeMaterialDefinition).length > 0,
+  "Map Engine must reject excessive collider material values"
+);
+
 const defaultWall = Engine.componentDefaults("WALL", 100, 100);
 requireCondition(
   defaultWall.properties?.friction === 0.02,
