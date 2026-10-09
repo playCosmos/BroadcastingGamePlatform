@@ -179,7 +179,6 @@ public final class PlatformServerMain {
                     ) {
                         System.out.println(
                             "[board-game] provider=" + donation.provider()
-                                + " donor=" + donation.userId()
                                 + " amount=" + donation.amount()
                                 + " matched=" + result.matchedRooms()
                                 + " processed=" + result.processedRooms()
@@ -221,7 +220,6 @@ public final class PlatformServerMain {
                         System.out.println(
                             "[viewer-draw] chat entry accepted"
                                 + " provider=" + chat.provider()
-                                + " user=" + chat.userId()
                                 + " entries=" + snapshot.entryCount()
                         );
                     }
@@ -244,9 +242,6 @@ public final class PlatformServerMain {
                             "[drawing-guess] chat status="
                                 + result.status()
                                 + " provider=" + chat.provider()
-                                + " user=" + chat.userId()
-                                + " room=" + result.roomId()
-                                + " round=" + result.roundId()
                                 + " rank=" + result.rank()
                                 + " score=" + result.guesserScore()
                         );
