@@ -8,15 +8,19 @@ if (-not (Test-Path $Jar)) {
     throw "platform regression jar missing: $Jar"
 }
 
-$Classes = "target/classes"
+$MainClasses = "target/classes"
+$TestClasses = "target/test-classes"
 $Dependencies = "target/probe-dependencies/*"
-if (-not (Test-Path $Classes)) {
-    throw "platform regression classes missing: $Classes"
+if (-not (Test-Path $MainClasses)) {
+    throw "platform regression main classes missing: $MainClasses"
+}
+if (-not (Test-Path $TestClasses)) {
+    throw "platform regression test classes missing: $TestClasses"
 }
 if (-not (Test-Path "target/probe-dependencies")) {
     throw "platform regression dependencies missing"
 }
-$ClassPath = $Classes + [IO.Path]::PathSeparator + $Dependencies
+$ClassPath = $TestClasses + [IO.Path]::PathSeparator + $MainClasses + [IO.Path]::PathSeparator + $Dependencies
 
 $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe",
