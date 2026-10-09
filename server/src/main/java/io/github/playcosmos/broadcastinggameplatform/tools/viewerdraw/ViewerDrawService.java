@@ -23,6 +23,7 @@ public final class ViewerDrawService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String RNG_ALGORITHM = "java.security.SecureRandom + Fisher-Yates";
     private static final int MAX_ENTRIES = 10000;
+    private static final int MAX_MACHINE_COMPONENTS = 5000;
     private static final int MAX_PROVIDER_CHARS = 64;
     private static final int MAX_ENTRY_ID_CHARS = 128;
     private static final int MAX_ENTRY_TEXT_CHARS = 256;
@@ -1224,6 +1225,12 @@ public final class ViewerDrawService {
 
         List<MachineComponent> rawComponents =
             raw.components() == null ? List.of() : raw.components();
+        if (rawComponents.size() > MAX_MACHINE_COMPONENTS) {
+            throw new IllegalArgumentException(
+                "too many machine components; max="
+                    + MAX_MACHINE_COMPONENTS
+            );
+        }
 
         var allowedTypes = legacySchema
             ? java.util.Set.of(
