@@ -2,6 +2,7 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
 import java.net.InetSocketAddress;
+import java.util.LinkedHashMap;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -25,6 +26,10 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private static final long DRAWING_RATE_WINDOW_NANOS =
         1_000_000_000L;
     private static final int MAX_RESOURCE_DESCRIPTOR_CHARS = 4096;
+    private static final int MAX_HANDSHAKES_PER_WINDOW = 120;
+    private static final int MAX_HANDSHAKE_RATE_KEYS = 4096;
+    private static final long HANDSHAKE_RATE_WINDOW_NANOS =
+        10_000_000_000L;
 
     private enum ChannelKind {
         BOARD,
@@ -37,6 +42,30 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         String drawerToken,
         boolean canWrite
     ) {}
+
+    static final class HandshakeRateWindow {
+        private long startedAtNanos;
+        private int count;
+
+        boolean allow(long nowNanos) {
+            if (
+                startedAtNanos == 0
+                    || nowNanos - startedAtNanos
+                        >= HANDSHAKE_RATE_WINDOW_NANOS
+            ) {
+                startedAtNanos = nowNanos;
+                count = 0;
+            }
+            count += 1;
+            return count <= MAX_HANDSHAKES_PER_WINDOW;
+        }
+
+        boolean expired(long nowNanos) {
+            return startedAtNanos != 0
+                && nowNanos - startedAtNanos
+                    >= HANDSHAKE_RATE_WINDOW_NANOS;
+        }
+    }
 
     private static final class MessageRateWindow {
         private long startedAtNanos = System.nanoTime();
@@ -61,6 +90,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         new ConcurrentHashMap<>();
     private final Map<WebSocket, MessageRateWindow> drawingWriteRates =
         new ConcurrentHashMap<>();
+    private final LinkedHashMap<String, HandshakeRateWindow>
+        handshakeRates = new LinkedHashMap<>();
     private final Predicate<String> roomCodeValidator;
     private final DrawingSyncService drawingSync;
 
@@ -92,6 +123,11 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
     @Override
     public void onOpen(WebSocket connection, ClientHandshake handshake) {
+        if (!allowHandshake(connection, handshake)) {
+            connection.close(1013, "websocket handshake rate exceeded");
+            return;
+        }
+
         Map<String, String> query = queryParameters(handshake);
         String roomCode = normalizeCode(query.get("roomCode"));
         if (roomCode != null) {
@@ -158,6 +194,46 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
 
         connection.close(1008, "valid board room or drawing code required");
+    }
+
+    private synchronized boolean allowHandshake(
+        WebSocket connection,
+        ClientHandshake handshake
+    ) {
+        long nowNanos = System.nanoTime();
+        handshakeRates.entrySet().removeIf(
+            entry -> entry.getValue().expired(nowNanos)
+        );
+
+        InetSocketAddress remote = connection.getRemoteSocketAddress();
+        String forwardedFor = null;
+        if (GameClientHttpServer.isTrustedForwardProxy(remote)) {
+            String header = handshake.getFieldValue("X-Forwarded-For");
+            if (header != null && !header.isBlank()) {
+                forwardedFor = header;
+            }
+        }
+        String key = GameClientHttpServer.rateLimitAddressKey(
+            remote,
+            forwardedFor
+        );
+
+        if (
+            !handshakeRates.containsKey(key)
+                && handshakeRates.size() >= MAX_HANDSHAKE_RATE_KEYS
+        ) {
+            var iterator = handshakeRates.entrySet().iterator();
+            if (iterator.hasNext()) {
+                iterator.next();
+                iterator.remove();
+            }
+        }
+
+        HandshakeRateWindow window = handshakeRates.computeIfAbsent(
+            key,
+            ignored -> new HandshakeRateWindow()
+        );
+        return window.allow(nowNanos);
     }
 
     private synchronized boolean registerIfCapacity(
