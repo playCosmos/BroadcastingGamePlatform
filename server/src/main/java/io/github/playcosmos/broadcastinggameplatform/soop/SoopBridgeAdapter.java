@@ -287,9 +287,13 @@ public final class SoopBridgeAdapter implements AutoCloseable {
             if (event.count() <= 0 || event.senderId() == null || event.senderId().isBlank()) return;
             state.donationReceived();
             var donation = new SoopDonation(
-                bid,
-                event.senderId(),
-                event.senderNickname(),
+                PlatformEventPayloads.boundedIdentifier(bid),
+                PlatformEventPayloads.boundedIdentifier(
+                    event.senderId()
+                ),
+                PlatformEventPayloads.boundedDisplayName(
+                    event.senderNickname()
+                ),
                 event.count(),
                 event.fanOrder(),
                 PlatformEventPayloads.boundedRawPayload(
