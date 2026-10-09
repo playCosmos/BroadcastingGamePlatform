@@ -30,6 +30,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
    - Board pause 중 처리되지 않는 후원 감사 레코드는 룸당 최근 256건만 유지한다.
+   - TERMINATED Board 룸은 최신 200개만 유지하며, 오래된 룸 삭제 시 player/runtime/event/deferred donation은 FK cascade로 함께 정리한다. V28 migration은 기존 DB에도 같은 정책을 적용한다.
 5. **Broadcast Tool**
    - Viewer Draw: Random/Number + Marble Map Maker + Browser Box2D-WASM Marble Draw V0 구현
    - Random / Number / Wheel / Marble Physics Draw를 게임과 독립적으로 제공한다.
