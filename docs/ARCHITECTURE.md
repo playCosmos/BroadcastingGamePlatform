@@ -55,6 +55,8 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
 - `/admin/games/board/`: 보드게임 룸 생성
 - `/admin/games/board/room.html?roomId=...`: Board 룸 운영
 - `/games/board/`: OBS/방송용 Board 클라이언트
+  - rounded/rect Board는 동일 `board.js` 런타임을 사용하고 geometry strategy만 전환한다.
+  - `board-rect.js`는 rect layout mode만 지정하는 얇은 adapter이며 룸/WS/턴/이동 로직을 복제하지 않는다.
 - `/admin/games/drawing-guess/`: Drawing Guess 룸 생성
 - `/admin/games/drawing-guess/room.html?roomId=...`: Drawing Guess 운영/Private Drawer View
 - `/games/drawing-guess/?roomId=XXXXXX`: Drawing Guess 고정 OBS Overlay
