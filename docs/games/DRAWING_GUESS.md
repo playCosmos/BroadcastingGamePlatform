@@ -417,7 +417,7 @@ vector stroke history + bounded history
 - SQLite와 메모리 history는 동일한 최근 retained window를 유지
 - Drawing WebSocket: code당 최대 24 connections
 - 쓰기 가능한 Drawer connection: code당 최대 2
-- Drawer WebSocket write: connection당 초당 최대 120 messages
+- Drawer WebSocket write: connection당 초당 최대 60 messages (클라이언트 points flush는 약 32ms 주기)
 - 전체 Board/Drawing WebSocket connection: 최대 256
 
 따라서 재접속 시 vector history를 재생하지만 무제한 history나 무제한 fan-out을 허용하지 않는다. 필요 시 후속 단계에서 bitmap snapshot을 추가한다.
