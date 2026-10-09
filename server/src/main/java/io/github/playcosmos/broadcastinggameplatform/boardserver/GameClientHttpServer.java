@@ -209,18 +209,9 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.viewerDraw = viewerDraw;
         this.drawingSync = drawingSync;
         this.drawingGame = drawingGame;
-        try {
-            this.adminBootstrapToken = new AtomicReference<>(
-                adminAuthStore.bootstrapTokenOrCreate(
-                    () -> randomToken(24)
-                )
-            );
-        } catch (java.sql.SQLException error) {
-            throw new IOException(
-                "failed to initialize persistent admin authentication",
-                error
-            );
-        }
+        this.adminBootstrapToken = new AtomicReference<>(
+            randomToken(24)
+        );
         this.adminHttpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(3))
             .build();
@@ -358,7 +349,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     public String rotateAdminAccess() {
         String nextToken = randomToken(24);
         try {
-            adminAuthStore.rotateBootstrapToken(nextToken);
+            adminAuthStore.revokeAllSessions();
             adminBootstrapToken.set(nextToken);
             return adminBootstrapUrl();
         } catch (java.sql.SQLException error) {
