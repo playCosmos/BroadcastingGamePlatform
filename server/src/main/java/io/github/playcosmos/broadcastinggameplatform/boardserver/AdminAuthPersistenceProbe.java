@@ -20,27 +20,16 @@ public final class AdminAuthPersistenceProbe {
             );
             database.initialize();
 
-            var firstStore = new AdminAuthStore(database);
-            String initialToken = firstStore.bootstrapTokenOrCreate(
-                () -> "initial-token"
-            );
             require(
-                "initial-token".equals(initialToken),
-                "initial token must be created"
+                !tableExists(database, "board_admin_auth_state"),
+                "bootstrap token must not be persisted in the database"
             );
 
+            var firstStore = new AdminAuthStore(database);
             Instant initialExpiry = Instant.now().plusSeconds(3600);
             firstStore.createSession("probe-session", initialExpiry);
 
             var reopenedStore = new AdminAuthStore(database);
-            require(
-                initialToken.equals(
-                    reopenedStore.bootstrapTokenOrCreate(
-                        () -> "replacement-token"
-                    )
-                ),
-                "bootstrap token must survive store recreation"
-            );
             require(
                 initialExpiry.equals(
                     reopenedStore.sessionExpiresAt("probe-session")
@@ -111,18 +100,14 @@ public final class AdminAuthPersistenceProbe {
                 "approved session must persist"
             );
 
-            reopenedAgain.rotateBootstrapToken("rotated-token");
+            int revoked = reopenedAgain.revokeAllSessions();
             require(
-                "rotated-token".equals(
-                    reopenedAgain.bootstrapTokenOrCreate(
-                        () -> "unused-token"
-                    )
-                ),
-                "rotated token must persist"
+                revoked >= 1,
+                "session revocation must report active sessions"
             );
             require(
                 reopenedAgain.sessionExpiresAt("probe-session") == null,
-                "token rotation must revoke existing sessions"
+                "session revocation must remove existing sessions"
             );
 
             System.out.println(
@@ -132,6 +117,23 @@ public final class AdminAuthPersistenceProbe {
         } catch (Exception error) {
             error.printStackTrace();
             return 1;
+        }
+    }
+
+    private static boolean tableExists(
+        BoardGameDatabase database,
+        String tableName
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT 1
+                 FROM sqlite_master
+                 WHERE type = 'table' AND name = ?
+                 """)) {
+            statement.setString(1, tableName);
+            try (var rows = statement.executeQuery()) {
+                return rows.next();
+            }
         }
     }
 
