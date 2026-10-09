@@ -1,5 +1,6 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
+import io.github.playcosmos.broadcastinggameplatform.operations.BoundedVirtualThreadExecutor;
 import com.google.gson.Gson;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
@@ -37,7 +38,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
 
 public final class GameClientHttpServer implements AutoCloseable {
@@ -58,6 +58,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static final int MAX_PROXY_BODY_BYTES = 1024 * 1024;
 
     private final HttpServer server;
+    private final BoundedVirtualThreadExecutor requestExecutor;
     private final Path webRoot;
     private final RoomService rooms;
     private final BoardGameRuntimeEngine runtime;
@@ -225,7 +226,11 @@ public final class GameClientHttpServer implements AutoCloseable {
             ),
             0
         );
-        this.server.setExecutor(Executors.newVirtualThreadPerTaskExecutor());
+        this.requestExecutor = new BoundedVirtualThreadExecutor(
+            64,
+            "platform-public-http-"
+        );
+        this.server.setExecutor(requestExecutor);
 
         server.createContext("/health", this::health);
         server.createContext("/api/v1/platform", this::platformInfo);
@@ -2920,5 +2925,6 @@ public final class GameClientHttpServer implements AutoCloseable {
     @Override
     public void close() {
         server.stop(1);
+        requestExecutor.close();
     }
 }
