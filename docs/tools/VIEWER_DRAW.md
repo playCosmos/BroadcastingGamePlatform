@@ -905,7 +905,7 @@ MachineMapDefinition
 브라우저는 v0 JSON을 읽을 때 `migrateDefinition()`으로 v1으로 변환한다. 서버는 기존 저장 데이터 호환을 위해 v0와 v1을 모두 검증할 수 있지만 신규 Map Maker 저장은 v1을 사용한다.
 
 DB revision/history 구조는 유지하며, 기존 맵을 편집 후 저장하면 migration된 v1 정의가 새 revision으로 저장된다.
-동일 맵을 여러 편집 세션에서 저장할 때는 클라이언트가 `expectedRevision`을 함께 보내며, 서버는 현재 revision과 일치할 때만 갱신한다. 오래된 편집본은 `409 Conflict`로 거부하여 최신 revision을 조용히 덮어쓰지 않는다.
+동일 맵을 여러 편집 세션에서 저장하거나 보관 처리할 때는 클라이언트가 `expectedRevision`을 함께 보내며, 서버는 현재 revision과 일치할 때만 변경한다. 오래된 편집본의 저장/보관 요청은 `409 Conflict`로 거부하여 최신 revision을 조용히 덮어쓰거나 숨기지 않는다.
 ### 13.6.2 Physics Preview Engine V1
 
 Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니라 실제 간이 물리 시뮬레이션이다.
