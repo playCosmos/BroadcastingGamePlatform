@@ -285,6 +285,21 @@ public final class ViewerDrawProbe {
             "marble audit history must retain only the latest 200 audits"
         );
 
+        var oversizedAudit = new java.util.LinkedHashMap<String, Object>(
+            savedAudit.audit()
+        );
+        oversizedAudit.put("padding", "가".repeat(400_000));
+        boolean oversizedAuditRejected = false;
+        try {
+            service.saveMarbleAudit(oversizedAudit);
+        } catch (IllegalArgumentException expected) {
+            oversizedAuditRejected = true;
+        }
+        require(
+            oversizedAuditRejected,
+            "marble audit limit must be enforced by UTF-8 byte size"
+        );
+
         System.out.println("Viewer Draw probe passed.");
     }
 
