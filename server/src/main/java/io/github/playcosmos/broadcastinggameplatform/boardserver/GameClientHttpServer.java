@@ -2563,21 +2563,27 @@ public final class GameClientHttpServer implements AutoCloseable {
             String rawName = equals >= 0
                 ? pair.substring(0, equals)
                 : pair;
-            if (!name.equals(URLDecoder.decode(
-                rawName,
-                StandardCharsets.UTF_8
-            ))) {
+            String decodedName = safeQueryDecode(rawName);
+            if (decodedName == null || !name.equals(decodedName)) {
                 continue;
             }
             String rawValue = equals >= 0
                 ? pair.substring(equals + 1)
                 : "";
-            return URLDecoder.decode(
-                rawValue,
-                StandardCharsets.UTF_8
-            );
+            return safeQueryDecode(rawValue);
         }
         return null;
+    }
+
+    static String safeQueryDecode(String value) {
+        try {
+            return URLDecoder.decode(
+                value == null ? "" : value,
+                StandardCharsets.UTF_8
+            );
+        } catch (IllegalArgumentException error) {
+            return null;
+        }
     }
 
     private static String normalizedAdminReturnPath(String value) {
@@ -2607,10 +2613,11 @@ public final class GameClientHttpServer implements AutoCloseable {
             String rawName = equals >= 0
                 ? pair.substring(0, equals)
                 : pair;
-            if ("token".equals(URLDecoder.decode(
-                rawName,
-                StandardCharsets.UTF_8
-            ))) {
+            String decodedName = safeQueryDecode(rawName);
+            if (decodedName == null) {
+                continue;
+            }
+            if ("token".equals(decodedName)) {
                 continue;
             }
             kept.add(pair);
