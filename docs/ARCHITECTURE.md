@@ -138,6 +138,17 @@ Drawing Guess는 현재 Classic Guess D0~D5가 구현된 게임 모듈이다.
 - 이미 현재 schema인 정상 재시작은 불필요한 backup을 새로 만들지 않는다.
 - 이 snapshot은 자동 rollback이 아니라 운영 복구점이며, migration 실패 시 원본 DB는 transaction rollback 상태로 유지된다.
 
+복구 절차:
+
+1. 서버 프로세스를 완전히 종료한다. 실행 중인 SQLite 파일을 덮어쓰지 않는다.
+2. 현재 `platform.db`를 별도 파일로 복사해 보존한다.
+3. 사용할 `backups/<db>.schema-v*.bak`를 원래 databasePath의 파일명으로 복사한다.
+4. 남아 있는 `-wal`/`-shm` 파일이 있으면 원본 DB와 함께 보존한 뒤 제거한다.
+5. 서버를 다시 시작한다. 백업 schema가 이전 버전이면 정상 migration 경로가 다시 적용된다.
+6. 시작 후 관리 화면/health 및 주요 room/draw 데이터를 확인한다.
+
+migration backup은 서버가 실행 중인 상태에서 live DB로 직접 덮어쓰는 용도가 아니다.
+
 
 ## Viewer Draw 계획
 
