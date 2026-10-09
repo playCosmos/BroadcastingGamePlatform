@@ -3,6 +3,7 @@
 
   const LEGACY_SCHEMA_VERSION = "viewer-draw-machine-map/v0";
   const SCHEMA_VERSION = "viewer-draw-machine-map/v1";
+  const MAX_COMPONENTS = 5000;
   const TYPES = new Set([
     "WALL","CURVE_WALL","CIRCLE",
     "SPAWN","BURST_SPAWN","FINISH",
@@ -1166,6 +1167,10 @@
       errors.push("중력 값은 유한 숫자여야 합니다.");
     }
     const comps=Array.isArray(def?.components)?def.components:[];
+    if(comps.length>MAX_COMPONENTS){
+      errors.push("컴포넌트는 최대 "+MAX_COMPONENTS+"개까지 사용할 수 있습니다.");
+      return errors;
+    }
     const rule=resolvedDrawRule(def);
     if(![
       "RACE_FINISH",
