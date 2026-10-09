@@ -26,19 +26,11 @@ jobs:
 
       - name: Check browser JavaScript
         shell: pwsh
-        run: |
-          node --check web/admin/assets/platform-admin.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --check web/admin/assets/board-room-admin.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --check web/admin/assets/board-room-operation.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --check web/games/board/js/throw-presentation.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --check web/games/board/js/board.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          node --check web/games/board/js/board-rect.js
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        run: ./server/check-browser-javascript.ps1
+
+      - name: Smoke box2d-wasm in browser
+        shell: pwsh
+        run: ./server/smoke-browser-physics.ps1
 
       - name: Build platform server
         working-directory: server
