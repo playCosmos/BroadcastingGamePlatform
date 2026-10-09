@@ -18,6 +18,7 @@ import java.util.function.IntSupplier;
 import static io.github.playcosmos.broadcastinggameplatform.room.RoomModels.*;
 
 public final class RoomService {
+    private static final int MAX_TERMINATED_ROOMS = 200;
     private static final Gson GSON = new Gson();
     private static final int MIN_COLUMNS = 8;
     private static final int MAX_COLUMNS = 64;
@@ -666,6 +667,7 @@ public final class RoomService {
                 }
 
                 if (expiredRoomIds.isEmpty()) {
+                    pruneTerminatedRooms(connection);
                     connection.commit();
                     return 0;
                 }
@@ -698,6 +700,7 @@ public final class RoomService {
                     statement.executeBatch();
                 }
 
+                pruneTerminatedRooms(connection);
                 connection.commit();
                 return terminated;
             } catch (SQLException error) {
@@ -706,6 +709,27 @@ public final class RoomService {
             } finally {
                 connection.setAutoCommit(true);
             }
+        }
+    }
+
+    private static void pruneTerminatedRooms(
+        java.sql.Connection connection
+    ) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+            DELETE FROM board_room
+            WHERE lifecycle_state = 'TERMINATED'
+              AND room_id NOT IN (
+                SELECT room_id
+                FROM board_room
+                WHERE lifecycle_state = 'TERMINATED'
+                ORDER BY
+                  COALESCE(terminated_at, updated_at) DESC,
+                  room_id DESC
+                LIMIT ?
+              )
+            """)) {
+            statement.setInt(1, MAX_TERMINATED_ROOMS);
+            statement.executeUpdate();
         }
     }
 
