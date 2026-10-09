@@ -2149,7 +2149,6 @@ public final class GameClientHttpServer implements AutoCloseable {
             if (!"APPROVED".equals(request.status())) {
                 sendJson(exchange, 200, Map.of(
                     "status", request.status(),
-                    "approvalCode", request.code(),
                     "expiresAt", request.expiresAt().toString()
                 ));
                 return;
