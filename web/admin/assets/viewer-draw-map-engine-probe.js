@@ -1632,10 +1632,38 @@ const viewerDrawCss = fs.readFileSync(
 );
 
 requireCondition(
+  makerSource.includes("window.ViewerDrawMapMakerStorage")
+    && makerSource.includes("MapStore.save")
+    && makerSource.includes("MapStore.archive")
+    && makerSource.includes("MapStore.list")
+    && makerSource.includes("MapStore.load")
+    && makerSource.includes("MARBLE_DRAW_URL"),
+  "Map Maker editor must use the shared storage adapter boundary"
+);
+requireCondition(
+  localMakerSource.length < 12000
+    && localMakerSource.includes("ViewerDrawMapMakerStorage")
+    && localMakerSource.includes('kind: "local"')
+    && localMakerSource.includes("localStorage")
+    && localMakerSource.includes("expectedRevision")
+    && localMakerSource.includes("currentRevision")
+    && localMakerSource.includes("error.status = 409")
+    && localMakerSource.includes("ViewerDrawMapMakerLaunchUrl")
+    && !localMakerSource.includes("function render("),
+  "Local Map Maker must remain a thin storage/launch adapter"
+);
+requireCondition(
+  localMakerHtml.includes("viewer-draw-map-maker-local.js")
+    && localMakerHtml.includes("viewer-draw-map-maker.js")
+    && localMakerHtml.indexOf("viewer-draw-map-maker-local.js")
+      < localMakerHtml.indexOf("viewer-draw-map-maker.js"),
+  "Standalone Map Maker must load the local adapter before the shared core"
+);
+
+requireCondition(
   serverMakerHtml.includes('id="gridSize" type="number" value="10"')
     && localMakerHtml.includes('id="gridSize" type="number" value="10"')
-    && makerSource.includes('num($("gridSize").value, 10)')
-    && localMakerSource.includes('num($("gridSize").value, 10)'),
+    && makerSource.includes('num($("gridSize").value, 10)'),
   "Map Maker grid snap default and fallback must stay at 10"
 );
 requireCondition(
@@ -1643,34 +1671,34 @@ requireCondition(
     && localMakerHtml.includes('id="previewSplits"'),
   "Map Maker must expose winner stopwatch split strips in both storage modes"
 );
-for (const source of [makerSource, localMakerSource]) {
+for (const source of [makerSource]) {
   requireCondition(
     source.includes("function formatPreviewTime")
       && source.includes("previewSnapshot.winnerSplits")
       && source.includes('previewSnapshot.runStatus === "COMPLETED"')
       && source.includes("finishCompletedPreview()"),
-    "Map Maker preview must freeze and render ranked stopwatch splits"
+    "Shared Map Maker core must freeze and render ranked stopwatch splits"
   );
 }
-for (const source of [makerSource, localMakerSource]) {
+for (const source of [makerSource]) {
   requireCondition(
     source.includes("editorZoom = clamp(nextZoom, .35, 6)"),
-    "Map Maker editor zoom must allow up to 600%"
+    "Shared Map Maker core editor zoom must allow up to 600%"
   );
 }
 
-for (const source of [makerSource, localMakerSource]) {
+for (const source of [makerSource]) {
   requireCondition(
     source.includes("Math.max(21, r * 2.4)")
       && source.includes("marble.entry?.displayName")
       && source.includes('ctx.strokeText(label, p.x, p.y)')
       && source.includes('ctx.fillText(label, p.x, p.y)')
       && !source.includes("labelY = p.y - r"),
-    "Map Maker preview labels must stay 3x, centered, full-name, and outline-only"
+    "Shared Map Maker core preview labels must stay 3x, centered, full-name, and outline-only"
   );
 }
 
-for (const source of [makerSource, localMakerSource]) {
+for (const source of [makerSource]) {
   requireCondition(
     source.includes('mode: "marquee"')
       && source.includes("selectedIds = new Set()")
@@ -1682,7 +1710,7 @@ for (const source of [makerSource, localMakerSource]) {
       && source.includes("Engine.isDirectionalCollider")
       && source.includes("Engine.isOneWayCollider")
       && source.includes("PRESET_ONE_WAY_WALL"),
-    "Map Maker must support drag multi-selection in both storage modes"
+    "Shared Map Maker core must support drag multi-selection"
   );
   requireCondition(
     (source.match(/advancedSettingsVisible\s*=\s*false/g) || []).length === 1
@@ -1749,33 +1777,23 @@ requireCondition(
   !serverMakerHtml.includes('id="previewSeed"')
     && !localMakerHtml.includes('id="previewSeed"')
     && makerSource.includes("function randomSeed()")
-    && localMakerSource.includes("function randomSeed()")
-    && !makerSource.includes('$(\"previewSeed\")')
-    && !localMakerSource.includes('$(\"previewSeed\")'),
+    && !makerSource.includes('$(\"previewSeed\")'),
   "Map Maker preview seed must be randomized internally and hidden from UI"
 );
 
 requireCondition(
   !makerSource.includes('data-tool="ELIMINATION"')
-    && !localMakerSource.includes('data-tool="ELIMINATION"')
     && !makerSource.includes("drawRuleType")
-    && !localMakerSource.includes("drawRuleType")
-    && !makerSource.includes("drawRuleWinnerCount")
-    && !localMakerSource.includes("drawRuleWinnerCount"),
+    && !makerSource.includes("drawRuleWinnerCount"),
   "Map Maker must not expose elimination or fixed finish-rule controls"
 );
 
 requireCondition(
   makerSource.includes("BUNDLED_AUDIO_URL")
-    && localMakerSource.includes("BUNDLED_AUDIO_URL")
     && makerSource.includes("BUNDLED_ORIGINAL_ROULETTE_URL")
-    && localMakerSource.includes("BUNDLED_ORIGINAL_ROULETTE_URL")
     && makerSource.includes("loadOriginalRoulettePreset")
-    && localMakerSource.includes("loadOriginalRoulettePreset")
     && makerSource.includes("isSpawnerType")
-    && localMakerSource.includes("isSpawnerType")
-    && makerSource.includes("loadAudioPreset")
-    && localMakerSource.includes("loadAudioPreset"),
+    && makerSource.includes("loadAudioPreset"),
   "Map Maker must expose all bundled maps and guard against duplicate spawners"
 );
 requireCondition(
