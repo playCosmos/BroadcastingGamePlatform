@@ -46,10 +46,25 @@ public final class FileLog implements AutoCloseable {
     }
 
     public static FileLog install(Path directory) throws IOException {
+        return install(directory, MAX_LOG_FILE_BYTES);
+    }
+
+    static FileLog install(
+        Path directory,
+        long maxLogFileBytes
+    ) throws IOException {
+        if (maxLogFileBytes < 1) {
+            throw new IllegalArgumentException(
+                "maxLogFileBytes must be positive"
+            );
+        }
         Path root = directory.toAbsolutePath().normalize();
         Files.createDirectories(root);
         hideDirectoryOnWindows(root);
-        var fileOutput = new RotatingLogOutputStream(root);
+        var fileOutput = new RotatingLogOutputStream(
+            root,
+            maxLogFileBytes
+        );
         var file = new PrintStream(
             fileOutput,
             true,
@@ -177,13 +192,17 @@ public final class FileLog implements AutoCloseable {
     private static final class RotatingLogOutputStream
         extends OutputStream {
         private final Path root;
+        private final long maxFileBytes;
         private OutputStream delegate;
         private Path currentPath;
         private long bytesWritten;
 
-        private RotatingLogOutputStream(Path root)
-            throws IOException {
+        private RotatingLogOutputStream(
+            Path root,
+            long maxFileBytes
+        ) throws IOException {
             this.root = root;
+            this.maxFileBytes = maxFileBytes;
             rotate();
         }
 
@@ -208,12 +227,12 @@ public final class FileLog implements AutoCloseable {
             int cursor = offset;
             int remaining = length;
             while (remaining > 0) {
-                if (bytesWritten >= MAX_LOG_FILE_BYTES) {
+                if (bytesWritten >= maxFileBytes) {
                     rotate();
                 }
                 int writable = (int) Math.min(
                     remaining,
-                    MAX_LOG_FILE_BYTES - bytesWritten
+                    maxFileBytes - bytesWritten
                 );
                 delegate.write(bytes, cursor, writable);
                 bytesWritten += writable;
@@ -226,7 +245,7 @@ public final class FileLog implements AutoCloseable {
             throws IOException {
             if (
                 bytesWritten + bytes
-                    > MAX_LOG_FILE_BYTES
+                    > maxFileBytes
             ) {
                 rotate();
             }
