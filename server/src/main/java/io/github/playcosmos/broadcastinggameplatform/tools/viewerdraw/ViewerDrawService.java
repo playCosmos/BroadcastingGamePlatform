@@ -23,6 +23,10 @@ public final class ViewerDrawService {
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final String RNG_ALGORITHM = "java.security.SecureRandom + Fisher-Yates";
     private static final int MAX_ENTRIES = 10000;
+    private static final int MAX_PROVIDER_CHARS = 64;
+    private static final int MAX_ENTRY_ID_CHARS = 128;
+    private static final int MAX_ENTRY_TEXT_CHARS = 256;
+    private static final int MAX_CHAT_KEYWORD_CHARS = 128;
     private static final int MAX_NUMBER = 999;
     private static final int MAX_NUMBER_DRAW_COUNT = 7;
 
@@ -231,20 +235,36 @@ public final class ViewerDrawService {
         if (normalizedProvider.isBlank()) {
             throw new IllegalArgumentException("provider is required");
         }
+        requireLength(
+            normalizedProvider,
+            "provider",
+            MAX_PROVIDER_CHARS
+        );
+        String normalizedChannelId = channelId == null
+            ? ""
+            : channelId.trim();
+        requireLength(
+            normalizedChannelId,
+            "channelId",
+            MAX_ENTRY_TEXT_CHARS
+        );
         String normalizedKeyword = keyword == null
             ? ""
             : keyword.trim();
         if (normalizedKeyword.isBlank()) {
             throw new IllegalArgumentException("keyword is required");
         }
+        requireLength(
+            normalizedKeyword,
+            "keyword",
+            MAX_CHAT_KEYWORD_CHARS
+        );
 
         synchronized (entryCollectionLock) {
             var next = new EntryCollectionState();
             next.source = "CHAT_KEYWORD";
             next.provider = normalizedProvider;
-            next.channelId = channelId == null
-                ? ""
-                : channelId.trim();
+            next.channelId = normalizedChannelId;
             next.keyword = normalizedKeyword;
             next.state = "OPEN";
             next.startedAt = Instant.now().toString();
@@ -339,7 +359,12 @@ public final class ViewerDrawService {
             String userId = event.userId() == null
                 ? ""
                 : event.userId().trim();
-            if (userId.isBlank()) return false;
+            if (
+                userId.isBlank()
+                    || userId.length() > MAX_ENTRY_TEXT_CHARS
+            ) {
+                return false;
+            }
             String key = entryCollection.provider + "\u0000" + userId;
             if (entryCollection.entries.containsKey(key)) {
                 entryCollection.duplicateMessages += 1;
@@ -354,6 +379,9 @@ public final class ViewerDrawService {
                 ? ""
                 : event.nickname().trim();
             if (displayName.isBlank()) displayName = userId;
+            if (displayName.length() > MAX_ENTRY_TEXT_CHARS) {
+                return false;
+            }
             String entryId = UUID.nameUUIDFromBytes(
                 ("viewer-draw:" + key).getBytes(StandardCharsets.UTF_8)
             ).toString();
@@ -2921,6 +2949,14 @@ public final class ViewerDrawService {
             String label = value.label() == null
                 ? ""
                 : value.label().trim();
+            requireLength(provider, "provider", MAX_PROVIDER_CHARS);
+            requireLength(userId, "userId", MAX_ENTRY_TEXT_CHARS);
+            requireLength(
+                displayName,
+                "displayName",
+                MAX_ENTRY_TEXT_CHARS
+            );
+            requireLength(label, "label", MAX_ENTRY_TEXT_CHARS);
             if (displayName.isBlank()) displayName = label;
             if (label.isBlank()) label = displayName;
             if (displayName.isBlank()) continue;
@@ -2933,6 +2969,11 @@ public final class ViewerDrawService {
             String entryId = value.entryId() == null
                 ? ""
                 : value.entryId().trim();
+            requireLength(
+                entryId,
+                "entryId",
+                MAX_ENTRY_ID_CHARS
+            );
             if (entryId.isBlank()) {
                 entryId = UUID.randomUUID().toString();
             }
@@ -2960,12 +3001,29 @@ public final class ViewerDrawService {
             if (value == null) continue;
             String normalized = value.trim();
             if (normalized.isBlank()) continue;
+            requireLength(
+                normalized,
+                "entry",
+                MAX_ENTRY_TEXT_CHARS
+            );
             if (seen.add(normalized)) result.add(normalized);
             if (result.size() > MAX_ENTRIES) {
                 throw new IllegalArgumentException("too many entries; max=" + MAX_ENTRIES);
             }
         }
         return List.copyOf(result);
+    }
+
+    private static void requireLength(
+        String value,
+        String name,
+        int maxChars
+    ) {
+        if (value != null && value.length() > maxChars) {
+            throw new IllegalArgumentException(
+                name + " is too long; max=" + maxChars
+            );
+        }
     }
 
     private static String frozenHash(Session session) {
