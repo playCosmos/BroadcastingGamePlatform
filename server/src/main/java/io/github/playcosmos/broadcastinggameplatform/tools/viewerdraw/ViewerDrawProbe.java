@@ -1,5 +1,6 @@
 package io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw;
 
+import com.google.gson.Gson;
 import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabase;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import java.nio.file.Files;
@@ -130,6 +131,79 @@ public final class ViewerDrawProbe {
         require(
             chatRandom.frozenEntryHash() != null,
             "chat session must freeze with identity-aware hash"
+        );
+
+        var savedAudit = service.saveMarbleAudit(
+            Map.of(
+                "schemaVersion", "viewer-draw-run-audit/v0",
+                "resultStatus", "COMPLETED",
+                "qualification", Map.of(
+                    "status", "QUALIFIED",
+                    "reasons", List.of(),
+                    "qualificationMinWinners", 1,
+                    "qualificationMaxNudges", 5
+                ),
+                "map", Map.of(
+                    "name", "Public Audit Probe",
+                    "definitionHash", "a".repeat(64)
+                ),
+                "entries", Map.of(
+                    "count", 2,
+                    "snapshotHash", "b".repeat(64)
+                ),
+                "engine", Map.of(
+                    "id", "BOX2D_WASM",
+                    "fixedTimestepSeconds", 1.0 / 120.0
+                ),
+                "run", Map.of(
+                    "seed", 1234,
+                    "startedAt", "2026-10-09T00:00:00Z",
+                    "completedAt", "2026-10-09T00:00:10Z",
+                    "simulationSeconds", 10,
+                    "stuckNudges", 0
+                ),
+                "result", Map.of(
+                    "winners", List.of(
+                        Map.of(
+                            "rank", 1,
+                            "entryId", "secret-entry-id",
+                            "displayName", "Winner A"
+                        )
+                    ),
+                    "finishOrder", List.of(
+                        Map.of("entryId", "secret-finish-id")
+                    ),
+                    "eliminationOrder", List.of(
+                        Map.of("entryId", "secret-elimination-id")
+                    ),
+                    "dnf", List.of(
+                        Map.of("entryId", "secret-dnf-id")
+                    ),
+                    "outputClaims", List.of(
+                        Map.of("entryId", "secret-output-id")
+                    )
+                )
+            )
+        );
+        var publicAudit = service.findPublicMarbleAuditByPublicCode(
+            savedAudit.publicCode()
+        );
+        String publicAuditJson = new Gson().toJson(publicAudit);
+        require(
+            publicAuditJson.contains("Winner A"),
+            "public marble audit must retain winner display name"
+        );
+        require(
+            publicAuditJson.contains("\"dnfCount\":1"),
+            "public marble audit must retain DNF count"
+        );
+        require(
+            !publicAuditJson.contains("entryId")
+                && !publicAuditJson.contains("finishOrder")
+                && !publicAuditJson.contains("eliminationOrder")
+                && !publicAuditJson.contains("outputClaims")
+                && !publicAuditJson.contains("secret-"),
+            "public marble audit must not expose internal entry detail"
         );
 
         System.out.println("Viewer Draw probe passed.");
