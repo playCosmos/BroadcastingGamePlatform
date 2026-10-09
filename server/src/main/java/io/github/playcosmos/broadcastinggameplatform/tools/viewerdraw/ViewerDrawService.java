@@ -603,6 +603,129 @@ public final class ViewerDrawService {
         );
     }
 
+    public Map<String, Object> findPublicMarbleAuditByPublicCode(
+        String publicCode
+    ) throws SQLException {
+        MarbleAudit stored = findMarbleAuditByPublicCode(publicCode);
+        Map<String, Object> source = stored.audit();
+
+        var publicAudit = new LinkedHashMap<String, Object>();
+        publicAudit.put("schemaVersion", stored.schemaVersion());
+        publicAudit.put("resultStatus", stored.resultStatus());
+
+        Map<String, Object> qualification = objectMap(
+            source.get("qualification"),
+            "qualification"
+        );
+        var publicQualification = new LinkedHashMap<String, Object>();
+        for (String key : List.of(
+            "status",
+            "reasons",
+            "qualificationMinWinners",
+            "qualificationMaxNudges"
+        )) {
+            if (qualification.containsKey(key)) {
+                publicQualification.put(key, qualification.get(key));
+            }
+        }
+        publicAudit.put("qualification", publicQualification);
+
+        Map<String, Object> map = objectMap(source.get("map"), "map");
+        var publicMap = new LinkedHashMap<String, Object>();
+        publicMap.put("name", stored.mapName());
+        publicMap.put("definitionHash", stored.definitionHash());
+        if (map.containsKey("name")) {
+            publicMap.put("name", map.get("name"));
+        }
+        publicAudit.put("map", publicMap);
+
+        Map<String, Object> entries = objectMap(
+            source.get("entries"),
+            "entries"
+        );
+        var publicEntries = new LinkedHashMap<String, Object>();
+        for (String key : List.of("count", "snapshotHash")) {
+            if (entries.containsKey(key)) {
+                publicEntries.put(key, entries.get(key));
+            }
+        }
+        publicAudit.put("entries", publicEntries);
+
+        Map<String, Object> engine = objectMap(
+            source.get("engine"),
+            "engine"
+        );
+        var publicEngine = new LinkedHashMap<String, Object>();
+        for (String key : List.of("id", "fixedTimestepSeconds")) {
+            if (engine.containsKey(key)) {
+                publicEngine.put(key, engine.get(key));
+            }
+        }
+        publicAudit.put("engine", publicEngine);
+
+        Map<String, Object> run = objectMap(source.get("run"), "run");
+        var publicRun = new LinkedHashMap<String, Object>();
+        for (String key : List.of(
+            "seed",
+            "startedAt",
+            "completedAt",
+            "simulationSeconds",
+            "stuckNudges"
+        )) {
+            if (run.containsKey(key)) {
+                publicRun.put(key, run.get(key));
+            }
+        }
+        publicAudit.put("run", publicRun);
+
+        Map<String, Object> result = objectMap(
+            source.get("result"),
+            "result"
+        );
+        var publicResult = new LinkedHashMap<String, Object>();
+        var publicWinners = new ArrayList<Map<String, Object>>();
+        Object winnersValue = result.get("winners");
+        if (winnersValue instanceof List<?> winners) {
+            for (Object item : winners) {
+                if (!(item instanceof Map<?, ?> rawWinner)) continue;
+                var winner = new LinkedHashMap<String, Object>();
+                Object rank = rawWinner.get("rank");
+                Object displayName = rawWinner.get("displayName");
+                if (rank != null) winner.put("rank", rank);
+                winner.put(
+                    "displayName",
+                    displayName == null ? "" : String.valueOf(displayName)
+                );
+                publicWinners.add(winner);
+            }
+        }
+        publicResult.put("winners", List.copyOf(publicWinners));
+        Object dnfValue = result.get("dnf");
+        publicResult.put(
+            "dnfCount",
+            dnfValue instanceof List<?> dnf ? dnf.size() : 0
+        );
+        publicAudit.put("result", publicResult);
+
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("publicCode", stored.publicCode());
+        payload.put("schemaVersion", stored.schemaVersion());
+        payload.put("resultStatus", stored.resultStatus());
+        payload.put(
+            "qualificationStatus",
+            stored.qualificationStatus()
+        );
+        payload.put("mapName", stored.mapName());
+        payload.put("definitionHash", stored.definitionHash());
+        payload.put("engineId", stored.engineId());
+        payload.put("seed", stored.seed());
+        payload.put("startedAt", stored.startedAt());
+        payload.put("completedAt", stored.completedAt());
+        payload.put("createdAt", stored.createdAt());
+        payload.put("audit", publicAudit);
+        return payload;
+    }
+
     private MarbleAudit findMarbleAuditByColumn(
         String column,
         String value
