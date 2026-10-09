@@ -23,7 +23,10 @@
   const INSTANT_MOVEMENT_MODE =
     params.get("motion") === "instant" ||
     /(?:^|\/)(?:rect-)?instant\.html$/i.test(window.location.pathname);
-  const ROOM_ID = String(params.get("roomId") || "").trim();
+  const ROOM_CODE = String(
+    params.get("roomCode") || params.get("roomId") || ""
+  ).trim().toUpperCase();
+  const ROOM_ID = ROOM_CODE;
   const ROOM_PREVIEW_MODE = params.get("preview") === "1";
   const ROOM_BOARD_SOURCE = ROOM_PREVIEW_MODE ? "preview" : "committed";
   let roomWebSocketUrl = String(params.get("ws") || "").trim();
@@ -5013,8 +5016,15 @@
     return cell.type === "NORMAL" ? "normal" : "custom";
   }
 
+  function roomReadUrl(roomId, suffix = "") {
+    const roomCode = String(roomId || "").trim().toUpperCase();
+    return "/api/board/rooms/" + encodeURIComponent(roomCode)
+      + suffix
+      + "?roomCode=" + encodeURIComponent(roomCode);
+  }
+
   async function loadRoomBoard(roomId) {
-    const response = await fetch("/api/board/rooms/" + encodeURIComponent(roomId), {
+    const response = await fetch(roomReadUrl(roomId), {
       cache: "no-store",
       headers: { "Accept": "application/json" }
     });
@@ -5036,7 +5046,7 @@
         ? (INSTANT_MOVEMENT_MODE ? "rect-instant.html" : "rect.html")
         : (INSTANT_MOVEMENT_MODE ? "instant.html" : "index.html");
       const url = new URL(target, window.location.href);
-      url.searchParams.set("roomId", roomId);
+      url.searchParams.set("roomCode", roomId);
       if (ROOM_PREVIEW_MODE) url.searchParams.set("preview", "1");
       if (ROOM_BOARD_SOURCE === "committed") url.searchParams.set("board", "committed");
       window.location.replace(url.toString());
@@ -5047,7 +5057,7 @@
     if (!ROOM_PREVIEW_MODE && snapshot.status === "READY") {
       try {
         const runtimeResponse = await fetch(
-          "/api/board/rooms/" + encodeURIComponent(roomId) + "/runtime",
+          roomReadUrl(roomId, "/runtime"),
           {
             cache: "no-store",
             headers: { "Accept": "application/json" }
@@ -5216,8 +5226,16 @@
     }
   }
 
+  function roomWebSocketAccessUrl(value) {
+    const url = new URL(value, window.location.href);
+    url.searchParams.set("roomCode", ROOM_CODE);
+    return url.toString();
+  }
+
   async function resolveRoomWebSocketUrl() {
-    if (roomWebSocketUrl) return roomWebSocketUrl;
+    if (roomWebSocketUrl) {
+      return roomWebSocketAccessUrl(roomWebSocketUrl);
+    }
 
     try {
       const response = await fetch("/api/client/config", {
@@ -5229,7 +5247,7 @@
         const configured = String(config?.websocketUrl || "").trim();
         if (configured) {
           roomWebSocketUrl = configured;
-          return roomWebSocketUrl;
+          return roomWebSocketAccessUrl(roomWebSocketUrl);
         }
       }
     } catch (_) {
@@ -5238,14 +5256,14 @@
     const scheme = window.location.protocol === "https:" ? "wss" : "ws";
     roomWebSocketUrl =
       scheme + "://" + window.location.hostname + ":17831";
-    return roomWebSocketUrl;
+    return roomWebSocketAccessUrl(roomWebSocketUrl);
   }
 
   async function syncRoomRuntimeState() {
     if (!ROOM_ID || ROOM_PREVIEW_MODE) return 0;
 
     const response = await fetch(
-      "/api/board/rooms/" + encodeURIComponent(ROOM_ID) + "/runtime",
+      roomReadUrl(ROOM_ID, "/runtime"),
       {
         cache: "no-store",
         headers: { "Accept": "application/json" }
