@@ -27,21 +27,37 @@ public final class RoomProbe {
             database.initialize();
             var policies = new ServerPolicyService(database);
             ParticipantLiveChecker liveChecker = players -> players.stream()
-                .map(player -> new PlayerConfig(
-                    player.soopId(),
-                    player.displayName(),
-                    player.profileImageUrl() == null || player.profileImageUrl().isBlank()
-                        ? "https://example.test/profile/" + player.soopId() + ".png"
-                        : player.profileImageUrl(),
-                    player.balloonTrigger(),
-                    new PlayerLiveStatus(
-                        "LIVE",
-                        "probe-bno-" + player.soopId(),
-                        "Probe " + player.displayName(),
-                        "2026-09-25T00:00:00+09:00",
-                        null
-                    )
-                ))
+                .map(player -> {
+                    boolean oversizedProviderResult =
+                        "oversized-provider-result".equals(
+                            player.soopId()
+                        );
+                    String displayName = oversizedProviderResult
+                        ? "D".repeat(256)
+                        : player.displayName();
+                    String profileImageUrl = oversizedProviderResult
+                        ? "https://example.test/" + "p".repeat(4096)
+                        : (
+                            player.profileImageUrl() == null
+                                || player.profileImageUrl().isBlank()
+                                ? "https://example.test/profile/"
+                                    + player.soopId() + ".png"
+                                : player.profileImageUrl()
+                        );
+                    return new PlayerConfig(
+                        player.soopId(),
+                        displayName,
+                        profileImageUrl,
+                        player.balloonTrigger(),
+                        new PlayerLiveStatus(
+                            "LIVE",
+                            "probe-bno-" + player.soopId(),
+                            "Probe " + displayName,
+                            "2026-09-25T00:00:00+09:00",
+                            null
+                        )
+                    );
+                })
                 .toList();
             var rooms = new RoomService(
                 database,
@@ -206,6 +222,51 @@ public final class RoomProbe {
                         "instructions[0].label".equals(error.field())
                     ),
                 "instruction label above 256 characters must be rejected"
+            );
+
+            var providerBoundsRoom = rooms.create(
+                new CreateRoomRequest(
+                    "Provider Bounds",
+                    List.of(
+                        new PlayerInput(
+                            "oversized-provider-result",
+                            "Local",
+                            null,
+                            100
+                        )
+                    ),
+                    new BoardInput(
+                        "dimensions",
+                        8,
+                        6,
+                        null,
+                        "rounded"
+                    ),
+                    new MovementInput(
+                        "dice",
+                        1,
+                        true,
+                        true,
+                        true
+                    ),
+                    new RulesInput(
+                        "destinationOnly",
+                        true,
+                        true
+                    ),
+                    List.of(),
+                    null
+                )
+            );
+            var boundedProviderPlayer =
+                providerBoundsRoom.config().players().get(0);
+            require(
+                boundedProviderPlayer.displayName().length() == 128,
+                "provider display name must be truncated to 128 characters"
+            );
+            require(
+                boundedProviderPlayer.profileImageUrl().length() == 2048,
+                "provider profile image URL must be truncated to 2048 characters"
             );
 
             var invalidRetention = new CreateRoomRequest(
