@@ -593,8 +593,8 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "error", "drawing guess room not found"
                 ));
             } catch (Exception error) {
-                sendJson(exchange, 400, Map.of(
-                    "error", safeMessage(error)
+                sendJson(exchange, 500, Map.of(
+                    "error", "drawing guess lookup failed"
                 ));
             }
             return;
@@ -1047,7 +1047,11 @@ public final class GameClientHttpServer implements AutoCloseable {
             } catch (java.util.NoSuchElementException error) {
                 sendJson(exchange, 404, Map.of("error", "draw not found"));
             } catch (Exception error) {
-                sendJson(exchange, 400, Map.of("error", safeMessage(error)));
+                sendJson(
+                    exchange,
+                    500,
+                    Map.of("error", "viewer draw lookup failed")
+                );
             }
             return;
         }
@@ -1091,8 +1095,8 @@ public final class GameClientHttpServer implements AutoCloseable {
             } catch (Exception error) {
                 sendJson(
                     exchange,
-                    400,
-                    Map.of("error", safeMessage(error))
+                    500,
+                    Map.of("error", "marble audit lookup failed")
                 );
             }
             return;
@@ -1651,11 +1655,28 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             sendJson(exchange, 200, payload);
         } catch (Exception error) {
-            sendJson(
-                exchange,
-                error instanceof java.util.NoSuchElementException ? 404 : 400,
-                Map.of("error", safeMessage(error))
-            );
+            if (administrator) {
+                sendJson(
+                    exchange,
+                    error instanceof java.util.NoSuchElementException
+                        ? 404
+                        : 400,
+                    Map.of("error", safeMessage(error))
+                );
+            } else {
+                sendJson(
+                    exchange,
+                    error instanceof java.util.NoSuchElementException
+                        ? 404
+                        : 500,
+                    Map.of(
+                        "error",
+                        error instanceof java.util.NoSuchElementException
+                            ? "room not found"
+                            : "room lookup failed"
+                    )
+                );
+            }
         }
     }
 
