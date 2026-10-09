@@ -745,6 +745,56 @@ public final class ViewerDrawMapProbe {
                 "server must reject excessive collider material values"
             );
 
+            var oversizedDefinitionWall =
+                new ViewerDrawService.MachineComponent(
+                    "oversized-definition-wall",
+                    "WALL",
+                    640,
+                    360,
+                    0,
+                    500,
+                    18,
+                    0,
+                    Map.of(
+                        "restitution", 0.35,
+                        "friction", 0.05,
+                        "padding",
+                        "x".repeat(
+                            ViewerDrawService.MAX_MACHINE_DEFINITION_BYTES
+                        )
+                    )
+                );
+            var oversizedDefinition =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Oversized Definition",
+                    world,
+                    List.of(
+                        spawn,
+                        oversizedDefinitionWall,
+                        finish
+                    )
+                );
+            require(
+                service.validateMachineMap(
+                    oversizedDefinition
+                ).isEmpty(),
+                "large unknown properties may be structurally valid before storage"
+            );
+            boolean oversizedDefinitionRejected = false;
+            try {
+                service.saveMachineMap(
+                    null,
+                    oversizedDefinition
+                );
+            } catch (IllegalArgumentException expected) {
+                oversizedDefinitionRejected = true;
+            }
+            require(
+                oversizedDefinitionRejected,
+                "machine map storage must reject definitions above 1 MiB"
+            );
+
             var invalid =
                 new ViewerDrawService.MachineMapDefinition(
                     "viewer-draw-machine-map/v0",
