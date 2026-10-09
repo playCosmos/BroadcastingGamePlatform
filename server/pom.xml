@@ -9,6 +9,8 @@
   <properties>
     <maven.compiler.release>25</maven.compiler.release>
     <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+    <!-- SOOPAPI v0.14.0, pinned to the tag's immutable commit. -->
+    <soopapi.version>fc805ac42051e495c439f88eff3a33cc02eac8c5</soopapi.version>
   </properties>
 
   <repositories>
@@ -22,7 +24,7 @@
     <dependency>
       <groupId>com.github.getCurrentThread</groupId>
       <artifactId>soopapi</artifactId>
-      <version>v0.14.0</version>
+      <version>${soopapi.version}</version>
     </dependency>
     <dependency>
       <groupId>com.google.code.gson</groupId>
