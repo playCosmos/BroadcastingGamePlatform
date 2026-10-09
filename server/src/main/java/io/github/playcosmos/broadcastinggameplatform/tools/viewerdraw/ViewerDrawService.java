@@ -2748,6 +2748,72 @@ public final class ViewerDrawService {
         }
     }
 
+    public Map<String, Object> findPublicSessionByCode(
+        String publicCode
+    ) throws SQLException {
+        Session session = findByPublicCode(publicCode);
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("publicCode", session.publicCode());
+        payload.put("name", session.name());
+        payload.put("mode", session.mode());
+        payload.put("state", session.state());
+        payload.put("entryCount", session.entryCount());
+        payload.put("config", session.config());
+        payload.put("result", publicSessionResult(session));
+        payload.put("completedAt", session.completedAt());
+        return payload;
+    }
+
+    private static Object publicSessionResult(Session session) {
+        if (session.result() == null) return null;
+        if (!"RANDOM".equals(session.mode())) {
+            return session.result();
+        }
+        if (!(session.result() instanceof Map<?, ?> result)) {
+            return null;
+        }
+
+        var publicResult = new LinkedHashMap<String, Object>();
+        Object mode = result.get("mode");
+        if (mode != null) publicResult.put("mode", mode);
+        Object winnerCount = result.get("winnerCount");
+        if (winnerCount != null) {
+            publicResult.put("winnerCount", winnerCount);
+        }
+
+        var winners = new ArrayList<Map<String, Object>>();
+        Object rawWinners = result.get("winners");
+        if (rawWinners instanceof List<?> values) {
+            for (Object value : values) {
+                String displayName = "";
+                String label = "";
+                if (value instanceof DrawEntry entry) {
+                    displayName = entry.displayName();
+                    label = entry.label();
+                } else if (value instanceof Map<?, ?> raw) {
+                    Object display = raw.get("displayName");
+                    Object labelValue = raw.get("label");
+                    displayName = display == null
+                        ? ""
+                        : String.valueOf(display);
+                    label = labelValue == null
+                        ? ""
+                        : String.valueOf(labelValue);
+                }
+                var winner = new LinkedHashMap<String, Object>();
+                winner.put("displayName", displayName);
+                winner.put(
+                    "label",
+                    label.isBlank() ? displayName : label
+                );
+                winners.add(winner);
+            }
+        }
+        publicResult.put("winners", List.copyOf(winners));
+        return publicResult;
+    }
+
+
     public Session freeze(String sessionId) throws SQLException {
         Session session = find(sessionId);
         if (!"DRAFT".equals(session.state())) {
