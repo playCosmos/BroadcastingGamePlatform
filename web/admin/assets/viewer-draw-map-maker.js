@@ -557,7 +557,12 @@
         ? null
         : await response.json().catch(() => ({}));
       if (!response.ok) {
-        throw new Error(body?.error || `HTTP ${response.status}`);
+        const error = new Error(
+          body?.error || `HTTP ${response.status}`
+        );
+        error.status = response.status;
+        error.body = body;
+        throw error;
       }
       return body;
     });
@@ -2372,7 +2377,20 @@
       );
       return saved;
     } catch (error) {
-      setStatus("저장 실패: " + error.message, "error");
+      if (error?.status === 409) {
+        await refreshSavedMaps().catch(() => {});
+        if ($("savedMaps") && mapId) {
+          $("savedMaps").value = mapId;
+        }
+        setStatus(
+          "저장 충돌 · 다른 편집본이 먼저 저장되었습니다. "
+            + "현재 편집 내용은 유지됩니다. 최신 revision을 불러와 "
+            + "변경 내용을 확인한 뒤 다시 저장하세요.",
+          "error"
+        );
+      } else {
+        setStatus("저장 실패: " + error.message, "error");
+      }
       return null;
     } finally {
       $("saveMap").disabled = false;
