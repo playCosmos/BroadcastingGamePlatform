@@ -1226,6 +1226,40 @@ public final class ClientBoundaryProbe {
                 "server restart plus existing browser access must not duplicate admin sessions"
             );
 
+            for (int attempt = 0; attempt < 120; attempt += 1) {
+                var publicLookup = client.send(
+                    HttpRequest.newBuilder(
+                        base.resolve(
+                            "/api/v1/tools/viewer-draw/public/ZZZZZZ"
+                        )
+                    )
+                    .GET().build(),
+                    HttpResponse.BodyHandlers.discarding()
+                );
+                require(
+                    publicLookup.statusCode() == 404,
+                    "public lookup rate limit must allow normal traffic"
+                );
+            }
+            var limitedPublicLookup = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve(
+                        "/api/v1/tools/viewer-draw/public/ZZZZZZ"
+                    )
+                )
+                .GET().build(),
+                HttpResponse.BodyHandlers.discarding()
+            );
+            require(
+                limitedPublicLookup.statusCode() == 429
+                    && "10".equals(
+                        limitedPublicLookup.headers()
+                            .firstValue("Retry-After")
+                            .orElse("")
+                    ),
+                "public capability lookups must be rate limited"
+            );
+
             var approvalRequest = client.send(
                 HttpRequest.newBuilder(
                     base.resolve(
