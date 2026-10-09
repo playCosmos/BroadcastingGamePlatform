@@ -38,6 +38,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.boardserver.ServerManagementProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.AdminAuthPersistenceProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDatabaseBackupProbe",
+    "io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameWebSocketRateProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.BoardServerConfigPersistenceProbe"
 )
 
