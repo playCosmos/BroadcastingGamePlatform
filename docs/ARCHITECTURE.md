@@ -124,6 +124,15 @@ Drawing Guess는 현재 Classic Guess D0~D5가 구현된 게임 모듈이다.
 - 후원은 Drawing Guess 필수 규칙으로 사용하지 않음
 - 기준 문서: `docs/games/DRAWING_GUESS.md`
 
+## SQLite Migration / Recovery
+
+- schema migration과 `PRAGMA user_version` 갱신은 동일 transaction에서 수행한다.
+- 기존 DB의 schema version이 현재보다 낮을 때만 migration 직전에 SQLite `VACUUM INTO` snapshot을 만든다.
+- backup은 DB 파일 옆 `backups/`에 `<db>.schema-v<version>-<timestamp>.bak` 형식으로 저장한다.
+- migration backup은 최근 5개만 유지한다.
+- 이미 현재 schema인 정상 재시작은 불필요한 backup을 새로 만들지 않는다.
+- 이 snapshot은 자동 rollback이 아니라 운영 복구점이며, migration 실패 시 원본 DB는 transaction rollback 상태로 유지된다.
+
 
 ## Viewer Draw 계획
 
