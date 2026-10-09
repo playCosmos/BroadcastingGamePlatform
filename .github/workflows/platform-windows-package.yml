@@ -9,6 +9,7 @@ on:
       - "web/**"
       - "docs/**"
       - ".github/workflows/platform-windows-package.yml"
+      - ".github/workflows/release.yml"
 
 permissions:
   contents: read
