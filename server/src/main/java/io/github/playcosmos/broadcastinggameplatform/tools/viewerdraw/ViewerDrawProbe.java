@@ -277,7 +277,27 @@ public final class ViewerDrawProbe {
             "public marble audit must not expose internal entry detail"
         );
 
+        for (int index = 0; index < 200; index += 1) {
+            service.saveMarbleAudit(savedAudit.audit());
+        }
+        require(
+            countMarbleAudits(database) == 200,
+            "marble audit history must retain only the latest 200 audits"
+        );
+
         System.out.println("Viewer Draw probe passed.");
+    }
+
+    private static int countMarbleAudits(
+        BoardGameDatabase database
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement(
+                 "SELECT COUNT(*) FROM viewer_draw_marble_audit"
+             );
+             var rows = statement.executeQuery()) {
+            return rows.next() ? rows.getInt(1) : -1;
+        }
     }
 
     @SuppressWarnings("unchecked")
