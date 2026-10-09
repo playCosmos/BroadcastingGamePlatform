@@ -15,6 +15,12 @@ public final class PlatformEventBusProbe {
         var chats = new AtomicInteger();
 
         try (
+            var failingDonationSubscription = bus.subscribe(
+                DonationEvent.class,
+                event -> {
+                    throw new IllegalStateException("probe subscriber failure");
+                }
+            );
             var donationSubscription = bus.subscribe(
                 DonationEvent.class,
                 event -> donations.incrementAndGet()
@@ -65,6 +71,10 @@ public final class PlatformEventBusProbe {
             require(
                 donations.get() == 2,
                 "donation subscriptions must be provider-neutral"
+            );
+            require(
+                bus.recent(3).size() == 3,
+                "subscriber failure must not prevent event retention"
             );
             require(
                 chats.get() == 1,
