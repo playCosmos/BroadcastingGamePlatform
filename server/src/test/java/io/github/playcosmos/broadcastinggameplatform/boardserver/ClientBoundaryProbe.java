@@ -327,6 +327,14 @@ public final class ClientBoundaryProbe {
                 boardResponse.statusCode() == 200,
                 "board client asset must be public"
             );
+            require(
+                "SAMEORIGIN".equals(
+                    boardResponse.headers()
+                        .firstValue("X-Frame-Options")
+                        .orElse("")
+                ),
+                "public web assets must reject cross-origin framing"
+            );
 
             require(
                 GameClientHttpServer.isTrustedForwardProxy(
