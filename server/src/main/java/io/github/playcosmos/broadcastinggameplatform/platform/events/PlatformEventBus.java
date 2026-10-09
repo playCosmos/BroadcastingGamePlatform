@@ -8,10 +8,13 @@ import java.util.function.Consumer;
 
 public final class PlatformEventBus {
     private static final int RECENT_LIMIT = 256;
+    private static final long FAILURE_LOG_INTERVAL_NANOS =
+        5_000_000_000L;
 
     private final CopyOnWriteArrayList<Subscription<?>> subscriptions =
         new CopyOnWriteArrayList<>();
     private final ArrayDeque<PlatformEvent> recent = new ArrayDeque<>();
+    private long lastFailureLogNanos = Long.MIN_VALUE;
 
     public <T extends PlatformEvent> AutoCloseable subscribe(
         Class<T> type,
@@ -36,17 +39,32 @@ public final class PlatformEventBus {
             try {
                 subscription.accept(event);
             } catch (RuntimeException error) {
-                System.err.println(
-                    "[platform-events] subscriber failed"
-                        + " type=" + event.type()
-                        + ": " + (
-                            error.getMessage() == null
-                                ? error.getClass().getSimpleName()
-                                : error.getMessage()
-                        )
-                );
+                if (shouldLogSubscriberFailure()) {
+                    System.err.println(
+                        "[platform-events] subscriber failed"
+                            + " type=" + event.type()
+                            + ": " + (
+                                error.getMessage() == null
+                                    ? error.getClass().getSimpleName()
+                                    : error.getMessage()
+                            )
+                    );
+                }
             }
         }
+    }
+
+    private synchronized boolean shouldLogSubscriberFailure() {
+        long now = System.nanoTime();
+        if (
+            lastFailureLogNanos != Long.MIN_VALUE
+                && now - lastFailureLogNanos
+                    < FAILURE_LOG_INTERVAL_NANOS
+        ) {
+            return false;
+        }
+        lastFailureLogNanos = now;
+        return true;
     }
 
     public List<PlatformEvent> recent(int requestedLimit) {
