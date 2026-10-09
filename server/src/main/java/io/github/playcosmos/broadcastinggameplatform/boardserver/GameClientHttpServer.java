@@ -2438,7 +2438,12 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static boolean trustForwardedHeaders(
         HttpExchange exchange
     ) {
-        var remote = exchange.getRemoteAddress();
+        return isTrustedForwardProxy(exchange.getRemoteAddress());
+    }
+
+    static boolean isTrustedForwardProxy(
+        InetSocketAddress remote
+    ) {
         return remote != null
             && remote.getAddress() != null
             && remote.getAddress().isLoopbackAddress();
