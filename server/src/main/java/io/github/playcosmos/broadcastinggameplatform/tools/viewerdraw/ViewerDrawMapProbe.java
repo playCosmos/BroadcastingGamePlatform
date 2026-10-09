@@ -768,6 +768,39 @@ public final class ViewerDrawMapProbe {
                 "invalid map save must be rejected"
             );
 
+            var retentionCurrent = updated;
+            for (int index = 0; index < 50; index += 1) {
+                retentionCurrent = service.saveMachineMap(
+                    saved.mapId(),
+                    retentionCurrent.revision(),
+                    updatedDefinition
+                );
+            }
+            require(
+                retentionCurrent.revision() == 52,
+                "retention probe must advance map to revision 52"
+            );
+            boolean revision2Pruned = false;
+            try {
+                service.findMachineMapRevision(
+                    saved.mapId(),
+                    2
+                );
+            } catch (java.util.NoSuchElementException expected) {
+                revision2Pruned = true;
+            }
+            require(
+                revision2Pruned,
+                "machine map history must prune revisions older than latest 50"
+            );
+            require(
+                service.findMachineMapRevision(
+                    saved.mapId(),
+                    3
+                ).revision() == 3,
+                "machine map history must retain exactly the latest 50 revisions"
+            );
+
             boolean staleArchiveRejected = false;
             try {
                 service.archiveMachineMap(
@@ -790,7 +823,7 @@ public final class ViewerDrawMapProbe {
 
             service.archiveMachineMap(
                 saved.mapId(),
-                updated.revision()
+                retentionCurrent.revision()
             );
             require(
                 service.recentMachineMaps(10).isEmpty(),
