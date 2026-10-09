@@ -18,7 +18,7 @@ for (const file of ["board.js", "board-rect.js"]) {
     file + " must accept the shared roomCode/roomId contract"
   );
   requireCondition(
-    source.includes("function roomReadUrl(roomId, suffix = "")")
+    source.includes('function roomReadUrl(roomId, suffix = "")')
       && source.includes('"?roomCode=" + encodeURIComponent(roomCode)'),
     file + " must authenticate public HTTP room reads with roomCode"
   );
