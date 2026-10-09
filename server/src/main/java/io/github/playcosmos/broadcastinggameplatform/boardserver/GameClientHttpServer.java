@@ -1325,7 +1325,47 @@ public final class GameClientHttpServer implements AutoCloseable {
                 }
 
                 if ("DELETE".equalsIgnoreCase(exchange.getRequestMethod())) {
-                    viewerDraw.archiveMachineMap(mapId);
+                    String rawExpectedRevision = queryParameter(
+                        exchange.getRequestURI().getRawQuery(),
+                        "expectedRevision"
+                    );
+                    if (
+                        rawExpectedRevision == null
+                            || rawExpectedRevision.isBlank()
+                    ) {
+                        sendJson(
+                            exchange,
+                            400,
+                            Map.of("error", "expectedRevision is required")
+                        );
+                        return;
+                    }
+                    final int expectedRevision;
+                    try {
+                        expectedRevision = Integer.parseInt(
+                            rawExpectedRevision
+                        );
+                    } catch (NumberFormatException error) {
+                        sendJson(
+                            exchange,
+                            400,
+                            Map.of("error", "expectedRevision is invalid")
+                        );
+                        return;
+                    }
+                    if (expectedRevision < 1) {
+                        sendJson(
+                            exchange,
+                            400,
+                            Map.of("error", "expectedRevision is invalid")
+                        );
+                        return;
+                    }
+
+                    viewerDraw.archiveMachineMap(
+                        mapId,
+                        expectedRevision
+                    );
                     exchange.sendResponseHeaders(204, -1);
                     exchange.close();
                     return;
@@ -1333,6 +1373,14 @@ public final class GameClientHttpServer implements AutoCloseable {
 
                 exchange.sendResponseHeaders(405, -1);
                 exchange.close();
+            } catch (
+                ViewerDrawService.MachineMapConflictException error
+            ) {
+                sendJson(
+                    exchange,
+                    409,
+                    Map.of("error", safeMessage(error))
+                );
             } catch (java.util.NoSuchElementException error) {
                 sendJson(
                     exchange,
