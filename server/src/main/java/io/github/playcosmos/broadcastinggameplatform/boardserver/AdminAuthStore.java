@@ -19,7 +19,6 @@ public final class AdminAuthStore {
     }
 
     public record ApprovalRequest(
-        String code,
         String status,
         Instant expiresAt
     ) {}
@@ -113,7 +112,7 @@ public final class AdminAuthStore {
             statement.setString(1, hash(requestId));
             statement.setString(
                 2,
-                normalizeApprovalCode(approvalCode)
+                hash(normalizeApprovalCode(approvalCode))
             );
             statement.setString(3, expiresAt.toString());
             statement.setString(4, now.toString());
@@ -128,7 +127,7 @@ public final class AdminAuthStore {
         cleanupExpiredApprovalRequests(now);
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
-                 SELECT approval_code, status, expires_at
+                 SELECT status, expires_at
                  FROM board_admin_approval_request
                  WHERE request_hash = ?
                  """)) {
@@ -137,8 +136,7 @@ public final class AdminAuthStore {
                 if (!rows.next()) return null;
                 return new ApprovalRequest(
                     rows.getString(1),
-                    rows.getString(2),
-                    Instant.parse(rows.getString(3))
+                    Instant.parse(rows.getString(2))
                 );
             }
         }
@@ -160,7 +158,7 @@ public final class AdminAuthStore {
             statement.setString(1, now.toString());
             statement.setString(
                 2,
-                normalizeApprovalCode(approvalCode)
+                hash(normalizeApprovalCode(approvalCode))
             );
             statement.setString(3, now.toString());
             return statement.executeUpdate() == 1;
