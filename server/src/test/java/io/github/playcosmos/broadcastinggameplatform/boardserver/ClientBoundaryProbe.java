@@ -348,6 +348,20 @@ public final class ClientBoundaryProbe {
                 ),
                 "external clients must not be trusted as reverse proxies"
             );
+            require(
+                GameClientHttpServer.sameHost(
+                    "example.test:443",
+                    "example.test"
+                ),
+                "public host matching must ignore the request port"
+            );
+            require(
+                !GameClientHttpServer.sameHost(
+                    "127.0.0.1:17832",
+                    "example.test"
+                ),
+                "local direct access must not inherit remote public-host cookie policy"
+            );
 
             require(
                 "198.51.100.20".equals(
