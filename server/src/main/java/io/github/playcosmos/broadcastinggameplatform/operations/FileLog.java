@@ -17,6 +17,8 @@ public final class FileLog implements AutoCloseable {
     private static final DateTimeFormatter FILE_TIME =
         DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
     private static final int MAX_RETAINED_LOG_FILES = 30;
+    private static final long MAX_LOG_FILE_BYTES =
+        32L * 1024 * 1024;
     private static final String LOG_PREFIX =
         "broadcasting-game-platform-";
     private static final String LEGACY_LOG_PREFIX =
@@ -24,16 +26,21 @@ public final class FileLog implements AutoCloseable {
 
     private final PrintStream originalOut;
     private final PrintStream originalErr;
+    private final RotatingLogOutputStream fileOutput;
     private final PrintStream file;
     private final PrintStream teeOut;
     private final PrintStream teeErr;
-    private final Path path;
 
-    private FileLog(PrintStream originalOut, PrintStream originalErr, PrintStream file, Path path) {
+    private FileLog(
+        PrintStream originalOut,
+        PrintStream originalErr,
+        RotatingLogOutputStream fileOutput,
+        PrintStream file
+    ) {
         this.originalOut = originalOut;
         this.originalErr = originalErr;
+        this.fileOutput = fileOutput;
         this.file = file;
-        this.path = path;
         this.teeOut = new TeePrintStream(originalOut, file);
         this.teeErr = new TeePrintStream(originalErr, file);
     }
@@ -42,37 +49,21 @@ public final class FileLog implements AutoCloseable {
         Path root = directory.toAbsolutePath().normalize();
         Files.createDirectories(root);
         hideDirectoryOnWindows(root);
-        String stamp = LocalDateTime.now().format(FILE_TIME);
-        Path path = null;
-        OutputStream stream = null;
-        for (int attempt = 0; attempt < 1000; attempt += 1) {
-            Path candidate = root.resolve(
-                LOG_PREFIX
-                    + stamp
-                    + (attempt == 0 ? "" : "-" + attempt)
-                    + ".log"
-            );
-            try {
-                stream = Files.newOutputStream(
-                    candidate,
-                    StandardOpenOption.CREATE_NEW,
-                    StandardOpenOption.WRITE
-                );
-                path = candidate;
-                break;
-            } catch (FileAlreadyExistsException ignored) {
-                // Extremely fast restarts may collide even at millisecond precision.
-            }
-        }
-        if (stream == null || path == null) {
-            throw new IOException("failed to allocate unique log file");
-        }
-        pruneOldLogs(root, path);
-        var file = new PrintStream(stream, true, StandardCharsets.UTF_8);
-        var log = new FileLog(System.out, System.err, file, path);
+        var fileOutput = new RotatingLogOutputStream(root);
+        var file = new PrintStream(
+            fileOutput,
+            true,
+            StandardCharsets.UTF_8
+        );
+        var log = new FileLog(
+            System.out,
+            System.err,
+            fileOutput,
+            file
+        );
         System.setOut(log.teeOut);
         System.setErr(log.teeErr);
-        System.out.println("[log] " + path);
+        System.out.println("[log] " + log.path());
         System.out.println("[encoding] console-out=" + log.originalOut.charset()
             + " console-err=" + log.originalErr.charset()
             + " file=UTF-8");
@@ -139,7 +130,7 @@ public final class FileLog implements AutoCloseable {
     }
 
     public Path path() {
-        return path;
+        return fileOutput.currentPath();
     }
 
     @Override
@@ -150,6 +141,122 @@ public final class FileLog implements AutoCloseable {
         teeErr.flush();
         file.flush();
         file.close();
+    }
+
+    private static LogTarget allocateLogTarget(
+        Path root
+    ) throws IOException {
+        String stamp = LocalDateTime.now().format(FILE_TIME);
+        for (int attempt = 0; attempt < 1000; attempt += 1) {
+            Path candidate = root.resolve(
+                LOG_PREFIX
+                    + stamp
+                    + (attempt == 0 ? "" : "-" + attempt)
+                    + ".log"
+            );
+            try {
+                OutputStream stream = Files.newOutputStream(
+                    candidate,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE
+                );
+                pruneOldLogs(root, candidate);
+                return new LogTarget(candidate, stream);
+            } catch (FileAlreadyExistsException ignored) {
+                // Extremely fast rotation/restart may share a timestamp.
+            }
+        }
+        throw new IOException("failed to allocate unique log file");
+    }
+
+    private record LogTarget(
+        Path path,
+        OutputStream stream
+    ) {}
+
+    private static final class RotatingLogOutputStream
+        extends OutputStream {
+        private final Path root;
+        private OutputStream delegate;
+        private Path currentPath;
+        private long bytesWritten;
+
+        private RotatingLogOutputStream(Path root)
+            throws IOException {
+            this.root = root;
+            rotate();
+        }
+
+        private synchronized Path currentPath() {
+            return currentPath;
+        }
+
+        @Override
+        public synchronized void write(int value)
+            throws IOException {
+            ensureCapacity(1);
+            delegate.write(value);
+            bytesWritten += 1;
+        }
+
+        @Override
+        public synchronized void write(
+            byte[] bytes,
+            int offset,
+            int length
+        ) throws IOException {
+            int cursor = offset;
+            int remaining = length;
+            while (remaining > 0) {
+                if (bytesWritten >= MAX_LOG_FILE_BYTES) {
+                    rotate();
+                }
+                int writable = (int) Math.min(
+                    remaining,
+                    MAX_LOG_FILE_BYTES - bytesWritten
+                );
+                delegate.write(bytes, cursor, writable);
+                bytesWritten += writable;
+                cursor += writable;
+                remaining -= writable;
+            }
+        }
+
+        private void ensureCapacity(int bytes)
+            throws IOException {
+            if (
+                bytesWritten + bytes
+                    > MAX_LOG_FILE_BYTES
+            ) {
+                rotate();
+            }
+        }
+
+        private void rotate() throws IOException {
+            if (delegate != null) {
+                delegate.flush();
+                delegate.close();
+            }
+            LogTarget next = allocateLogTarget(root);
+            delegate = next.stream();
+            currentPath = next.path();
+            bytesWritten = 0;
+        }
+
+        @Override
+        public synchronized void flush()
+            throws IOException {
+            if (delegate != null) delegate.flush();
+        }
+
+        @Override
+        public synchronized void close()
+            throws IOException {
+            if (delegate == null) return;
+            delegate.flush();
+            delegate.close();
+            delegate = null;
+        }
     }
 
     /**
