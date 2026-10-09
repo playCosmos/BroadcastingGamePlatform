@@ -123,6 +123,10 @@ public final class BoardGameDatabase implements DatabaseAccess {
 
         Path backupDirectory = parent.resolve("backups");
         Files.createDirectories(backupDirectory);
+        pruneMigrationBackups(
+            backupDirectory,
+            Math.max(0, MAX_MIGRATION_BACKUPS - 1)
+        );
         String baseName = databasePath.getFileName().toString()
             + ".schema-v" + schemaVersion + "-"
             + System.currentTimeMillis();
@@ -153,10 +157,16 @@ public final class BoardGameDatabase implements DatabaseAccess {
         try (var statement = connection.createStatement()) {
             statement.execute("VACUUM INTO '" + sqlPath + "'");
         }
-        pruneMigrationBackups(backupDirectory);
+        pruneMigrationBackups(
+            backupDirectory,
+            MAX_MIGRATION_BACKUPS
+        );
     }
 
-    private void pruneMigrationBackups(Path backupDirectory) {
+    private void pruneMigrationBackups(
+        Path backupDirectory,
+        int keepCount
+    ) {
         String prefix = databasePath.getFileName().toString()
             + ".schema-v";
         try (var files = Files.list(backupDirectory)) {
@@ -174,7 +184,7 @@ public final class BoardGameDatabase implements DatabaseAccess {
                 )
                 .toList();
             for (
-                int index = MAX_MIGRATION_BACKUPS;
+                int index = Math.max(0, keepCount);
                 index < backups.size();
                 index += 1
             ) {
