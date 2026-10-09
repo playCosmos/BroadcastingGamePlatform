@@ -2379,9 +2379,10 @@ public final class GameClientHttpServer implements AutoCloseable {
             return configured;
         }
 
-        String host = exchange.getRequestHeaders().getFirst(
-            "X-Forwarded-Host"
-        );
+        boolean trustForwarded = trustForwardedHeaders(exchange);
+        String host = trustForwarded
+            ? exchange.getRequestHeaders().getFirst("X-Forwarded-Host")
+            : null;
         if (host == null || host.isBlank()) {
             host = exchange.getRequestHeaders().getFirst("Host");
         }
@@ -2407,9 +2408,9 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
         }
 
-        String forwardedProto = exchange.getRequestHeaders().getFirst(
-            "X-Forwarded-Proto"
-        );
+        String forwardedProto = trustForwarded
+            ? exchange.getRequestHeaders().getFirst("X-Forwarded-Proto")
+            : null;
         String scheme = forwardedProto != null
             && forwardedProto.trim().equalsIgnoreCase("https")
             ? "wss"
@@ -2426,11 +2427,21 @@ public final class GameClientHttpServer implements AutoCloseable {
         ) {
             return true;
         }
+        if (!trustForwardedHeaders(exchange)) return false;
         String forwarded = exchange.getRequestHeaders().getFirst(
             "X-Forwarded-Proto"
         );
         return forwarded != null
             && forwarded.trim().equalsIgnoreCase("https");
+    }
+
+    private static boolean trustForwardedHeaders(
+        HttpExchange exchange
+    ) {
+        var remote = exchange.getRemoteAddress();
+        return remote != null
+            && remote.getAddress() != null
+            && remote.getAddress().isLoopbackAddress();
     }
 
     private static boolean requireGetOrHead(
