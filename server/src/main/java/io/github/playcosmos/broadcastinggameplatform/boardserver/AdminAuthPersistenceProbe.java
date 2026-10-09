@@ -66,6 +66,10 @@ public final class AdminAuthPersistenceProbe {
                 "administrator approval code must not be stored in plaintext"
             );
             require(
+                storedApprovalCode(database).startsWith("v2."),
+                "administrator approval code must use process-keyed HMAC storage"
+            );
+            require(
                 approvalReopened.approveApprovalRequest(
                     "ABC7K2",
                     Instant.now()
@@ -95,6 +99,18 @@ public final class AdminAuthPersistenceProbe {
                 "approved session must persist"
             );
 
+            insertStaleApprovalRow(database);
+            approvalReopened.cleanupExpiredApprovalRequests(
+                Instant.now()
+            );
+            require(
+                !approvalRequestHashExists(
+                    database,
+                    "legacy-request-hash"
+                ),
+                "approval rows from another process key must be invalidated"
+            );
+
             int revoked = reopenedAgain.revokeAllSessions();
             require(
                 revoked >= 1,
@@ -112,6 +128,58 @@ public final class AdminAuthPersistenceProbe {
         } catch (Exception error) {
             error.printStackTrace();
             return 1;
+        }
+    }
+
+    private static String storedApprovalCode(
+        BoardGameDatabase database
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT approval_code
+                 FROM board_admin_approval_request
+                 LIMIT 1
+                 """);
+             var rows = statement.executeQuery()) {
+            return rows.next() ? rows.getString(1) : "";
+        }
+    }
+
+    private static void insertStaleApprovalRow(
+        BoardGameDatabase database
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 INSERT INTO board_admin_approval_request(
+                   request_hash, approval_code, status,
+                   expires_at, created_at, approved_at
+                 ) VALUES (?, ?, 'PENDING', ?, ?, NULL)
+                 """)) {
+            statement.setString(1, "legacy-request-hash");
+            statement.setString(2, "legacy-sha256-like-value");
+            statement.setString(
+                3,
+                Instant.now().plusSeconds(600).toString()
+            );
+            statement.setString(4, Instant.now().toString());
+            statement.executeUpdate();
+        }
+    }
+
+    private static boolean approvalRequestHashExists(
+        BoardGameDatabase database,
+        String requestHash
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT 1
+                 FROM board_admin_approval_request
+                 WHERE request_hash = ?
+                 """)) {
+            statement.setString(1, requestHash);
+            try (var rows = statement.executeQuery()) {
+                return rows.next();
+            }
         }
     }
 
