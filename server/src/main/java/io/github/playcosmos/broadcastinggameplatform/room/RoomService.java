@@ -573,6 +573,7 @@ public final class RoomService {
                     statement.executeUpdate();
                 }
 
+                pruneTerminatedRooms(connection);
                 connection.commit();
             } catch (SQLException error) {
                 connection.rollback();
