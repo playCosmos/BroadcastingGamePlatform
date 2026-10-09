@@ -243,6 +243,7 @@ public final class BoardGameRuntimeEngine {
                     "operator",
                     "운영자",
                     0,
+                    player.playerIndex,
                     player.soopId,
                     player.displayName,
                     "manual-position",
@@ -691,6 +692,7 @@ public final class BoardGameRuntimeEngine {
                     donation.userId(),
                     donation.nickname(),
                     donation.amount(),
+                    player.playerIndex,
                     player.soopId,
                     player.displayName,
                     turnGenerator,
@@ -1763,6 +1765,7 @@ public final class BoardGameRuntimeEngine {
         String donorId,
         String donorNickname,
         int balloonCount,
+        int playerIndex,
         String playerId,
         String playerName,
         String generator,
@@ -1776,6 +1779,84 @@ public final class BoardGameRuntimeEngine {
         List<CellUpdate> cellUpdates,
         String createdAt
     ) {}
+
+    public static String publicPlayerId(int playerIndex) {
+        return "P" + (Math.max(0, playerIndex) + 1);
+    }
+
+    public static Map<String, Object> publicTurnEvent(
+        BoardTurnEvent event
+    ) {
+        Objects.requireNonNull(event, "event");
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("type", event.type());
+        payload.put("eventId", event.eventId());
+        payload.put("roomId", event.roomId());
+        payload.put("sequence", event.sequence());
+        payload.put(
+            "playerId",
+            publicPlayerId(event.playerIndex())
+        );
+        payload.put("playerName", event.playerName());
+        payload.put("generator", event.generator());
+        payload.put("startPosition", event.startPosition());
+        payload.put("endPosition", event.endPosition());
+        payload.put("laps", event.laps());
+        payload.put(
+            "openingThrowSkipped",
+            event.openingThrowSkipped()
+        );
+        payload.put(
+            "skipNextThrowsAfter",
+            event.skipNextThrowsAfter()
+        );
+        payload.put("safetyStopped", event.safetyStopped());
+        payload.put(
+            "throwResolutions",
+            event.throwResolutions()
+        );
+        payload.put("cellUpdates", event.cellUpdates());
+        payload.put("createdAt", event.createdAt());
+        return payload;
+    }
+
+    public static Map<String, Object> publicRuntimeSnapshot(
+        RuntimeSnapshot snapshot
+    ) {
+        Objects.requireNonNull(snapshot, "snapshot");
+        var players = new ArrayList<Map<String, Object>>();
+        for (RuntimePlayer player : snapshot.players()) {
+            var value = new LinkedHashMap<String, Object>();
+            value.put("playerIndex", player.playerIndex());
+            value.put(
+                "playerId",
+                publicPlayerId(player.playerIndex())
+            );
+            value.put("displayName", player.displayName());
+            value.put("position", player.position());
+            value.put("laps", player.laps());
+            value.put(
+                "skipNextThrows",
+                player.skipNextThrows()
+            );
+            value.put(
+                "nextThrowMultiplier",
+                player.nextThrowMultiplier()
+            );
+            value.put(
+                "ignoreNextLandingEffects",
+                player.ignoreNextLandingEffects()
+            );
+            players.add(value);
+        }
+
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("roomId", snapshot.roomId());
+        payload.put("sequence", snapshot.sequence());
+        payload.put("board", snapshot.board());
+        payload.put("players", List.copyOf(players));
+        return payload;
+    }
 
     public record RuntimePlayer(
         int playerIndex,
