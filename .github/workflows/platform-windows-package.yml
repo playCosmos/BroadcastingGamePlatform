@@ -158,6 +158,9 @@ jobs:
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+          java -cp $jar io.github.playcosmos.broadcastinggameplatform.operations.FileLogProbe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
           java -cp $jar io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
