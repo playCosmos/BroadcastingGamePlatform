@@ -55,9 +55,15 @@ public final class AdminAuthPersistenceProbe {
             );
             require(
                 pending != null
-                    && "PENDING".equals(pending.status())
-                    && "ABC7K2".equals(pending.code()),
+                    && "PENDING".equals(pending.status()),
                 "approval request must survive store recreation"
+            );
+            require(
+                !approvalCodeStoredAsPlaintext(
+                    database,
+                    "ABC7K2"
+                ),
+                "administrator approval code must not be stored in plaintext"
             );
             require(
                 approvalReopened.approveApprovalRequest(
@@ -106,6 +112,22 @@ public final class AdminAuthPersistenceProbe {
         } catch (Exception error) {
             error.printStackTrace();
             return 1;
+        }
+    }
+
+    private static boolean approvalCodeStoredAsPlaintext(
+        BoardGameDatabase database,
+        String approvalCode
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT approval_code
+                 FROM board_admin_approval_request
+                 LIMIT 1
+                 """);
+             var rows = statement.executeQuery()) {
+            return rows.next()
+                && approvalCode.equals(rows.getString(1));
         }
     }
 
