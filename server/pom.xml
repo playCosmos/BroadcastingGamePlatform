@@ -91,7 +91,7 @@
                 <filter>
                   <artifact>io.github.playcosmos:broadcasting-game-platform-server</artifact>
                   <excludes>
-                    <exclude>**/*Probe.class</exclude>
+                    <exclude>**/*Probe*.class</exclude>
                   </excludes>
                 </filter>
               </filters>
