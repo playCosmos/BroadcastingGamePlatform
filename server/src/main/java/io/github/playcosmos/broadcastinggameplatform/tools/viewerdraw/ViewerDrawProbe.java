@@ -185,6 +185,24 @@ public final class ViewerDrawProbe {
             chatRandom.frozenEntryHash() != null,
             "chat session must freeze with identity-aware hash"
         );
+        chatRandom = service.start(chatRandom.sessionId());
+        var publicChatRandom = service.findPublicSessionByCode(
+            chatRandom.publicCode()
+        );
+        String publicChatRandomJson = new Gson().toJson(
+            publicChatRandom
+        );
+        require(
+            publicChatRandomJson.contains("\"displayName\"")
+                && publicChatRandomJson.contains("\"label\""),
+            "public random result must retain winner presentation"
+        );
+        require(
+            !publicChatRandomJson.contains("\"provider\"")
+                && !publicChatRandomJson.contains("\"userId\"")
+                && !publicChatRandomJson.contains("\"entryId\""),
+            "public random result must hide provider identity"
+        );
 
         var savedAudit = service.saveMarbleAudit(
             Map.of(
