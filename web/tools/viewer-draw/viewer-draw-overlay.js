@@ -137,9 +137,9 @@
       qStatus,
       qStatus==="QUALIFIED" ? "good" : "bad"
     );
-    const dnfCount=Array.isArray(resultData.dnf)
-      ? resultData.dnf.length
-      : 0;
+    const dnfCount=Number.isFinite(Number(resultData.dnfCount))
+      ? Math.max(0, Number(resultData.dnfCount))
+      : (Array.isArray(resultData.dnf) ? resultData.dnf.length : 0);
     addAuditBadge("DNF "+dnfCount, dnfCount ? "warn" : "");
     addAuditBadge(
       "NUDGE "+(Number(run.stuckNudges)||0),
