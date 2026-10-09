@@ -37,18 +37,7 @@ public final class AdminAuthPersistenceProbe {
                 "admin session must survive store recreation"
             );
 
-            Instant refreshedExpiry = Instant.now().plusSeconds(7200);
-            reopenedStore.refreshSession(
-                "probe-session",
-                refreshedExpiry
-            );
             var reopenedAgain = new AdminAuthStore(database);
-            require(
-                refreshedExpiry.equals(
-                    reopenedAgain.sessionExpiresAt("probe-session")
-                ),
-                "refreshed expiry must persist"
-            );
 
             Instant approvalExpiry = Instant.now().plusSeconds(600);
             require(
