@@ -62,23 +62,6 @@ public final class AdminAuthStore {
         }
     }
 
-    public void refreshSession(
-        String sessionId,
-        Instant expiresAt
-    ) throws SQLException {
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 UPDATE board_admin_session
-                 SET expires_at = ?, updated_at = ?
-                 WHERE session_hash = ?
-                 """)) {
-            statement.setString(1, expiresAt.toString());
-            statement.setString(2, Instant.now().toString());
-            statement.setString(3, hash(sessionId));
-            statement.executeUpdate();
-        }
-    }
-
     public void deleteSession(String sessionId)
         throws SQLException {
         try (var connection = database.open();
