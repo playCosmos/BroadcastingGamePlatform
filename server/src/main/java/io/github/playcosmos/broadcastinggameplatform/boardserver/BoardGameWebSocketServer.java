@@ -2,7 +2,6 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
 import java.net.InetSocketAddress;
-import java.nio.charset.StandardCharsets;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
