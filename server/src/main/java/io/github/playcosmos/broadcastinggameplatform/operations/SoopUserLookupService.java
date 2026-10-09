@@ -22,6 +22,7 @@ public final class SoopUserLookupService {
     private static final Gson GSON = new Gson();
     private static final String SEARCH_ENDPOINT = "https://sch.sooplive.com/api.php";
     private static final int MAX_CANDIDATES = 10;
+    private static final int MAX_RESPONSE_BYTES = 512 * 1024;
 
     private final HttpClient http = HttpClient.newBuilder()
         .connectTimeout(Duration.ofSeconds(5))
@@ -41,12 +42,35 @@ public final class SoopUserLookupService {
             .header("User-Agent", "RamyaniGameServer/0.2")
             .GET()
             .build();
-        var response = http.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-        if (response.statusCode() < 200 || response.statusCode() >= 300) {
-            throw new IllegalStateException("SOOP 사용자 조회 실패 (HTTP " + response.statusCode() + ")");
+        var response = http.send(
+            request,
+            HttpResponse.BodyHandlers.ofInputStream()
+        );
+        final String responseJson;
+        try (var body = response.body()) {
+            if (
+                response.statusCode() < 200
+                    || response.statusCode() >= 300
+            ) {
+                throw new IllegalStateException(
+                    "SOOP 사용자 조회 실패 (HTTP "
+                        + response.statusCode() + ")"
+                );
+            }
+
+            byte[] bytes = body.readNBytes(MAX_RESPONSE_BYTES + 1);
+            if (bytes.length > MAX_RESPONSE_BYTES) {
+                throw new IllegalStateException(
+                    "SOOP 사용자 조회 응답이 너무 큽니다."
+                );
+            }
+            responseJson = new String(
+                bytes,
+                StandardCharsets.UTF_8
+            );
         }
 
-        JsonObject root = GSON.fromJson(response.body(), JsonObject.class);
+        JsonObject root = GSON.fromJson(responseJson, JsonObject.class);
         JsonArray source = root == null ? null : array(root, "suggest_bj", "suggestBj", "users", "data");
         var candidates = new ArrayList<UserCandidate>();
         if (source != null) {
