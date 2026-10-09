@@ -3,14 +3,25 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 import io.github.playcosmos.broadcastinggameplatform.db.DatabaseAccess;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Locale;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 public final class AdminAuthStore {
     private static final Base64.Encoder HASH_ENCODER =
         Base64.getUrlEncoder().withoutPadding();
+    private static final byte[] APPROVAL_HMAC_KEY =
+        randomSecret(32);
+    private static final String APPROVAL_HMAC_KEY_ID =
+        HASH_ENCODER.encodeToString(
+            java.util.Arrays.copyOf(APPROVAL_HMAC_KEY, 9)
+        );
+    private static final String APPROVAL_HMAC_PREFIX =
+        "v2." + APPROVAL_HMAC_KEY_ID + ".";
 
     private final DatabaseAccess database;
 
@@ -112,7 +123,7 @@ public final class AdminAuthStore {
             statement.setString(1, hash(requestId));
             statement.setString(
                 2,
-                hash(normalizeApprovalCode(approvalCode))
+                approvalHash(approvalCode)
             );
             statement.setString(3, expiresAt.toString());
             statement.setString(4, now.toString());
@@ -158,7 +169,7 @@ public final class AdminAuthStore {
             statement.setString(1, now.toString());
             statement.setString(
                 2,
-                hash(normalizeApprovalCode(approvalCode))
+                approvalHash(approvalCode)
             );
             statement.setString(3, now.toString());
             return statement.executeUpdate() == 1;
@@ -254,8 +265,13 @@ public final class AdminAuthStore {
              var statement = connection.prepareStatement("""
                  DELETE FROM board_admin_approval_request
                  WHERE expires_at <= ?
+                    OR approval_code NOT LIKE ?
                  """)) {
             statement.setString(1, now.toString());
+            statement.setString(
+                2,
+                APPROVAL_HMAC_PREFIX + "%"
+            );
             statement.executeUpdate();
         }
     }
@@ -305,6 +321,35 @@ public final class AdminAuthStore {
         return code == null
             ? ""
             : code.trim().toUpperCase(Locale.ROOT);
+    }
+
+    private static String approvalHash(String code) {
+        try {
+            Mac mac = Mac.getInstance("HmacSHA256");
+            mac.init(
+                new SecretKeySpec(
+                    APPROVAL_HMAC_KEY,
+                    "HmacSHA256"
+                )
+            );
+            byte[] digest = mac.doFinal(
+                normalizeApprovalCode(code)
+                    .getBytes(StandardCharsets.UTF_8)
+            );
+            return APPROVAL_HMAC_PREFIX
+                + HASH_ENCODER.encodeToString(digest);
+        } catch (Exception error) {
+            throw new IllegalStateException(
+                "HmacSHA256 unavailable",
+                error
+            );
+        }
+    }
+
+    private static byte[] randomSecret(int bytes) {
+        byte[] secret = new byte[bytes];
+        new SecureRandom().nextBytes(secret);
+        return secret;
     }
 
     private static String hash(String value) {
