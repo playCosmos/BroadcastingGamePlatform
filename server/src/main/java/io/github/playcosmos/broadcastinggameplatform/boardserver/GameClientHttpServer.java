@@ -12,6 +12,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persiste
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
+import io.github.playcosmos.broadcastinggameplatform.room.RoomModels;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
 import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawService;
 import java.io.IOException;
@@ -1589,7 +1590,11 @@ public final class GameClientHttpServer implements AutoCloseable {
             roomId = route;
         }
 
-        if (!hasRoomReadAccess(exchange, roomId)) {
+        boolean administrator = isAdminSession(exchange);
+        if (
+            !administrator
+                && !hasRoomReadAccess(exchange, roomId)
+        ) {
             sendJson(exchange, 401, Map.of(
                 "error",
                 "valid committed room code required"
@@ -1598,9 +1603,20 @@ public final class GameClientHttpServer implements AutoCloseable {
         }
 
         try {
-            Object payload = runtimeRoute
-                ? runtime.snapshot(roomId)
-                : rooms.find(roomId);
+            Object payload;
+            if (runtimeRoute) {
+                var snapshot = runtime.snapshot(roomId);
+                payload = administrator
+                    ? snapshot
+                    : BoardGameRuntimeEngine.publicRuntimeSnapshot(
+                        snapshot
+                    );
+            } else {
+                var snapshot = rooms.find(roomId);
+                payload = administrator
+                    ? snapshot
+                    : publicRoomSnapshot(snapshot);
+            }
 
             if ("HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
                 exchange.sendResponseHeaders(200, -1);
@@ -1615,6 +1631,42 @@ public final class GameClientHttpServer implements AutoCloseable {
                 Map.of("error", safeMessage(error))
             );
         }
+    }
+
+    private static Map<String, Object> publicRoomSnapshot(
+        RoomModels.RoomSnapshot snapshot
+    ) {
+        var players = new ArrayList<Map<String, Object>>();
+        var config = snapshot.config();
+        if (config != null && config.players() != null) {
+            for (int index = 0; index < config.players().size(); index += 1) {
+                var player = config.players().get(index);
+                if (player == null) continue;
+                var value = new LinkedHashMap<String, Object>();
+                value.put(
+                    "playerId",
+                    BoardGameRuntimeEngine.publicPlayerId(index)
+                );
+                value.put("displayName", player.displayName());
+                value.put("profileImageUrl", player.profileImageUrl());
+                players.add(value);
+            }
+        }
+
+        var publicConfig = new LinkedHashMap<String, Object>();
+        if (config != null) {
+            publicConfig.put("name", config.name());
+            publicConfig.put("board", config.board());
+        }
+        publicConfig.put("players", List.copyOf(players));
+
+        var payload = new LinkedHashMap<String, Object>();
+        payload.put("roomId", snapshot.roomId());
+        payload.put("status", snapshot.status());
+        payload.put("config", publicConfig);
+        payload.put("preview", snapshot.preview());
+        payload.put("committedBoard", snapshot.committedBoard());
+        return payload;
     }
 
     private boolean hasRoomReadAccess(
