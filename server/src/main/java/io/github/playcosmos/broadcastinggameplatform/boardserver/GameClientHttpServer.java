@@ -2971,6 +2971,10 @@ public final class GameClientHttpServer implements AutoCloseable {
             "X-Content-Type-Options",
             "nosniff"
         );
+        exchange.getResponseHeaders().set(
+            "X-Frame-Options",
+            "SAMEORIGIN"
+        );
     }
 
     private static String contentType(Path path) {
