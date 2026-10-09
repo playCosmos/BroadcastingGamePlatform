@@ -300,7 +300,110 @@ public final class ViewerDrawProbe {
             "marble audit limit must be enforced by UTF-8 byte size"
         );
 
+        var retainedDraft = service.create(
+            "retained-draft",
+            "NUMBER",
+            List.of(),
+            Map.of("maxNumber", 45, "drawCount", 1)
+        );
+        seedTerminalSessions(database, 205);
+
+        var retentionTrigger = service.create(
+            "retention-trigger",
+            "NUMBER",
+            List.of(),
+            Map.of("maxNumber", 45, "drawCount", 1)
+        );
+        retentionTrigger = service.freeze(
+            retentionTrigger.sessionId()
+        );
+        retentionTrigger = service.start(
+            retentionTrigger.sessionId()
+        );
+        require(
+            "COMPLETED".equals(retentionTrigger.state()),
+            "retention trigger draw must complete"
+        );
+        require(
+            countTerminalSessions(database) == 200,
+            "terminal Viewer Draw sessions must retain only the latest 200"
+        );
+        require(
+            "DRAFT".equals(
+                service.find(retainedDraft.sessionId()).state()
+            ),
+            "Viewer Draw retention must not prune active DRAFT sessions"
+        );
+
         System.out.println("Viewer Draw probe passed.");
+    }
+
+    private static void seedTerminalSessions(
+        BoardGameDatabase database,
+        int count
+    ) throws Exception {
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            try (var statement = connection.prepareStatement("""
+                INSERT INTO viewer_draw_session(
+                  session_id, public_code, name, mode,
+                  entry_source, state, config_json,
+                  frozen_entry_hash, entry_count,
+                  created_at, updated_at, completed_at
+                ) VALUES (?, ?, ?, 'NUMBER', 'MANUAL_LIST',
+                          'COMPLETED', ?, NULL, 0, ?, ?, ?)
+                """)) {
+                for (int index = 0; index < count; index += 1) {
+                    String sessionId = "retention-old-" + index;
+                    String publicCode = String.format(
+                        java.util.Locale.ROOT,
+                        "0%05d",
+                        index
+                    );
+                    String timestamp = String.format(
+                        java.util.Locale.ROOT,
+                        "2020-01-01T00:%02d:%02dZ",
+                        (index / 60) % 60,
+                        index % 60
+                    );
+                    statement.setString(1, sessionId);
+                    statement.setString(2, publicCode);
+                    statement.setString(
+                        3,
+                        "Retention Old " + index
+                    );
+                    statement.setString(
+                        4,
+                        "{\"maxNumber\":45,\"drawCount\":1}"
+                    );
+                    statement.setString(5, timestamp);
+                    statement.setString(6, timestamp);
+                    statement.setString(7, timestamp);
+                    statement.addBatch();
+                }
+                statement.executeBatch();
+                connection.commit();
+            } catch (Exception error) {
+                connection.rollback();
+                throw error;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        }
+    }
+
+    private static int countTerminalSessions(
+        BoardGameDatabase database
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT COUNT(*)
+                 FROM viewer_draw_session
+                 WHERE state IN ('COMPLETED', 'CANCELLED')
+                 """);
+             var rows = statement.executeQuery()) {
+            return rows.next() ? rows.getInt(1) : -1;
+        }
     }
 
     private static int countMarbleAudits(
