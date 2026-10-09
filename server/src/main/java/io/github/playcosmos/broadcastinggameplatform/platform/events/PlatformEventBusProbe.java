@@ -102,6 +102,34 @@ public final class PlatformEventBusProbe {
             "platform raw payloads must be bounded"
         );
 
+        require(
+            PlatformEventPayloads.boundedIdentifier(
+                "i".repeat(
+                    PlatformEventPayloads.MAX_IDENTIFIER_CHARS + 10
+                )
+            ).length()
+                == PlatformEventPayloads.MAX_IDENTIFIER_CHARS,
+            "platform identifiers must be bounded"
+        );
+        require(
+            PlatformEventPayloads.boundedDisplayName(
+                "n".repeat(
+                    PlatformEventPayloads.MAX_DISPLAY_NAME_CHARS + 10
+                )
+            ).length()
+                == PlatformEventPayloads.MAX_DISPLAY_NAME_CHARS,
+            "platform display names must be bounded"
+        );
+        require(
+            PlatformEventPayloads.boundedChatMessage(
+                "m".repeat(
+                    PlatformEventPayloads.MAX_CHAT_MESSAGE_CHARS + 10
+                )
+            ).length()
+                == PlatformEventPayloads.MAX_CHAT_MESSAGE_CHARS,
+            "platform chat messages must be bounded"
+        );
+
         var registry = new ProviderRegistry();
         var fake = new FakeProvider();
         registry.register(fake);
