@@ -32,7 +32,16 @@ if (-not (Test-Path $JarPath)) {
 
 $jar = Get-Command jar -ErrorAction Stop
 $probeClasses = & $jar.Source tf $JarPath |
-    Where-Object { $_ -match 'Probe\.class
+    Where-Object { $_ -match 'Probe\.class$' }
+if ($LASTEXITCODE -ne 0) {
+    throw "failed to inspect server jar"
+}
+if ($probeClasses) {
+    throw "regression Probe classes must not be shipped in the production jar"
+}
+
+Remove-Item $DistRoot -Recurse -Force -ErrorAction SilentlyContinue
+Remove-Item $InputRoot -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Path $DistRoot | Out-Null
 New-Item -ItemType Directory -Path $InputRoot | Out-Null
 Copy-Item $JarPath (Join-Path $InputRoot $JarName)
