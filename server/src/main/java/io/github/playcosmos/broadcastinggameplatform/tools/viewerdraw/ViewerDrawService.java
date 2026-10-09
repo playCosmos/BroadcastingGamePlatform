@@ -26,6 +26,7 @@ public final class ViewerDrawService {
     private static final int MAX_MACHINE_COMPONENTS = 5000;
     private static final int MAX_MACHINE_REVISIONS_PER_MAP = 50;
     private static final int MAX_MARBLE_AUDITS = 200;
+    private static final int MAX_TERMINAL_SESSIONS = 200;
     public static final int MAX_MARBLE_AUDIT_BYTES = 1024 * 1024;
     private static final double MAX_WORLD_SIZE = 100_000;
     private static final double MAX_GRAVITY_ABS = 1_000;
@@ -2759,6 +2760,27 @@ public final class ViewerDrawService {
         return find(sessionId);
     }
 
+    private static void pruneTerminalSessions(
+        java.sql.Connection connection
+    ) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+            DELETE FROM viewer_draw_session
+            WHERE state IN ('COMPLETED', 'CANCELLED')
+              AND session_id NOT IN (
+                SELECT session_id
+                FROM viewer_draw_session
+                WHERE state IN ('COMPLETED', 'CANCELLED')
+                ORDER BY
+                  COALESCE(completed_at, updated_at) DESC,
+                  session_id DESC
+                LIMIT ?
+              )
+            """)) {
+            statement.setInt(1, MAX_TERMINAL_SESSIONS);
+            statement.executeUpdate();
+        }
+    }
+
     public List<Session> recent(int limit) throws SQLException {
         int normalizedLimit = Math.max(1, Math.min(100, limit));
         var ids = new ArrayList<String>();
@@ -3021,6 +3043,7 @@ public final class ViewerDrawService {
                         throw new IllegalStateException("session state changed before draw completion");
                     }
                 }
+                pruneTerminalSessions(connection);
                 connection.commit();
             } catch (Exception error) {
                 connection.rollback();
