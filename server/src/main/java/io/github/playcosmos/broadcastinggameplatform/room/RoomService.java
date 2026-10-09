@@ -19,6 +19,12 @@ import static io.github.playcosmos.broadcastinggameplatform.room.RoomModels.*;
 
 public final class RoomService {
     private static final int MAX_TERMINATED_ROOMS = 200;
+    private static final int MAX_ROOM_NAME_CHARS = 80;
+    private static final int MAX_PROVIDER_USER_ID_CHARS = 128;
+    private static final int MAX_DISPLAY_NAME_CHARS = 128;
+    private static final int MAX_PROFILE_IMAGE_URL_CHARS = 2048;
+    private static final int MAX_INSTRUCTION_ID_CHARS = 64;
+    private static final int MAX_INSTRUCTION_LABEL_CHARS = 256;
     private static final Gson GSON = new Gson();
     private static final int MIN_COLUMNS = 8;
     private static final int MAX_COLUMNS = 64;
@@ -106,6 +112,12 @@ public final class RoomService {
         normalizePauseGraceSeconds(request.pauseGraceSeconds(), errors);
 
         String name = normalizeText(request.name(), "Room");
+        validateLength(
+            name,
+            "name",
+            MAX_ROOM_NAME_CHARS,
+            errors
+        );
         List<PlayerConfig> players = normalizePlayers(request.players(), errors);
         BoardConfig board = normalizeBoard(request.board(), errors);
         MovementConfig movement = normalizeMovement(request.movement(), errors);
@@ -162,8 +174,14 @@ public final class RoomService {
                 return new PlayerConfig(
                     player.provider(),
                     player.soopId(),
-                    displayName,
-                    player.profileImageUrl(),
+                    truncateText(
+                        displayName,
+                        MAX_DISPLAY_NAME_CHARS
+                    ),
+                    truncateNullableText(
+                        player.profileImageUrl(),
+                        MAX_PROFILE_IMAGE_URL_CHARS
+                    ),
                     player.balloonTrigger(),
                     player.live()
                 );
@@ -840,6 +858,12 @@ public final class RoomService {
             }
 
             String soopId = normalizeText(player.soopId(), "");
+            validateLength(
+                soopId,
+                prefix + ".soopId",
+                MAX_PROVIDER_USER_ID_CHARS,
+                errors
+            );
             String providerUserKey = provider + "\u0000" + soopId;
             if (soopId.isBlank()) {
                 errors.add(new ValidationError(prefix + ".soopId", "broadcast user id is required"));
@@ -854,11 +878,31 @@ public final class RoomService {
                 errors.add(new ValidationError(prefix + ".balloonTrigger", "exact balloon trigger must be > 0"));
             }
 
+            String displayName = normalizeText(
+                player.displayName(),
+                ""
+            );
+            String profileImageUrl = blankToNull(
+                player.profileImageUrl()
+            );
+            validateLength(
+                displayName,
+                prefix + ".displayName",
+                MAX_DISPLAY_NAME_CHARS,
+                errors
+            );
+            validateLength(
+                profileImageUrl,
+                prefix + ".profileImageUrl",
+                MAX_PROFILE_IMAGE_URL_CHARS,
+                errors
+            );
+
             normalized.add(new PlayerConfig(
                 provider,
                 soopId,
-                normalizeText(player.displayName(), ""),
-                blankToNull(player.profileImageUrl()),
+                displayName,
+                profileImageUrl,
                 player.balloonTrigger(),
                 null
             ));
@@ -1004,6 +1048,12 @@ public final class RoomService {
             }
 
             String id = normalizeText(instruction.id(), "");
+            validateLength(
+                id,
+                prefix + ".id",
+                MAX_INSTRUCTION_ID_CHARS,
+                errors
+            );
             if (id.isBlank()) {
                 errors.add(new ValidationError(prefix + ".id", "instruction id is required"));
                 continue;
@@ -1051,9 +1101,20 @@ public final class RoomService {
 
             validateInstructionAction(instruction, prefix, errors);
 
+            String label = normalizeText(
+                instruction.label(),
+                id
+            );
+            validateLength(
+                label,
+                prefix + ".label",
+                MAX_INSTRUCTION_LABEL_CHARS,
+                errors
+            );
+
             normalized.add(new InstructionInput(
                 id,
-                normalizeText(instruction.label(), id),
+                label,
                 new AllocationInput(mode, value),
                 Boolean.TRUE.equals(instruction.rerollOnVacate()),
                 instruction.action() == null ? null : instruction.action().deepCopy()
@@ -1344,6 +1405,40 @@ public final class RoomService {
             seed = ROOM_CODE_RANDOM.nextLong() & Long.MAX_VALUE;
         } while (seed == 0);
         return seed;
+    }
+
+    private static void validateLength(
+        String value,
+        String field,
+        int maxChars,
+        List<ValidationError> errors
+    ) {
+        if (value != null && value.length() > maxChars) {
+            errors.add(
+                new ValidationError(
+                    field,
+                    "must be at most " + maxChars + " characters"
+                )
+            );
+        }
+    }
+
+    private static String truncateText(
+        String value,
+        int maxChars
+    ) {
+        if (value == null || value.length() <= maxChars) {
+            return value;
+        }
+        return value.substring(0, maxChars);
+    }
+
+    private static String truncateNullableText(
+        String value,
+        int maxChars
+    ) {
+        if (value == null) return null;
+        return truncateText(value, maxChars);
     }
 
     private static String normalizeText(String value, String fallback) {
