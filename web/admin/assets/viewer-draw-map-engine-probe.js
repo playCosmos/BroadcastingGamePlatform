@@ -22,6 +22,15 @@ requireCondition(
   "Map Engine default definition must match the authoritative bundled Retro map"
 );
 
+const oversizedDefinition = Engine.defaultDefinition();
+oversizedDefinition.components = new Array(5001).fill(null);
+requireCondition(
+  Engine.validateDefinition(oversizedDefinition).some(
+    (error) => String(error).includes("5000")
+  ),
+  "Map Engine must reject definitions above 5000 components"
+);
+
 const defaultWall = Engine.componentDefaults("WALL", 100, 100);
 requireCondition(
   defaultWall.properties?.friction === 0.02,
