@@ -4,6 +4,13 @@
   const LEGACY_SCHEMA_VERSION = "viewer-draw-machine-map/v0";
   const SCHEMA_VERSION = "viewer-draw-machine-map/v1";
   const MAX_COMPONENTS = 5000;
+  const MAX_WORLD_SIZE = 100000;
+  const MAX_GRAVITY_ABS = 1000;
+  const MAX_COMPONENT_COORD_ABS = 200000;
+  const MAX_COMPONENT_SIZE = 100000;
+  const MAX_RESTITUTION = 10;
+  const MAX_FRICTION = 10;
+  const MAX_BOOST = 10000;
   const TYPES = new Set([
     "WALL","CURVE_WALL","CIRCLE",
     "SPAWN","BURST_SPAWN","FINISH",
@@ -1159,12 +1166,14 @@
     const w=Number(def?.world?.width), h=Number(def?.world?.height);
     if(!Number.isFinite(w)||!Number.isFinite(h)){
       errors.push("World 크기는 유한 숫자여야 합니다.");
-    }else if(w<0||h<0){
-      errors.push("World 너비와 높이는 0 이상이어야 합니다.");
+    }else if(w<=0||h<=0||w>MAX_WORLD_SIZE||h>MAX_WORLD_SIZE){
+      errors.push("World 너비와 높이는 0보다 크고 "+MAX_WORLD_SIZE+" 이하여야 합니다.");
     }
     const gx=Number(def?.world?.gravityX), gy=Number(def?.world?.gravityY);
     if(!Number.isFinite(gx)||!Number.isFinite(gy)){
       errors.push("중력 값은 유한 숫자여야 합니다.");
+    }else if(Math.abs(gx)>MAX_GRAVITY_ABS||Math.abs(gy)>MAX_GRAVITY_ABS){
+      errors.push("중력 값의 절대값이 너무 큽니다.");
     }
     const comps=Array.isArray(def?.components)?def.components:[];
     if(comps.length>MAX_COMPONENTS){
@@ -1205,6 +1214,8 @@
       const x=Number(c?.x),y=Number(c?.y),rotation=Number(c?.rotation);
       if(!Number.isFinite(x)||!Number.isFinite(y)||!Number.isFinite(rotation)){
         errors.push("컴포넌트 위치/회전 값은 유한 숫자여야 합니다.");
+      }else if(Math.abs(x)>MAX_COMPONENT_COORD_ABS||Math.abs(y)>MAX_COMPONENT_COORD_ABS){
+        errors.push("컴포넌트 위치의 절대값이 너무 큽니다.");
       }else if(rotation<-360||rotation>360){
         errors.push("회전각은 -360~360° 범위여야 합니다.");
       }
@@ -1214,6 +1225,8 @@
           errors.push("사각형 컴포넌트 크기는 유한 숫자여야 합니다.");
         }else if(cw<0||ch<0){
           errors.push("너비와 높이는 0 이상이어야 합니다.");
+        }else if(cw>MAX_COMPONENT_SIZE||ch>MAX_COMPONENT_SIZE){
+          errors.push("컴포넌트 너비와 높이가 너무 큽니다.");
         }
       }
       if(["CIRCLE","SPAWN","BURST_SPAWN"].includes(c?.type)){
@@ -1222,6 +1235,8 @@
           errors.push("원형 컴포넌트 radius는 유한 숫자여야 합니다.");
         }else if(radius<0){
           errors.push("반지름은 0 이상이어야 합니다.");
+        }else if(radius>MAX_COMPONENT_SIZE){
+          errors.push("컴포넌트 반지름이 너무 큽니다.");
         }
       }
       const p=c?.properties||{};
@@ -1229,9 +1244,9 @@
         const restitution=finiteOr(p.restitution,.35);
         const friction=finiteOr(p.friction,.05);
         const boost=finiteOr(p.boost,0);
-        if(restitution<0) errors.push("탄성은 0 이상이어야 합니다.");
-        if(friction<0) errors.push("마찰은 0 이상이어야 합니다.");
-        if(boost<0) errors.push("Boost는 0 이상이어야 합니다.");
+        if(restitution<0||restitution>MAX_RESTITUTION) errors.push("탄성 값이 지원 범위를 벗어났습니다.");
+        if(friction<0||friction>MAX_FRICTION) errors.push("마찰 값이 지원 범위를 벗어났습니다.");
+        if(boost<0||boost>MAX_BOOST) errors.push("Boost 값이 지원 범위를 벗어났습니다.");
       }
       if(c?.type==="CURVE_WALL"){
         const curveMode=String(p.curveMode||"PARABOLA").toUpperCase();
