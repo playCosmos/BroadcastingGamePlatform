@@ -47,6 +47,8 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - 브라우저의 관리 POST는 로컬 동일 Origin만 허용한다.
    - bootstrap token이 포함된 Admin URL은 일반 상태 API나 로그에 기록하지 않는다.
    - 미인증 승인 코드 요청은 원격 주소당 1분 4회로 제한하고, pending 요청은 최대 32개만 유지한다.
+   - 6자리 승인 코드는 최초 발급 응답에서만 브라우저에 전달하고 DB에는 SHA-256 hash만 저장한다. 상태 polling에서는 코드를 재전송하지 않는다.
+   - V27 upgrade는 최대 10분 수명의 기존 plaintext pending 승인 요청을 폐기하며, 기존 관리자 session에는 영향을 주지 않는다.
 
 ## 웹 경로
 
