@@ -2405,7 +2405,10 @@
     stopPreview();
     try {
       await api(
-        "/api/v1/tools/viewer-draw/maps/" + encodeURIComponent(mapId),
+        "/api/v1/tools/viewer-draw/maps/"
+          + encodeURIComponent(mapId)
+          + "?expectedRevision="
+          + encodeURIComponent(String(mapRevision)),
         { method: "DELETE" }
       );
       const archivedName = definition.name;
@@ -2413,7 +2416,19 @@
       await refreshSavedMaps();
       setStatus(`${archivedName} 맵을 보관 처리했습니다.`, "ok");
     } catch (error) {
-      setStatus("맵 보관 실패: " + error.message, "error");
+      if (error?.status === 409) {
+        await refreshSavedMaps().catch(() => {});
+        if ($("savedMaps") && mapId) {
+          $("savedMaps").value = mapId;
+        }
+        setStatus(
+          "보관 충돌 · 다른 편집본이 먼저 저장되었습니다. "
+            + "최신 revision을 불러온 뒤 다시 시도하세요.",
+          "error"
+        );
+      } else {
+        setStatus("맵 보관 실패: " + error.message, "error");
+      }
     }
   }
 
