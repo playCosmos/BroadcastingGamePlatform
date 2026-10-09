@@ -206,6 +206,32 @@ public final class BoardGameRuntimeProbe {
             require(turn.skipNextThrowsAfter() == 0, "skip must be consumed by pending bonus");
             require(dispatched.size() == 1, "board turn must dispatch after commit");
 
+            String publicTurnJson = GSON.toJson(
+                BoardGameRuntimeEngine.publicTurnEvent(turn)
+            );
+            require(
+                publicTurnJson.contains("\"playerId\":\"P1\""),
+                "public board turn must use anonymous player key"
+            );
+            require(
+                !publicTurnJson.contains("\"donorId\"")
+                    && !publicTurnJson.contains("\"donorNickname\"")
+                    && !publicTurnJson.contains("viewer-a")
+                    && !publicTurnJson.contains("\"soopId\""),
+                "public board turn must hide provider identities"
+            );
+
+            String publicRuntimeJson = GSON.toJson(
+                BoardGameRuntimeEngine.publicRuntimeSnapshot(
+                    runtime.snapshot(created.roomId())
+                )
+            );
+            require(
+                publicRuntimeJson.contains("\"playerId\":\"P1\"")
+                    && !publicRuntimeJson.contains("\"soopId\""),
+                "public runtime snapshot must hide provider identities"
+            );
+
             var duplicate = runtime.process(donation);
             require(duplicate.processedRooms() == 0, "duplicate donation must not process again");
             require(duplicate.duplicateRooms() == 1, "duplicate donation must be detected");
