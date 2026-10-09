@@ -47,10 +47,18 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
                     eventBus.publish(
                         new ChatMessageEvent(
                             ID,
-                            channelId,
-                            chat.senderId(),
-                            chat.senderNickname(),
-                            chat.message(),
+                            PlatformEventPayloads.boundedIdentifier(
+                                channelId
+                            ),
+                            PlatformEventPayloads.boundedIdentifier(
+                                chat.senderId()
+                            ),
+                            PlatformEventPayloads.boundedDisplayName(
+                                chat.senderNickname()
+                            ),
+                            PlatformEventPayloads.boundedChatMessage(
+                                chat.message()
+                            ),
                             PlatformEventPayloads.boundedRawPayload(
                                 chat.raw()
                             ),
@@ -71,7 +79,9 @@ public final class SoopBroadcastProvider implements BroadcastProvider {
                 eventBus.publish(
                     new ChannelEvent(
                         ID,
-                        channelId,
+                        PlatformEventPayloads.boundedIdentifier(
+                            channelId
+                        ),
                         event == null
                             ? "unknown"
                             : event.getClass().getSimpleName(),
