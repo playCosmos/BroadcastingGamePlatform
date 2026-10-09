@@ -2064,6 +2064,31 @@ public final class GameClientHttpServer implements AutoCloseable {
 
     private static String remoteAddressKey(HttpExchange exchange) {
         var remote = exchange.getRemoteAddress();
+        String forwardedFor = trustForwardedHeaders(exchange)
+            ? exchange.getRequestHeaders().getFirst("X-Forwarded-For")
+            : null;
+        return rateLimitAddressKey(remote, forwardedFor);
+    }
+
+    static String rateLimitAddressKey(
+        InetSocketAddress remote,
+        String trustedForwardedFor
+    ) {
+        if (
+            trustedForwardedFor != null
+                && !trustedForwardedFor.isBlank()
+        ) {
+            String[] values = trustedForwardedFor.split(",");
+            String candidate = values[values.length - 1].trim();
+            if (
+                !candidate.isBlank()
+                    && candidate.length() <= 64
+                    && candidate.matches("[0-9A-Fa-f:.]+")
+            ) {
+                return candidate.toLowerCase(Locale.ROOT);
+            }
+        }
+
         if (remote == null) return "unknown";
         if (remote.getAddress() != null) {
             return remote.getAddress().getHostAddress();
