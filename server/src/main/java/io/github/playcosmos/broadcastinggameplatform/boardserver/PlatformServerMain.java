@@ -108,7 +108,9 @@ public final class PlatformServerMain {
             database,
             event -> websocket.broadcastEvent(
                 event.roomId(),
-                GSON.toJson(event)
+                GSON.toJson(
+                    BoardGameRuntimeEngine.publicTurnEvent(event)
+                )
             )
         );
         int recovered = runtime.recoverQueuedDonations();
