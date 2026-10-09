@@ -50,7 +50,7 @@ public record BoardServerConfig(
         String publicWebSocketUrl
     ) {
         Server normalized() {
-            String adminHost = valueOrDefault(host, "127.0.0.1");
+            String adminHost = normalizeAdminHost(host);
             int adminPort = validPort(port, 17830);
             int wsPort = validPort(websocketPort, 17831);
             String publicHost = valueOrDefault(clientHost, "0.0.0.0");
@@ -73,6 +73,21 @@ public record BoardServerConfig(
                     "publicWebSocketUrl",
                     Set.of("ws", "wss")
                 )
+            );
+        }
+
+        private static String normalizeAdminHost(
+            String value
+        ) {
+            String host = valueOrDefault(value, "127.0.0.1");
+            if ("localhost".equalsIgnoreCase(host)) {
+                return "localhost";
+            }
+            if ("127.0.0.1".equals(host) || "::1".equals(host)) {
+                return host;
+            }
+            throw new IllegalArgumentException(
+                "server.host must be a loopback address"
             );
         }
 
