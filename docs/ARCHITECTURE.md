@@ -38,6 +38,8 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - lazygyu/roulette의 Box2D 충돌/골인/순위 구조를 기반 참고한다.
 6. **Admin/Auth**
    - bootstrap token 링크
+   - bootstrap token은 프로세스 메모리에만 존재하며 서버 시작마다 새로 발급한다. DB에는 원문/해시 모두 저장하지 않는다.
+   - 기존 관리자 세션은 별도 session hash로 영속화되므로 서버 재시작 후에도 만료 시각까지 유지된다.
    - 토큰 직접 입력
    - 10분 유효 6자리 승인 요청
    - 고정 12시간 TTL의 HttpOnly 관리자 세션 (`Path=/`, `SameSite=Strict`; HTTPS에서는 `Secure`)
