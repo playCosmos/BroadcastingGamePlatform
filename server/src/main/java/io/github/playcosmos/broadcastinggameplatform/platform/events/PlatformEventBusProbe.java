@@ -92,6 +92,16 @@ public final class PlatformEventBusProbe {
             );
         }
 
+        require(
+            PlatformEventPayloads.boundedRawPayload(
+                "x".repeat(
+                    PlatformEventPayloads.MAX_RAW_PAYLOAD_CHARS + 128
+                )
+            ).length()
+                == PlatformEventPayloads.MAX_RAW_PAYLOAD_CHARS,
+            "platform raw payloads must be bounded"
+        );
+
         var registry = new ProviderRegistry();
         var fake = new FakeProvider();
         registry.register(fake);
