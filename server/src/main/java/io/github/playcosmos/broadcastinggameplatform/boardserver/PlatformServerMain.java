@@ -36,7 +36,7 @@ public final class PlatformServerMain {
         WindowsConsoleEncoding.configure();
 
         if (args.length > 0 && "--board-server-probe".equals(args[0])) {
-            System.exit(BoardServerProbe.run());
+            System.exit(BoardServerSelfCheck.run());
             return;
         }
 
