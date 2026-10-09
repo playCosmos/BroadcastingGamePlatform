@@ -44,10 +44,13 @@ public final class BoardGameDatabaseBackupProbe {
                 Files.isDirectory(backupDirectory),
                 "migration backup directory must be created"
             );
-            var backups = Files.list(backupDirectory)
-                .filter(Files::isRegularFile)
-                .sorted()
-                .toList();
+            java.util.List<Path> backups;
+            try (var files = Files.list(backupDirectory)) {
+                backups = files
+                    .filter(Files::isRegularFile)
+                    .sorted()
+                    .toList();
+            }
             require(
                 backups.size() == 5,
                 "only the latest five migration backups must remain"
@@ -87,13 +90,15 @@ public final class BoardGameDatabaseBackupProbe {
                 );
             }
 
-            long before = Files.list(backupDirectory)
-                .filter(Files::isRegularFile)
-                .count();
+            long before;
+            try (var files = Files.list(backupDirectory)) {
+                before = files.filter(Files::isRegularFile).count();
+            }
             database.initialize();
-            long after = Files.list(backupDirectory)
-                .filter(Files::isRegularFile)
-                .count();
+            long after;
+            try (var files = Files.list(backupDirectory)) {
+                after = files.filter(Files::isRegularFile).count();
+            }
             require(
                 before == after,
                 "current schema startup must not create redundant backup"
