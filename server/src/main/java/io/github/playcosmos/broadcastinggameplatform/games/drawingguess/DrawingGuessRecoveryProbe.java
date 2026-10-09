@@ -210,6 +210,13 @@ public final class DrawingGuessRecoveryProbe {
                 !sync3.isActive(drawingCode),
                 "round completion must close recovered canvas session"
             );
+            require(
+                persistedCanvasRows(
+                    database,
+                    firstRound.publicRound().roundId()
+                ) == 0,
+                "closed canvas session and event history must be purged"
+            );
 
             var syncAfterClose = new DrawingSyncService(database);
             require(
@@ -334,6 +341,29 @@ public final class DrawingGuessRecoveryProbe {
                             Files.deleteIfExists(path);
                         } catch (Exception ignored) {}
                     });
+            }
+        }
+    }
+
+    private static int persistedCanvasRows(
+        BoardGameDatabase database,
+        String roundId
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT
+                   (SELECT COUNT(*)
+                    FROM drawing_guess_canvas_session
+                    WHERE round_id = ?)
+                   +
+                   (SELECT COUNT(*)
+                    FROM drawing_guess_canvas_event
+                    WHERE round_id = ?)
+                 """)) {
+            statement.setString(1, roundId);
+            statement.setString(2, roundId);
+            try (var rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : -1;
             }
         }
     }
