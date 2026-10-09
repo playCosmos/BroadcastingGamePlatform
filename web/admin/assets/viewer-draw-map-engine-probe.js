@@ -1631,6 +1631,38 @@ const viewerDrawCss = fs.readFileSync(
   "utf8"
 );
 
+function assetCacheVersion(source, assetName) {
+  const escaped = assetName.replace(/\./g, "\\.");
+  const match = source.match(
+    new RegExp(escaped + "\\?v=([^\"']+)")
+  );
+  return match ? match[1] : "";
+}
+
+for (const assetName of [
+  "viewer-draw-map-engine.js",
+  "viewer-draw-map-maker.js"
+]) {
+  requireCondition(
+    assetCacheVersion(serverMakerHtml, assetName)
+      === assetCacheVersion(localMakerHtml, assetName)
+      && assetCacheVersion(serverMakerHtml, assetName) !== "",
+    assetName + " cache version must match server and standalone Map Maker"
+  );
+}
+for (const assetName of [
+  "viewer-draw-map-engine.js",
+  "browser-physics-adapter.js",
+  "viewer-draw-marble.js"
+]) {
+  requireCondition(
+    assetCacheVersion(marbleHtml, assetName)
+      === assetCacheVersion(standaloneMarbleHtml, assetName)
+      && assetCacheVersion(marbleHtml, assetName) !== "",
+    assetName + " cache version must match server and standalone Marble Draw"
+  );
+}
+
 requireCondition(
   makerSource.includes("window.ViewerDrawMapMakerStorage")
     && makerSource.includes("MapStore.save")
