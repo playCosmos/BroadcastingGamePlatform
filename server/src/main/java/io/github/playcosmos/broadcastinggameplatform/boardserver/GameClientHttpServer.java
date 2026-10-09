@@ -1055,7 +1055,9 @@ public final class GameClientHttpServer implements AutoCloseable {
                 sendJson(
                     exchange,
                     200,
-                    viewerDraw.findMarbleAuditByPublicCode(code)
+                    viewerDraw.findPublicMarbleAuditByPublicCode(
+                        code
+                    )
                 );
             } catch (java.util.NoSuchElementException error) {
                 sendJson(
