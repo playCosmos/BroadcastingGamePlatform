@@ -9,6 +9,7 @@ import com.github.getcurrentthread.soopapi.event.model.JoinChannelEvent;
 import com.github.getcurrentthread.soopapi.event.model.ReconnectedEvent;
 import com.github.getcurrentthread.soopapi.event.model.ReconnectingEvent;
 import com.github.getcurrentthread.soopapi.event.model.SendBalloonEvent;
+import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventPayloads;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
 import java.time.Duration;
 import java.util.Objects;
@@ -291,7 +292,9 @@ public final class SoopBridgeAdapter implements AutoCloseable {
                 event.senderNickname(),
                 event.count(),
                 event.fanOrder(),
-                event.raw(),
+                PlatformEventPayloads.boundedRawPayload(
+                    event.raw()
+                ),
                 event.timestamp()
             );
             System.out.println("[soop] balloon: " + donation.nickname() + " (" + donation.donorId() + ") x" + donation.balloonCount());
