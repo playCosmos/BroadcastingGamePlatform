@@ -8,6 +8,16 @@ if (-not (Test-Path $Jar)) {
     throw "platform regression jar missing: $Jar"
 }
 
+$Classes = "target/classes"
+$Dependencies = "target/probe-dependencies/*"
+if (-not (Test-Path $Classes)) {
+    throw "platform regression classes missing: $Classes"
+}
+if (-not (Test-Path "target/probe-dependencies")) {
+    throw "platform regression dependencies missing"
+}
+$ClassPath = $Classes + [IO.Path]::PathSeparator + $Dependencies
+
 $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe",
     "io.github.playcosmos.broadcastinggameplatform.operations.FileLogProbe",
@@ -33,14 +43,14 @@ $Probes = @(
 
 foreach ($Probe in $Probes) {
     Write-Host "[probe] $Probe"
-    java -cp $Jar $Probe
+    java -cp $ClassPath $Probe
     if ($LASTEXITCODE -ne 0) {
         throw "platform regression probe failed: $Probe ($LASTEXITCODE)"
     }
 }
 
 Write-Host "[probe] PlatformServerMain --board-server-probe"
-java -cp $Jar io.github.playcosmos.broadcastinggameplatform.boardserver.PlatformServerMain --board-server-probe
+java -cp $ClassPath io.github.playcosmos.broadcastinggameplatform.boardserver.PlatformServerMain --board-server-probe
 if ($LASTEXITCODE -ne 0) {
     throw "platform server probe failed: $LASTEXITCODE"
 }
