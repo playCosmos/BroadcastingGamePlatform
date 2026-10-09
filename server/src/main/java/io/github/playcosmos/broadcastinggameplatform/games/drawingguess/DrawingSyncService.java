@@ -463,7 +463,7 @@ public final class DrawingSyncService {
 
         if (state.roundId != null) {
             codeByRound.remove(state.roundId, state.code);
-            persistClosed(state, Instant.now());
+            persistClosed(state);
         }
         return true;
     }
@@ -600,7 +600,7 @@ public final class DrawingSyncService {
                 );
 
                 if (!expiresAt.isAfter(now)) {
-                    markPersistedClosed(roundId, now);
+                    deletePersistedState(roundId);
                     continue;
                 }
 
@@ -810,30 +810,9 @@ public final class DrawingSyncService {
         }
     }
 
-    private void persistClosed(State state, Instant closedAt) {
+    private void persistClosed(State state) {
         if (database == null || state.roundId == null) return;
-        markPersistedClosed(state.roundId, closedAt);
-    }
-
-    private void markPersistedClosed(
-        String roundId,
-        Instant closedAt
-    ) {
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 UPDATE drawing_guess_canvas_session
-                 SET state = 'CLOSED', closed_at = ?
-                 WHERE round_id = ? AND state = 'ACTIVE'
-                 """)) {
-            statement.setString(1, closedAt.toString());
-            statement.setString(2, roundId);
-            statement.executeUpdate();
-        } catch (SQLException error) {
-            throw new IllegalStateException(
-                "failed to close persistent drawing session",
-                error
-            );
-        }
+        deletePersistedState(state.roundId);
     }
 
     private void deletePersistedState(String roundId) {
