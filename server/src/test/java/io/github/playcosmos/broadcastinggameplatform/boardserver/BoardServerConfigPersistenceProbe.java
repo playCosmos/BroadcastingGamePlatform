@@ -92,6 +92,27 @@ public final class BoardServerConfigPersistenceProbe {
                 );
             }
 
+            boolean nonLoopbackAdminRejected = false;
+            try {
+                new BoardServerConfig.Server(
+                    "0.0.0.0",
+                    17830,
+                    17831,
+                    false,
+                    "0.0.0.0",
+                    17832,
+                    "",
+                    ""
+                ).normalized();
+            } catch (IllegalArgumentException expected) {
+                nonLoopbackAdminRejected = true;
+            }
+            if (!nonLoopbackAdminRejected) {
+                throw new IllegalStateException(
+                    "management bind host must remain loopback-only"
+                );
+            }
+
             boolean invalidPublicBaseRejected = false;
             try {
                 new BoardServerConfig.Server(
