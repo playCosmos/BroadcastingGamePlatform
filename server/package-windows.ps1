@@ -118,6 +118,18 @@ Broadcasting Game Platform Server
 - config.json이 없으면 최초 실행 때 자동 생성됩니다.
 - 기존 config.json이 있으면 업데이트 시 덮어쓰지 않습니다.
 - 운영 DB는 data/platform.db 입니다.
+- schema migration 전에는 data/backups/ 아래에 최근 5개의 .bak 복구점을 유지합니다.
+
+DB 복구
+-------
+1. BroadcastingGamePlatformServer를 완전히 종료합니다.
+2. 현재 data/platform.db를 다른 이름으로 복사해 보존합니다.
+3. 복구할 data/backups/*.bak 파일을 data/platform.db로 복사합니다.
+4. 이전 실행의 platform.db-wal / platform.db-shm이 남아 있으면 별도로 보존한 뒤 제거합니다.
+5. 서버를 다시 실행합니다. 이전 schema 백업이면 migration이 다시 적용됩니다.
+6. 관리 화면과 주요 룸/추첨 데이터를 확인합니다.
+
+실행 중인 서버의 DB 파일을 직접 덮어쓰지 마십시오.
 
 외부 공개
 ---------
