@@ -1194,7 +1194,7 @@ public final class ViewerDrawService {
                 || world.height() > MAX_WORLD_SIZE
         ) {
             throw new IllegalArgumentException(
-                "world width/height must be within 0.."
+                "world width/height must be greater than zero and at most "
                     + (long) MAX_WORLD_SIZE
             );
         }
