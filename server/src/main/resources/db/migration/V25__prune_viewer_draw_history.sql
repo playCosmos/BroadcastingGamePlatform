@@ -1,3 +1,11 @@
+DELETE FROM viewer_draw_marble_audit
+WHERE audit_id NOT IN (
+  SELECT audit_id
+  FROM viewer_draw_marble_audit
+  ORDER BY created_at DESC, audit_id DESC
+  LIMIT 200
+);
+
 DELETE FROM viewer_draw_machine_map_revision
 WHERE (map_id, revision) IN (
   SELECT map_id, revision
@@ -12,12 +20,13 @@ WHERE (map_id, revision) IN (
     FROM viewer_draw_machine_map_revision
   )
   WHERE retained_rank > 50
-);
-
-DELETE FROM viewer_draw_marble_audit
-WHERE audit_id NOT IN (
-  SELECT audit_id
-  FROM viewer_draw_marble_audit
-  ORDER BY created_at DESC, audit_id DESC
-  LIMIT 200
+)
+AND (map_id, revision) NOT IN (
+  SELECT map_id, MAX(revision)
+  FROM viewer_draw_machine_map_revision
+  WHERE definition_hash IN (
+    SELECT definition_hash
+    FROM viewer_draw_marble_audit
+  )
+  GROUP BY map_id, definition_hash
 );
