@@ -1169,6 +1169,29 @@ public final class ClientBoundaryProbe {
                 "approval of a second browser must add exactly one admin session"
             );
 
+            int lastApprovalStatus = 0;
+            for (int attempt = 0; attempt < 4; attempt += 1) {
+                var extraApproval = client.send(
+                    HttpRequest.newBuilder(
+                        base.resolve("/api/admin/access/request")
+                    )
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build(),
+                    HttpResponse.BodyHandlers.ofString()
+                );
+                lastApprovalStatus = extraApproval.statusCode();
+                if (attempt < 3) {
+                    require(
+                        lastApprovalStatus == 201,
+                        "approval request rate limit must allow normal burst"
+                    );
+                }
+            }
+            require(
+                lastApprovalStatus == 429,
+                "approval request rate limit must reject excessive requests"
+            );
+
             System.out.println("[client-boundary-probe] PASS");
             return 0;
         } catch (Exception error) {
