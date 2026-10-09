@@ -54,6 +54,47 @@ public final class ViewerDrawProbe {
 
         require(service.recent(10).size() == 2, "history must persist both draws");
 
+        boolean oversizedManualRejected = false;
+        try {
+            service.create(
+                "oversized-manual",
+                "RANDOM",
+                List.of("x".repeat(257)),
+                Map.of("winnerCount", 1)
+            );
+        } catch (IllegalArgumentException expected) {
+            oversizedManualRejected = true;
+        }
+        require(
+            oversizedManualRejected,
+            "oversized manual entry must be rejected"
+        );
+
+        boolean oversizedStructuredRejected = false;
+        try {
+            service.create(
+                "oversized-structured",
+                "RANDOM",
+                "IMPORTED_SET",
+                List.of(
+                    new ViewerDrawService.DrawEntry(
+                        "entry-1",
+                        "SOOP",
+                        "u".repeat(257),
+                        "Viewer",
+                        "Viewer"
+                    )
+                ),
+                Map.of("winnerCount", 1)
+            );
+        } catch (IllegalArgumentException expected) {
+            oversizedStructuredRejected = true;
+        }
+        require(
+            oversizedStructuredRejected,
+            "oversized structured entry field must be rejected"
+        );
+
         var collection = service.openChatEntryCollection(
             "SOOP",
             "channel-a",
@@ -76,6 +117,18 @@ public final class ViewerDrawProbe {
                 chat("SOOP", "channel-a", "u1", "Viewer 1", "!참가")
             ),
             "matching SOOP keyword must add viewer"
+        );
+        require(
+            !service.processChatMessage(
+                chat(
+                    "SOOP",
+                    "channel-a",
+                    "u".repeat(257),
+                    "Oversized",
+                    "!참가"
+                )
+            ),
+            "oversized chat identity must not enter collection"
         );
         require(
             !service.processChatMessage(
