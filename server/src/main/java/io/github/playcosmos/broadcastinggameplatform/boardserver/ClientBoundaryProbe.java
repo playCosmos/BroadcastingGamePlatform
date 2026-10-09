@@ -1169,10 +1169,10 @@ public final class ClientBoundaryProbe {
             server.start();
 
             require(
-                bootstrapBeforeRestart.equals(
+                !bootstrapBeforeRestart.equals(
                     server.adminBootstrapUrl()
                 ),
-                "bootstrap token must persist across server restart"
+                "bootstrap token must rotate on every server restart"
             );
 
             var afterRestartAdminPage = client.send(
