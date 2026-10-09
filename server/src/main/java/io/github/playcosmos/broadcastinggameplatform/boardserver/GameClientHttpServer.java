@@ -2571,18 +2571,70 @@ public final class GameClientHttpServer implements AutoCloseable {
     }
 
     private boolean isSecurePublicRequest(HttpExchange exchange) {
-        if (
-            config.server().publicBaseUrl() != null
-            && config.server().publicBaseUrl().startsWith("https://")
-        ) {
-            return true;
+        if (trustForwardedHeaders(exchange)) {
+            String forwarded = exchange.getRequestHeaders().getFirst(
+                "X-Forwarded-Proto"
+            );
+            if (
+                forwarded != null
+                    && forwarded.trim().equalsIgnoreCase("https")
+            ) {
+                return true;
+            }
         }
-        if (!trustForwardedHeaders(exchange)) return false;
-        String forwarded = exchange.getRequestHeaders().getFirst(
-            "X-Forwarded-Proto"
-        );
-        return forwarded != null
-            && forwarded.trim().equalsIgnoreCase("https");
+
+        String publicBaseUrl = config.server().publicBaseUrl();
+        if (
+            publicBaseUrl == null
+                || !publicBaseUrl.startsWith("https://")
+        ) {
+            return false;
+        }
+
+        try {
+            URI publicBase = URI.create(publicBaseUrl);
+            String requestHost = exchange.getRequestHeaders().getFirst(
+                "Host"
+            );
+            return sameHost(requestHost, publicBase.getHost());
+        } catch (RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    static boolean sameHost(
+        String requestHost,
+        String expectedHost
+    ) {
+        if (
+            requestHost == null
+                || requestHost.isBlank()
+                || expectedHost == null
+                || expectedHost.isBlank()
+        ) {
+            return false;
+        }
+
+        String normalized = requestHost.trim();
+        int comma = normalized.indexOf(',');
+        if (comma >= 0) {
+            normalized = normalized.substring(0, comma).trim();
+        }
+        if (normalized.startsWith("[")) {
+            int close = normalized.indexOf(']');
+            if (close > 0) {
+                normalized = normalized.substring(1, close);
+            }
+        } else {
+            int colon = normalized.lastIndexOf(':');
+            if (
+                colon > 0
+                    && normalized.indexOf(':') == colon
+            ) {
+                normalized = normalized.substring(0, colon);
+            }
+        }
+        return normalized.equalsIgnoreCase(expectedHost);
     }
 
     private static boolean trustForwardedHeaders(
