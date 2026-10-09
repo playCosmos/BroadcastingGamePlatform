@@ -1809,6 +1809,7 @@ V6 운영/제작 확장 구현 완료:
 - Audit 생성/업로드/이력은 별도 `viewer-draw-audit-sync.js` 모듈에서만 처리한다.
 - 서버가 중단되어도 이미 시작한 Marble 추첨의 Physics/winner/timeout/qualification에는 영향이 없다.
 - OBS audit overlay는 완료 후 저장된 Audit의 표현 계층이며 Physics authority가 아니다.
+- public audit API는 표시용 최소 정보만 반환한다. winner의 displayName/rank, DNF count, qualification/run/map/engine 메타데이터는 유지하지만 내부 entryId, finishOrder, eliminationOrder, output/slot/sensor claim trace는 노출하지 않는다.
 - Branch state는 Output이 실제로 claim된 순간에만 변경된다.
 - Sensor predicate는 Marble의 실제 sensor 접촉을 누적해 활성화한다.
 
