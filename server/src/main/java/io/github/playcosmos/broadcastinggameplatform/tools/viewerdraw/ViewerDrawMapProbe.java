@@ -657,6 +657,94 @@ public final class ViewerDrawMapProbe {
                 "server must reject maps above 5000 components"
             );
 
+            var hugeWorld =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Huge World",
+                    new ViewerDrawService.MachineWorld(
+                        100001,
+                        720,
+                        0,
+                        12
+                    ),
+                    List.of(spawn, finish)
+                );
+            require(
+                !service.validateMachineMap(hugeWorld).isEmpty(),
+                "server must reject oversized world dimensions"
+            );
+
+            var hugeGravity =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Huge Gravity",
+                    new ViewerDrawService.MachineWorld(
+                        1280,
+                        720,
+                        0,
+                        1001
+                    ),
+                    List.of(spawn, finish)
+                );
+            require(
+                !service.validateMachineMap(hugeGravity).isEmpty(),
+                "server must reject excessive gravity"
+            );
+
+            var hugeCoordinateWall =
+                new ViewerDrawService.MachineComponent(
+                    "huge-coordinate-wall",
+                    "WALL",
+                    200001,
+                    360,
+                    0,
+                    500,
+                    18,
+                    0,
+                    Map.of(
+                        "restitution", 0.35,
+                        "friction", 0.05
+                    )
+                );
+            var hugeCoordinate =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Huge Coordinate",
+                    world,
+                    List.of(spawn, hugeCoordinateWall, finish)
+                );
+            require(
+                !service.validateMachineMap(hugeCoordinate).isEmpty(),
+                "server must reject excessive component coordinates"
+            );
+
+            var hugeMaterialWall =
+                new ViewerDrawService.MachineComponent(
+                    "huge-material-wall",
+                    "WALL",
+                    640,
+                    360,
+                    0,
+                    500,
+                    18,
+                    0,
+                    Map.of(
+                        "restitution", 11,
+                        "friction", 0.05
+                    )
+                );
+            var hugeMaterial =
+                new ViewerDrawService.MachineMapDefinition(
+                    "viewer-draw-machine-map/v0",
+                    "Huge Material",
+                    world,
+                    List.of(spawn, hugeMaterialWall, finish)
+                );
+            require(
+                !service.validateMachineMap(hugeMaterial).isEmpty(),
+                "server must reject excessive collider material values"
+            );
+
             var invalid =
                 new ViewerDrawService.MachineMapDefinition(
                     "viewer-draw-machine-map/v0",
