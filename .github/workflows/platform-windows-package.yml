@@ -28,6 +28,10 @@ jobs:
           java-version: "25"
           cache: maven
 
+      - name: Check PowerShell scripts
+        shell: pwsh
+        run: ./server/check-powershell.ps1
+
       - name: Prepare browser physics assets
         shell: pwsh
         run: ./server/prepare-browser-physics.ps1
