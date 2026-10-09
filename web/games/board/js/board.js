@@ -4959,15 +4959,15 @@
     renderGlobalState();
 
     const runtimePlayers = new Map(
-      (runtime?.players || []).map((player) => [String(player.soopId), player])
+      (runtime?.players || []).map((player) => [String(player.playerId), player])
     );
 
     for (const [index, player] of (snapshot.config?.players || []).entries()) {
-      const runtimePlayer = runtimePlayers.get(String(player.soopId));
+      const runtimePlayer = runtimePlayers.get(String(player.playerId));
       registerPlayer({
-        id: player.soopId || ("preview-player-" + index),
-        name: player.displayName || player.soopId || ("참가자 " + (index + 1)),
-        shortLabel: String(player.displayName || player.soopId || (index + 1)).slice(0, 1),
+        id: player.playerId || ("preview-player-" + index),
+        name: player.displayName || player.playerId || ("참가자 " + (index + 1)),
+        shortLabel: String(player.displayName || player.playerId || (index + 1)).slice(0, 1),
         profileImageUrl: player.profileImageUrl || "",
         position: ROOM_PREVIEW_MODE ? 0 : (runtimePlayer?.position ?? 0)
       });
@@ -5124,7 +5124,7 @@
     }
 
     for (const runtimePlayer of runtime.players || []) {
-      const player = state.players.get(String(runtimePlayer.soopId));
+      const player = state.players.get(String(runtimePlayer.playerId));
       if (!player) continue;
       player.position = normalizeCell(runtimePlayer.position);
       player.laps = Number(runtimePlayer.laps) || 0;
