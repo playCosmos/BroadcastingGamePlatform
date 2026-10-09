@@ -1,6 +1,10 @@
 (() => {
   "use strict";
 
+  const RECT_LAYOUT =
+    String(window.BoardLayoutMode || "rounded").toLowerCase()
+      === "rect";
+
   const MIN_COLUMNS = 8;
   const MIN_ROWS = 6;
   const MAX_COLUMNS = 64;
@@ -91,6 +95,9 @@
   let lastMotionTime = 0;
   let previousScaleWeights = null;
   let neutralSolveCache = null;
+  const rectMovementSolveCache = new Map();
+  let lastValidatedRectSolve = null;
+  let rectForcePreciseSolve = false;
   // 중앙 Throw 연출은 화면이 하나이므로 FIFO로 직렬화한다.
   // 결과 공개 이후의 말 이동은 기존 플레이어별 큐에서 독립적으로 진행된다.
   let throwPresentationQueue = Promise.resolve();
@@ -145,10 +152,10 @@
     if (refs.eventMessage) refs.eventMessage.textContent = message;
   }
 
-  function renderGlobalState() {
+  function renderGlobalStateRect() {
     if (!refs.boardStage) return;
 
-    refs.boardStage.dataset.layoutEngine = "reserve-first-loop-v4";
+    refs.boardStage.dataset.layoutEngine = "rectilinear-loop-experimental";
     refs.boardStage.dataset.movementMode =
       INSTANT_MOVEMENT_MODE ? "instant-marker-overlay-v8" : "marker-overlay-v8";
     refs.boardStage.dataset.phase = state.currentPhaseId;
@@ -186,7 +193,7 @@
     return layer;
   }
 
-  function buildBoard() {
+  function buildBoardRect() {
     if (!refs.boardGrid) return;
 
     const playerLayer = ensurePlayerLayer();
@@ -208,6 +215,9 @@
     }
     previousScaleWeights = null;
     neutralSolveCache = null;
+    rectMovementSolveCache.clear();
+    lastValidatedRectSolve = null;
+    rectForcePreciseSolve = false;
 
 
     if (motionFrame) {
@@ -288,120 +298,74 @@
     });
   }
 
-  function createRoundedLoop(width, height, margin, radius) {
+  function createRectLoop(width, height, margin) {
     const left = margin;
     const right = width - margin;
     const top = margin;
     const bottom = height - margin;
-
-    const innerWidth = Math.max(1, right - left);
-    const innerHeight = Math.max(1, bottom - top);
-    const r = clamp(radius, 1, Math.min(innerWidth, innerHeight) * 0.49);
-    const horizontal = Math.max(0, innerWidth - (r * 2));
-    const vertical = Math.max(0, innerHeight - (r * 2));
-    const quarterArc = Math.PI * r * 0.5;
-    const perimeter = (horizontal * 2) + (vertical * 2) + (quarterArc * 4);
+    const horizontal = Math.max(1, right - left);
+    const vertical = Math.max(1, bottom - top);
+    const perimeter = (horizontal * 2) + (vertical * 2);
 
     return {
       left,
       right,
       top,
       bottom,
-      radius: r,
+      radius: 0,
+      quarterArc: 0,
       horizontal,
       vertical,
-      quarterArc,
       perimeter
     };
   }
 
-  function loopPoint(path, distance) {
-    const twoPi = Math.PI * 2;
+  function loopPointRect(path, distance) {
     let s = ((distance % path.perimeter) + path.perimeter) % path.perimeter;
 
     if (s < path.horizontal) {
       return {
-        x: path.left + path.radius + s,
+        x: path.left + s,
         y: path.top,
         angle: 0,
-        curved: false
+        curved: false,
+        segment: 0,
+        offset: s
       };
     }
     s -= path.horizontal;
-
-    if (s < path.quarterArc) {
-      const t = s / path.quarterArc;
-      const phi = (-Math.PI / 2) + (t * Math.PI / 2);
-      return {
-        x: path.right - path.radius + (Math.cos(phi) * path.radius),
-        y: path.top + path.radius + (Math.sin(phi) * path.radius),
-        angle: phi + (Math.PI / 2),
-        curved: true
-      };
-    }
-    s -= path.quarterArc;
 
     if (s < path.vertical) {
       return {
         x: path.right,
-        y: path.top + path.radius + s,
+        y: path.top + s,
         angle: Math.PI / 2,
-        curved: false
+        curved: false,
+        segment: 1,
+        offset: s
       };
     }
     s -= path.vertical;
 
-    if (s < path.quarterArc) {
-      const t = s / path.quarterArc;
-      const phi = t * Math.PI / 2;
-      return {
-        x: path.right - path.radius + (Math.cos(phi) * path.radius),
-        y: path.bottom - path.radius + (Math.sin(phi) * path.radius),
-        angle: phi + (Math.PI / 2),
-        curved: true
-      };
-    }
-    s -= path.quarterArc;
-
     if (s < path.horizontal) {
       return {
-        x: path.right - path.radius - s,
+        x: path.right - s,
         y: path.bottom,
         angle: Math.PI,
-        curved: false
+        curved: false,
+        segment: 2,
+        offset: s
       };
     }
     s -= path.horizontal;
 
-    if (s < path.quarterArc) {
-      const t = s / path.quarterArc;
-      const phi = (Math.PI / 2) + (t * Math.PI / 2);
-      return {
-        x: path.left + path.radius + (Math.cos(phi) * path.radius),
-        y: path.bottom - path.radius + (Math.sin(phi) * path.radius),
-        angle: phi + (Math.PI / 2),
-        curved: true
-      };
-    }
-    s -= path.quarterArc;
-
-    if (s < path.vertical) {
-      return {
-        x: path.left,
-        y: path.bottom - path.radius - s,
-        angle: Math.PI * 1.5,
-        curved: false
-      };
-    }
-    s -= path.vertical;
-
-    const t = clamp(s / path.quarterArc, 0, 1);
-    const phi = Math.PI + (t * Math.PI / 2);
     return {
-      x: path.left + path.radius + (Math.cos(phi) * path.radius),
-      y: path.top + path.radius + (Math.sin(phi) * path.radius),
-      angle: (phi + (Math.PI / 2)) % twoPi,
-      curved: true
+      x: path.left,
+      y: path.bottom - s,
+      angle: Math.PI * 1.5,
+      curved: false,
+      segment: 3,
+      offset: s
     };
   }
 
@@ -503,52 +467,36 @@
     return distance;
   }
 
-  function cellGeometry(path, distance, cellWidth, cellHeight) {
+  function cellGeometryRect(path, distance, cellWidth, cellHeight) {
     const point = loopPoint(path, distance);
-    const inwardX = -Math.sin(point.angle);
-    const inwardY = Math.cos(point.angle);
+    const halfWidth = cellWidth * 0.5;
+    const halfHeight = cellHeight * 0.5;
 
-    let centerX = point.x + (inwardX * cellHeight * 0.5);
-    let centerY = point.y + (inwardY * cellHeight * 0.5);
-    // 코너에서도 셀 자체는 회전하지 않는다.
-    // 중심 위치만 둥근 경로를 따라 이동하고 직사각형/텍스트는 항상 정방향을 유지한다.
-    let corners = rectangleCorners(
+    let centerX = point.x;
+    let centerY = point.y;
+
+    if (point.segment === 0) {
+      centerY = path.top + halfHeight;
+    } else if (point.segment === 1) {
+      centerX = path.right - halfWidth;
+    } else if (point.segment === 2) {
+      centerY = path.bottom - halfHeight;
+    } else {
+      centerX = path.left + halfWidth;
+    }
+
+    // 코너에서는 곡선/삼각함수 보정 없이 셀 전체가 보드 안에 남도록
+    // X/Y 중심만 직사각형 경계 안으로 clamp한다.
+    centerX = clamp(
       centerX,
-      centerY,
-      cellWidth,
-      cellHeight
+      path.left + halfWidth,
+      path.right - halfWidth
     );
-
-    // 직선부는 margin 끝에 정확히 붙고, 코너/코너 주변에서만
-    // 회전된 직사각형의 꼭짓점이 화면 밖으로 나가지 않도록
-    // 보드 안쪽으로 필요한 만큼만 추가 이동한다.
-    let extraInset = 0;
-
-    for (const corner of corners) {
-      if (corner.x < path.left && inwardX > 0.0001) {
-        extraInset = Math.max(extraInset, (path.left - corner.x) / inwardX);
-      }
-      if (corner.x > path.right && inwardX < -0.0001) {
-        extraInset = Math.max(extraInset, (corner.x - path.right) / -inwardX);
-      }
-      if (corner.y < path.top && inwardY > 0.0001) {
-        extraInset = Math.max(extraInset, (path.top - corner.y) / inwardY);
-      }
-      if (corner.y > path.bottom && inwardY < -0.0001) {
-        extraInset = Math.max(extraInset, (corner.y - path.bottom) / -inwardY);
-      }
-    }
-
-    if (extraInset > 0) {
-      centerX += inwardX * (extraInset + 0.25);
-      centerY += inwardY * (extraInset + 0.25);
-      corners = rectangleCorners(
-        centerX,
-        centerY,
-        cellWidth,
-        cellHeight
-      );
-    }
+    centerY = clamp(
+      centerY,
+      path.top + halfHeight,
+      path.bottom - halfHeight
+    );
 
     return {
       distance,
@@ -557,11 +505,92 @@
       centerY,
       width: cellWidth,
       height: cellHeight,
-      corners
+      corners: rectangleCorners(centerX, centerY, cellWidth, cellHeight)
     };
   }
 
-  function findNextGeometry(path, previous, previousDistance, width, height, gap) {
+  function rectGeometryDistance(a, b) {
+    const dx = Math.max(
+      0,
+      Math.abs(a.centerX - b.centerX) -
+      ((a.width + b.width) * 0.5)
+    );
+    const dy = Math.max(
+      0,
+      Math.abs(a.centerY - b.centerY) -
+      ((a.height + b.height) * 0.5)
+    );
+
+    return Math.hypot(dx, dy);
+  }
+
+  function rectMovementSolveBudget() {
+    const fast =
+      directTokenAnimations.size > 0 &&
+      !rectForcePreciseSolve;
+
+    return fast
+      ? {
+          fast: true,
+          cornerGuard: 4,
+          cornerIterations: 12,
+          widthGuard: 4,
+          widthIterations: 14
+        }
+      : {
+          fast: false,
+          cornerGuard: 12,
+          cornerIterations: 20,
+          widthGuard: 14,
+          widthIterations: 42
+        };
+  }
+
+  function tangentHalfExtent(geometry) {
+    return geometry.point.segment % 2 === 0
+      ? geometry.width * 0.5
+      : geometry.height * 0.5;
+  }
+
+  function segmentLength(path, segment) {
+    return segment % 2 === 0 ? path.horizontal : path.vertical;
+  }
+
+  function segmentCenterOffset(path, geometry) {
+    if (geometry.point.segment === 0) {
+      return geometry.centerX - path.left;
+    }
+    if (geometry.point.segment === 1) {
+      return geometry.centerY - path.top;
+    }
+    if (geometry.point.segment === 2) {
+      return path.right - geometry.centerX;
+    }
+    return path.bottom - geometry.centerY;
+  }
+
+  function findNextGeometryRect(path, previous, previousDistance, width, height, gap) {
+    const segment = previous.point.segment;
+    const previousExtent = tangentHalfExtent(previous);
+    const currentExtent = segment % 2 === 0 ? width * 0.5 : height * 0.5;
+    const previousCenterOffset = segmentCenterOffset(path, previous);
+    const targetCenterOffset =
+      previousCenterOffset + previousExtent + gap + currentExtent;
+    const edgeLength = segmentLength(path, segment);
+
+    // 같은 직선 변 안에서 끝나는 대부분의 배치는 polygonDistance/이분탐색 없이
+    // 실제 외곽 gap 수식으로 즉시 결정한다.
+    if (targetCenterOffset <= edgeLength - currentExtent + 0.0001) {
+      const segmentStartDistance =
+        previousDistance - previous.point.offset;
+      const distance = segmentStartDistance + targetCenterOffset;
+      return {
+        distance,
+        geometry: cellGeometry(path, distance, width, height)
+      };
+    }
+
+    // 코너를 넘는 경우에만 정밀 거리 탐색을 사용한다.
     const step = Math.max(
       gap,
       width,
@@ -574,16 +603,22 @@
     let high = previousDistance + step;
     let candidate = cellGeometry(path, high, width, height);
 
-    for (let guard = 0; guard < 12; guard += 1) {
-      if (polygonDistance(previous.corners, candidate.corners) >= gap) break;
+    const budget = rectMovementSolveBudget();
+
+    for (let guard = 0; guard < budget.cornerGuard; guard += 1) {
+      if (rectGeometryDistance(previous, candidate) >= gap) break;
       high += step;
       candidate = cellGeometry(path, high, width, height);
     }
 
-    for (let iteration = 0; iteration < 24; iteration += 1) {
+    for (
+      let iteration = 0;
+      iteration < budget.cornerIterations;
+      iteration += 1
+    ) {
       const middle = (low + high) * 0.5;
       const middleGeometry = cellGeometry(path, middle, width, height);
-      const distance = polygonDistance(previous.corners, middleGeometry.corners);
+      const distance = rectGeometryDistance(previous, middleGeometry);
 
       if (distance >= gap) {
         high = middle;
@@ -645,7 +680,24 @@
     };
   }
 
-  function findPreviousGeometry(path, next, nextDistance, width, height, gap) {
+  function findPreviousGeometryRect(path, next, nextDistance, width, height, gap) {
+    const segment = next.point.segment;
+    const nextExtent = tangentHalfExtent(next);
+    const currentExtent = segment % 2 === 0 ? width * 0.5 : height * 0.5;
+    const nextCenterOffset = segmentCenterOffset(path, next);
+    const targetCenterOffset =
+      nextCenterOffset - nextExtent - gap - currentExtent;
+
+    if (targetCenterOffset >= currentExtent - 0.0001) {
+      const segmentStartDistance =
+        nextDistance - next.point.offset;
+      const distance = segmentStartDistance + targetCenterOffset;
+      return {
+        distance,
+        geometry: cellGeometry(path, distance, width, height)
+      };
+    }
+
     const step = Math.max(
       gap,
       width,
@@ -658,16 +710,22 @@
     let low = nextDistance - step;
     let candidate = cellGeometry(path, low, width, height);
 
-    for (let guard = 0; guard < 12; guard += 1) {
-      if (polygonDistance(candidate.corners, next.corners) >= gap) break;
+    const budget = rectMovementSolveBudget();
+
+    for (let guard = 0; guard < budget.cornerGuard; guard += 1) {
+      if (rectGeometryDistance(candidate, next) >= gap) break;
       low -= step;
       candidate = cellGeometry(path, low, width, height);
     }
 
-    for (let iteration = 0; iteration < 24; iteration += 1) {
+    for (
+      let iteration = 0;
+      iteration < budget.cornerIterations;
+      iteration += 1
+    ) {
       const middle = (low + high) * 0.5;
       const middleGeometry = cellGeometry(path, middle, width, height);
-      const distance = polygonDistance(middleGeometry.corners, next.corners);
+      const distance = rectGeometryDistance(middleGeometry, next);
 
       if (distance >= gap) {
         low = middle;
@@ -683,7 +741,7 @@
     };
   }
 
-  function placeLoopBidirectionalWithWidths(
+  function placeLoopBidirectionalWithWidthsRect(
     path,
     widths,
     aspect,
@@ -741,9 +799,9 @@
 
     const forwardFront = placements[forwardEnd];
     const backwardFront = placements[backwardEnd];
-    const closureGap = polygonDistance(
-      forwardFront.corners,
-      backwardFront.corners
+    const closureGap = rectGeometryDistance(
+      forwardFront,
+      backwardFront
     );
 
     // 역방향 front는 anchor보다 음의 방향에 있으므로 한 바퀴를 더해
@@ -768,7 +826,7 @@
     };
   }
 
-  function validatePlacements(placements, gap) {
+  function validatePlacementsRect(placements, gap) {
     // P0: 모든 순환 인접쌍의 실제 외곽 간격이 같은 값이어야 한다.
     // 허용 오차는 렌더링 소수점/이분 탐색 오차만 허용한다.
     const gapTolerance = 0.05;
@@ -783,9 +841,9 @@
 
     for (let index = 0; index < placements.length; index += 1) {
       const nextIndex = (index + 1) % placements.length;
-      const distance = polygonDistance(
-        placements[index].corners,
-        placements[nextIndex].corners
+      const distance = rectGeometryDistance(
+        placements[index],
+        placements[nextIndex]
       );
 
       adjacentGaps.push(distance);
@@ -811,9 +869,9 @@
 
         if (isAdjacent) continue;
 
-        const distance = polygonDistance(
-          placements[a].corners,
-          placements[b].corners
+        const distance = rectGeometryDistance(
+          placements[a],
+          placements[b]
         );
 
         if (distance <= overlapTolerance) {
@@ -914,7 +972,7 @@
     });
   }
 
-  function solveNormalWidth(
+  function solveNormalWidthRect(
     path,
     aspect,
     weights,
@@ -976,10 +1034,11 @@
       return null;
     }
 
+    const budget = rectMovementSolveBudget();
     let highTrial = trialFor(high);
     for (
       let guard = 0;
-      guard < 14 &&
+      guard < budget.widthGuard &&
       !highTrial.frontierCrossed &&
       highTrial.closureGap > gap;
       guard += 1
@@ -990,7 +1049,11 @@
       highTrial = trialFor(high);
     }
 
-    for (let iteration = 0; iteration < 42; iteration += 1) {
+    for (
+      let iteration = 0;
+      iteration < budget.widthIterations;
+      iteration += 1
+    ) {
       const middle = (low + high) * 0.5;
       const trial = trialFor(middle);
       const tooLarge =
@@ -1011,7 +1074,7 @@
     };
   }
 
-  function solveReserveFirstLoop(path, aspect, weights, gap, anchorDistance) {
+  function solveReserveFirstLoopRect(path, aspect, weights, gap, anchorDistance) {
     const neutralKey = [
       board.cellCount,
       path.horizontal.toFixed(3),
@@ -1032,44 +1095,92 @@
       };
     }
 
-    let emphasisFactor = 1;
+    const budget = rectMovementSolveBudget();
 
-    // 일반 상황에서는 강조 크기를 100% 예약한다.
-    // P0 충돌이 실제로 발생하는 경우에만 강조 초과분을 조금씩 낮춘다.
-    for (let attempt = 0; attempt < 18; attempt += 1) {
-      const solved = solveNormalWidth(
+    if (budget.fast) {
+      // 이동 최적화는 계산 정밀도만 낮춘다.
+      // Dock scale 계약(2.00 / 1.36 / 1.10)은 절대 축소하지 않는다.
+      let solved = solveNormalWidth(
         path,
         aspect,
         weights,
         gap,
         neutral.width,
-        emphasisFactor,
+        1,
         anchorDistance
       );
 
-      if (!solved) {
-        emphasisFactor *= 0.94;
-        continue;
+      if (solved) {
+        const validation = validatePlacements(solved.placements, gap);
+        if (validation.valid) {
+          return {
+            neutralWidth: neutral.width,
+            emphasisFactor: 1,
+            gap,
+            validation,
+            layoutFallback: "none",
+            ...solved
+          };
+        }
       }
 
+      // 빠른 반복수 때문에 검증이 모자란 경우에만 같은 배율(1.0)로
+      // 정밀 계산을 단 한 번 수행한다. 배율을 낮추는 fallback은 금지한다.
+      rectForcePreciseSolve = true;
+      try {
+        solved = solveNormalWidth(
+          path,
+          aspect,
+          weights,
+          gap,
+          neutral.width,
+          1,
+          anchorDistance
+        );
+      } finally {
+        rectForcePreciseSolve = false;
+      }
+
+      if (!solved) return null;
+
       const validation = validatePlacements(solved.placements, gap);
-      const result = {
+      if (!validation.valid) return null;
+
+      return {
         neutralWidth: neutral.width,
-        emphasisFactor,
+        emphasisFactor: 1,
         gap,
         validation,
-        layoutFallback: emphasisFactor < 0.9999 ? "reduced-emphasis" : "none",
+        layoutFallback: "precise-scale-preserved",
         ...solved
       };
-
-      if (validation.valid) return result;
-
-      emphasisFactor *= 0.94;
     }
 
-    throw new Error(
-      "P0 layout failure: reserve-first layout could not avoid overlap"
+    // 초기/정지 상태도 이동 중과 동일한 Dock scale 계약을 지킨다.
+    // 데모(기본 16×12, 4명)라고 해서 emphasis를 낮추지 않는다.
+    const solved = solveNormalWidth(
+      path,
+      aspect,
+      weights,
+      gap,
+      neutral.width,
+      1,
+      anchorDistance
     );
+
+    if (!solved) return null;
+
+    const validation = validatePlacements(solved.placements, gap);
+    if (!validation.valid) return null;
+
+    return {
+      neutralWidth: neutral.width,
+      emphasisFactor: 1,
+      gap,
+      validation,
+      layoutFallback: "none",
+      ...solved
+    };
   }
 
   function circularPathDistance(a, b, perimeter) {
@@ -1096,12 +1207,27 @@
     return logicalPlacements;
   }
 
-  function solveTopLeftStartLoop(path, aspect, logicalWeights, gap) {
-    // START 중심은 항상 좌상단 코너 곡선의 중앙에 고정한다.
-    // 이후 칸은 START에서 시계/반시계 양방향으로 절반씩 배치하므로
-    // 확대 변화가 한 방향으로 전체 루프에 누적되는 현상을 줄인다.
-    const targetDistance =
-      path.perimeter - (path.quarterArc * 0.5);
+  function solveTopLeftStartLoopRect(path, aspect, logicalWeights, gap) {
+    const targetDistance = path.perimeter;
+    const geometryKey = [
+      board.cellCount,
+      path.horizontal.toFixed(3),
+      path.vertical.toFixed(3),
+      aspect.toFixed(6),
+      gap.toFixed(3)
+    ].join(":");
+    const fast = directTokenAnimations.size > 0;
+    const weightKey = logicalWeights.map((weight) => weight.toFixed(3)).join(",");
+    const cacheKey = geometryKey + "|" + weightKey;
+
+    if (fast && rectMovementSolveCache.has(cacheKey)) {
+      const cached = rectMovementSolveCache.get(cacheKey);
+      return {
+        ...cached,
+        layoutFallback:
+          cached.layoutFallback === "none" ? "cache" : cached.layoutFallback
+      };
+    }
 
     const solved = solveReserveFirstLoop(
       path,
@@ -1111,17 +1237,52 @@
       targetDistance
     );
 
-    return {
-      ...solved,
-      placements: solved.placements,
-      physicalPlacements: solved.placements,
-      physicalOrder: Array.from(
-        { length: board.cellCount },
-        (_, index) => index
-      ),
-      startPhysicalSlot: 0,
-      startTargetDistance: targetDistance
-    };
+    if (solved) {
+      const result = {
+        ...solved,
+        placements: solved.placements,
+        physicalPlacements: solved.placements,
+        physicalOrder: Array.from(
+          { length: board.cellCount },
+          (_, index) => index
+        ),
+        startPhysicalSlot: 0,
+        startTargetDistance: targetDistance
+      };
+
+      lastValidatedRectSolve = {
+        geometryKey,
+        weightKey,
+        result
+      };
+
+      if (fast) {
+        rectMovementSolveCache.set(cacheKey, result);
+        if (rectMovementSolveCache.size > 128) {
+          const oldestKey = rectMovementSolveCache.keys().next().value;
+          rectMovementSolveCache.delete(oldestKey);
+        }
+      }
+
+      return result;
+    }
+
+    // 같은 입력을 다음 rAF에서 다시 계산하지 않는다.
+    // 현재 stage geometry와 일치하는 마지막 검증 배치를 즉시 재사용한다.
+    if (
+      lastValidatedRectSolve &&
+      lastValidatedRectSolve.geometryKey === geometryKey &&
+      lastValidatedRectSolve.weightKey === weightKey
+    ) {
+      return {
+        ...lastValidatedRectSolve.result,
+        layoutFallback: "last-validated-same-scale"
+      };
+    }
+
+    throw new Error(
+      "rect layout unavailable: no validated fast or previous layout"
+    );
   }
 
   function motionSmoothTime(mode) {
@@ -1470,7 +1631,7 @@
     );
   }
 
-  function layoutNow() {
+  function layoutNowRect() {
     layoutFrame = 0;
     if (!refs.boardStage || !refs.boardGrid || !cellElements.size) return;
 
@@ -1488,13 +1649,8 @@
     const aspect = nominalWidth / Math.max(1, nominalHeight);
     const nominalCell = Math.min(nominalWidth, nominalHeight);
     const gap = clamp(nominalCell * 0.075, 3, 11);
-    const cornerRadius = clamp(
-      nominalCell * 1.90,
-      gap * 3,
-      Math.min(width - (margin * 2), height - (margin * 2)) * 0.28
-    );
 
-    const path = createRoundedLoop(width, height, margin, cornerRadius);
+    const path = createRectLoop(width, height, margin);
     const solved = solveTopLeftStartLoop(
       path,
       aspect,
@@ -1558,7 +1714,7 @@
       solved.normalWidth / Math.max(0.01, aspect)
     ).toFixed(3);
     refs.boardGrid.dataset.closureGap = solved.closureGap.toFixed(3);
-    refs.boardGrid.dataset.layoutAnchor = "start-bidirectional";
+    refs.boardGrid.dataset.layoutAnchor = "start-bidirectional-rect";
 
     // 첫 배치는 transition 없이 확정한다.
     // 모든 셀이 최종 좌표를 받은 뒤에만 이후 이동 애니메이션을 허용한다.
@@ -3049,7 +3205,7 @@
     });
   }
 
-  async function movePlayerStepsCoreV8(playerId, steps) {
+  async function movePlayerStepsCoreV8Rect(playerId, steps) {
     const player = state.players.get(String(playerId));
     if (!player) throw new Error("unknown player: " + playerId);
 
@@ -3079,7 +3235,7 @@
       try {
         layoutNow();
       } catch (error) {
-        console.error("movement layout step failed; marker remains in destination cell", {
+        console.error("movement layout step failed; keeping last validated rect layout", {
           playerId: id,
           from: previous,
           to: next,
@@ -3087,7 +3243,9 @@
           distance,
           error
         });
-        scheduleLayout();
+        if (refs.boardGrid) {
+          refs.boardGrid.dataset.layoutFallback = "exception-last-valid";
+        }
       }
 
       await animateMarkerTrackedTokenV8(
@@ -4869,7 +5027,7 @@
       + "?roomCode=" + encodeURIComponent(roomCode);
   }
 
-  async function loadRoomBoard(roomId) {
+  async function loadRoomBoardRect(roomId) {
     const response = await fetch(roomReadUrl(roomId), {
       cache: "no-store",
       headers: { "Accept": "application/json" }
@@ -4886,7 +5044,7 @@
     }
 
     const configuredStyle = snapshot.config?.board?.layoutStyle || "rounded";
-    const expectedStyle = "rounded";
+    const expectedStyle = "rect";
     if (configuredStyle !== expectedStyle) {
       const target = configuredStyle === "rect"
         ? (INSTANT_MOVEMENT_MODE ? "rect-instant.html" : "rect.html")
@@ -5207,6 +5365,1049 @@
     }, { once: true });
 
     connect();
+  }
+
+
+  // Rounded layout variants. Rect-only optimized helpers stay above.
+  function createRoundedLoop(width, height, margin, radius) {
+    const left = margin;
+    const right = width - margin;
+    const top = margin;
+    const bottom = height - margin;
+
+    const innerWidth = Math.max(1, right - left);
+    const innerHeight = Math.max(1, bottom - top);
+    const r = clamp(radius, 1, Math.min(innerWidth, innerHeight) * 0.49);
+    const horizontal = Math.max(0, innerWidth - (r * 2));
+    const vertical = Math.max(0, innerHeight - (r * 2));
+    const quarterArc = Math.PI * r * 0.5;
+    const perimeter = (horizontal * 2) + (vertical * 2) + (quarterArc * 4);
+
+    return {
+      left,
+      right,
+      top,
+      bottom,
+      radius: r,
+      horizontal,
+      vertical,
+      quarterArc,
+      perimeter
+    };
+  }
+
+  function renderGlobalStateRounded() {
+    if (!refs.boardStage) return;
+
+    refs.boardStage.dataset.layoutEngine = "reserve-first-loop-v4";
+    refs.boardStage.dataset.movementMode =
+      INSTANT_MOVEMENT_MODE ? "instant-marker-overlay-v8" : "marker-overlay-v8";
+    refs.boardStage.dataset.phase = state.currentPhaseId;
+    refs.boardStage.dataset.totalLaps = String(state.totalLaps);
+    refs.boardStage.dataset.playerCount = String(state.players.size);
+    refs.boardStage.dataset.columns = String(board.columns);
+    refs.boardStage.dataset.rows = String(board.rows);
+    refs.boardStage.dataset.cellCount = String(board.cellCount);
+
+    if (refs.boardGrid) {
+      refs.boardGrid.setAttribute(
+        "aria-label",
+        board.columns + "×" + board.rows + " 외곽 " + board.cellCount + "칸 연속 루프 보드"
+      );
+    }
+  }
+
+  function buildBoardRounded() {
+    if (!refs.boardGrid) return;
+
+    const playerLayer = ensurePlayerLayer();
+
+    if (refs.boardStage) {
+      refs.boardStage.dataset.layoutReady = "false";
+    }
+
+    refs.boardGrid.innerHTML = "";
+    cellElements.clear();
+    playerZoneElements.clear();
+    playerMarkerElements.clear();
+    fixedPlayerTokenScreenSize = PLAYER_TOKEN_FALLBACK_SCREEN_SIZE;
+    if (refs.boardStage) {
+      refs.boardStage.style.setProperty(
+        "--player-token-screen-size",
+        fixedPlayerTokenScreenSize.toFixed(3) + "px"
+      );
+    }
+    previousScaleWeights = null;
+    neutralSolveCache = null;
+
+
+    if (motionFrame) {
+      window.cancelAnimationFrame(motionFrame);
+      motionFrame = 0;
+    }
+    lastMotionTime = 0;
+    cellMotionStates.clear();
+    tokenMotionStates.clear();
+
+    for (let index = 0; index < board.cellCount; index += 1) {
+      const definition = cellDefinition(index);
+
+      const cell = document.createElement("article");
+      cell.className = "board-cell";
+      cell.dataset.cellIndex = String(index);
+      cell.dataset.kind = definition.kind;
+      cell.dataset.instructionType = definition.instructionType;
+      cell.dataset.randomCell = String(definition.randomCell);
+      cell.dataset.occupied = "false";
+      cell.dataset.playerState = "normal";
+
+      const label = document.createElement("span");
+      label.className = "cell-label";
+      label.textContent = definition.command || definition.label;
+
+      const instructionZone = document.createElement("span");
+      instructionZone.className = "cell-instruction-zone";
+      instructionZone.append(label);
+
+      const playerZone = document.createElement("span");
+      playerZone.className = "cell-player-zone";
+      playerZone.dataset.cellIndex = String(index);
+      playerZone.dataset.count = "0";
+      playerZone.setAttribute("aria-hidden", "true");
+
+      cell.append(instructionZone, playerZone);
+      refs.boardGrid.append(cell);
+      cellElements.set(index, cell);
+      playerZoneElements.set(index, playerZone);
+    }
+
+    if (playerLayer) playerLayer.replaceChildren();
+    playerTokenElements.clear();
+    playerMarkerElements.clear();
+    renderPlayers();
+  }
+
+  function loopPointRounded(path, distance) {
+    const twoPi = Math.PI * 2;
+    let s = ((distance % path.perimeter) + path.perimeter) % path.perimeter;
+
+    if (s < path.horizontal) {
+      return {
+        x: path.left + path.radius + s,
+        y: path.top,
+        angle: 0,
+        curved: false
+      };
+    }
+    s -= path.horizontal;
+
+    if (s < path.quarterArc) {
+      const t = s / path.quarterArc;
+      const phi = (-Math.PI / 2) + (t * Math.PI / 2);
+      return {
+        x: path.right - path.radius + (Math.cos(phi) * path.radius),
+        y: path.top + path.radius + (Math.sin(phi) * path.radius),
+        angle: phi + (Math.PI / 2),
+        curved: true
+      };
+    }
+    s -= path.quarterArc;
+
+    if (s < path.vertical) {
+      return {
+        x: path.right,
+        y: path.top + path.radius + s,
+        angle: Math.PI / 2,
+        curved: false
+      };
+    }
+    s -= path.vertical;
+
+    if (s < path.quarterArc) {
+      const t = s / path.quarterArc;
+      const phi = t * Math.PI / 2;
+      return {
+        x: path.right - path.radius + (Math.cos(phi) * path.radius),
+        y: path.bottom - path.radius + (Math.sin(phi) * path.radius),
+        angle: phi + (Math.PI / 2),
+        curved: true
+      };
+    }
+    s -= path.quarterArc;
+
+    if (s < path.horizontal) {
+      return {
+        x: path.right - path.radius - s,
+        y: path.bottom,
+        angle: Math.PI,
+        curved: false
+      };
+    }
+    s -= path.horizontal;
+
+    if (s < path.quarterArc) {
+      const t = s / path.quarterArc;
+      const phi = (Math.PI / 2) + (t * Math.PI / 2);
+      return {
+        x: path.left + path.radius + (Math.cos(phi) * path.radius),
+        y: path.bottom - path.radius + (Math.sin(phi) * path.radius),
+        angle: phi + (Math.PI / 2),
+        curved: true
+      };
+    }
+    s -= path.quarterArc;
+
+    if (s < path.vertical) {
+      return {
+        x: path.left,
+        y: path.bottom - path.radius - s,
+        angle: Math.PI * 1.5,
+        curved: false
+      };
+    }
+    s -= path.vertical;
+
+    const t = clamp(s / path.quarterArc, 0, 1);
+    const phi = Math.PI + (t * Math.PI / 2);
+    return {
+      x: path.left + path.radius + (Math.cos(phi) * path.radius),
+      y: path.top + path.radius + (Math.sin(phi) * path.radius),
+      angle: (phi + (Math.PI / 2)) % twoPi,
+      curved: true
+    };
+  }
+
+  function cellGeometryRounded(path, distance, cellWidth, cellHeight) {
+    const point = loopPoint(path, distance);
+    const inwardX = -Math.sin(point.angle);
+    const inwardY = Math.cos(point.angle);
+
+    let centerX = point.x + (inwardX * cellHeight * 0.5);
+    let centerY = point.y + (inwardY * cellHeight * 0.5);
+    // 코너에서도 셀 자체는 회전하지 않는다.
+    // 중심 위치만 둥근 경로를 따라 이동하고 직사각형/텍스트는 항상 정방향을 유지한다.
+    let corners = rectangleCorners(
+      centerX,
+      centerY,
+      cellWidth,
+      cellHeight
+    );
+
+    // 직선부는 margin 끝에 정확히 붙고, 코너/코너 주변에서만
+    // 회전된 직사각형의 꼭짓점이 화면 밖으로 나가지 않도록
+    // 보드 안쪽으로 필요한 만큼만 추가 이동한다.
+    let extraInset = 0;
+
+    for (const corner of corners) {
+      if (corner.x < path.left && inwardX > 0.0001) {
+        extraInset = Math.max(extraInset, (path.left - corner.x) / inwardX);
+      }
+      if (corner.x > path.right && inwardX < -0.0001) {
+        extraInset = Math.max(extraInset, (corner.x - path.right) / -inwardX);
+      }
+      if (corner.y < path.top && inwardY > 0.0001) {
+        extraInset = Math.max(extraInset, (path.top - corner.y) / inwardY);
+      }
+      if (corner.y > path.bottom && inwardY < -0.0001) {
+        extraInset = Math.max(extraInset, (corner.y - path.bottom) / -inwardY);
+      }
+    }
+
+    if (extraInset > 0) {
+      centerX += inwardX * (extraInset + 0.25);
+      centerY += inwardY * (extraInset + 0.25);
+      corners = rectangleCorners(
+        centerX,
+        centerY,
+        cellWidth,
+        cellHeight
+      );
+    }
+
+    return {
+      distance,
+      point,
+      centerX,
+      centerY,
+      width: cellWidth,
+      height: cellHeight,
+      corners
+    };
+  }
+
+  function findNextGeometryRounded(path, previous, previousDistance, width, height, gap) {
+    const step = Math.max(
+      gap,
+      width,
+      height,
+      previous.width,
+      previous.height
+    ) * 0.75 + gap;
+
+    let low = previousDistance;
+    let high = previousDistance + step;
+    let candidate = cellGeometry(path, high, width, height);
+
+    for (let guard = 0; guard < 12; guard += 1) {
+      if (polygonDistance(previous.corners, candidate.corners) >= gap) break;
+      high += step;
+      candidate = cellGeometry(path, high, width, height);
+    }
+
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+      const middle = (low + high) * 0.5;
+      const middleGeometry = cellGeometry(path, middle, width, height);
+      const distance = polygonDistance(previous.corners, middleGeometry.corners);
+
+      if (distance >= gap) {
+        high = middle;
+        candidate = middleGeometry;
+      } else {
+        low = middle;
+      }
+    }
+
+    return {
+      distance: high,
+      geometry: candidate
+    };
+  }
+
+  function findPreviousGeometryRounded(path, next, nextDistance, width, height, gap) {
+    const step = Math.max(
+      gap,
+      width,
+      height,
+      next.width,
+      next.height
+    ) * 0.75 + gap;
+
+    let high = nextDistance;
+    let low = nextDistance - step;
+    let candidate = cellGeometry(path, low, width, height);
+
+    for (let guard = 0; guard < 12; guard += 1) {
+      if (polygonDistance(candidate.corners, next.corners) >= gap) break;
+      low -= step;
+      candidate = cellGeometry(path, low, width, height);
+    }
+
+    for (let iteration = 0; iteration < 24; iteration += 1) {
+      const middle = (low + high) * 0.5;
+      const middleGeometry = cellGeometry(path, middle, width, height);
+      const distance = polygonDistance(middleGeometry.corners, next.corners);
+
+      if (distance >= gap) {
+        low = middle;
+        candidate = middleGeometry;
+      } else {
+        high = middle;
+      }
+    }
+
+    return {
+      distance: low,
+      geometry: candidate
+    };
+  }
+
+  function placeLoopBidirectionalWithWidthsRounded(
+    path,
+    widths,
+    aspect,
+    gap,
+    anchorDistance
+  ) {
+    const heights = widths.map((width) => width / Math.max(0.01, aspect));
+    const placements = new Array(board.cellCount);
+    const forwardEnd = Math.floor(board.cellCount * 0.5);
+    const backwardEnd = forwardEnd + 1;
+
+    placements[0] = cellGeometry(
+      path,
+      anchorDistance,
+      widths[0],
+      heights[0]
+    );
+
+    let current = placements[0];
+    let currentDistance = anchorDistance;
+
+    // START에서 진행 방향으로 절반만 누적 배치한다.
+    for (let index = 1; index <= forwardEnd; index += 1) {
+      const next = findNextGeometry(
+        path,
+        current,
+        currentDistance,
+        widths[index],
+        heights[index],
+        gap
+      );
+      currentDistance = next.distance;
+      current = next.geometry;
+      placements[index] = current;
+    }
+
+    current = placements[0];
+    currentDistance = anchorDistance;
+
+    // END부터 역방향으로 나머지 절반을 배치한다.
+    // 따라서 END→START gap도 직접 계산되어 항상 동일 gap 대상이다.
+    for (let index = board.cellCount - 1; index >= backwardEnd; index -= 1) {
+      const previous = findPreviousGeometry(
+        path,
+        current,
+        currentDistance,
+        widths[index],
+        heights[index],
+        gap
+      );
+      currentDistance = previous.distance;
+      current = previous.geometry;
+      placements[index] = current;
+    }
+
+    const forwardFront = placements[forwardEnd];
+    const backwardFront = placements[backwardEnd];
+    const closureGap = polygonDistance(
+      forwardFront.corners,
+      backwardFront.corners
+    );
+
+    // 역방향 front는 anchor보다 음의 방향에 있으므로 한 바퀴를 더해
+    // 두 front가 아직 순서상 교차하지 않았는지 확인한다.
+    const forwardDistance = forwardFront.distance;
+    const backwardDistance = backwardFront.distance + path.perimeter;
+    const frontierArc = backwardDistance - forwardDistance;
+    const frontierCrossed = frontierArc <= 0;
+
+    return {
+      placements,
+      startOffset: anchorDistance,
+      anchorDistance,
+      closureGap,
+      frontierArc,
+      frontierCrossed,
+      forwardEnd,
+      backwardEnd,
+      // 기존 진단 필드와 호환. 실제 승인 여부는 closureGap/validation으로 결정한다.
+      requiredPerimeter:
+        path.perimeter + (frontierCrossed ? gap : (gap - closureGap))
+    };
+  }
+
+  function validatePlacementsRounded(placements, gap) {
+    // P0: 모든 순환 인접쌍의 실제 외곽 간격이 같은 값이어야 한다.
+    // 허용 오차는 렌더링 소수점/이분 탐색 오차만 허용한다.
+    const gapTolerance = 0.05;
+    const overlapTolerance = 0.08;
+    const adjacentGaps = [];
+
+    let minimumAdjacentGap = Infinity;
+    let maximumAdjacentGap = -Infinity;
+    let maximumGapError = 0;
+    let gapMismatchPair = null;
+    let collisionPair = null;
+
+    for (let index = 0; index < placements.length; index += 1) {
+      const nextIndex = (index + 1) % placements.length;
+      const distance = polygonDistance(
+        placements[index].corners,
+        placements[nextIndex].corners
+      );
+
+      adjacentGaps.push(distance);
+      minimumAdjacentGap = Math.min(minimumAdjacentGap, distance);
+      maximumAdjacentGap = Math.max(maximumAdjacentGap, distance);
+
+      const error = Math.abs(distance - gap);
+      if (error > maximumGapError) {
+        maximumGapError = error;
+      }
+
+      if (error > gapTolerance && gapMismatchPair === null) {
+        gapMismatchPair = [index, nextIndex];
+      }
+    }
+
+    // 인접하지 않은 칸은 동일 gap 대상은 아니지만 절대 겹쳐서는 안 된다.
+    for (let a = 0; a < placements.length; a += 1) {
+      for (let b = a + 1; b < placements.length; b += 1) {
+        const isAdjacent =
+          b === a + 1 ||
+          (a === 0 && b === placements.length - 1);
+
+        if (isAdjacent) continue;
+
+        const distance = polygonDistance(
+          placements[a].corners,
+          placements[b].corners
+        );
+
+        if (distance <= overlapTolerance) {
+          collisionPair = [a, b];
+          break;
+        }
+      }
+
+      if (collisionPair) break;
+    }
+
+    return {
+      valid: gapMismatchPair === null && collisionPair === null,
+      adjacentGaps,
+      minimumAdjacentGap,
+      maximumAdjacentGap,
+      maximumGapError,
+      gapTolerance,
+      gapMismatchPair,
+      collisionPair
+    };
+  }
+
+  function solveNormalWidthRounded(
+    path,
+    aspect,
+    weights,
+    gap,
+    neutralWidth,
+    emphasisFactor,
+    anchorDistance
+  ) {
+    const normalIndices = [];
+    for (let index = 0; index < weights.length; index += 1) {
+      if (weights[index] <= 1.0001) normalIndices.push(index);
+    }
+
+    const trialFor = (normalWidth) => {
+      const widths = buildReservedWidths(
+        neutralWidth,
+        normalWidth,
+        weights,
+        emphasisFactor
+      );
+      return {
+        widths,
+        ...placeLoopBidirectionalWithWidths(
+          path,
+          widths,
+          aspect,
+          gap,
+          anchorDistance
+        )
+      };
+    };
+
+    if (!normalIndices.length) {
+      const trial = trialFor(neutralWidth);
+      return {
+        normalWidth: neutralWidth,
+        ...trial
+      };
+    }
+
+    // 모든 배율은 실제 일반 칸 크기 기준이므로 초기값도
+    // 강조 weight 총합을 포함한 전체 비율로 직접 추정한다.
+    const effectiveWeightTotal = weights.reduce(
+      (sum, weight) =>
+        sum + (1 + ((Math.max(1, weight) - 1) * emphasisFactor)),
+      0
+    );
+    const estimatedNormalWidth = Math.max(
+      0.5,
+      (path.perimeter - (gap * board.cellCount)) /
+        Math.max(1, effectiveWeightTotal)
+    );
+
+    let low = 0.5;
+    let high = Math.max(neutralWidth, estimatedNormalWidth * 1.5);
+    let lowTrial = trialFor(low);
+
+    if (lowTrial.frontierCrossed || lowTrial.closureGap < gap) {
+      return null;
+    }
+
+    let highTrial = trialFor(high);
+    for (
+      let guard = 0;
+      guard < 14 &&
+      !highTrial.frontierCrossed &&
+      highTrial.closureGap > gap;
+      guard += 1
+    ) {
+      low = high;
+      lowTrial = highTrial;
+      high *= 1.25;
+      highTrial = trialFor(high);
+    }
+
+    for (let iteration = 0; iteration < 42; iteration += 1) {
+      const middle = (low + high) * 0.5;
+      const trial = trialFor(middle);
+      const tooLarge =
+        trial.frontierCrossed ||
+        trial.closureGap < gap;
+
+      if (tooLarge) {
+        high = middle;
+      } else {
+        low = middle;
+        lowTrial = trial;
+      }
+    }
+
+    return {
+      normalWidth: low,
+      ...lowTrial
+    };
+  }
+
+  function solveReserveFirstLoopRounded(path, aspect, weights, gap, anchorDistance) {
+    const neutralKey = [
+      board.cellCount,
+      path.horizontal.toFixed(3),
+      path.vertical.toFixed(3),
+      path.radius.toFixed(3),
+      aspect.toFixed(6),
+      gap.toFixed(3)
+    ].join(":");
+
+    let neutral;
+    if (neutralSolveCache && neutralSolveCache.key === neutralKey) {
+      neutral = neutralSolveCache.value;
+    } else {
+      neutral = solveUniformWidth(path, aspect, gap);
+      neutralSolveCache = {
+        key: neutralKey,
+        value: neutral
+      };
+    }
+
+    let emphasisFactor = 1;
+
+    // 일반 상황에서는 강조 크기를 100% 예약한다.
+    // P0 충돌이 실제로 발생하는 경우에만 강조 초과분을 조금씩 낮춘다.
+    for (let attempt = 0; attempt < 18; attempt += 1) {
+      const solved = solveNormalWidth(
+        path,
+        aspect,
+        weights,
+        gap,
+        neutral.width,
+        emphasisFactor,
+        anchorDistance
+      );
+
+      if (!solved) {
+        emphasisFactor *= 0.94;
+        continue;
+      }
+
+      const validation = validatePlacements(solved.placements, gap);
+      const result = {
+        neutralWidth: neutral.width,
+        emphasisFactor,
+        gap,
+        validation,
+        layoutFallback: emphasisFactor < 0.9999 ? "reduced-emphasis" : "none",
+        ...solved
+      };
+
+      if (validation.valid) return result;
+
+      emphasisFactor *= 0.94;
+    }
+
+    throw new Error(
+      "P0 layout failure: reserve-first layout could not avoid overlap"
+    );
+  }
+
+  function solveTopLeftStartLoopRounded(path, aspect, logicalWeights, gap) {
+    // START 중심은 항상 좌상단 코너 곡선의 중앙에 고정한다.
+    // 이후 칸은 START에서 시계/반시계 양방향으로 절반씩 배치하므로
+    // 확대 변화가 한 방향으로 전체 루프에 누적되는 현상을 줄인다.
+    const targetDistance =
+      path.perimeter - (path.quarterArc * 0.5);
+
+    const solved = solveReserveFirstLoop(
+      path,
+      aspect,
+      logicalWeights,
+      gap,
+      targetDistance
+    );
+
+    return {
+      ...solved,
+      placements: solved.placements,
+      physicalPlacements: solved.placements,
+      physicalOrder: Array.from(
+        { length: board.cellCount },
+        (_, index) => index
+      ),
+      startPhysicalSlot: 0,
+      startTargetDistance: targetDistance
+    };
+  }
+
+  function layoutNowRounded() {
+    layoutFrame = 0;
+    if (!refs.boardStage || !refs.boardGrid || !cellElements.size) return;
+
+    const rect = refs.boardStage.getBoundingClientRect();
+    const width = rect.width;
+    const height = rect.height;
+    if (width <= 0 || height <= 0) return;
+
+    const weights = scaleWeights();
+    const occupancy = occupancyByCell();
+
+    const margin = clamp(Math.min(width, height) * 0.014, 8, 22);
+    const nominalWidth = Math.max(1, (width - (margin * 2)) / board.columns);
+    const nominalHeight = Math.max(1, (height - (margin * 2)) / board.rows);
+    const aspect = nominalWidth / Math.max(1, nominalHeight);
+    const nominalCell = Math.min(nominalWidth, nominalHeight);
+    const gap = clamp(nominalCell * 0.075, 3, 11);
+    const cornerRadius = clamp(
+      nominalCell * 1.90,
+      gap * 3,
+      Math.min(width - (margin * 2), height - (margin * 2)) * 0.28
+    );
+
+    const path = createRoundedLoop(width, height, margin, cornerRadius);
+    const solved = solveTopLeftStartLoop(
+      path,
+      aspect,
+      weights,
+      gap
+    );
+
+    for (let index = 0; index < board.cellCount; index += 1) {
+      const previousWeight =
+        previousScaleWeights && Number.isFinite(previousScaleWeights[index])
+          ? previousScaleWeights[index]
+          : weights[index];
+
+      let motionMode = "neutral";
+      if (weights[index] > previousWeight + 0.001) {
+        motionMode = "approach";
+      } else if (weights[index] < previousWeight - 0.001) {
+        motionMode = "release";
+      }
+
+      applyCellGeometry(
+        index,
+        solved.placements[index],
+        solved.neutralWidth,
+        solved.neutralWidth / Math.max(0.01, aspect),
+        weights[index],
+        occupancy.has(index),
+        motionMode
+      );
+    }
+
+    previousScaleWeights = weights.slice();
+    refreshFixedPlayerTokenScreenSize(solved.placements, occupancy);
+    layoutPlayerTokens(solved.placements, occupancy);
+    scheduleMotion();
+
+    refs.boardGrid.dataset.pathPerimeter = path.perimeter.toFixed(3);
+    refs.boardGrid.dataset.requiredPerimeter = solved.requiredPerimeter.toFixed(3);
+    refs.boardGrid.dataset.cellGap = solved.gap.toFixed(3);
+    refs.boardGrid.dataset.minimumAdjacentGap =
+      solved.validation.minimumAdjacentGap.toFixed(3);
+    refs.boardGrid.dataset.maximumAdjacentGap =
+      solved.validation.maximumAdjacentGap.toFixed(3);
+    refs.boardGrid.dataset.maximumGapError =
+      solved.validation.maximumGapError.toFixed(3);
+    refs.boardGrid.dataset.equalGap = String(
+      solved.validation.gapMismatchPair === null
+    );
+    refs.boardGrid.dataset.collisionFree = String(
+      solved.validation.collisionPair === null
+    );
+    refs.boardGrid.dataset.cellAspect = aspect.toFixed(6);
+    refs.boardGrid.dataset.instructionZoneRatio = INSTRUCTION_ZONE_RATIO.toFixed(2);
+    refs.boardGrid.dataset.playerZoneRatio = PLAYER_ZONE_RATIO.toFixed(2);
+    refs.boardGrid.dataset.neutralCellWidth = solved.neutralWidth.toFixed(3);
+    refs.boardGrid.dataset.normalCellWidth = solved.normalWidth.toFixed(3);
+    refs.boardGrid.dataset.emphasisFactor = solved.emphasisFactor.toFixed(4);
+    refs.boardGrid.dataset.layoutFallback = solved.layoutFallback || "none";
+    refs.boardGrid.dataset.startPhysicalSlot = String(solved.startPhysicalSlot);
+    refs.boardGrid.dataset.baseCellHeight = (
+      solved.normalWidth / Math.max(0.01, aspect)
+    ).toFixed(3);
+    refs.boardGrid.dataset.closureGap = solved.closureGap.toFixed(3);
+    refs.boardGrid.dataset.layoutAnchor = "start-bidirectional";
+
+    // 첫 배치는 transition 없이 확정한다.
+    // 모든 셀이 최종 좌표를 받은 뒤에만 이후 이동 애니메이션을 허용한다.
+    if (refs.boardStage.dataset.layoutReady !== "true") {
+      refs.boardStage.getBoundingClientRect();
+      refs.boardStage.dataset.layoutReady = "true";
+    }
+
+  }
+
+  async function movePlayerStepsCoreV8Rounded(playerId, steps) {
+    const player = state.players.get(String(playerId));
+    if (!player) throw new Error("unknown player: " + playerId);
+
+    const signedSteps = Number.parseInt(steps, 10) || 0;
+    const direction = signedSteps < 0 ? -1 : 1;
+    const distance = Math.abs(signedSteps);
+    if (!distance) return { ...player };
+
+    ensurePlayerTokens();
+    syncPlayerOverlayPosition(player.id, true);
+
+    for (let moved = 0; moved < distance; moved += 1) {
+      const id = String(player.id);
+      const previous = player.position;
+      const next = normalizeCell(previous + direction);
+      const firstRect = playerTokenRect(id);
+
+      // 화면 말은 현 위치에 고정하고, 투명 marker만 다음 칸 player-zone으로 옮긴다.
+      // 따라서 논리 경로/reparent는 한 칸씩 유지되면서 렌더링 말은 셀 transform에서 분리된다.
+      directTokenAnimations.add(id);
+      player.position = next;
+      ensurePlayerTokens();
+      moveTokenElementToCell(id, next);
+      syncPlayerTokenParents();
+      renderGlobalState();
+
+      try {
+        layoutNow();
+      } catch (error) {
+        console.error("movement layout step failed; marker remains in destination cell", {
+          playerId: id,
+          from: previous,
+          to: next,
+          moved,
+          distance,
+          error
+        });
+        scheduleLayout();
+      }
+
+      await animateMarkerTrackedTokenV8(
+        id,
+        firstRect,
+        STEP_DELAY_MS,
+        moved === distance - 1
+      );
+
+      if (
+        direction > 0 &&
+        previous === board.cellCount - 1 &&
+        next === 0
+      ) {
+        player.laps += 1;
+        state.totalLaps += 1;
+        evaluatePhase();
+      }
+    }
+
+    syncPlayerOverlayPosition(player.id, true);
+    return { ...player };
+  }
+
+  async function loadRoomBoardRounded(roomId) {
+    const response = await fetch(roomReadUrl(roomId), {
+      cache: "no-store",
+      headers: { "Accept": "application/json" }
+    });
+
+    const text = await response.text();
+    let snapshot = {};
+    if (text) {
+      try { snapshot = JSON.parse(text); }
+      catch { snapshot = { error: text }; }
+    }
+    if (!response.ok) {
+      throw new Error(snapshot.error || (response.status + " " + response.statusText));
+    }
+
+    const configuredStyle = snapshot.config?.board?.layoutStyle || "rounded";
+    const expectedStyle = "rounded";
+    if (configuredStyle !== expectedStyle) {
+      const target = configuredStyle === "rect"
+        ? (INSTANT_MOVEMENT_MODE ? "rect-instant.html" : "rect.html")
+        : (INSTANT_MOVEMENT_MODE ? "instant.html" : "index.html");
+      const url = new URL(target, window.location.href);
+      url.searchParams.set("roomCode", roomId);
+      if (ROOM_PREVIEW_MODE) url.searchParams.set("preview", "1");
+      if (ROOM_BOARD_SOURCE === "committed") url.searchParams.set("board", "committed");
+      window.location.replace(url.toString());
+      return null;
+    }
+
+    let runtime = null;
+    if (!ROOM_PREVIEW_MODE && snapshot.status === "READY") {
+      try {
+        const runtimeResponse = await fetch(
+          roomReadUrl(roomId, "/runtime"),
+          {
+            cache: "no-store",
+            headers: { "Accept": "application/json" }
+          }
+        );
+        if (runtimeResponse.ok) runtime = await runtimeResponse.json();
+      } catch (_) {
+        runtime = null;
+      }
+    }
+
+    const source = runtime?.board || (
+      ROOM_BOARD_SOURCE === "committed"
+        ? (snapshot.committedBoard || snapshot.preview)
+        : snapshot.preview
+    );
+
+    if (!source) throw new Error("room board preview is missing");
+
+    const columns = Number(snapshot.config?.board?.columns);
+    const rows = Number(snapshot.config?.board?.rows);
+    if (!Number.isInteger(columns) || !Number.isInteger(rows)) {
+      throw new Error("room board dimensions are invalid");
+    }
+
+    board.columns = clamp(columns, MIN_COLUMNS, MAX_COLUMNS);
+    board.rows = clamp(rows, MIN_ROWS, MAX_ROWS);
+    board.cellCount = perimeterCellCount(board.columns, board.rows);
+
+    const cells = {};
+    for (const cell of source.cells || []) {
+      const index = Number(cell.index);
+      if (!Number.isInteger(index) || index < 0 || index >= board.cellCount) continue;
+      cells[index] = {
+        label: roomCellLabel(cell),
+        command: roomCellLabel(cell),
+        kind: index === 0 ? "start" : (cell.type === "NORMAL" ? "normal" : "instruction"),
+        instructionType: roomCellInstructionType(cell),
+        randomCell: Boolean(cell.rerollOnVacate)
+      };
+    }
+
+    state.phasePlan = [{
+      id: "room-preview",
+      minTotalLaps: 0,
+      label: "ROOM PREVIEW",
+      description: snapshot.config?.name || "Room",
+      cells
+    }];
+    state.currentPhaseId = "room-preview";
+
+    buildBoard();
+    renderGlobalState();
+
+    const runtimePlayers = new Map(
+      (runtime?.players || []).map((player) => [String(player.playerId), player])
+    );
+
+    for (const [index, player] of (snapshot.config?.players || []).entries()) {
+      const runtimePlayer = runtimePlayers.get(String(player.playerId));
+      registerPlayer({
+        id: player.playerId || ("preview-player-" + index),
+        name: player.displayName || player.playerId || ("참가자 " + (index + 1)),
+        shortLabel: String(player.displayName || player.playerId || (index + 1)).slice(0, 1),
+        profileImageUrl: player.profileImageUrl || "",
+        position: ROOM_PREVIEW_MODE ? 0 : (runtimePlayer?.position ?? 0)
+      });
+    }
+
+    setEventMessage(
+      (snapshot.config?.name || "룸") + " · " +
+      board.columns + "×" + board.rows +
+      ", 외곽 " + board.cellCount + "칸"
+    );
+    return snapshot;
+  }
+
+  // Shared runtime dispatches only the geometry/layout-specific surface.
+  function renderGlobalState(...args) {
+    return RECT_LAYOUT
+      ? renderGlobalStateRect(...args)
+      : renderGlobalStateRounded(...args);
+  }
+
+  function buildBoard(...args) {
+    return RECT_LAYOUT
+      ? buildBoardRect(...args)
+      : buildBoardRounded(...args);
+  }
+
+  function loopPoint(...args) {
+    return RECT_LAYOUT
+      ? loopPointRect(...args)
+      : loopPointRounded(...args);
+  }
+
+  function cellGeometry(...args) {
+    return RECT_LAYOUT
+      ? cellGeometryRect(...args)
+      : cellGeometryRounded(...args);
+  }
+
+  function findNextGeometry(...args) {
+    return RECT_LAYOUT
+      ? findNextGeometryRect(...args)
+      : findNextGeometryRounded(...args);
+  }
+
+  function findPreviousGeometry(...args) {
+    return RECT_LAYOUT
+      ? findPreviousGeometryRect(...args)
+      : findPreviousGeometryRounded(...args);
+  }
+
+  function placeLoopBidirectionalWithWidths(...args) {
+    return RECT_LAYOUT
+      ? placeLoopBidirectionalWithWidthsRect(...args)
+      : placeLoopBidirectionalWithWidthsRounded(...args);
+  }
+
+  function validatePlacements(...args) {
+    return RECT_LAYOUT
+      ? validatePlacementsRect(...args)
+      : validatePlacementsRounded(...args);
+  }
+
+  function solveNormalWidth(...args) {
+    return RECT_LAYOUT
+      ? solveNormalWidthRect(...args)
+      : solveNormalWidthRounded(...args);
+  }
+
+  function solveReserveFirstLoop(...args) {
+    return RECT_LAYOUT
+      ? solveReserveFirstLoopRect(...args)
+      : solveReserveFirstLoopRounded(...args);
+  }
+
+  function solveTopLeftStartLoop(...args) {
+    return RECT_LAYOUT
+      ? solveTopLeftStartLoopRect(...args)
+      : solveTopLeftStartLoopRounded(...args);
+  }
+
+  function layoutNow(...args) {
+    return RECT_LAYOUT
+      ? layoutNowRect(...args)
+      : layoutNowRounded(...args);
+  }
+
+  function movePlayerStepsCoreV8(...args) {
+    return RECT_LAYOUT
+      ? movePlayerStepsCoreV8Rect(...args)
+      : movePlayerStepsCoreV8Rounded(...args);
+  }
+
+  function loadRoomBoard(...args) {
+    return RECT_LAYOUT
+      ? loadRoomBoardRect(...args)
+      : loadRoomBoardRounded(...args);
   }
 
   async function initialize() {
