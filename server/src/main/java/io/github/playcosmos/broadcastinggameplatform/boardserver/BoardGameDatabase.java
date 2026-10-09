@@ -6,10 +6,12 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Connection;
+import java.util.Comparator;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 
 public final class BoardGameDatabase implements DatabaseAccess {
+    private static final int MAX_MIGRATION_BACKUPS = 5;
     private static final String[] MIGRATIONS = {
         "/db/migration/V4__board_rooms.sql",
         "/db/migration/V5__board_room_live_status.sql",
@@ -84,6 +86,10 @@ public final class BoardGameDatabase implements DatabaseAccess {
             );
         }
 
+        if (version > 0 && version < MIGRATIONS.length) {
+            createPreMigrationBackup(connection, version);
+        }
+
         while (version < MIGRATIONS.length) {
             int nextVersion = version + 1;
             connection.setAutoCommit(false);
@@ -102,6 +108,87 @@ public final class BoardGameDatabase implements DatabaseAccess {
             } finally {
                 connection.setAutoCommit(true);
             }
+        }
+    }
+
+    private void createPreMigrationBackup(
+        Connection connection,
+        int schemaVersion
+    ) throws IOException, SQLException {
+        Path parent = databasePath.getParent();
+        if (parent == null) return;
+
+        Path backupDirectory = parent.resolve("backups");
+        Files.createDirectories(backupDirectory);
+        String baseName = databasePath.getFileName().toString()
+            + ".schema-v" + schemaVersion + "-"
+            + System.currentTimeMillis();
+
+        Path backupPath = null;
+        for (int attempt = 0; attempt < 100; attempt += 1) {
+            Path candidate = backupDirectory.resolve(
+                baseName
+                    + (attempt == 0 ? "" : "-" + attempt)
+                    + ".bak"
+            );
+            if (!Files.exists(candidate)) {
+                backupPath = candidate;
+                break;
+            }
+        }
+        if (backupPath == null) {
+            throw new IOException(
+                "failed to allocate database migration backup path"
+            );
+        }
+
+        String sqlPath = backupPath
+            .toAbsolutePath()
+            .normalize()
+            .toString()
+            .replace("'", "''");
+        try (var statement = connection.createStatement()) {
+            statement.execute("VACUUM INTO '" + sqlPath + "'");
+        }
+        pruneMigrationBackups(backupDirectory);
+    }
+
+    private void pruneMigrationBackups(Path backupDirectory) {
+        String prefix = databasePath.getFileName().toString()
+            + ".schema-v";
+        try (var files = Files.list(backupDirectory)) {
+            var backups = files
+                .filter(Files::isRegularFile)
+                .filter(path -> {
+                    String name = path.getFileName().toString();
+                    return name.startsWith(prefix)
+                        && name.endsWith(".bak");
+                })
+                .sorted(
+                    Comparator.comparingLong(
+                        BoardGameDatabase::lastModifiedMillis
+                    ).reversed()
+                )
+                .toList();
+            for (
+                int index = MAX_MIGRATION_BACKUPS;
+                index < backups.size();
+                index += 1
+            ) {
+                try {
+                    Files.deleteIfExists(backups.get(index));
+                } catch (IOException ignored) {
+                }
+            }
+        } catch (IOException ignored) {
+        }
+    }
+
+    private static long lastModifiedMillis(Path path) {
+        try {
+            return Files.getLastModifiedTime(path).toMillis();
+        } catch (IOException ignored) {
+            return Long.MIN_VALUE;
         }
     }
 
