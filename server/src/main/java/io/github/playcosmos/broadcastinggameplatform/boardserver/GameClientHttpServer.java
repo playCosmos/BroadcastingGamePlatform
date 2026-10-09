@@ -1811,10 +1811,6 @@ public final class GameClientHttpServer implements AutoCloseable {
                     return false;
                 }
 
-                adminAuthStore.refreshSession(
-                    sessionId,
-                    now.plus(SESSION_TTL)
-                );
                 return true;
             } catch (java.sql.SQLException error) {
                 System.err.println(
