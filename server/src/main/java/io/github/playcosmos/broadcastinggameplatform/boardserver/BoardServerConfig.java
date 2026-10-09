@@ -1,5 +1,8 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
+import java.net.URI;
+import java.util.Set;
+
 public record BoardServerConfig(
     String streamerId,
     Server server,
@@ -60,8 +63,16 @@ public record BoardServerConfig(
                 openBrowserOnStart,
                 publicHost,
                 publicPort,
-                normalizeBaseUrl(publicBaseUrl),
-                normalizeBaseUrl(publicWebSocketUrl)
+                normalizePublicUrl(
+                    publicBaseUrl,
+                    "publicBaseUrl",
+                    Set.of("http", "https")
+                ),
+                normalizePublicUrl(
+                    publicWebSocketUrl,
+                    "publicWebSocketUrl",
+                    Set.of("ws", "wss")
+                )
             );
         }
 
@@ -73,11 +84,47 @@ public record BoardServerConfig(
             return value == null || value.isBlank() ? fallback : value.trim();
         }
 
-        private static String normalizeBaseUrl(String value) {
+        private static String normalizePublicUrl(
+            String value,
+            String name,
+            Set<String> allowedSchemes
+        ) {
             if (value == null || value.isBlank()) return "";
             String normalized = value.trim();
             while (normalized.endsWith("/")) {
-                normalized = normalized.substring(0, normalized.length() - 1);
+                normalized = normalized.substring(
+                    0,
+                    normalized.length() - 1
+                );
+            }
+
+            final URI uri;
+            try {
+                uri = URI.create(normalized);
+            } catch (RuntimeException error) {
+                throw new IllegalArgumentException(
+                    name + " must be a valid absolute URL",
+                    error
+                );
+            }
+
+            String scheme = uri.getScheme();
+            if (
+                scheme == null
+                    || !allowedSchemes.contains(
+                        scheme.toLowerCase(
+                            java.util.Locale.ROOT
+                        )
+                    )
+                    || uri.getHost() == null
+                    || uri.getHost().isBlank()
+                    || uri.getUserInfo() != null
+                    || uri.getRawQuery() != null
+                    || uri.getRawFragment() != null
+            ) {
+                throw new IllegalArgumentException(
+                    name + " uses an unsupported URL"
+                );
             }
             return normalized;
         }
