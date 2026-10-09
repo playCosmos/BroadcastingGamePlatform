@@ -568,6 +568,42 @@
     });
   }
 
+  const MapStore = window.ViewerDrawMapMakerStorage
+    || Object.freeze({
+      kind: "server",
+      async save({ mapId, expectedRevision, definition }) {
+        return api("/api/v1/tools/viewer-draw/maps", {
+          method: "POST",
+          body: JSON.stringify({
+            mapId,
+            expectedRevision,
+            definition
+          })
+        });
+      },
+      async archive({ mapId, expectedRevision }) {
+        return api(
+          "/api/v1/tools/viewer-draw/maps/"
+            + encodeURIComponent(mapId)
+            + "?expectedRevision="
+            + encodeURIComponent(String(expectedRevision)),
+          { method: "DELETE" }
+        );
+      },
+      async list() {
+        return api("/api/v1/tools/viewer-draw/maps");
+      },
+      async load(mapId) {
+        return api(
+          "/api/v1/tools/viewer-draw/maps/"
+            + encodeURIComponent(mapId)
+        );
+      }
+    });
+  const MARBLE_DRAW_URL =
+    window.ViewerDrawMapMakerLaunchUrl
+    || "/tools/viewer-draw/marble/";
+
   function selectedComponents() {
     return definition.components.filter((c) => selectedIds.has(c.id));
   }
@@ -2350,15 +2386,16 @@
     if (!validateClient()) return null;
 
     $("saveMap").disabled = true;
-    setStatus("플랫폼 DB에 맵 저장 중...");
+    setStatus(
+      MapStore.kind === "local"
+        ? "브라우저에 맵 저장 중..."
+        : "플랫폼 DB에 맵 저장 중..."
+    );
     try {
-      const saved = await api("/api/v1/tools/viewer-draw/maps", {
-        method: "POST",
-        body: JSON.stringify({
-          mapId,
-          expectedRevision: mapId ? mapRevision : null,
-          definition
-        })
+      const saved = await MapStore.save({
+        mapId,
+        expectedRevision: mapId ? mapRevision : null,
+        definition
       });
       mapId = saved.mapId;
       mapRevision = saved.revision;
@@ -2372,7 +2409,9 @@
       await refreshSavedMaps();
       $("savedMaps").value = mapId;
       setStatus(
-        `저장 완료 · revision ${mapRevision} · hash ${mapHash.slice(0, 16)}…`,
+        MapStore.kind === "local"
+          ? `브라우저 저장 완료 · revision ${mapRevision}`
+          : `저장 완료 · revision ${mapRevision} · hash ${mapHash.slice(0, 16)}…`,
         "ok"
       );
       return saved;
@@ -2404,17 +2443,19 @@
     }
     stopPreview();
     try {
-      await api(
-        "/api/v1/tools/viewer-draw/maps/"
-          + encodeURIComponent(mapId)
-          + "?expectedRevision="
-          + encodeURIComponent(String(mapRevision)),
-        { method: "DELETE" }
-      );
+      await MapStore.archive({
+        mapId,
+        expectedRevision: mapRevision
+      });
       const archivedName = definition.name;
       newMap();
       await refreshSavedMaps();
-      setStatus(`${archivedName} 맵을 보관 처리했습니다.`, "ok");
+      setStatus(
+        MapStore.kind === "local"
+          ? `${archivedName} 로컬 맵을 삭제했습니다.`
+          : `${archivedName} 맵을 보관 처리했습니다.`,
+        "ok"
+      );
     } catch (error) {
       if (error?.status === 409) {
         await refreshSavedMaps().catch(() => {});
@@ -2433,7 +2474,7 @@
   }
 
   async function refreshSavedMaps() {
-    const body = await api("/api/v1/tools/viewer-draw/maps");
+    const body = await MapStore.list();
     const select = $("savedMaps");
     const selected = mapId || select.value;
     select.replaceChildren();
@@ -2446,7 +2487,9 @@
     for (const map of body.maps || []) {
       const option = document.createElement("option");
       option.value = map.mapId;
-      option.textContent = `${map.name} · r${map.revision}`;
+      option.textContent = MapStore.kind === "local"
+        ? `${map.name} · local r${map.revision}`
+        : `${map.name} · r${map.revision}`;
       select.appendChild(option);
     }
     select.value = selected || "";
@@ -2461,9 +2504,7 @@
 
     stopPreview();
     try {
-      const loaded = await api(
-        "/api/v1/tools/viewer-draw/maps/" + encodeURIComponent(id)
-      );
+      const loaded = await MapStore.load(id);
       mapId = loaded.mapId;
       mapRevision = loaded.revision;
       mapHash = loaded.definitionHash;
@@ -2478,7 +2519,12 @@
       updateEditButtons();
       render();
       validateClient();
-      setStatus(`${loaded.name} r${loaded.revision} 불러옴`, "ok");
+      setStatus(
+        MapStore.kind === "local"
+          ? `${loaded.name} local r${loaded.revision} 불러옴`
+          : `${loaded.name} r${loaded.revision} 불러옴`,
+        "ok"
+      );
     } catch (error) {
       setStatus("불러오기 실패: " + error.message, "error");
     }
@@ -3265,7 +3311,7 @@
       "viewerDrawMarbleMapDefinition",
       JSON.stringify(definition)
     );
-    window.location.assign("/tools/viewer-draw/marble/");
+    window.location.assign(MARBLE_DRAW_URL);
   });
 
   window.addEventListener("keydown", (event) => {
