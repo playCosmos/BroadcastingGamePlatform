@@ -41,7 +41,7 @@ jobs:
         shell: bash
         working-directory: web
         run: |
-          npm install --ignore-scripts --no-audit --no-fund --no-package-lock
+          npm ci --ignore-scripts --no-audit --no-fund
           mkdir -p vendor/box2d-wasm
           cp node_modules/box2d-wasm/dist/es/entry.js vendor/box2d-wasm/
           cp node_modules/box2d-wasm/dist/es/Box2D.js vendor/box2d-wasm/
