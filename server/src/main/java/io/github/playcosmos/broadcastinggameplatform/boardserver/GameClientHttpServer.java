@@ -1012,17 +1012,11 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             try {
-                var session = viewerDraw.findByPublicCode(code);
-                var payload = new LinkedHashMap<String, Object>();
-                payload.put("publicCode", session.publicCode());
-                payload.put("name", session.name());
-                payload.put("mode", session.mode());
-                payload.put("state", session.state());
-                payload.put("entryCount", session.entryCount());
-                payload.put("config", session.config());
-                payload.put("result", session.result());
-                payload.put("completedAt", session.completedAt());
-                sendJson(exchange, 200, payload);
+                sendJson(
+                    exchange,
+                    200,
+                    viewerDraw.findPublicSessionByCode(code)
+                );
             } catch (java.util.NoSuchElementException error) {
                 sendJson(exchange, 404, Map.of("error", "draw not found"));
             } catch (Exception error) {
