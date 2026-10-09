@@ -11,6 +11,7 @@ if (-not (Test-Path $Jar)) {
 $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe",
     "io.github.playcosmos.broadcastinggameplatform.operations.FileLogProbe",
+    "io.github.playcosmos.broadcastinggameplatform.operations.BoundedVirtualThreadExecutorProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe",
