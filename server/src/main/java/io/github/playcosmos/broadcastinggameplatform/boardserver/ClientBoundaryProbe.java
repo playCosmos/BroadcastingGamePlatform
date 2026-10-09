@@ -312,6 +312,19 @@ public final class ClientBoundaryProbe {
                 "board client asset must be public"
             );
 
+            require(
+                GameClientHttpServer.isTrustedForwardProxy(
+                    new InetSocketAddress("127.0.0.1", 12345)
+                ),
+                "loopback reverse proxy must be trusted"
+            );
+            require(
+                !GameClientHttpServer.isTrustedForwardProxy(
+                    new InetSocketAddress("203.0.113.10", 12345)
+                ),
+                "external clients must not be trusted as reverse proxies"
+            );
+
             var configResponse = client.send(
                 HttpRequest.newBuilder(
                     base.resolve("/api/client/config")
