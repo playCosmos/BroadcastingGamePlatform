@@ -7,7 +7,6 @@ import java.sql.SQLException;
 import java.time.Instant;
 import java.util.Base64;
 import java.util.Locale;
-import java.util.function.Supplier;
 
 public final class AdminAuthStore {
     private static final Base64.Encoder HASH_ENCODER =
@@ -24,82 +23,6 @@ public final class AdminAuthStore {
         String status,
         Instant expiresAt
     ) {}
-
-    public String bootstrapTokenOrCreate(
-        Supplier<String> tokenSupplier
-    ) throws SQLException {
-        try (var connection = database.open()) {
-            connection.setAutoCommit(false);
-            try {
-                try (var select = connection.prepareStatement("""
-                    SELECT bootstrap_token
-                    FROM board_admin_auth_state
-                    WHERE singleton_id = 1
-                    """);
-                     var rows = select.executeQuery()) {
-                    if (rows.next()) {
-                        String existing = rows.getString(1);
-                        connection.commit();
-                        return existing;
-                    }
-                }
-
-                String created = tokenSupplier.get();
-                String now = Instant.now().toString();
-                try (var insert = connection.prepareStatement("""
-                    INSERT INTO board_admin_auth_state(
-                      singleton_id, bootstrap_token, updated_at
-                    ) VALUES (1, ?, ?)
-                    """)) {
-                    insert.setString(1, created);
-                    insert.setString(2, now);
-                    insert.executeUpdate();
-                }
-                connection.commit();
-                return created;
-            } catch (Exception error) {
-                connection.rollback();
-                if (error instanceof SQLException sql) throw sql;
-                throw new SQLException(
-                    "failed to initialize admin auth",
-                    error
-                );
-            } finally {
-                connection.setAutoCommit(true);
-            }
-        }
-    }
-
-    public void rotateBootstrapToken(String token)
-        throws SQLException {
-        try (var connection = database.open()) {
-            connection.setAutoCommit(false);
-            try {
-                try (var statement = connection.prepareStatement("""
-                    INSERT INTO board_admin_auth_state(
-                      singleton_id, bootstrap_token, updated_at
-                    ) VALUES (1, ?, ?)
-                    ON CONFLICT(singleton_id) DO UPDATE SET
-                      bootstrap_token = excluded.bootstrap_token,
-                      updated_at = excluded.updated_at
-                    """)) {
-                    statement.setString(1, token);
-                    statement.setString(
-                        2,
-                        Instant.now().toString()
-                    );
-                    statement.executeUpdate();
-                }
-                deleteAllSessionsAndApprovals(connection);
-                connection.commit();
-            } catch (SQLException error) {
-                connection.rollback();
-                throw error;
-            } finally {
-                connection.setAutoCommit(true);
-            }
-        }
-    }
 
     public void createSession(
         String sessionId,
