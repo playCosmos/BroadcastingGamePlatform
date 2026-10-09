@@ -916,19 +916,69 @@ public final class ViewerDrawService {
     }
 
     public void archiveMachineMap(String mapId) throws SQLException {
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 UPDATE viewer_draw_machine_map
-                 SET status = 'ARCHIVED', updated_at = ?
-                 WHERE map_id = ? AND status <> 'ARCHIVED'
-                 """)) {
-            statement.setString(1, Instant.now().toString());
-            statement.setString(2, mapId);
-            if (statement.executeUpdate() != 1) {
-                throw new NoSuchElementException(
-                    "viewer draw machine map not found"
-                );
+        archiveMachineMap(mapId, null);
+    }
+
+    public void archiveMachineMap(
+        String mapId,
+        Integer expectedRevision
+    ) throws SQLException {
+        try (var connection = database.open()) {
+            int updated;
+            if (expectedRevision == null) {
+                try (var statement = connection.prepareStatement("""
+                    UPDATE viewer_draw_machine_map
+                    SET status = 'ARCHIVED', updated_at = ?
+                    WHERE map_id = ? AND status <> 'ARCHIVED'
+                    """)) {
+                    statement.setString(1, Instant.now().toString());
+                    statement.setString(2, mapId);
+                    updated = statement.executeUpdate();
+                }
+            } else {
+                try (var statement = connection.prepareStatement("""
+                    UPDATE viewer_draw_machine_map
+                    SET status = 'ARCHIVED', updated_at = ?
+                    WHERE map_id = ?
+                      AND status <> 'ARCHIVED'
+                      AND revision = ?
+                    """)) {
+                    statement.setString(1, Instant.now().toString());
+                    statement.setString(2, mapId);
+                    statement.setInt(3, expectedRevision);
+                    updated = statement.executeUpdate();
+                }
             }
+
+            if (updated == 1) return;
+
+            try (var statement = connection.prepareStatement("""
+                SELECT revision, status
+                FROM viewer_draw_machine_map
+                WHERE map_id = ?
+                """)) {
+                statement.setString(1, mapId);
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next() || "ARCHIVED".equals(
+                        rows.getString("status")
+                    )) {
+                        throw new NoSuchElementException(
+                            "viewer draw machine map not found"
+                        );
+                    }
+                    if (expectedRevision != null) {
+                        throw new MachineMapConflictException(
+                            "machine map revision conflict: expected "
+                                + expectedRevision
+                                + ", current "
+                                + rows.getInt("revision")
+                        );
+                    }
+                }
+            }
+            throw new NoSuchElementException(
+                "viewer draw machine map not found"
+            );
         }
     }
 
