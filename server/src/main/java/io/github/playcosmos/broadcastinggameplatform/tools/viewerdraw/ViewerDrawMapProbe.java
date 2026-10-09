@@ -667,7 +667,30 @@ public final class ViewerDrawMapProbe {
                 "invalid map save must be rejected"
             );
 
-            service.archiveMachineMap(saved.mapId());
+            boolean staleArchiveRejected = false;
+            try {
+                service.archiveMachineMap(
+                    saved.mapId(),
+                    saved.revision()
+                );
+            } catch (
+                ViewerDrawService.MachineMapConflictException expected
+            ) {
+                staleArchiveRejected = true;
+            }
+            require(
+                staleArchiveRejected,
+                "stale map archive must be rejected"
+            );
+            require(
+                service.recentMachineMaps(10).size() == 1,
+                "stale archive must not hide the active map"
+            );
+
+            service.archiveMachineMap(
+                saved.mapId(),
+                updated.revision()
+            );
             require(
                 service.recentMachineMaps(10).isEmpty(),
                 "archived map must leave active map list"
