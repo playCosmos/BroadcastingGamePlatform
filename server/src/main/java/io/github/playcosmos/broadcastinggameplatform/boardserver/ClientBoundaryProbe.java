@@ -341,6 +341,17 @@ public final class ClientBoundaryProbe {
                 "external clients must not be trusted as reverse proxies"
             );
 
+            require(
+                GameClientHttpServer.safeQueryDecode("%ZZ") == null,
+                "malformed query encoding must be rejected safely"
+            );
+            require(
+                "room code".equals(
+                    GameClientHttpServer.safeQueryDecode("room+code")
+                ),
+                "valid query encoding must still decode normally"
+            );
+
             var configResponse = client.send(
                 HttpRequest.newBuilder(
                     base.resolve("/api/client/config")
