@@ -844,6 +844,8 @@ drawing_guess_canvas_event
 - 기존 프로세스에서 발급된 Token은 재시작 후 쓸 수 없다.
 - 인증된 운영자만 `drawer-recovery` API를 통해 새 Token과 Private Prompt를 교환한다.
 - Drawer 쓰기 payload와 WebSocket 연결 수는 위 Canvas 상태 동기화 절의 서버 상한을 적용한다.
+- SQLite Canvas history는 ACTIVE Round 복구용이다. Round가 완료되거나 만료되면 canvas session을 삭제하고 event history도 FK cascade로 제거한다.
+- V23 migration은 기존 DB에 남아 있던 CLOSED canvas session/history를 정리한다.
 
 복구 흐름:
 
