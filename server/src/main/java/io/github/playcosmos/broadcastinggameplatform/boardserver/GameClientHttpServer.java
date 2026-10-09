@@ -2227,6 +2227,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             String responseType = response.headers()
                 .firstValue("Content-Type")
                 .orElse("application/json; charset=utf-8");
+            applySecurityHeaders(exchange);
             exchange.getResponseHeaders().set(
                 "Content-Type",
                 responseType
@@ -2386,6 +2387,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         }
 
         long bodyLength = Files.size(requested);
+        applySecurityHeaders(exchange);
         exchange.getResponseHeaders().set(
             "Content-Type",
             contentType(requested)
@@ -2920,6 +2922,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             );
 
         byte[] body = html.getBytes(StandardCharsets.UTF_8);
+        applySecurityHeaders(exchange);
         exchange.getResponseHeaders().set(
             "Content-Type",
             "text/html; charset=utf-8"
@@ -2947,6 +2950,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         HttpExchange exchange,
         String location
     ) throws IOException {
+        applySecurityHeaders(exchange);
         exchange.getResponseHeaders().set("Location", location);
         exchange.getResponseHeaders().set(
             "Cache-Control",
@@ -2954,6 +2958,19 @@ public final class GameClientHttpServer implements AutoCloseable {
         );
         exchange.sendResponseHeaders(303, -1);
         exchange.close();
+    }
+
+    private static void applySecurityHeaders(
+        HttpExchange exchange
+    ) {
+        exchange.getResponseHeaders().set(
+            "Referrer-Policy",
+            "no-referrer"
+        );
+        exchange.getResponseHeaders().set(
+            "X-Content-Type-Options",
+            "nosniff"
+        );
     }
 
     private static String contentType(Path path) {
@@ -3003,6 +3020,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         int status,
         Object payload
     ) throws IOException {
+        applySecurityHeaders(exchange);
         byte[] body = GSON.toJson(payload)
             .getBytes(StandardCharsets.UTF_8);
         exchange.getResponseHeaders().set(
