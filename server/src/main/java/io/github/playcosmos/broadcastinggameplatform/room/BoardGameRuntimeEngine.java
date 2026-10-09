@@ -26,7 +26,7 @@ import java.util.function.IntUnaryOperator;
 import static io.github.playcosmos.broadcastinggameplatform.room.RoomModels.*;
 
 public final class BoardGameRuntimeEngine {
-    private static final int MAX_IGNORED_DEFERRED_PER_ROOM = 1024;
+    private static final int MAX_IGNORED_DEFERRED_PER_ROOM = 256;
     private static final int MAX_DEFERRED_RAW_PAYLOAD_CHARS = 64 * 1024;
     private static final Gson GSON = new Gson();
     private static final int MAX_BONUS_CHAIN = 32;
