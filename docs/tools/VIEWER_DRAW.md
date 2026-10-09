@@ -906,6 +906,7 @@ MachineMapDefinition
 
 DB revision/history 구조는 유지하며, 기존 맵을 편집 후 저장하면 migration된 v1 정의가 새 revision으로 저장된다.
 동일 맵을 여러 편집 세션에서 저장하거나 보관 처리할 때는 클라이언트가 `expectedRevision`을 함께 보내며, 서버는 현재 revision과 일치할 때만 변경한다. 오래된 편집본의 저장/보관 요청은 `409 Conflict`로 거부하여 최신 revision을 조용히 덮어쓰거나 숨기지 않는다.
+맵 revision history는 맵당 최신 50개를 유지한다. 저장 시 같은 transaction 안에서 이전 revision을 prune하며, V25 migration은 기존 DB의 오래된 revision도 같은 정책으로 정리한다.
 ### 13.6.2 Physics Preview Engine V1
 
 Map Maker에 내장된 Preview Engine은 별도 결과 애니메이션이 아니라 실제 간이 물리 시뮬레이션이다.
@@ -1790,6 +1791,8 @@ V6 운영/제작 확장 구현 완료:
   - DB migration `V22__viewer_draw_marble_audit.sql`
   - 완료된 로컬 Audit만 사용자가 명시적으로 서버 저장 가능
   - 최근 Audit history 조회
+  - 서버 저장 Audit은 전체 최신 200건을 유지한다.
+  - 새 Audit 저장 시 초과분을 prune하며, V25 migration은 기존 DB도 같은 200건 정책으로 정리한다.
   - 각 저장 Audit에 6자리 public code 발급
   - Physics/winner 결정 경로와 서버 sync 경로 분리
 - OBS Marble Result Overlay
