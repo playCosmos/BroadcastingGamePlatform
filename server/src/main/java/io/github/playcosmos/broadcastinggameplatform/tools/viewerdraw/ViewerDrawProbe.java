@@ -54,6 +54,22 @@ public final class ViewerDrawProbe {
 
         require(service.recent(10).size() == 2, "history must persist both draws");
 
+        boolean oversizedNameRejected = false;
+        try {
+            service.create(
+                "x".repeat(81),
+                "RANDOM",
+                List.of("A"),
+                Map.of("winnerCount", 1)
+            );
+        } catch (IllegalArgumentException expected) {
+            oversizedNameRejected = true;
+        }
+        require(
+            oversizedNameRejected,
+            "oversized viewer draw session name must be rejected"
+        );
+
         boolean oversizedManualRejected = false;
         try {
             service.create(
