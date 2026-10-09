@@ -409,7 +409,8 @@ vector stroke history + bounded history
 
 현재 서버 경계:
 
-- WebSocket drawing event: 최대 8 KiB
+- 모든 inbound WebSocket text: 최대 8 KiB (`1009`로 초과 연결 종료)
+- WebSocket drawing event payload: 최대 8 KiB
 - `canvas.stroke.points`: event당 최대 128 points
 - 정규화 좌표 `x/y`와 선택적 `pressure`: 0..1 유한값만 허용
 - retained history: 최대 20,000 events이면서 동시에 최대 8 MiB
