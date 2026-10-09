@@ -544,17 +544,21 @@ public final class BoardGameHttpServer implements AutoCloseable {
             return;
         }
 
-        byte[] body = Files.readAllBytes(requested);
+        long bodyLength = Files.size(requested);
         exchange.getResponseHeaders().set("Content-Type", contentType(requested));
         exchange.getResponseHeaders().set("Cache-Control", "no-cache");
+        exchange.getResponseHeaders().set(
+            "Content-Length",
+            Long.toString(bodyLength)
+        );
         if ("HEAD".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(200, -1);
             exchange.close();
             return;
         }
-        exchange.sendResponseHeaders(200, body.length);
+        exchange.sendResponseHeaders(200, bodyLength);
         try (var output = exchange.getResponseBody()) {
-            output.write(body);
+            Files.copy(requested, output);
         }
     }
 
