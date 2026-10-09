@@ -21,7 +21,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private static final int MAX_BOARD_CONNECTIONS_PER_ROOM = 32;
     private static final int MAX_DRAWING_CONNECTIONS_PER_CODE = 24;
     private static final int MAX_DRAWER_CONNECTIONS_PER_CODE = 2;
-    private static final int MAX_DRAWING_MESSAGES_PER_SECOND = 120;
+    private static final int MAX_DRAWING_MESSAGES_PER_SECOND = 60;
     private static final int MAX_INBOUND_MESSAGE_CHARS = 8 * 1024;
     private static final long DRAWING_RATE_WINDOW_NANOS =
         1_000_000_000L;
