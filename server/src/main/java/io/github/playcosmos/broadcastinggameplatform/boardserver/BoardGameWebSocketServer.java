@@ -143,8 +143,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 return;
             }
             System.out.println(
-                "[platform-ws] board connected: "
-                    + connection.getRemoteSocketAddress()
+                "[platform-ws] board connected"
+                    + " connections=" + connectedClients.get()
             );
             return;
         }
@@ -188,7 +188,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             System.out.println(
                 "[platform-ws] drawing connected role="
                     + (canWrite ? "drawer" : "overlay")
-                    + ": " + connection.getRemoteSocketAddress()
+                    + " connections=" + connectedClients.get()
             );
             return;
         }
