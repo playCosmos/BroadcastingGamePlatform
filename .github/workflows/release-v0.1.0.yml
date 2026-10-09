@@ -1,10 +1,7 @@
 name: Release v0.1.0
 
 on:
-  push:
-    branches: [main]
-    paths:
-      - ".github/workflows/release-v0.1.0.yml"
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -22,6 +19,10 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+
+      - name: Prepare browser physics assets
+        shell: pwsh
+        run: ./server/prepare-browser-physics.ps1
 
       - name: Check browser JavaScript
         shell: pwsh
@@ -110,15 +111,34 @@ jobs:
           Set-Content -Path "$zip.sha256" -Value "$hash  $zip" -Encoding ascii
           Write-Host "SHA256 $hash"
 
-      - name: Create GitHub Release
+      - name: Create or update GitHub Release
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release create v0.1.0 `
-            "BroadcastingGamePlatformServer-Windows-x64-v0.1.0.zip" `
-            "BroadcastingGamePlatformServer-Windows-x64-v0.1.0.zip.sha256" `
-            --repo "${{ github.repository }}" `
-            --target "${{ github.sha }}" `
-            --title "Broadcasting Game Platform v0.1.0" `
-            --notes-file "docs/releases/v0.1.0.md"
+          $repo = "${{ github.repository }}"
+          $tag = "v0.1.0"
+          $zip = "BroadcastingGamePlatformServer-Windows-x64-v0.1.0.zip"
+          $checksum = "$zip.sha256"
+
+          gh release view $tag --repo $repo *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release edit $tag `
+              --repo $repo `
+              --target "${{ github.sha }}" `
+              --title "Broadcasting Game Platform v0.1.0" `
+              --notes-file "docs/releases/v0.1.0.md"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            gh release upload $tag $zip $checksum `
+              --repo $repo `
+              --clobber
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          } else {
+            gh release create $tag $zip $checksum `
+              --repo $repo `
+              --target "${{ github.sha }}" `
+              --title "Broadcasting Game Platform v0.1.0" `
+              --notes-file "docs/releases/v0.1.0.md"
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
