@@ -1793,6 +1793,7 @@ V6 운영/제작 확장 구현 완료:
   - 최근 Audit history 조회
   - 서버 저장 Audit은 전체 최신 200건을 유지한다.
   - 새 Audit 저장 시 초과분을 prune하며, V25 migration은 기존 DB도 같은 200건 정책으로 정리한다.
+  - 저장 Audit JSON은 UTF-8 기준 최대 1 MiB이며 HTTP 업로드와 서비스 검증이 동일 상한을 사용한다.
   - 각 저장 Audit에 6자리 public code 발급
   - Physics/winner 결정 경로와 서버 sync 경로 분리
 - OBS Marble Result Overlay
