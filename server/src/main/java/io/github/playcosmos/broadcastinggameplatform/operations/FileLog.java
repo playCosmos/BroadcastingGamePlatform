@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
@@ -14,7 +15,7 @@ import java.util.Locale;
 
 public final class FileLog implements AutoCloseable {
     private static final DateTimeFormatter FILE_TIME =
-        DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
+        DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss-SSS");
     private static final int MAX_RETAINED_LOG_FILES = 30;
     private static final String LOG_PREFIX =
         "broadcasting-game-platform-";
@@ -41,16 +42,31 @@ public final class FileLog implements AutoCloseable {
         Path root = directory.toAbsolutePath().normalize();
         Files.createDirectories(root);
         hideDirectoryOnWindows(root);
-        Path path = root.resolve(
-            LOG_PREFIX
-                + LocalDateTime.now().format(FILE_TIME)
-                + ".log"
-        );
-        var stream = Files.newOutputStream(
-            path,
-            StandardOpenOption.CREATE_NEW,
-            StandardOpenOption.WRITE
-        );
+        String stamp = LocalDateTime.now().format(FILE_TIME);
+        Path path = null;
+        OutputStream stream = null;
+        for (int attempt = 0; attempt < 1000; attempt += 1) {
+            Path candidate = root.resolve(
+                LOG_PREFIX
+                    + stamp
+                    + (attempt == 0 ? "" : "-" + attempt)
+                    + ".log"
+            );
+            try {
+                stream = Files.newOutputStream(
+                    candidate,
+                    StandardOpenOption.CREATE_NEW,
+                    StandardOpenOption.WRITE
+                );
+                path = candidate;
+                break;
+            } catch (FileAlreadyExistsException ignored) {
+                // Extremely fast restarts may collide even at millisecond precision.
+            }
+        }
+        if (stream == null || path == null) {
+            throw new IOException("failed to allocate unique log file");
+        }
         pruneOldLogs(root, path);
         var file = new PrintStream(stream, true, StandardCharsets.UTF_8);
         var log = new FileLog(System.out, System.err, file, path);
