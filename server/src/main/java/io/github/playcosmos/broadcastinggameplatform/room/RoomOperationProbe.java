@@ -103,6 +103,52 @@ public final class RoomOperationProbe {
                 "terminated room position correction must be blocked"
             );
 
+            for (int index = 0; index < 205; index += 1) {
+                var retainedProbeRoom = rooms.create(
+                    new CreateRoomRequest(
+                        "Retention " + index,
+                        List.of(
+                            new PlayerInput(
+                                "retention-" + index,
+                                "R" + index,
+                                null,
+                                100
+                            )
+                        ),
+                        new BoardInput(
+                            "dimensions",
+                            8,
+                            6,
+                            null,
+                            "rect"
+                        ),
+                        new MovementInput(
+                            "dice",
+                            1,
+                            false,
+                            false,
+                            false
+                        ),
+                        new RulesInput(
+                            "destinationOnly",
+                            true,
+                            true
+                        ),
+                        List.of(),
+                        new RandomPoolInput(
+                            "custom",
+                            List.of(),
+                            null
+                        )
+                    )
+                );
+                rooms.terminate(retainedProbeRoom.roomId());
+            }
+            require(
+                countTerminatedRooms(database) == 200,
+                "terminated room retention must keep only latest 200 rooms"
+            );
+
             System.out.println("[room-operation-probe] PASS");
             return 0;
         } catch (Exception error) {
@@ -117,6 +163,20 @@ public final class RoomOperationProbe {
                     });
                 } catch (Exception ignored) {}
             }
+        }
+    }
+
+    private static int countTerminatedRooms(
+        BoardGameDatabase database
+    ) throws Exception {
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT COUNT(*)
+                 FROM board_room
+                 WHERE lifecycle_state = 'TERMINATED'
+                 """);
+             var rows = statement.executeQuery()) {
+            return rows.next() ? rows.getInt(1) : -1;
         }
     }
 
