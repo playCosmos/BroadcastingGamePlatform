@@ -24,6 +24,13 @@ public final class ViewerDrawService {
     private static final String RNG_ALGORITHM = "java.security.SecureRandom + Fisher-Yates";
     private static final int MAX_ENTRIES = 10000;
     private static final int MAX_MACHINE_COMPONENTS = 5000;
+    private static final double MAX_WORLD_SIZE = 100_000;
+    private static final double MAX_GRAVITY_ABS = 1_000;
+    private static final double MAX_COMPONENT_COORD_ABS = 200_000;
+    private static final double MAX_COMPONENT_SIZE = 100_000;
+    private static final double MAX_RESTITUTION = 10;
+    private static final double MAX_FRICTION = 10;
+    private static final double MAX_BOOST = 10_000;
     private static final int MAX_PROVIDER_CHARS = 64;
     private static final int MAX_ENTRY_ID_CHARS = 128;
     private static final int MAX_ENTRY_TEXT_CHARS = 256;
@@ -1180,13 +1187,27 @@ public final class ViewerDrawService {
         }
         requireFinite(world.width(), "world.width");
         requireFinite(world.height(), "world.height");
-        if (world.width() < 0 || world.height() < 0) {
+        if (
+            world.width() <= 0
+                || world.height() <= 0
+                || world.width() > MAX_WORLD_SIZE
+                || world.height() > MAX_WORLD_SIZE
+        ) {
             throw new IllegalArgumentException(
-                "world width/height must be non-negative"
+                "world width/height must be within 0.."
+                    + (long) MAX_WORLD_SIZE
             );
         }
         requireFinite(world.gravityX(), "world.gravityX");
         requireFinite(world.gravityY(), "world.gravityY");
+        if (
+            Math.abs(world.gravityX()) > MAX_GRAVITY_ABS
+                || Math.abs(world.gravityY()) > MAX_GRAVITY_ABS
+        ) {
+            throw new IllegalArgumentException(
+                "world gravity magnitude is too large"
+            );
+        }
 
         MachineDrawRule rawRule = raw.drawRule();
         String drawRuleType = rawRule == null || rawRule.type() == null
@@ -1298,6 +1319,23 @@ public final class ViewerDrawService {
             requireFinite(rawComponent.width(), id + ".width");
             requireFinite(rawComponent.height(), id + ".height");
             requireFinite(rawComponent.radius(), id + ".radius");
+            if (
+                Math.abs(rawComponent.x()) > MAX_COMPONENT_COORD_ABS
+                    || Math.abs(rawComponent.y()) > MAX_COMPONENT_COORD_ABS
+            ) {
+                throw new IllegalArgumentException(
+                    id + " position magnitude is too large"
+                );
+            }
+            if (
+                rawComponent.width() > MAX_COMPONENT_SIZE
+                    || rawComponent.height() > MAX_COMPONENT_SIZE
+                    || rawComponent.radius() > MAX_COMPONENT_SIZE
+            ) {
+                throw new IllegalArgumentException(
+                    id + " component size is too large"
+                );
+            }
 
             if (
                 rawComponent.rotation() < -360
@@ -1362,9 +1400,16 @@ public final class ViewerDrawService {
                 double boost = numberProperty(
                     properties, "boost", 0
                 );
-                if (restitution < 0 || friction < 0 || boost < 0) {
+                if (
+                    restitution < 0
+                        || friction < 0
+                        || boost < 0
+                        || restitution > MAX_RESTITUTION
+                        || friction > MAX_FRICTION
+                        || boost > MAX_BOOST
+                ) {
                     throw new IllegalArgumentException(
-                        id + " restitution/friction/boost must be non-negative"
+                        id + " restitution/friction/boost is outside supported bounds"
                     );
                 }
             }
