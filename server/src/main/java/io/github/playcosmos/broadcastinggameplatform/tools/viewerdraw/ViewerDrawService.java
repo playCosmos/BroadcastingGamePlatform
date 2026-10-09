@@ -26,6 +26,7 @@ public final class ViewerDrawService {
     private static final int MAX_MACHINE_COMPONENTS = 5000;
     private static final int MAX_MACHINE_REVISIONS_PER_MAP = 50;
     private static final int MAX_MARBLE_AUDITS = 200;
+    public static final int MAX_MARBLE_AUDIT_BYTES = 1024 * 1024;
     private static final double MAX_WORLD_SIZE = 100_000;
     private static final double MAX_GRAVITY_ABS = 1_000;
     private static final double MAX_COMPONENT_COORD_ABS = 200_000;
@@ -2412,7 +2413,10 @@ public final class ViewerDrawService {
         }
 
         String json = GSON.toJson(rawAudit);
-        if (json.length() > 2_000_000) {
+        if (
+            json.getBytes(StandardCharsets.UTF_8).length
+                > MAX_MARBLE_AUDIT_BYTES
+        ) {
             throw new IllegalArgumentException(
                 "marble audit is too large"
             );
