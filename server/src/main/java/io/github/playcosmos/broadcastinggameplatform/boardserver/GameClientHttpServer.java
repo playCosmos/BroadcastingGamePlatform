@@ -1172,9 +1172,12 @@ public final class GameClientHttpServer implements AutoCloseable {
             if ("POST".equalsIgnoreCase(exchange.getRequestMethod())) {
                 try {
                     byte[] body = exchange.getRequestBody().readNBytes(
-                        MAX_PROXY_BODY_BYTES + 1
+                        ViewerDrawService.MAX_MARBLE_AUDIT_BYTES + 1
                     );
-                    if (body.length > MAX_PROXY_BODY_BYTES) {
+                    if (
+                        body.length
+                            > ViewerDrawService.MAX_MARBLE_AUDIT_BYTES
+                    ) {
                         sendJson(
                             exchange,
                             413,
