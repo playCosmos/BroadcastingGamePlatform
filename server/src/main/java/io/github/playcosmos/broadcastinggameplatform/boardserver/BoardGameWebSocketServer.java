@@ -18,6 +18,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private static final Pattern CODE_PATTERN =
         Pattern.compile("[A-HJ-NP-Z2-9]{6}");
     private static final int MAX_TOTAL_CONNECTIONS = 256;
+    private static final int MAX_CONNECTIONS_PER_REMOTE_ADDRESS = 24;
     private static final int MAX_BOARD_CONNECTIONS_PER_ROOM = 32;
     private static final int MAX_DRAWING_CONNECTIONS_PER_CODE = 24;
     private static final int MAX_DRAWER_CONNECTIONS_PER_CODE = 2;
@@ -169,6 +170,25 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             return false;
         }
 
+        int remoteConnections = 0;
+        var remoteAddress = connection.getRemoteSocketAddress();
+        for (WebSocket activeConnection : channelByConnection.keySet()) {
+            if (
+                sameRemoteAddress(
+                    remoteAddress,
+                    activeConnection.getRemoteSocketAddress()
+                )
+            ) {
+                remoteConnections += 1;
+            }
+        }
+        if (
+            remoteConnections
+                >= MAX_CONNECTIONS_PER_REMOTE_ADDRESS
+        ) {
+            return false;
+        }
+
         int channelConnections = 0;
         int drawerConnections = 0;
         for (Channel active : channelByConnection.values()) {
@@ -216,6 +236,19 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
         connectedClients.incrementAndGet();
         return true;
+    }
+
+    private static boolean sameRemoteAddress(
+        InetSocketAddress left,
+        InetSocketAddress right
+    ) {
+        if (left == null || right == null) return false;
+        if (left.getAddress() != null && right.getAddress() != null) {
+            return left.getAddress().equals(right.getAddress());
+        }
+        return left.getHostString().equalsIgnoreCase(
+            right.getHostString()
+        );
     }
 
     @Override
