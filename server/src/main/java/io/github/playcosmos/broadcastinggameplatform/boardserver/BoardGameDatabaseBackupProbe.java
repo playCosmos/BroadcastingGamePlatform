@@ -15,6 +15,23 @@ public final class BoardGameDatabaseBackupProbe {
             Path databasePath = root.resolve("platform.db");
             var database = new BoardGameDatabase(databasePath);
             database.initialize();
+            int currentSchemaVersion;
+            try (var connection = database.open();
+                 var statement = connection.createStatement();
+                 var rows = statement.executeQuery(
+                     "PRAGMA user_version"
+                 )) {
+                require(
+                    rows.next(),
+                    "current schema version must be readable"
+                );
+                currentSchemaVersion = rows.getInt(1);
+            }
+            require(
+                currentSchemaVersion > 1,
+                "backup probe requires at least two migrations"
+            );
+            int previousSchemaVersion = currentSchemaVersion - 1;
 
             try (var connection = database.open();
                  var statement = connection.createStatement()) {
@@ -34,7 +51,9 @@ public final class BoardGameDatabaseBackupProbe {
             for (int cycle = 0; cycle < 6; cycle += 1) {
                 try (var connection = database.open();
                      var statement = connection.createStatement()) {
-                    statement.execute("PRAGMA user_version=24");
+                    statement.execute(
+                        "PRAGMA user_version=" + previousSchemaVersion
+                    );
                 }
                 database.initialize();
             }
@@ -65,7 +84,8 @@ public final class BoardGameDatabaseBackupProbe {
                     "PRAGMA user_version"
                 )) {
                     require(
-                        rows.next() && rows.getInt(1) == 24,
+                        rows.next()
+                            && rows.getInt(1) == previousSchemaVersion,
                         "pre-migration backup must preserve old schema version"
                     );
                 }
@@ -85,7 +105,8 @@ public final class BoardGameDatabaseBackupProbe {
                      "PRAGMA user_version"
                  )) {
                 require(
-                    rows.next() && rows.getInt(1) == 25,
+                    rows.next()
+                        && rows.getInt(1) == currentSchemaVersion,
                     "live database must finish at current schema version"
                 );
             }
