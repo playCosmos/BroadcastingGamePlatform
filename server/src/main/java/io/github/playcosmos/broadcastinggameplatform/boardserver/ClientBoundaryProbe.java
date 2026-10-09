@@ -469,6 +469,11 @@ public final class ClientBoundaryProbe {
                 "admin session cookie must be SameSite=Strict"
             );
             String sessionCookie = setCookie.split(";", 2)[0];
+            String adminSessionId = sessionCookie.substring(
+                sessionCookie.indexOf('=') + 1
+            );
+            java.time.Instant issuedSessionExpiry =
+                adminAuthStore.sessionExpiresAt(adminSessionId);
 
             require(
                 adminAuthStore.countActiveSessions(
@@ -529,6 +534,12 @@ public final class ClientBoundaryProbe {
                         "\"source\":\"local-admin\""
                     ),
                 "authenticated state API must proxy to local admin"
+            );
+            require(
+                issuedSessionExpiry.equals(
+                    adminAuthStore.sessionExpiresAt(adminSessionId)
+                ),
+                "authenticated reads must not rewrite fixed session expiry"
             );
 
             var authenticatedPost = client.send(
