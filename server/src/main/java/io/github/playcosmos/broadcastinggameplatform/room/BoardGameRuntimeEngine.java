@@ -26,6 +26,8 @@ import java.util.function.IntUnaryOperator;
 import static io.github.playcosmos.broadcastinggameplatform.room.RoomModels.*;
 
 public final class BoardGameRuntimeEngine {
+    private static final int MAX_IGNORED_DEFERRED_PER_ROOM = 1024;
+    private static final int MAX_DEFERRED_RAW_PAYLOAD_CHARS = 64 * 1024;
     private static final Gson GSON = new Gson();
     private static final int MAX_BONUS_CHAIN = 32;
     private static final int MAX_LANDING_CHAIN = 64;
@@ -312,6 +314,7 @@ public final class BoardGameRuntimeEngine {
                     statement.setString(1, roomId);
                     statement.executeUpdate();
                 }
+                pruneIgnoredDeferredDonations(connection, roomId);
 
                 connection.commit();
             } catch (SQLException error) {
@@ -810,13 +813,45 @@ public final class BoardGameRuntimeEngine {
                 statement.setString(7, donation.nickname());
                 statement.setInt(8, donation.amount());
                 statement.setInt(9, donation.supporterOrder());
-                statement.setString(10, donation.rawPayload());
+                statement.setString(
+                    10,
+                    truncate(
+                        donation.rawPayload(),
+                        MAX_DEFERRED_RAW_PAYLOAD_CHARS
+                    )
+                );
                 statement.setLong(11, donation.occurredAtEpochMs());
                 statement.setString(12, Instant.now().toString());
                 statement.executeUpdate();
             }
 
+            if ("IGNORED".equals(state)) {
+                pruneIgnoredDeferredDonations(
+                    connection,
+                    room.roomId()
+                );
+            }
             return state;
+        }
+    }
+
+    private static void pruneIgnoredDeferredDonations(
+        Connection connection,
+        String roomId
+    ) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+            DELETE FROM board_game_deferred_donation
+            WHERE id IN (
+                SELECT id
+                FROM board_game_deferred_donation
+                WHERE room_id = ? AND state = 'IGNORED'
+                ORDER BY id DESC
+                LIMIT -1 OFFSET ?
+            )
+            """)) {
+            statement.setString(1, roomId);
+            statement.setInt(2, MAX_IGNORED_DEFERRED_PER_ROOM);
+            statement.executeUpdate();
         }
     }
 
@@ -1471,6 +1506,16 @@ public final class BoardGameRuntimeEngine {
             new ArrayList<>(source.cells()),
             source.rerollPool() == null ? List.of() : List.copyOf(source.rerollPool())
         );
+    }
+
+    private static String truncate(
+        String value,
+        int maxChars
+    ) {
+        if (value == null || value.length() <= maxChars) {
+            return value;
+        }
+        return value.substring(0, maxChars);
     }
 
     private static String fingerprint(DonationEvent donation) throws SQLException {
