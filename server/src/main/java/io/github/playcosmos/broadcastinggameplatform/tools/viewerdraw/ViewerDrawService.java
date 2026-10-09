@@ -24,6 +24,7 @@ public final class ViewerDrawService {
     private static final String RNG_ALGORITHM = "java.security.SecureRandom + Fisher-Yates";
     private static final int MAX_ENTRIES = 10000;
     private static final int MAX_MACHINE_COMPONENTS = 5000;
+    public static final int MAX_MACHINE_DEFINITION_BYTES = 1024 * 1024;
     private static final int MAX_MACHINE_REVISIONS_PER_MAP = 50;
     private static final int MAX_MARBLE_AUDITS = 200;
     private static final int MAX_TERMINAL_SESSIONS = 200;
@@ -874,6 +875,14 @@ public final class ViewerDrawService {
             : mapId.trim();
         String now = Instant.now().toString();
         String json = GSON.toJson(normalized);
+        if (
+            json.getBytes(StandardCharsets.UTF_8).length
+                > MAX_MACHINE_DEFINITION_BYTES
+        ) {
+            throw new IllegalArgumentException(
+                "machine map definition is too large"
+            );
+        }
         String hash = sha256(json);
 
         try (var connection = database.open()) {
