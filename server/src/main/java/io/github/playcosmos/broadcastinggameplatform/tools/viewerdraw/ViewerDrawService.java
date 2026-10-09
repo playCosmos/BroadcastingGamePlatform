@@ -24,6 +24,8 @@ public final class ViewerDrawService {
     private static final String RNG_ALGORITHM = "java.security.SecureRandom + Fisher-Yates";
     private static final int MAX_ENTRIES = 10000;
     private static final int MAX_MACHINE_COMPONENTS = 5000;
+    private static final int MAX_MACHINE_REVISIONS_PER_MAP = 50;
+    private static final int MAX_MARBLE_AUDITS = 200;
     private static final double MAX_WORLD_SIZE = 100_000;
     private static final double MAX_GRAVITY_ABS = 1_000;
     private static final double MAX_COMPONENT_COORD_ABS = 200_000;
@@ -482,8 +484,10 @@ public final class ViewerDrawService {
         String publicCode;
 
         try (var connection = database.open()) {
-            publicCode = createUnusedAuditCode(connection);
-            try (var statement = connection.prepareStatement("""
+            connection.setAutoCommit(false);
+            try {
+                publicCode = createUnusedAuditCode(connection);
+                try (var statement = connection.prepareStatement("""
                 INSERT INTO viewer_draw_marble_audit(
                   audit_id, public_code, schema_version,
                   result_status, qualification_status,
@@ -575,6 +579,18 @@ public final class ViewerDrawService {
                 );
                 statement.setString(14, createdAt);
                 statement.executeUpdate();
+                }
+                pruneMarbleAudits(connection);
+                connection.commit();
+            } catch (Exception error) {
+                connection.rollback();
+                if (error instanceof SQLException sql) throw sql;
+                throw new SQLException(
+                    "failed to save marble audit",
+                    error
+                );
+            } finally {
+                connection.setAutoCommit(true);
             }
         }
 
@@ -961,6 +977,7 @@ public final class ViewerDrawService {
                     statement.setString(6, now);
                     statement.executeUpdate();
                 }
+                pruneMachineMapRevisions(connection, id);
 
                 connection.commit();
             } catch (Exception error) {
@@ -975,6 +992,45 @@ public final class ViewerDrawService {
             }
         }
         return findMachineMap(id);
+    }
+
+    private static void pruneMachineMapRevisions(
+        java.sql.Connection connection,
+        String mapId
+    ) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+            DELETE FROM viewer_draw_machine_map_revision
+            WHERE map_id = ?
+              AND revision NOT IN (
+                SELECT revision
+                FROM viewer_draw_machine_map_revision
+                WHERE map_id = ?
+                ORDER BY revision DESC
+                LIMIT ?
+              )
+            """)) {
+            statement.setString(1, mapId);
+            statement.setString(2, mapId);
+            statement.setInt(3, MAX_MACHINE_REVISIONS_PER_MAP);
+            statement.executeUpdate();
+        }
+    }
+
+    private static void pruneMarbleAudits(
+        java.sql.Connection connection
+    ) throws SQLException {
+        try (var statement = connection.prepareStatement("""
+            DELETE FROM viewer_draw_marble_audit
+            WHERE audit_id NOT IN (
+              SELECT audit_id
+              FROM viewer_draw_marble_audit
+              ORDER BY created_at DESC, audit_id DESC
+              LIMIT ?
+            )
+            """)) {
+            statement.setInt(1, MAX_MARBLE_AUDITS);
+            statement.executeUpdate();
+        }
     }
 
     public List<MachineMap> recentMachineMaps(int limit)
