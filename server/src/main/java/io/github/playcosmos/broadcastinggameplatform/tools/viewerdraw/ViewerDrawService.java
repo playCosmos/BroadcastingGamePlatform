@@ -39,6 +39,7 @@ public final class ViewerDrawService {
     private static final int MAX_ENTRY_ID_CHARS = 128;
     private static final int MAX_ENTRY_TEXT_CHARS = 256;
     private static final int MAX_CHAT_KEYWORD_CHARS = 128;
+    private static final int MAX_SESSION_NAME_CHARS = 80;
     private static final int MAX_NUMBER = 999;
     private static final int MAX_NUMBER_DRAW_COUNT = 7;
 
@@ -2701,6 +2702,11 @@ public final class ViewerDrawService {
         String normalizedName = name == null || name.isBlank()
             ? defaultName(normalizedMode)
             : name.trim();
+        requireLength(
+            normalizedName,
+            "name",
+            MAX_SESSION_NAME_CHARS
+        );
         Map<String, Object> normalizedConfig = normalizeConfig(
             normalizedMode,
             config == null ? Map.of() : config
