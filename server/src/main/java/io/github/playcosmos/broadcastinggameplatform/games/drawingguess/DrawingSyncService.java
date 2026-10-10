@@ -434,9 +434,19 @@ public final class DrawingSyncService {
             var replay = new ArrayList<String>();
             if (state.snapshotJson != null) {
                 int length = state.snapshotJson.length();
-                int chunks = Math.max(1,
-                    (length + SNAPSHOT_CHUNK_CHARS - 1) / SNAPSHOT_CHUNK_CHARS
-                );
+                var parts = new ArrayList<String>();
+                for (int offset = 0; offset < length;) {
+                    int end = Math.min(length, offset + SNAPSHOT_CHUNK_CHARS);
+                    // WebSocket UTF-8 encoding must not split a surrogate pair.
+                    if (end < length
+                        && Character.isHighSurrogate(state.snapshotJson.charAt(end - 1))
+                        && Character.isLowSurrogate(state.snapshotJson.charAt(end))) {
+                        end -= 1;
+                    }
+                    parts.add(state.snapshotJson.substring(offset, end));
+                    offset = end;
+                }
+                int chunks = parts.size();
                 var begin = new JsonObject();
                 begin.addProperty("type", "canvas.snapshot.begin");
                 begin.addProperty("sequence", state.snapshotSequence);
@@ -447,10 +457,7 @@ public final class DrawingSyncService {
                     part.addProperty("type", "canvas.snapshot.chunk");
                     part.addProperty("sequence", state.snapshotSequence);
                     part.addProperty("index", index);
-                    part.addProperty("data", state.snapshotJson.substring(
-                        index * SNAPSHOT_CHUNK_CHARS,
-                        Math.min(length, (index + 1) * SNAPSHOT_CHUNK_CHARS)
-                    ));
+                    part.addProperty("data", parts.get(index));
                     replay.add(GSON.toJson(part));
                 }
                 var finish = new JsonObject();
