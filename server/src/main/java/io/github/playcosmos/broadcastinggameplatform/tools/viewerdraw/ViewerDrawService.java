@@ -977,6 +977,13 @@ public final class ViewerDrawService {
         payload.put("startedAt", stored.startedAt());
         payload.put("completedAt", stored.completedAt());
         payload.put("createdAt", stored.createdAt());
+        // A server-side copy of client-supplied output is not an independent
+        // physics replay or cryptographic attestation of the winner order.
+        payload.put("verification", Map.of(
+            "status", "CLIENT_REPORTED",
+            "serverPhysicsReplayed", false,
+            "independentlyVerified", false
+        ));
         payload.put("audit", publicAudit);
         return payload;
     }
