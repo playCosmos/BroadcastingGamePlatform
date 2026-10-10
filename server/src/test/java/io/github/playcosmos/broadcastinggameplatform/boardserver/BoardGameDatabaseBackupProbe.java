@@ -51,6 +51,17 @@ public final class BoardGameDatabaseBackupProbe {
             for (int cycle = 0; cycle < 6; cycle += 1) {
                 try (var connection = database.open();
                      var statement = connection.createStatement()) {
+                    // Simulate the actual V29 schema, not just an older
+                    // user_version on a database with V30 columns present.
+                    // SQLite 3.46 supports DROP COLUMN.
+                    statement.execute("""
+                        ALTER TABLE drawing_guess_canvas_session
+                        DROP COLUMN snapshot_json
+                        """);
+                    statement.execute("""
+                        ALTER TABLE drawing_guess_canvas_session
+                        DROP COLUMN snapshot_sequence
+                        """);
                     statement.execute(
                         "PRAGMA user_version=" + previousSchemaVersion
                     );
