@@ -1627,6 +1627,11 @@
   }, true);
   function invalidateDraftOnEdit(event) {
     if (!event.target.matches("input, select, textarea")) return;
+    // Preset naming/selection and post-commit controls are not room settings.
+    if ([
+      "boardRoomPresetName", "boardRoomPresetSelect",
+      "boardRoomExtendMinutes", "boardRoomOverlayUrl"
+    ].includes(event.target.id)) return;
     // Never allow confirmation of a prior DRAFT after settings change.
     if (!currentRoom || currentRoom.status === "READY") return;
     showEmptyPreview();
