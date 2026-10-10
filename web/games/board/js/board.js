@@ -5367,7 +5367,9 @@
         .catch((error) => {
           console.error("[board-room] turn playback failed", error);
           syncing = true;
-          resynchronize(currentGeneration);
+          // Never await this playback promise from its own rejection handler.
+          // Reconnecting restarts synchronization behind a clean barrier.
+          socket?.close(1011, "room turn playback failed");
         })
         .finally(() => {
           playing = false;
