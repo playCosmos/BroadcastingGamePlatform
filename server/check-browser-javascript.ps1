@@ -43,7 +43,8 @@ try {
     $NodeProbes = @(
         "web/admin/assets/viewer-draw-map-engine-probe.js",
         "web/tools/viewer-draw/marble/browser-physics-adapter-probe.js",
-        "web/games/board/js/board-client-probe.js"
+        "web/games/board/js/board-client-probe.js",
+        "web/games/board/js/board-runtime-sync-probe.js"
     )
     foreach ($Probe in $NodeProbes) {
         node $Probe
