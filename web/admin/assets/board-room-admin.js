@@ -24,6 +24,9 @@
   const previewPanel = $("boardRoomPreviewPanel");
   const previewFrame = $("boardRoomPreviewFrame");
   const previewMeta = $("boardRoomPreviewMeta");
+  const previewPlaceholder = $("boardRoomPreviewPlaceholder");
+  const sampleFrame = $("boardRoomSampleFrame");
+  const boardTabButtons = Array.from(document.querySelectorAll("[data-board-room-tab]"));
   const rerollButton = $("boardRoomRerollButton");
   const commitButton = $("boardRoomCommitButton");
   const pauseButton = $("boardRoomPauseButton");
@@ -55,6 +58,80 @@
   let instructionSequence = 0;
   let instructionEditorSequence = 0;
   let selectedInstructionRow = null;
+
+  function activateBoardTab(tabName, focus = false) {
+    const selected = tabName === "effects" ? "effects" : "board";
+    boardTabButtons.forEach((button) => {
+      const active = button.dataset.boardRoomTab === selected;
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+      const panel = document.getElementById(button.getAttribute("aria-controls"));
+      if (panel) panel.hidden = !active;
+      if (active && focus) button.focus();
+    });
+  }
+
+  // The sample shows dimensions and shape only; the authoritative instruction
+  // placement is produced when the server creates a DRAFT room.
+  function sampleBoardConfiguration() {
+    let columns = Number(form.elements.namedItem("columns")?.value);
+    let rows = Number(form.elements.namedItem("rows")?.value);
+    if (sizingMode.value === "cellCount") {
+      const requested = Number(form.elements.namedItem("cellCount")?.value);
+      let best = null;
+      let bestScore = Infinity;
+      for (let c = 8; c <= 64; c += 1) {
+        for (let r = 6; r <= 48; r += 1) {
+          if (2 * (c + r) - 4 !== requested) continue;
+          const score = Math.abs(c / r - 4 / 3);
+          if (score < bestScore) {
+            best = { columns: c, rows: r };
+            bestScore = score;
+          }
+        }
+      }
+      if (best) ({ columns, rows } = best);
+    }
+    if (!Number.isInteger(columns) || columns < 8 || columns > 64) columns = 12;
+    if (!Number.isInteger(rows) || rows < 6 || rows > 48) rows = 8;
+    return {
+      columns,
+      rows,
+      style: form.elements.namedItem("layoutStyle")?.value === "rect" ? "rect" : "rounded"
+    };
+  }
+
+  function refreshSampleBoard() {
+    if (!sampleFrame) return;
+    const board = sampleBoardConfiguration();
+    const key = [board.columns, board.rows, board.style].join(":");
+    if (sampleFrame.dataset.previewKey === key) return;
+    sampleFrame.dataset.previewKey = key;
+    const page = board.style === "rect" ? "rect.html" : "index.html";
+    const url = new URL("/games/board/" + page, window.location.origin);
+    url.searchParams.set("demo", "1");
+    url.searchParams.set("players", "2");
+    url.searchParams.set("cols", String(board.columns));
+    url.searchParams.set("rows", String(board.rows));
+    sampleFrame.src = url.toString();
+  }
+
+  function showSamplePreview() {
+    currentRoom = null;
+    if (previewPanel) previewPanel.hidden = false;
+    if (previewPlaceholder) previewPlaceholder.hidden = false;
+    if (previewFrame) previewFrame.hidden = true;
+    if (previewMeta) previewMeta.textContent = "샘플 · 룸 초안 생성 전";
+    if (rerollButton) rerollButton.disabled = true;
+    if (commitButton) commitButton.disabled = true;
+    if (overlayRow) overlayRow.hidden = true;
+    if (pauseButton) pauseButton.hidden = true;
+    if (resumeButton) resumeButton.hidden = true;
+    if (terminateButton) terminateButton.hidden = true;
+    if (extendControl) extendControl.hidden = true;
+    if (extendButton) extendButton.hidden = true;
+    refreshSampleBoard();
+  }
 
   function showResult(text, tone = "") {
     result.textContent = text;
@@ -565,8 +642,7 @@
     syncMovement();
     syncPauseDonationPolicy();
     liveSummary.innerHTML = "";
-    previewPanel.hidden = true;
-    currentRoom = null;
+    showSamplePreview();
     if (!options.silent) {
       showResult("저장된 룸 설정을 불러왔습니다.", "success");
     }
@@ -1309,6 +1385,8 @@
     currentRoom = snapshot;
     renderLiveStatuses(snapshot);
     previewPanel.hidden = false;
+    if (previewPlaceholder) previewPlaceholder.hidden = true;
+    if (previewFrame) previewFrame.hidden = false;
     previewFrame.src = previewUrl(snapshot);
 
     const board = snapshot.config?.board;
@@ -1570,6 +1648,45 @@
       syncSharedBalloonMode();
     }
   });
+  boardTabButtons.forEach((button, index) => {
+    button.addEventListener("click", () => activateBoardTab(button.dataset.boardRoomTab));
+    button.addEventListener("keydown", (event) => {
+      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+      event.preventDefault();
+      const next = event.key === "Home" ? 0
+        : event.key === "End" ? boardTabButtons.length - 1
+        : (index + (event.key === "ArrowRight" ? 1 : -1) + boardTabButtons.length)
+            % boardTabButtons.length;
+      activateBoardTab(boardTabButtons[next].dataset.boardRoomTab, true);
+    });
+  });
+  form.addEventListener("invalid", (event) => {
+    if (document.getElementById("boardRoomTabPanelEffects")?.contains(event.target)) {
+      activateBoardTab("effects");
+    } else if (document.getElementById("boardRoomTabPanelBoard")?.contains(event.target)) {
+      activateBoardTab("board");
+    }
+  }, true);
+  form.addEventListener("input", (event) => {
+    if (event.target.matches("input, select, textarea")) {
+      if (currentRoom && currentRoom.status !== "READY") {
+        showSamplePreview();
+        showResult("설정이 변경됐습니다. 새 룸 초안을 생성해 배치를 확인하세요.", "working");
+      } else if (!currentRoom) {
+        refreshSampleBoard();
+      }
+    }
+  });
+  form.addEventListener("change", (event) => {
+    if (event.target.matches("input, select, textarea")) {
+      if (currentRoom && currentRoom.status !== "READY") {
+        showSamplePreview();
+        showResult("설정이 변경됐습니다. 새 룸 초안을 생성해 배치를 확인하세요.", "working");
+      } else if (!currentRoom) {
+        refreshSampleBoard();
+      }
+    }
+  });
   sizingMode.addEventListener("change", syncBoardSizing);
   diceEnabled.addEventListener("change", syncMovement);
   yutEnabled.addEventListener("change", syncMovement);
@@ -1648,6 +1765,8 @@
   syncAllInstructionRows();
   rebuildInstructionList();
   restoreLastCreatedRoomCookie();
+  activateBoardTab("board");
+  showSamplePreview();
   syncExtensionAvailability();
   window.setInterval(syncExtensionAvailability, 1000);
 })();
