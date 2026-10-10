@@ -2,6 +2,12 @@ name: Broadcasting Game Platform Windows Package
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "web/**"
+      - ".github/workflows/platform-windows-package.yml"
   push:
     branches: [main]
     paths:
