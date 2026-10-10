@@ -2230,7 +2230,8 @@ public final class GameClientHttpServer implements AutoCloseable {
         )
             .timeout(Duration.ofSeconds(15))
             .method(exchange.getRequestMethod(), bodyPublisher)
-            .header("Accept", "application/json");
+            .header("Accept", "application/json")
+            .header("Origin", adminBaseUri.getScheme() + "://" + adminBaseUri.getAuthority());
 
         String contentType = exchange.getRequestHeaders().getFirst(
             "Content-Type"
