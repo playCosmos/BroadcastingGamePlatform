@@ -84,6 +84,48 @@ try {
         }
     }
 
+    # The room editor must be one basic panel plus one tabbed workspace,
+    # with a visible demo on the right before a server room is created.
+    $editorUrl = "$baseUrl/admin/games/board/index.html"
+    $editorDom = & $browser @(
+        "--headless",
+        "--disable-gpu",
+        "--no-sandbox",
+        "--virtual-time-budget=5000",
+        "--dump-dom",
+        $editorUrl
+    ) 2>&1 | Out-String
+    if ($LASTEXITCODE -ne 0) {
+        throw "board room editor browser failed: $editorDom"
+    }
+    $panelCount = ([regex]::Matches(
+        $editorDom, 'class="board-room-(primary|workspace)-panel"'
+    )).Count
+    if ($panelCount -ne 2) {
+        throw "board room editor should have exactly two top-level panels, found $panelCount"
+    }
+    foreach ($required in @(
+        'id="boardRoomTabBoard"',
+        'id="boardRoomTabEffects"',
+        'id="boardRoomTabPanelBoard"',
+        'id="boardRoomTabPanelEffects"',
+        'id="boardRoomSampleFrame"',
+        'id="boardRoomPreviewFrame"',
+        'id="boardRoomCreateButton"',
+        'id="boardRoomCommitButton"'
+    )) {
+        if (-not $editorDom.Contains($required)) {
+            throw "board room editor is missing $required"
+        }
+    }
+    if ($editorDom -notmatch 'id="boardRoomTabBoard"[^>]*aria-selected="true"') {
+        throw "board size/shape tab must be selected on load"
+    }
+    if ($editorDom -notmatch 'id="boardRoomSampleFrame"[^>]*src="[^"]+demo=1') {
+        throw "room editor must display a sample board before DRAFT creation"
+    }
+    Write-Host "[board-smoke] room editor two-panel layout and initial sample passed"
+
     Write-Host "[board-smoke] rounded and rect layouts passed"
 }
 finally {
