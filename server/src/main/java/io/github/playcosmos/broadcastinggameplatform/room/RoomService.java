@@ -933,7 +933,7 @@ public final class RoomService {
         List<ValidationError> errors
     ) {
         BoardInput board = input == null
-            ? new BoardInput("dimensions", 16, 12, null, "rounded")
+            ? new BoardInput("dimensions", 12, 8, null, "rounded")
             : input;
 
         String style = normalizeText(board.layoutStyle(), "rounded").toLowerCase();
@@ -959,8 +959,8 @@ public final class RoomService {
             columns = dimensions[0];
             rows = dimensions[1];
         } else if ("dimensions".equals(sizingMode)) {
-            columns = board.columns() == null ? 16 : board.columns();
-            rows = board.rows() == null ? 12 : board.rows();
+            columns = board.columns() == null ? 12 : board.columns();
+            rows = board.rows() == null ? 8 : board.rows();
             if (columns < MIN_COLUMNS || columns > MAX_COLUMNS) {
                 errors.add(new ValidationError(
                     "board.columns",
