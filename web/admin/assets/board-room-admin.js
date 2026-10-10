@@ -25,7 +25,6 @@
   const previewFrame = $("boardRoomPreviewFrame");
   const previewMeta = $("boardRoomPreviewMeta");
   const previewPlaceholder = $("boardRoomPreviewPlaceholder");
-  const sampleFrame = $("boardRoomSampleFrame");
   const boardTabButtons = Array.from(document.querySelectorAll("[data-board-room-tab]"));
   const rerollButton = $("boardRoomRerollButton");
   const commitButton = $("boardRoomCommitButton");
@@ -71,57 +70,17 @@
     });
   }
 
-  // The sample shows dimensions and shape only; the authoritative instruction
-  // placement is produced when the server creates a DRAFT room.
-  function sampleBoardConfiguration() {
-    let columns = Number(form.elements.namedItem("columns")?.value);
-    let rows = Number(form.elements.namedItem("rows")?.value);
-    if (sizingMode.value === "cellCount") {
-      const requested = Number(form.elements.namedItem("cellCount")?.value);
-      let best = null;
-      let bestScore = Infinity;
-      for (let c = 8; c <= 64; c += 1) {
-        for (let r = 6; r <= 48; r += 1) {
-          if (2 * (c + r) - 4 !== requested) continue;
-          const score = Math.abs(c / r - 4 / 3);
-          if (score < bestScore) {
-            best = { columns: c, rows: r };
-            bestScore = score;
-          }
-        }
-      }
-      if (best) ({ columns, rows } = best);
-    }
-    if (!Number.isInteger(columns) || columns < 8 || columns > 64) columns = 12;
-    if (!Number.isInteger(rows) || rows < 6 || rows > 48) rows = 8;
-    return {
-      columns,
-      rows,
-      style: form.elements.namedItem("layoutStyle")?.value === "rect" ? "rect" : "rounded"
-    };
-  }
-
-  function refreshSampleBoard() {
-    if (!sampleFrame) return;
-    const board = sampleBoardConfiguration();
-    const key = [board.columns, board.rows, board.style].join(":");
-    if (sampleFrame.dataset.previewKey === key) return;
-    sampleFrame.dataset.previewKey = key;
-    const page = board.style === "rect" ? "rect.html" : "index.html";
-    const url = new URL("/games/board/" + page, window.location.origin);
-    url.searchParams.set("demo", "1");
-    url.searchParams.set("players", "2");
-    url.searchParams.set("cols", String(board.columns));
-    url.searchParams.set("rows", String(board.rows));
-    sampleFrame.src = url.toString();
-  }
-
-  function showSamplePreview() {
+  // The preview is always an actual server-created room. Until a DRAFT
+  // exists, show an empty state rather than an unrelated demo board.
+  function showEmptyPreview() {
     currentRoom = null;
     if (previewPanel) previewPanel.hidden = false;
     if (previewPlaceholder) previewPlaceholder.hidden = false;
-    if (previewFrame) previewFrame.hidden = true;
-    if (previewMeta) previewMeta.textContent = "샘플 · 룸 초안 생성 전";
+    if (previewFrame) {
+      previewFrame.hidden = true;
+      previewFrame.removeAttribute("src");
+    }
+    if (previewMeta) previewMeta.textContent = "룸 초안 생성 전";
     if (rerollButton) rerollButton.disabled = true;
     if (commitButton) commitButton.disabled = true;
     if (overlayRow) overlayRow.hidden = true;
@@ -130,7 +89,6 @@
     if (terminateButton) terminateButton.hidden = true;
     if (extendControl) extendControl.hidden = true;
     if (extendButton) extendButton.hidden = true;
-    refreshSampleBoard();
   }
 
   function showResult(text, tone = "") {
@@ -642,7 +600,7 @@
     syncMovement();
     syncPauseDonationPolicy();
     liveSummary.innerHTML = "";
-    showSamplePreview();
+    showEmptyPreview();
     if (!options.silent) {
       showResult("저장된 룸 설정을 불러왔습니다.", "success");
     }
@@ -1667,26 +1625,15 @@
       activateBoardTab("board");
     }
   }, true);
-  form.addEventListener("input", (event) => {
-    if (event.target.matches("input, select, textarea")) {
-      if (currentRoom && currentRoom.status !== "READY") {
-        showSamplePreview();
-        showResult("설정이 변경됐습니다. 새 룸 초안을 생성해 배치를 확인하세요.", "working");
-      } else if (!currentRoom) {
-        refreshSampleBoard();
-      }
-    }
-  });
-  form.addEventListener("change", (event) => {
-    if (event.target.matches("input, select, textarea")) {
-      if (currentRoom && currentRoom.status !== "READY") {
-        showSamplePreview();
-        showResult("설정이 변경됐습니다. 새 룸 초안을 생성해 배치를 확인하세요.", "working");
-      } else if (!currentRoom) {
-        refreshSampleBoard();
-      }
-    }
-  });
+  function invalidateDraftOnEdit(event) {
+    if (!event.target.matches("input, select, textarea")) return;
+    // Never allow confirmation of a prior DRAFT after settings change.
+    if (!currentRoom || currentRoom.status === "READY") return;
+    showEmptyPreview();
+    showResult("설정이 변경됐습니다. 새 룸 초안을 생성해 실제 배치를 확인하세요.", "working");
+  }
+  form.addEventListener("input", invalidateDraftOnEdit);
+  form.addEventListener("change", invalidateDraftOnEdit);
   sizingMode.addEventListener("change", syncBoardSizing);
   diceEnabled.addEventListener("change", syncMovement);
   yutEnabled.addEventListener("change", syncMovement);
@@ -1766,7 +1713,7 @@
   rebuildInstructionList();
   restoreLastCreatedRoomCookie();
   activateBoardTab("board");
-  showSamplePreview();
+  showEmptyPreview();
   syncExtensionAvailability();
   window.setInterval(syncExtensionAvailability, 1000);
 })();
