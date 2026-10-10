@@ -5369,7 +5369,9 @@
           syncing = true;
           // Never await this playback promise from its own rejection handler.
           // Reconnecting restarts synchronization behind a clean barrier.
-          socket?.close(1011, "room turn playback failed");
+          if (currentGeneration === generation) {
+            socket?.close(1011, "room turn playback failed");
+          }
         })
         .finally(() => {
           playing = false;
