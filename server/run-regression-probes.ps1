@@ -28,6 +28,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.operations.BoundedVirtualThreadExecutorProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawCollectionPersistenceProbe",
+    "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawReadSnapshotProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSnapshotProbe",
