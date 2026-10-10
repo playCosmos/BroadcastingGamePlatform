@@ -6,6 +6,7 @@ import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import io.github.playcosmos.broadcastinggameplatform.soop.BoardParticipantSoopManager;
 import java.io.IOException;
+import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
 import java.util.Map;
@@ -39,9 +40,10 @@ public final class RoomHttpHandler implements HttpHandler {
     @Override
     public void handle(HttpExchange exchange) throws IOException {
         exchange.getResponseHeaders().set("Cache-Control", "no-store");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Origin", "*");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Headers", "Content-Type");
-        exchange.getResponseHeaders().set("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+        if (!isLoopback(exchange)) {
+            sendJson(exchange, 403, error("board room API is loopback-only"));
+            return;
+        }
 
         if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(204, -1);
@@ -49,10 +51,7 @@ public final class RoomHttpHandler implements HttpHandler {
             return;
         }
 
-        if (!isLoopback(exchange)) {
-            sendJson(exchange, 403, error("board room API is loopback-only"));
-            return;
-        }
+        if (!requireTrustedMutationOrigin(exchange)) return;
 
         String path = exchange.getRequestURI().getPath();
         String suffix = path != null && path.startsWith(BASE)
@@ -334,6 +333,41 @@ public final class RoomHttpHandler implements HttpHandler {
         exchange.getResponseHeaders().set("Allow", method);
         exchange.sendResponseHeaders(405, -1);
         exchange.close();
+        return false;
+    }
+
+    private static boolean requireTrustedMutationOrigin(HttpExchange exchange)
+        throws IOException {
+        if (!"POST".equalsIgnoreCase(exchange.getRequestMethod())) return true;
+
+        // The public administrator proxy explicitly sets the local origin. Requiring
+        // it also blocks cross-site forms and origin-less browser POST requests.
+        String origin = exchange.getRequestHeaders().getFirst("Origin");
+        if (origin != null) {
+            try {
+                URI supplied = URI.create(origin.trim());
+                String host = supplied.getHost();
+                int localPort = exchange.getLocalAddress().getPort();
+                if (
+                    "http".equalsIgnoreCase(supplied.getScheme())
+                    && supplied.getPort() == localPort
+                    && host != null
+                    && (
+                        "127.0.0.1".equals(host)
+                        || "::1".equals(host)
+                        || "localhost".equalsIgnoreCase(host)
+                    )
+                    && supplied.getUserInfo() == null
+                    && (supplied.getPath() == null || supplied.getPath().isEmpty())
+                    && supplied.getRawQuery() == null
+                    && supplied.getRawFragment() == null
+                ) return true;
+            } catch (RuntimeException ignored) {
+                // Reject invalid origins along with remote origins.
+            }
+        }
+
+        sendJson(exchange, 403, error("board room mutation origin is not trusted"));
         return false;
     }
 
