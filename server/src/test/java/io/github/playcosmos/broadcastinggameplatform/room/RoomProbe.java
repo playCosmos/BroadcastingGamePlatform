@@ -69,6 +69,22 @@ public final class RoomProbe {
                 "default active room limit must be one"
             );
 
+            var defaultBoard = rooms.validate(new CreateRoomRequest(
+                "Default Board",
+                List.of(new PlayerInput("default-soop", "Default", null, 100)),
+                null,
+                new MovementInput("dice", 2, true, true, true),
+                new RulesInput("destinationOnly", true, true),
+                List.of(),
+                null
+            )).config().board();
+            require(
+                defaultBoard.columns() == 12
+                    && defaultBoard.rows() == 8
+                    && defaultBoard.cellCount() == 36,
+                "new room defaults must be 12x8 with a 36-cell perimeter"
+            );
+
             var cycleValidator = new FixedInstructionCycleValidator();
             require(
                 cycleValidator.findCycle(fixedCycleBoard(false)).isPresent(),
