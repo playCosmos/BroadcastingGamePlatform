@@ -3006,27 +3006,48 @@ public final class ViewerDrawService {
         }
     }
 
+    /**
+     * The ID list and each assembled session use one WAL read snapshot.
+     * A concurrent retention prune must not remove an ID mid-listing.
+     */
     public List<Session> recent(int limit) throws SQLException {
         int normalizedLimit = Math.max(1, Math.min(100, limit));
-        var ids = new ArrayList<String>();
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT session_id
-                 FROM viewer_draw_session
-                 ORDER BY updated_at DESC
-                 LIMIT ?
-                 """)) {
-            statement.setInt(1, normalizedLimit);
-            try (var rows = statement.executeQuery()) {
-                while (rows.next()) ids.add(rows.getString(1));
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            var ids = new ArrayList<String>();
+            try (var statement = connection.prepareStatement("""
+                SELECT session_id
+                FROM viewer_draw_session
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """)) {
+                statement.setInt(1, normalizedLimit);
+                try (var rows = statement.executeQuery()) {
+                    while (rows.next()) ids.add(rows.getString(1));
+                }
             }
+            var result = new ArrayList<Session>();
+            for (String id : ids) result.add(readSession(connection, id));
+            connection.commit();
+            return List.copyOf(result);
         }
-        var result = new ArrayList<Session>();
-        for (String id : ids) result.add(find(id));
-        return List.copyOf(result);
     }
 
+    /** Read the session, its identities, and result in one consistent view. */
     public Session find(String sessionId) throws SQLException {
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            Session session = readSession(connection, sessionId);
+            connection.commit();
+            return session;
+        }
+    }
+
+    /** Caller must already have started a read transaction on connection. */
+    private Session readSession(
+        java.sql.Connection connection,
+        String sessionId
+    ) throws SQLException {
         Map<String, Object> config;
         String publicCode;
         String name;
@@ -3039,17 +3060,18 @@ public final class ViewerDrawService {
         String updatedAt;
         String completedAt;
 
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT public_code, name, mode, entry_source, state, config_json,
-                        frozen_entry_hash, entry_count, created_at,
-                        updated_at, completed_at
-                 FROM viewer_draw_session
-                 WHERE session_id = ?
-                 """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT public_code, name, mode, entry_source, state, config_json,
+                       frozen_entry_hash, entry_count, created_at,
+                       updated_at, completed_at
+                FROM viewer_draw_session
+                WHERE session_id = ?
+                """)) {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
-                if (!rows.next()) throw new NoSuchElementException("viewer draw session not found");
+                if (!rows.next()) {
+                    throw new NoSuchElementException("viewer draw session not found");
+                }
                 publicCode = rows.getString("public_code");
                 name = rows.getString("name");
                 mode = rows.getString("mode");
@@ -3068,13 +3090,12 @@ public final class ViewerDrawService {
         }
 
         var entries = new ArrayList<DrawEntry>();
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT entry_id, provider_id, user_id, display_name, label
-                 FROM viewer_draw_entry
-                 WHERE session_id = ?
-                 ORDER BY entry_index
-                 """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT entry_id, provider_id, user_id, display_name, label
+                FROM viewer_draw_entry
+                WHERE session_id = ?
+                ORDER BY entry_index
+                """)) {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
@@ -3090,10 +3111,9 @@ public final class ViewerDrawService {
         }
 
         Object drawResult = null;
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT result_json FROM viewer_draw_result WHERE session_id = ?
-                 """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT result_json FROM viewer_draw_result WHERE session_id = ?
+                """)) {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
                 if (rows.next()) {
@@ -3111,19 +3131,25 @@ public final class ViewerDrawService {
 
     public Session findByPublicCode(String publicCode) throws SQLException {
         String normalized = normalizePublicCode(publicCode);
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT session_id
-                 FROM viewer_draw_session
-                 WHERE public_code = ?
-                 """)) {
-            statement.setString(1, normalized);
-            try (var rows = statement.executeQuery()) {
-                if (!rows.next()) {
-                    throw new NoSuchElementException("viewer draw session not found");
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            String sessionId;
+            try (var statement = connection.prepareStatement("""
+                    SELECT session_id
+                    FROM viewer_draw_session
+                    WHERE public_code = ?
+                    """)) {
+                statement.setString(1, normalized);
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next()) {
+                        throw new NoSuchElementException("viewer draw session not found");
+                    }
+                    sessionId = rows.getString(1);
                 }
-                return find(rows.getString(1));
             }
+            Session session = readSession(connection, sessionId);
+            connection.commit();
+            return session;
         }
     }
 
