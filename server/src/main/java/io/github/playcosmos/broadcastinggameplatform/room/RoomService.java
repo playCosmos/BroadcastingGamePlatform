@@ -318,7 +318,7 @@ public final class RoomService {
         }
     }
 
-    public RoomSnapshot rerollPreview(String roomId) throws SQLException {
+    public synchronized RoomSnapshot rerollPreview(String roomId) throws SQLException {
         var current = find(roomId);
         if (
             !"DRAFT".equals(current.status())
@@ -336,11 +336,13 @@ public final class RoomService {
                  UPDATE board_room
                  SET preview_json = ?, preview_seed = ?, updated_at = ?
                  WHERE room_id = ? AND status = 'DRAFT'
+                   AND lifecycle_state = 'DRAFT' AND preview_seed = ?
                  """)) {
             statement.setString(1, GSON.toJson(preview));
             statement.setLong(2, preview.seed());
             statement.setString(3, now);
             statement.setString(4, roomId);
+            statement.setLong(5, current.preview().seed());
             if (statement.executeUpdate() != 1) {
                 throw new IllegalStateException("room preview changed concurrently");
             }
@@ -398,11 +400,13 @@ public final class RoomService {
                         activated_at = COALESCE(activated_at, ?),
                         updated_at = ?
                     WHERE room_id = ? AND status = 'DRAFT'
+                      AND lifecycle_state = 'DRAFT' AND preview_seed = ?
                     """)) {
                     statement.setString(1, previewJson);
                     statement.setString(2, now);
                     statement.setString(3, now);
                     statement.setString(4, roomId);
+                    statement.setLong(5, current.preview().seed());
                     if (statement.executeUpdate() != 1) {
                         throw new IllegalStateException("room preview changed concurrently");
                     }
