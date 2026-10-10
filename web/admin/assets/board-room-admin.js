@@ -501,9 +501,9 @@
       })),
       sharedBalloon: sharedBalloonCheckbox()?.checked ?? true,
       sizingMode: sizingMode.value,
-      columns: form.elements.namedItem("columns")?.value || "16",
-      rows: form.elements.namedItem("rows")?.value || "12",
-      cellCount: form.elements.namedItem("cellCount")?.value || "52",
+      columns: form.elements.namedItem("columns")?.value || "12",
+      rows: form.elements.namedItem("rows")?.value || "8",
+      cellCount: form.elements.namedItem("cellCount")?.value || "36",
       layoutStyle: form.elements.namedItem("layoutStyle")?.value || "rounded",
       diceEnabled: diceEnabled.checked,
       yutEnabled: yutEnabled.checked,
@@ -602,9 +602,9 @@
     setValue("retentionMinutes", preset.retentionMinutes ?? "240");
     setValue("pauseDonationMode", preset.pauseDonationMode ?? "QUEUE");
     setValue("pauseGraceSeconds", preset.pauseGraceSeconds ?? "10");
-    setValue("columns", preset.columns ?? "16");
-    setValue("rows", preset.rows ?? "12");
-    setValue("cellCount", preset.cellCount ?? "52");
+    setValue("columns", preset.columns ?? "12");
+    setValue("rows", preset.rows ?? "8");
+    setValue("cellCount", preset.cellCount ?? "36");
     setValue("layoutStyle", preset.layoutStyle ?? "rounded");
     setValue("diceCount", preset.diceCount ?? "2");
 
