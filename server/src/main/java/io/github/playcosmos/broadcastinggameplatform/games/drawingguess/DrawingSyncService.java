@@ -70,6 +70,7 @@ public final class DrawingSyncService {
         private final AtomicLong sequence = new AtomicLong();
         private final ArrayList<String> history = new ArrayList<>();
         private long historyBytes;
+        private long snapshotWireBytes;
         private long snapshotSequence;
         private String snapshotJson;
         private DrawingCanvasDocument document = new DrawingCanvasDocument();
@@ -264,7 +265,8 @@ public final class DrawingSyncService {
             String canonical = GSON.toJson(event);
             long bytes = historyBytes(canonical);
             boolean compact = state.history.size() + 1 > MAX_HISTORY
-                || state.historyBytes + bytes > MAX_HISTORY_BYTES;
+                || state.snapshotWireBytes + state.historyBytes + bytes
+                    > MAX_HISTORY_BYTES;
             String nextSnapshot = null;
             DrawingCanvasDocument nextDocument = null;
             if (compact) {
@@ -275,7 +277,9 @@ public final class DrawingSyncService {
                 );
                 nextDocument.apply(event);
                 nextSnapshot = GSON.toJson(nextDocument.snapshot());
-                if (historyBytes(nextSnapshot) > MAX_SNAPSHOT_BYTES) {
+                if (historyBytes(nextSnapshot) > MAX_SNAPSHOT_BYTES
+                    || snapshotReplayBytes(nextSnapshot, sequence)
+                        > MAX_HISTORY_BYTES) {
                     throw new IllegalStateException(
                         "drawing canvas exceeds compact snapshot capacity"
                     );
@@ -287,6 +291,7 @@ public final class DrawingSyncService {
                 state.document = nextDocument;
                 state.snapshotJson = nextSnapshot;
                 state.snapshotSequence = sequence;
+                state.snapshotWireBytes = snapshotReplayBytes(nextSnapshot, sequence);
                 state.history.clear();
                 state.historyBytes = 0;
             } else {
@@ -427,47 +432,59 @@ public final class DrawingSyncService {
         return eventJson.getBytes(StandardCharsets.UTF_8).length;
     }
 
-    /** Reconnect starts from an entire snapshot, never orphaned point events. */
+    /** Reconnect starts from a complete snapshot, never orphaned points. */
     public List<String> history(String code) {
         State state = activeState(code);
         synchronized (state) {
             var replay = new ArrayList<String>();
             if (state.snapshotJson != null) {
-                int length = state.snapshotJson.length();
-                var parts = new ArrayList<String>();
-                for (int offset = 0; offset < length;) {
-                    int end = Math.min(length, offset + SNAPSHOT_CHUNK_CHARS);
-                    // WebSocket UTF-8 encoding must not split a surrogate pair.
-                    if (end < length
-                        && Character.isHighSurrogate(state.snapshotJson.charAt(end - 1))
-                        && Character.isLowSurrogate(state.snapshotJson.charAt(end))) {
-                        end -= 1;
-                    }
-                    parts.add(state.snapshotJson.substring(offset, end));
-                    offset = end;
-                }
-                int chunks = parts.size();
-                var begin = new JsonObject();
-                begin.addProperty("type", "canvas.snapshot.begin");
-                begin.addProperty("sequence", state.snapshotSequence);
-                begin.addProperty("chunks", chunks);
-                replay.add(GSON.toJson(begin));
-                for (int index = 0; index < chunks; index++) {
-                    var part = new JsonObject();
-                    part.addProperty("type", "canvas.snapshot.chunk");
-                    part.addProperty("sequence", state.snapshotSequence);
-                    part.addProperty("index", index);
-                    part.addProperty("data", parts.get(index));
-                    replay.add(GSON.toJson(part));
-                }
-                var finish = new JsonObject();
-                finish.addProperty("type", "canvas.snapshot.end");
-                finish.addProperty("sequence", state.snapshotSequence);
-                replay.add(GSON.toJson(finish));
+                replay.addAll(snapshotMessages(
+                    state.snapshotJson, state.snapshotSequence
+                ));
             }
             replay.addAll(state.history);
             return List.copyOf(replay);
         }
+    }
+
+    private static long snapshotReplayBytes(String json, long sequence) {
+        return snapshotMessages(json, sequence).stream()
+            .mapToLong(DrawingSyncService::historyBytes)
+            .sum();
+    }
+
+    private static List<String> snapshotMessages(String json, long sequence) {
+        int length = json.length();
+        var parts = new ArrayList<String>();
+        for (int offset = 0; offset < length;) {
+            int end = Math.min(length, offset + SNAPSHOT_CHUNK_CHARS);
+            if (end < length
+                && Character.isHighSurrogate(json.charAt(end - 1))
+                && Character.isLowSurrogate(json.charAt(end))) {
+                end -= 1;
+            }
+            parts.add(json.substring(offset, end));
+            offset = end;
+        }
+        var replay = new ArrayList<String>();
+        var begin = new JsonObject();
+        begin.addProperty("type", "canvas.snapshot.begin");
+        begin.addProperty("sequence", sequence);
+        begin.addProperty("chunks", parts.size());
+        replay.add(GSON.toJson(begin));
+        for (int index = 0; index < parts.size(); index++) {
+            var chunk = new JsonObject();
+            chunk.addProperty("type", "canvas.snapshot.chunk");
+            chunk.addProperty("sequence", sequence);
+            chunk.addProperty("index", index);
+            chunk.addProperty("data", parts.get(index));
+            replay.add(GSON.toJson(chunk));
+        }
+        var finish = new JsonObject();
+        finish.addProperty("type", "canvas.snapshot.end");
+        finish.addProperty("sequence", sequence);
+        replay.add(GSON.toJson(finish));
+        return replay;
     }
 
     public boolean closeSession(String code) {
@@ -642,6 +659,9 @@ public final class DrawingSyncService {
                 state.snapshotSequence = rows.getLong("snapshot_sequence");
                 state.snapshotJson = rows.getString("snapshot_json");
                 if (state.snapshotJson != null) {
+                    state.snapshotWireBytes = snapshotReplayBytes(
+                        state.snapshotJson, state.snapshotSequence
+                    );
                     try {
                         state.document = DrawingCanvasDocument.restore(
                             JsonParser.parseString(state.snapshotJson)
