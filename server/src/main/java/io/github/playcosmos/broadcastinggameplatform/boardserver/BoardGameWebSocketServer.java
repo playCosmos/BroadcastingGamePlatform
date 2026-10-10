@@ -187,6 +187,15 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                     if (!connection.isOpen()) break;
                     connection.send(event);
                 }
+                if (connection.isOpen()) {
+                    // A final replay watermark distinguishes replay from live
+                    // events, including sessions with no retained tail events.
+                    connection.send(
+                        "{\"type\":\"drawing.history.complete\",\"sequence\":"
+                            + drawingSync.findPublic(drawingCode).lastSequence()
+                            + "}"
+                    );
+                }
     
                 System.out.println(
                     "[platform-ws] drawing connected role="
