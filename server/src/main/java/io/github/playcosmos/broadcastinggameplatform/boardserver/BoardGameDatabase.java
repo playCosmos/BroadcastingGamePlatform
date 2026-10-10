@@ -38,7 +38,8 @@ public final class BoardGameDatabase implements DatabaseAccess {
         "/db/migration/V26__prune_viewer_draw_sessions.sql",
         "/db/migration/V27__reset_admin_approval_codes.sql",
         "/db/migration/V28__prune_terminated_board_rooms.sql",
-        "/db/migration/V29__board_donation_inbox.sql"
+        "/db/migration/V29__board_donation_inbox.sql",
+        "/db/migration/V30__drawing_canvas_snapshots.sql"
     };
 
     private final Path databasePath;
