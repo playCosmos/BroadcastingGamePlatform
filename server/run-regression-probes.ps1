@@ -36,6 +36,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingGuessRecoveryProbe",
     "io.github.playcosmos.broadcastinggameplatform.room.RoomProbe",
     "io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeProbe",
+    "io.github.playcosmos.broadcastinggameplatform.room.DonationInboxProbe",
     "io.github.playcosmos.broadcastinggameplatform.room.MixedMovementProbe",
     "io.github.playcosmos.broadcastinggameplatform.room.RoomOperationProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.ClientBoundaryProbe",
