@@ -4,7 +4,7 @@ const vm = require("vm");
 
 const source = fs.readFileSync(path.join(__dirname, "board.js"), "utf8");
 const first = source.indexOf("  async function connectRoomWebSocket() {");
-const last = source.indexOf("\n\n  // Rounded layout variants.", first);
+const last = source.indexOf("  // Rounded layout variants.", first);
 if (first < 0 || last < 0) throw new Error("room synchronization function missing");
 const syncSource = source.substring(first, last);
 
