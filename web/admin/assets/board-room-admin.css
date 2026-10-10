@@ -1008,43 +1008,29 @@
   display: none !important;
 }
 .board-room-preview-placeholder {
-  width: 100%;
-  height: 100%;
   position: absolute;
   inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 20px;
+  text-align: center;
+  background: #0b0f14;
 }
 .board-room-preview-placeholder[hidden] {
   display: none !important;
 }
-.board-room-preview-placeholder iframe {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  pointer-events: none;
-}
-.board-room-preview-placeholder > p,
-.board-room-sample-caption {
-  position: absolute;
-  left: 12px;
-  right: 12px;
-  z-index: 2;
-  width: fit-content;
-  max-width: calc(100% - 24px);
-  padding: 6px 9px;
-  border: 1px solid #41546b;
-  border-radius: 7px;
-  background: rgba(11, 16, 22, .92);
+.board-room-preview-placeholder strong {
   color: #e4ecf6;
-  font-size: 12px;
-  font-weight: 750;
-  line-height: 1.4;
+  font-size: clamp(14px, 1.5vw, 18px);
 }
-.board-room-sample-caption {
-  top: 12px;
-}
-.board-room-preview-placeholder > p {
-  bottom: 12px;
-  margin: 0;
+.board-room-preview-placeholder span {
+  max-width: 32ch;
+  color: #aab7c7;
+  font-size: 13px;
+  line-height: 1.5;
 }
 .board-room-board-preview .board-room-create-actions {
   margin-top: 14px;
