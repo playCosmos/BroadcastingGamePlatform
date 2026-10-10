@@ -129,6 +129,13 @@
     const qStatus=String(
       qualification.status || stored.qualificationStatus || "-"
     );
+    // Public code proves only that a record was stored by this server.
+    // The simulation, winner order and map hash are client-reported data.
+    const independentlyVerified=
+      stored.verification?.independentlyVerified === true;
+    if(!independentlyVerified){
+      addAuditBadge("클라이언트 기록 · 물리 결과 미검증", "warn");
+    }
     addAuditBadge(
       resultStatus,
       resultStatus==="TIMEOUT" ? "warn" : "good"
