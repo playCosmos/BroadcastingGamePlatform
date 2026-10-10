@@ -56,6 +56,16 @@ try {
             Name = "rect"
             Url = "$baseUrl/games/board/rect.html?demo=1&players=4"
             Engine = "rectilinear-loop-experimental"
+        },
+        @{
+            Name = "rounded-12x8"
+            Url = "$baseUrl/games/board/index.html?demo=1&players=4&cols=12&rows=8"
+            Engine = "reserve-first-loop-v4"
+        },
+        @{
+            Name = "rect-12x8"
+            Url = "$baseUrl/games/board/rect.html?demo=1&players=4&cols=12&rows=8"
+            Engine = "rectilinear-loop-experimental"
         }
     )
 
