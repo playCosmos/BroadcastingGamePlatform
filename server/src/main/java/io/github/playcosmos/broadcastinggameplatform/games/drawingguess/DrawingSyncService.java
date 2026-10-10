@@ -198,17 +198,6 @@ public final class DrawingSyncService {
 
     public String append(String code, String drawerToken, String rawJson) {
         State state = activeState(code);
-        if (
-            drawerToken == null
-            || !MessageDigest.isEqual(
-                state.drawerTokenHash.getBytes(StandardCharsets.UTF_8),
-                tokenHash(drawerToken).getBytes(StandardCharsets.UTF_8)
-            )
-        ) {
-            throw new SecurityException(
-                "drawing write authorization failed"
-            );
-        }
         if (rawJson == null || rawJson.isBlank()) {
             throw new IllegalArgumentException(
                 "drawing event is required"
@@ -245,6 +234,18 @@ public final class DrawingSyncService {
         validatePayload(type, payload);
 
         synchronized (state) {
+            // Check authorization under the same lock as token rotation and
+            // session closure, not before a potentially delayed DB write.
+            if (
+                states.get(state.code) != state
+                || drawerToken == null
+                || !MessageDigest.isEqual(
+                    state.drawerTokenHash.getBytes(StandardCharsets.UTF_8),
+                    tokenHash(drawerToken).getBytes(StandardCharsets.UTF_8)
+                )
+            ) {
+                throw new SecurityException("drawing write authorization failed");
+            }
             long sequence = state.sequence.get() + 1L;
             Instant createdAt = Instant.now();
 
@@ -458,14 +459,19 @@ public final class DrawingSyncService {
         String normalized = normalizeCode(code);
         if (normalized.isBlank()) return false;
 
-        State state = states.remove(normalized);
+        State state = states.get(normalized);
         if (state == null) return false;
-
-        if (state.roundId != null) {
-            codeByRound.remove(state.roundId, state.code);
-            persistClosed(state);
+        synchronized (state) {
+            if (states.get(normalized) != state) return false;
+            // Persist first: if deletion fails, keep the session addressable
+            // so the operator can retry closure rather than losing its state.
+            if (state.roundId != null) persistClosed(state);
+            if (!states.remove(normalized, state)) return false;
+            if (state.roundId != null) {
+                codeByRound.remove(state.roundId, state.code);
+            }
+            return true;
         }
-        return true;
     }
 
     public boolean closeSessionForRound(String roundId) {
