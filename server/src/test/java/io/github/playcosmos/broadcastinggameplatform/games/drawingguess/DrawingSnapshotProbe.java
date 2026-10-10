@@ -54,6 +54,20 @@ public final class DrawingSnapshotProbe {
                   "points":[{"x":0.5,"y":0.6}]
                 }}
                 """);
+            // A large but legitimate stroke verifies multi-frame snapshots.
+            String points = String.join(
+                ",",
+                java.util.Collections.nCopies(
+                    128, "{\"x\":0.42,\"y\":0.61}"
+                )
+            );
+            for (int batch = 0; batch < 20; batch++) {
+                sync.append(code, token,
+                    "{\"type\":\"canvas.stroke.points\","
+                        + "\"payload\":{\"strokeId\":\"persistent-stroke\","
+                        + "\"points\":[" + points + "]}}"
+                );
+            }
             sync.append(code, token, """
                 {"type":"canvas.undo","payload":{}}
                 """);
@@ -74,6 +88,12 @@ public final class DrawingSnapshotProbe {
                 "bounded event journal must begin replay with snapshot");
             require(compacted.size() < 1300,
                 "large event history must be compacted");
+            long chunks = compacted.stream()
+                .filter(event -> JsonParser.parseString(event)
+                    .getAsJsonObject().get("type").getAsString()
+                    .equals("canvas.snapshot.chunk"))
+                .count();
+            require(chunks > 1, "large snapshots must use bounded chunks");
             long bytes = compacted.stream().mapToLong(event ->
                 event.getBytes(StandardCharsets.UTF_8).length).sum();
             require(bytes <= 8L * 1024 * 1024,
@@ -96,7 +116,7 @@ public final class DrawingSnapshotProbe {
             require(restoredRedo.snapshot().getAsJsonArray("strokes").size() == 1,
                 "redo after compaction must restore visible stroke");
             require(restoredRedo.snapshot().getAsJsonArray("strokes")
-                .get(0).getAsJsonObject().getAsJsonArray("points").size() == 2,
+                .get(0).getAsJsonObject().getAsJsonArray("points").size() == 2562,
                 "stroke point history must survive compaction");
 
             var reboot = new DrawingSyncService(db);
