@@ -844,3 +844,253 @@
     grid-column: auto;
   }
 }
+
+
+/* Board room editor: exactly two top-level panels.
+   Basic information, participants and movement are grouped in panel one.
+   Panel two holds both board tabs and a persistent preview/commit surface. */
+.board-room-admin-shell {
+  width: min(1560px, calc(100% - 40px));
+}
+.board-room-form {
+  gap: 18px;
+}
+.board-room-primary-panel,
+.board-room-workspace-panel {
+  min-width: 0;
+  padding: clamp(16px, 2vw, 24px);
+  border: 1px solid #303b48;
+  border-radius: 16px;
+  background: #121820;
+}
+.board-room-group-heading,
+.board-room-workspace-panel > h2 {
+  margin: 0 0 14px;
+}
+.board-room-settings-section {
+  min-width: 0;
+  padding: 15px 0;
+  border-top: 1px solid #2a333e;
+}
+.board-room-settings-section h3 {
+  margin: 0 0 12px;
+  color: #e5ebf3;
+  font-size: 15px;
+  font-weight: 800;
+}
+.board-room-settings-section .board-room-basic-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.board-room-preset-panel {
+  margin-top: 8px;
+  border-top: 1px solid #2a333e;
+  padding-top: 14px;
+}
+.board-room-preset-panel > summary {
+  width: fit-content;
+  cursor: pointer;
+  color: #c8d4e2;
+  font-size: 13px;
+  font-weight: 750;
+}
+.board-room-preset-grid {
+  margin-top: 12px;
+}
+.board-room-primary-panel .board-room-generator-choice-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.board-room-primary-panel .board-room-generator-card,
+.board-room-primary-panel .board-room-generator-suboptions {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 10px;
+}
+.board-room-primary-panel .board-room-generator-option-spacer {
+  display: none;
+}
+.board-room-workspace-grid {
+  display: grid;
+  grid-template-columns: minmax(340px, 0.78fr) minmax(0, 1.22fr);
+  align-items: start;
+  gap: 18px;
+}
+.board-room-editor-pane {
+  min-width: 0;
+}
+.board-room-editor-tabs {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+  margin-bottom: 16px;
+  padding: 5px;
+  border: 1px solid #303c4a;
+  border-radius: 11px;
+  background: #0c1219;
+}
+.board-room-editor-tabs [role="tab"] {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: #aab7c7;
+  font-size: 13px;
+  font-weight: 750;
+}
+.board-room-editor-tabs [role="tab"][aria-selected="true"] {
+  background: #2b4056;
+  color: #f4f8ff;
+  box-shadow: inset 0 0 0 1px #627c98;
+}
+.board-room-editor-tabs [role="tab"]:focus-visible {
+  outline: 2px solid #a0c8f1;
+  outline-offset: 2px;
+}
+.board-room-tab-content[hidden] {
+  display: none !important;
+}
+.board-room-editor-pane .board-room-settings-section {
+  padding: 0;
+  border-top: 0;
+}
+.board-room-editor-pane .board-room-settings-section > h3 {
+  display: none;
+}
+.board-room-editor-pane .board-room-board-grid,
+.board-room-editor-pane .board-room-instruction-grid,
+.board-room-editor-pane .board-room-random-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.board-room-editor-pane .board-room-field-cluster {
+  grid-column: 1 / -1;
+}
+.board-room-editor-pane .board-room-instruction-editor {
+  grid-template-columns: 1fr;
+}
+.board-room-editor-pane .board-room-instruction-master-list {
+  max-height: 240px;
+}
+.board-room-editor-pane .board-room-instruction-list-item {
+  min-height: 42px;
+}
+.board-room-editor-pane .board-room-instruction-sidebar .board-room-instruction-toolbar {
+  grid-template-columns: 1fr;
+}
+.board-room-board-preview {
+  min-width: 0;
+  position: sticky;
+  top: 16px;
+}
+.board-room-board-preview .board-room-preview-panel {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.board-room-board-preview .board-room-preview-head {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 7px;
+}
+.board-room-board-preview .board-room-preview-head h3 {
+  margin: 0;
+  color: #e5ebf3;
+  font-size: 15px;
+}
+.board-room-board-preview .board-room-preview-actions {
+  order: 2;
+}
+.board-room-board-preview .board-room-preview-shell {
+  position: relative;
+  background: #0b0f14;
+}
+.board-room-board-preview .board-room-preview-shell iframe {
+  display: block;
+}
+.board-room-board-preview .board-room-preview-shell iframe[hidden] {
+  display: none !important;
+}
+.board-room-preview-placeholder {
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+.board-room-preview-placeholder[hidden] {
+  display: none !important;
+}
+.board-room-preview-placeholder iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  pointer-events: none;
+}
+.board-room-preview-placeholder > p,
+.board-room-sample-caption {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  z-index: 2;
+  width: fit-content;
+  max-width: calc(100% - 24px);
+  padding: 6px 9px;
+  border: 1px solid #41546b;
+  border-radius: 7px;
+  background: rgba(11, 16, 22, .92);
+  color: #e4ecf6;
+  font-size: 12px;
+  font-weight: 750;
+  line-height: 1.4;
+}
+.board-room-sample-caption {
+  top: 12px;
+}
+.board-room-preview-placeholder > p {
+  bottom: 12px;
+  margin: 0;
+}
+.board-room-board-preview .board-room-create-actions {
+  margin-top: 14px;
+  align-items: stretch;
+  flex-direction: column;
+}
+.board-room-board-preview .board-room-create-actions > button {
+  min-height: 46px;
+  border-color: #678bad;
+  background: #284660;
+}
+.board-room-board-preview .board-room-create-actions > button:hover:not(:disabled) {
+  background: #365b7c;
+}
+.board-room-board-preview .board-room-create-actions > p {
+  margin-top: 0;
+}
+@media (max-width: 1100px) {
+  .board-room-workspace-grid {
+    grid-template-columns: minmax(300px, 0.85fr) minmax(0, 1.15fr);
+    gap: 12px;
+  }
+  .board-room-primary-panel .board-room-settings-section .board-room-basic-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 850px) {
+  .board-room-admin-shell {
+    width: min(100% - 20px, 760px);
+  }
+  .board-room-workspace-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .board-room-board-preview {
+    position: static;
+    grid-row: 1;
+  }
+  .board-room-primary-panel .board-room-generator-choice-grid {
+    grid-template-columns: 1fr;
+  }
+}
+@media (max-width: 540px) {
+  .board-room-primary-panel .board-room-settings-section .board-room-basic-grid,
+  .board-room-editor-pane .board-room-board-grid,
+  .board-room-editor-pane .board-room-instruction-grid,
+  .board-room-editor-pane .board-room-random-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
