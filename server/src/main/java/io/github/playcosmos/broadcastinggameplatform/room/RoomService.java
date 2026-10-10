@@ -264,8 +264,21 @@ public final class RoomService {
     }
 
     public RoomSnapshot find(String roomId) throws SQLException {
-        terminateExpiredRooms();
+        var snapshot = loadRoomSnapshot(roomId);
+        var lifecycle = snapshot.lifecycle();
+        if (lifecycle != null && !"TERMINATED".equals(lifecycle.state())) {
+            OffsetDateTime expiry = parseStoredDateTime(lifecycle.expiresAt());
+            if (expiry != null && !expiry.isAfter(OffsetDateTime.now())) {
+                // Only expired rooms trigger a database mutation. Live public reads
+                // and WebSocket handshakes must not acquire SQLite writer locks.
+                terminateExpiredRooms();
+                return loadRoomSnapshot(roomId);
+            }
+        }
+        return snapshot;
+    }
 
+    private RoomSnapshot loadRoomSnapshot(String roomId) throws SQLException {
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
                  SELECT br.room_id, br.status, br.config_json, br.preview_json,
