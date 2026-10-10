@@ -32,6 +32,8 @@ public final class DrawingSyncService {
     private static final Duration SESSION_TTL = Duration.ofHours(6);
     private static final int MAX_HISTORY = 20_000;
     private static final long MAX_HISTORY_BYTES = 8L * 1024 * 1024;
+    private static final long MAX_SNAPSHOT_BYTES = 4L * 1024 * 1024;
+    private static final int SNAPSHOT_CHUNK_CHARS = 16 * 1024;
     private static final int MAX_MESSAGE_CHARS = 8 * 1024;
     private static final int MAX_POINTS_PER_EVENT = 128;
     private static final java.util.Set<String> ALLOWED_TYPES =
@@ -68,6 +70,9 @@ public final class DrawingSyncService {
         private final AtomicLong sequence = new AtomicLong();
         private final ArrayList<String> history = new ArrayList<>();
         private long historyBytes;
+        private long snapshotSequence;
+        private String snapshotJson;
+        private DrawingCanvasDocument document = new DrawingCanvasDocument();
 
         private State(
             String roundId,
@@ -257,22 +262,38 @@ public final class DrawingSyncService {
             event.add("payload", payload.deepCopy());
 
             String canonical = GSON.toJson(event);
-            long firstRetainedSequence =
-                firstRetainedSequenceAfterAppend(
-                    state,
-                    sequence,
-                    canonical
+            long bytes = historyBytes(canonical);
+            boolean compact = state.history.size() + 1 > MAX_HISTORY
+                || state.historyBytes + bytes > MAX_HISTORY_BYTES;
+            String nextSnapshot = null;
+            DrawingCanvasDocument nextDocument = null;
+            if (compact) {
+                // Build the next state before writing; never drop old history
+                // when the materialized snapshot is too large.
+                nextDocument = DrawingCanvasDocument.restore(
+                    state.document.snapshot()
                 );
-            persistEvent(
-                state,
-                sequence,
-                canonical,
-                createdAt,
-                firstRetainedSequence
-            );
-
+                nextDocument.apply(event);
+                nextSnapshot = GSON.toJson(nextDocument.snapshot());
+                if (historyBytes(nextSnapshot) > MAX_SNAPSHOT_BYTES) {
+                    throw new IllegalStateException(
+                        "drawing canvas exceeds compact snapshot capacity"
+                    );
+                }
+            }
+            persistEvent(state, sequence, canonical, createdAt, nextSnapshot);
             state.sequence.set(sequence);
-            appendHistory(state, canonical);
+            if (compact) {
+                state.document = nextDocument;
+                state.snapshotJson = nextSnapshot;
+                state.snapshotSequence = sequence;
+                state.history.clear();
+                state.historyBytes = 0;
+            } else {
+                state.document.apply(event);
+                state.history.add(canonical);
+                state.historyBytes += bytes;
+            }
             return canonical;
         }
     }
@@ -406,52 +427,39 @@ public final class DrawingSyncService {
         return eventJson.getBytes(StandardCharsets.UTF_8).length;
     }
 
-    private static long firstRetainedSequenceAfterAppend(
-        State state,
-        long nextSequence,
-        String canonical
-    ) {
-        long bytes = state.historyBytes + historyBytes(canonical);
-        int retained = state.history.size() + 1;
-        int removeIndex = 0;
-
-        while (
-            retained > MAX_HISTORY
-                || bytes > MAX_HISTORY_BYTES
-        ) {
-            if (removeIndex >= state.history.size()) {
-                break;
-            }
-            bytes -= historyBytes(
-                state.history.get(removeIndex)
-            );
-            removeIndex += 1;
-            retained -= 1;
-        }
-
-        return nextSequence - retained + 1;
-    }
-
-    private static void appendHistory(
-        State state,
-        String canonical
-    ) {
-        state.history.add(canonical);
-        state.historyBytes += historyBytes(canonical);
-
-        while (
-            state.history.size() > MAX_HISTORY
-                || state.historyBytes > MAX_HISTORY_BYTES
-        ) {
-            String removed = state.history.remove(0);
-            state.historyBytes -= historyBytes(removed);
-        }
-    }
-
+    /** Reconnect starts from an entire snapshot, never orphaned point events. */
     public List<String> history(String code) {
         State state = activeState(code);
         synchronized (state) {
-            return List.copyOf(state.history);
+            var replay = new ArrayList<String>();
+            if (state.snapshotJson != null) {
+                int length = state.snapshotJson.length();
+                int chunks = Math.max(1,
+                    (length + SNAPSHOT_CHUNK_CHARS - 1) / SNAPSHOT_CHUNK_CHARS
+                );
+                var begin = new JsonObject();
+                begin.addProperty("type", "canvas.snapshot.begin");
+                begin.addProperty("sequence", state.snapshotSequence);
+                begin.addProperty("chunks", chunks);
+                replay.add(GSON.toJson(begin));
+                for (int index = 0; index < chunks; index++) {
+                    var part = new JsonObject();
+                    part.addProperty("type", "canvas.snapshot.chunk");
+                    part.addProperty("sequence", state.snapshotSequence);
+                    part.addProperty("index", index);
+                    part.addProperty("data", state.snapshotJson.substring(
+                        index * SNAPSHOT_CHUNK_CHARS,
+                        Math.min(length, (index + 1) * SNAPSHOT_CHUNK_CHARS)
+                    ));
+                    replay.add(GSON.toJson(part));
+                }
+                var finish = new JsonObject();
+                finish.addProperty("type", "canvas.snapshot.end");
+                finish.addProperty("sequence", state.snapshotSequence);
+                replay.add(GSON.toJson(finish));
+            }
+            replay.addAll(state.history);
+            return List.copyOf(replay);
         }
     }
 
