@@ -39,14 +39,7 @@
 
     <input id="overlayUrlInput" type="hidden" />
 
-    <section class="panel board-room-panel" id="boardRoomPanel">
-      <div class="panel-heading">
-        <div>
-          <h2>보드게임 룸 생성</h2>
-          <p>룸별 설정은 SQLite에 저장합니다. 생성 시 참가자별 SOOP 방송 상태를 확인하고, 서버가 만든 실제 보드 프리뷰를 확인한 뒤 배치를 확정합니다. DRAFT 룸은 여러 개 만들 수 있고, 동시에 활성화할 수 있는 룸 수는 서버 관리 콘솔의 활성 룸 상한을 따릅니다.</p>
-        </div>
-      </div>
-
+    <section class="board-room-panel" id="boardRoomPanel">
       <form class="board-room-form" id="boardRoomForm">
         <section class="board-room-primary-panel" aria-labelledby="boardRoomBasicsHeading">
           <div class="board-room-group-heading">
@@ -244,7 +237,7 @@
         </div>
       </div>
               <div class="board-room-create-actions">
-          <button type="submit" id="boardRoomCreateButton">룸 생성 및 방송 상태 확인</button>
+          <button type="submit" id="boardRoomCreateButton">룸 초안 생성 · 실제 배치 확인</button>
           <p class="operation-result" id="boardRoomResult">설정을 입력한 뒤 룸을 생성하세요.</p>
         </div>
             </section>
