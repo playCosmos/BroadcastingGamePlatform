@@ -95,7 +95,7 @@ try {
     }
 
     # The room editor must be one basic panel plus one tabbed workspace,
-    # with a visible demo on the right before a server room is created.
+    # with a disabled preview until the server has created a real DRAFT.
     $editorUrl = "$baseUrl/admin/games/board/index.html"
     $editorDom = & $browser @(
         "--headless",
@@ -119,7 +119,7 @@ try {
         'id="boardRoomTabEffects"',
         'id="boardRoomTabPanelBoard"',
         'id="boardRoomTabPanelEffects"',
-        'id="boardRoomSampleFrame"',
+        'id="boardRoomPreviewPlaceholder"',
         'id="boardRoomPreviewFrame"',
         'id="boardRoomCreateButton"',
         'id="boardRoomCommitButton"'
@@ -131,10 +131,17 @@ try {
     if ($editorDom -notmatch 'id="boardRoomTabBoard"[^>]*aria-selected="true"') {
         throw "board size/shape tab must be selected on load"
     }
-    if ($editorDom -notmatch 'id="boardRoomSampleFrame"[^>]*src="[^"]+demo=1') {
-        throw "room editor must display a sample board before DRAFT creation"
+    if ($editorDom -match 'id="boardRoomSampleFrame"' -or
+        $editorDom -match 'id="boardRoomPreviewFrame"[^>]+src="[^"]*demo=1') {
+        throw "room editor must not substitute a demo board for real DRAFT preview"
     }
-    Write-Host "[board-smoke] room editor two-panel layout and initial sample passed"
+    if ($editorDom -notmatch 'id="boardRoomPreviewFrame"[^>]*hidden') {
+        throw "room editor real-board iframe must start hidden before DRAFT creation"
+    }
+    if ($editorDom -notmatch 'id="boardRoomPreviewPlaceholder"[^>]*>') {
+        throw "room editor must show empty state before DRAFT creation"
+    }
+    Write-Host "[board-smoke] room editor two panels and server-only preview passed"
 
     Write-Host "[board-smoke] rounded and rect layouts passed"
 }
