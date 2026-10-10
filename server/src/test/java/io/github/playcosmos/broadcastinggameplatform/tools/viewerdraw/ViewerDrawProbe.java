@@ -277,6 +277,12 @@ public final class ViewerDrawProbe {
         );
         String publicAuditJson = new Gson().toJson(publicAudit);
         require(
+            publicAuditJson.contains("\"CLIENT_REPORTED\"")
+                && publicAuditJson.contains("\"independentlyVerified\":false")
+                && publicAuditJson.contains("\"serverPhysicsReplayed\":false"),
+            "public marble audit must disclose that server did not verify physics"
+        );
+        require(
             publicAuditJson.contains("Winner A"),
             "public marble audit must retain winner display name"
         );

@@ -156,6 +156,50 @@ public final class ServerManagementProbe {
                 "http://127.0.0.1:" + adminPort
             );
 
+            // A loopback socket is not an authorization boundary for web pages.
+            var blockedBoardMutation = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/board/rooms/" + firstRoom.roomId() + "/terminate")
+                )
+                    .header("Origin", "https://attacker.example")
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                blockedBoardMutation.statusCode() == 403
+                    && "ACTIVE".equals(rooms.find(firstRoom.roomId()).lifecycle().state()),
+                "cross-origin local board mutation must be rejected"
+            );
+
+            var originlessBoardMutation = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/board/rooms/" + firstRoom.roomId() + "/terminate")
+                )
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                originlessBoardMutation.statusCode() == 403,
+                "origin-less local board mutation must be rejected"
+            );
+
+            var draftRoom = rooms.create(roomRequest);
+            var trustedBoardMutation = client.send(
+                HttpRequest.newBuilder(
+                    base.resolve("/api/board/rooms/" + draftRoom.roomId() + "/preview/reroll")
+                )
+                    .header("Origin", "http://127.0.0.1:" + adminPort)
+                    .POST(HttpRequest.BodyPublishers.noBody())
+                    .build(),
+                HttpResponse.BodyHandlers.ofString()
+            );
+            require(
+                trustedBoardMutation.statusCode() == 200,
+                "trusted local origin must be allowed to mutate board draft"
+            );
+
             var page = client.send(
                 HttpRequest.newBuilder(base.resolve("/"))
                     .GET()

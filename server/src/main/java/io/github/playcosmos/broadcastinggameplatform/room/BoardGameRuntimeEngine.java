@@ -53,7 +53,25 @@ public final class BoardGameRuntimeEngine {
         this.randomInt = Objects.requireNonNull(randomInt, "randomInt");
     }
 
+    public synchronized List<String> matchingRoomIds(DonationEvent donation)
+        throws SQLException {
+        validateDonation(donation);
+        return findMatchingRooms(
+            donation.provider(), donation.channelId(), donation.amount()
+        ).stream().map(RoomMatch::roomId).toList();
+    }
+
     public synchronized ProcessResult process(DonationEvent donation) throws SQLException {
+        return processForRooms(donation, null);
+    }
+
+    /**
+     * A durable inbox records original room bindings. Retried donations must
+     * never leak into rooms that were activated after the event was received.
+     */
+    public synchronized ProcessResult processForRooms(
+        DonationEvent donation, List<String> originalRoomIds
+    ) throws SQLException {
         validateDonation(donation);
         String fingerprint = fingerprint(donation);
         var matches = findMatchingRooms(
@@ -61,6 +79,11 @@ public final class BoardGameRuntimeEngine {
             donation.channelId(),
             donation.amount()
         );
+        if (originalRoomIds != null) {
+            matches = matches.stream()
+                .filter(match -> originalRoomIds.contains(match.roomId()))
+                .toList();
+        }
 
         var events = new ArrayList<BoardTurnEvent>();
         int duplicateRooms = 0;
@@ -1520,7 +1543,7 @@ public final class BoardGameRuntimeEngine {
         return value.substring(0, maxChars);
     }
 
-    private static String fingerprint(DonationEvent donation) throws SQLException {
+    public static String fingerprint(DonationEvent donation) throws SQLException {
         String explicitEventId = extractProviderEventId(donation.rawPayload());
         if (explicitEventId != null) {
             return "event:" + explicitEventId;

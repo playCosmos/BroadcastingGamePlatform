@@ -5263,24 +5263,25 @@
     return roomWebSocketAccessUrl(roomWebSocketUrl);
   }
 
-  async function syncRoomRuntimeState() {
-    if (!ROOM_ID || ROOM_PREVIEW_MODE) return 0;
-
-    const response = await fetch(
-      roomReadUrl(ROOM_ID, "/runtime"),
-      {
-        cache: "no-store",
-        headers: { "Accept": "application/json" }
-      }
-    );
-    if (!response.ok) return 0;
-
+  async function fetchRoomRuntimeState() {
+    if (!ROOM_ID || ROOM_PREVIEW_MODE) return null;
+    const response = await fetch(roomReadUrl(ROOM_ID, "/runtime"), {
+      cache: "no-store",
+      headers: { "Accept": "application/json" }
+    });
+    if (!response.ok) throw new Error("room runtime fetch failed: " + response.status);
     const runtime = await response.json();
+    if (!Number.isSafeInteger(Number(runtime.sequence))
+        || Number(runtime.sequence) < 0) {
+      throw new Error("invalid room runtime sequence");
+    }
+    return runtime;
+  }
 
+  function applyRoomRuntimeSnapshot(runtime) {
     for (const cell of runtime.board?.cells || []) {
       applyCellUpdate({ cellIndex: cell.index, current: cell });
     }
-
     for (const runtimePlayer of runtime.players || []) {
       const player = state.players.get(String(runtimePlayer.playerId));
       if (!player) continue;
@@ -5288,13 +5289,11 @@
       player.laps = Number(runtimePlayer.laps) || 0;
     }
     renderPlayers();
-
-    return Number(runtime.sequence) || 0;
+    return Number(runtime.sequence);
   }
 
   async function connectRoomWebSocket() {
     if (!ROOM_ID || ROOM_PREVIEW_MODE) return;
-
     const resolvedWebSocketUrl = await resolveRoomWebSocketUrl();
     if (!resolvedWebSocketUrl) return;
 
@@ -5302,51 +5301,12 @@
     let retryTimer = 0;
     let retryAttempt = 0;
     let closed = false;
+    let generation = 0;
     let lastSequence = 0;
-
-    const connect = () => {
-      if (closed) return;
-      try {
-        socket = new WebSocket(resolvedWebSocketUrl);
-      } catch (_) {
-        schedule();
-        return;
-      }
-
-      socket.addEventListener("open", () => {
-        retryAttempt = 0;
-        syncRoomRuntimeState()
-          .then((sequence) => {
-            if (sequence > lastSequence) lastSequence = sequence;
-          })
-          .catch(() => {});
-      });
-
-      socket.addEventListener("message", (message) => {
-        let payload;
-        try {
-          payload = JSON.parse(message.data);
-        } catch (_) {
-          return;
-        }
-        if (payload?.type !== "board.turn") return;
-        if (String(payload.roomId) !== ROOM_ID) return;
-
-        const sequence = Number(payload.sequence) || 0;
-        if (sequence && sequence <= lastSequence) return;
-        if (sequence) lastSequence = sequence;
-
-        roomTurnPlaybackQueue = roomTurnPlaybackQueue
-          .catch(() => undefined)
-          .then(() => playResolvedTurn(payload))
-          .catch((error) => {
-            console.error("[board-room] turn playback failed", error);
-          });
-      });
-
-      socket.addEventListener("close", schedule);
-      socket.addEventListener("error", () => {});
-    };
+    let syncing = true;
+    let playing = false;
+    let pending = new Map();
+    const MAX_PENDING_TURNS = 512;
 
     const schedule = () => {
       if (closed || retryTimer) return;
@@ -5358,15 +5318,123 @@
       }, delayMs);
     };
 
+    const resynchronize = async (currentGeneration) => {
+      if (closed || currentGeneration !== generation) return;
+      syncing = true;
+      try {
+        // A previous turn may still be animating. Never overwrite its effects
+        // with an older snapshot captured before animation completed.
+        await roomTurnPlaybackQueue.catch(() => undefined);
+        if (closed || currentGeneration !== generation) return;
+        const runtime = await fetchRoomRuntimeState();
+        if (!runtime || closed || currentGeneration !== generation) return;
+        lastSequence = applyRoomRuntimeSnapshot(runtime);
+        for (const sequence of pending.keys()) {
+          if (sequence <= lastSequence) pending.delete(sequence);
+        }
+        syncing = false;
+        drainPending(currentGeneration);
+      } catch (error) {
+        console.error("[board-room] runtime synchronization failed", error);
+        if (currentGeneration === generation && !closed) {
+          socket?.close(1011, "runtime snapshot unavailable");
+        }
+      }
+    };
+
+    const drainPending = (currentGeneration) => {
+      if (closed || syncing || playing || currentGeneration !== generation) return;
+      const nextSequence = lastSequence + 1;
+      const next = pending.get(nextSequence);
+      if (!next) {
+        if (pending.size) {
+          // Events are missing. Reload a complete server snapshot instead of
+          // skipping an animation and leaving cells/players inconsistent.
+          resynchronize(currentGeneration);
+        }
+        return;
+      }
+
+      pending.delete(nextSequence);
+      playing = true;
+      roomTurnPlaybackQueue = roomTurnPlaybackQueue
+        .catch(() => undefined)
+        .then(async () => {
+          if (closed || syncing || currentGeneration !== generation) return;
+          await playResolvedTurn(next);
+          lastSequence = nextSequence;
+        })
+        .catch((error) => {
+          console.error("[board-room] turn playback failed", error);
+          syncing = true;
+          // Never await this playback promise from its own rejection handler.
+          // Reconnecting restarts synchronization behind a clean barrier.
+          if (currentGeneration === generation) {
+            socket?.close(1011, "room turn playback failed");
+          }
+        })
+        .finally(() => {
+          playing = false;
+          if (!syncing) drainPending(currentGeneration);
+        });
+    };
+
+    const connect = () => {
+      if (closed) return;
+      const currentGeneration = ++generation;
+      syncing = true;
+      pending.clear();
+      try {
+        socket = new WebSocket(resolvedWebSocketUrl);
+      } catch (_) {
+        schedule();
+        return;
+      }
+
+      const currentSocket = socket;
+      currentSocket.addEventListener("open", () => {
+        if (closed || currentGeneration !== generation) return;
+        retryAttempt = 0;
+        resynchronize(currentGeneration);
+      });
+
+      currentSocket.addEventListener("message", (message) => {
+        if (closed || currentGeneration !== generation) return;
+        let payload;
+        try { payload = JSON.parse(message.data); }
+        catch (_) { return; }
+        if (payload?.type !== "board.turn"
+            || String(payload.roomId) !== ROOM_ID) return;
+        const sequence = Number(payload.sequence);
+        if (!Number.isSafeInteger(sequence) || sequence < 1) return;
+        if (sequence <= lastSequence || pending.has(sequence)) return;
+        if (pending.size >= MAX_PENDING_TURNS) {
+          // A stalled browser must not buffer an unbounded event backlog.
+          currentSocket.close(1013, "room turn backlog limit");
+          return;
+        }
+        pending.set(sequence, payload);
+        drainPending(currentGeneration);
+      });
+
+      currentSocket.addEventListener("close", () => {
+        if (closed || currentGeneration !== generation) return;
+        ++generation; // Invalidate outstanding fetches and animations.
+        syncing = true;
+        pending.clear();
+        schedule();
+      });
+      currentSocket.addEventListener("error", () => {});
+    };
+
     window.addEventListener("beforeunload", () => {
       closed = true;
+      ++generation;
       if (retryTimer) window.clearTimeout(retryTimer);
       if (socket && socket.readyState < WebSocket.CLOSING) socket.close();
     }, { once: true });
-
     connect();
   }
-
 
   // Rounded layout variants. Rect-only optimized helpers stay above.
   function createRoundedLoop(width, height, margin, radius) {

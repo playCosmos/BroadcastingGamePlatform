@@ -264,8 +264,21 @@ public final class RoomService {
     }
 
     public RoomSnapshot find(String roomId) throws SQLException {
-        terminateExpiredRooms();
+        var snapshot = loadRoomSnapshot(roomId);
+        var lifecycle = snapshot.lifecycle();
+        if (lifecycle != null && !"TERMINATED".equals(lifecycle.state())) {
+            OffsetDateTime expiry = parseStoredDateTime(lifecycle.expiresAt());
+            if (expiry != null && !expiry.isAfter(OffsetDateTime.now())) {
+                // Only expired rooms trigger a database mutation. Live public reads
+                // and WebSocket handshakes must not acquire SQLite writer locks.
+                terminateExpiredRooms();
+                return loadRoomSnapshot(roomId);
+            }
+        }
+        return snapshot;
+    }
 
+    private RoomSnapshot loadRoomSnapshot(String roomId) throws SQLException {
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
                  SELECT br.room_id, br.status, br.config_json, br.preview_json,
@@ -318,7 +331,7 @@ public final class RoomService {
         }
     }
 
-    public RoomSnapshot rerollPreview(String roomId) throws SQLException {
+    public synchronized RoomSnapshot rerollPreview(String roomId) throws SQLException {
         var current = find(roomId);
         if (
             !"DRAFT".equals(current.status())
@@ -336,11 +349,13 @@ public final class RoomService {
                  UPDATE board_room
                  SET preview_json = ?, preview_seed = ?, updated_at = ?
                  WHERE room_id = ? AND status = 'DRAFT'
+                   AND lifecycle_state = 'DRAFT' AND preview_seed = ?
                  """)) {
             statement.setString(1, GSON.toJson(preview));
             statement.setLong(2, preview.seed());
             statement.setString(3, now);
             statement.setString(4, roomId);
+            statement.setLong(5, current.preview().seed());
             if (statement.executeUpdate() != 1) {
                 throw new IllegalStateException("room preview changed concurrently");
             }
@@ -398,11 +413,13 @@ public final class RoomService {
                         activated_at = COALESCE(activated_at, ?),
                         updated_at = ?
                     WHERE room_id = ? AND status = 'DRAFT'
+                      AND lifecycle_state = 'DRAFT' AND preview_seed = ?
                     """)) {
                     statement.setString(1, previewJson);
                     statement.setString(2, now);
                     statement.setString(3, now);
                     statement.setString(4, roomId);
+                    statement.setLong(5, current.preview().seed());
                     if (statement.executeUpdate() != 1) {
                         throw new IllegalStateException("room preview changed concurrently");
                     }

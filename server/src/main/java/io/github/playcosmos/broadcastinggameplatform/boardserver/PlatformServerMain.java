@@ -13,6 +13,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroad
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
 import io.github.playcosmos.broadcastinggameplatform.operations.WindowsConsoleEncoding;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
+import io.github.playcosmos.broadcastinggameplatform.room.DonationInboxService;
 import io.github.playcosmos.broadcastinggameplatform.soop.BoardParticipantSoopManager;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomHttpHandler;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -118,6 +119,16 @@ public final class PlatformServerMain {
             System.out.println("[platform-server] recovered queued donations=" + recovered);
         }
 
+        var donationInbox = new DonationInboxService(database, runtime);
+        try {
+            int replayed = donationInbox.recoverAfterRestart();
+            if (replayed > 0) {
+                System.out.println("[donation-inbox] recovered pending=" + replayed);
+            }
+        } catch (Exception error) {
+            System.err.println("[donation-inbox] startup replay deferred: " + error.getMessage());
+        }
+
         var lifecycleExecutor = Executors.newSingleThreadScheduledExecutor(runnable -> {
             Thread thread = new Thread(runnable, "board-room-lifecycle");
             thread.setDaemon(true);
@@ -151,6 +162,15 @@ public final class PlatformServerMain {
             }
         }, 1, 1, TimeUnit.SECONDS);
 
+        lifecycleExecutor.scheduleWithFixedDelay(() -> {
+            try {
+                donationInbox.drainBatch(128);
+            } catch (Exception error) {
+                System.err.println("[donation-inbox] retry scan failed: "
+                    + error.getMessage());
+            }
+        }, 2, 2, TimeUnit.SECONDS);
+
         var platformEvents = new PlatformEventBus();
         var providers = new ProviderRegistry();
         var soop = new SoopBroadcastProvider(
@@ -170,26 +190,11 @@ public final class PlatformServerMain {
                     return;
                 }
                 try {
-                    var result = runtime.process(donation);
-                    if (
-                        result.processedRooms() > 0 ||
-                        result.duplicateRooms() > 0 ||
-                        result.queuedRooms() > 0 ||
-                        result.ignoredRooms() > 0
-                    ) {
-                        System.out.println(
-                            "[board-game] provider=" + donation.provider()
-                                + " amount=" + donation.amount()
-                                + " matched=" + result.matchedRooms()
-                                + " processed=" + result.processedRooms()
-                                + " queued=" + result.queuedRooms()
-                                + " ignored=" + result.ignoredRooms()
-                                + " duplicates=" + result.duplicateRooms()
-                        );
-                    }
+                    donationInbox.accept(donation);
+                    donationInbox.drainBatch(64);
                 } catch (Exception error) {
                     System.err.println(
-                        "[board-game] donation processing failed: "
+                        "[donation-inbox] ingest or replay failed: "
                             + error.getMessage()
                     );
                     error.printStackTrace(System.err);
@@ -337,6 +342,13 @@ public final class PlatformServerMain {
             try { chatSubscription.close(); } catch (Exception ignored) {}
             try { participantSoop.close(); } catch (Exception ignored) {}
             try { providers.close(); } catch (Exception ignored) {}
+            if (donationInbox.volatileBufferedCount() > 0) {
+                System.err.println(
+                    "[donation-inbox] shutting down with volatile events="
+                        + donationInbox.volatileBufferedCount()
+                        + " (not crash durable)"
+                );
+            }
             try { fileLog.close(); } catch (Exception ignored) {}
             shutdown.countDown();
         };

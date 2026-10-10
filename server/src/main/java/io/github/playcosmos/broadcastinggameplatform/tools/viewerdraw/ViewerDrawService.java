@@ -50,7 +50,8 @@ public final class ViewerDrawService {
         EntryCollectionState.idle();
 
     public ViewerDrawService(DatabaseAccess database) {
-        this.database = database;
+        this.database = java.util.Objects.requireNonNull(database, "database");
+        restoreEntryCollection();
     }
 
     public record DrawEntry(
@@ -283,6 +284,7 @@ public final class ViewerDrawService {
             next.state = "OPEN";
             next.startedAt = Instant.now().toString();
             next.updatedAt = next.startedAt;
+            persistCollectionConfiguration(next, true);
             entryCollection = next;
             return entryCollectionSnapshotLocked();
         }
@@ -291,8 +293,11 @@ public final class ViewerDrawService {
     public EntryCollectionSnapshot pauseEntryCollection() {
         synchronized (entryCollectionLock) {
             if ("OPEN".equals(entryCollection.state)) {
-                entryCollection.state = "PAUSED";
-                entryCollection.updatedAt = Instant.now().toString();
+                var next = copyCollectionState(entryCollection);
+                next.state = "PAUSED";
+                next.updatedAt = Instant.now().toString();
+                persistCollectionConfiguration(next, false);
+                entryCollection = next;
             }
             return entryCollectionSnapshotLocked();
         }
@@ -309,8 +314,11 @@ public final class ViewerDrawService {
                         "chat collection is not configured"
                     );
                 }
-                entryCollection.state = "OPEN";
-                entryCollection.updatedAt = Instant.now().toString();
+                var next = copyCollectionState(entryCollection);
+                next.state = "OPEN";
+                next.updatedAt = Instant.now().toString();
+                persistCollectionConfiguration(next, false);
+                entryCollection = next;
             }
             return entryCollectionSnapshotLocked();
         }
@@ -322,8 +330,11 @@ public final class ViewerDrawService {
                 "OPEN".equals(entryCollection.state)
                 || "PAUSED".equals(entryCollection.state)
             ) {
-                entryCollection.state = "CLOSED";
-                entryCollection.updatedAt = Instant.now().toString();
+                var next = copyCollectionState(entryCollection);
+                next.state = "CLOSED";
+                next.updatedAt = Instant.now().toString();
+                persistCollectionConfiguration(next, false);
+                entryCollection = next;
             }
             return entryCollectionSnapshotLocked();
         }
@@ -331,10 +342,13 @@ public final class ViewerDrawService {
 
     public EntryCollectionSnapshot clearEntryCollection() {
         synchronized (entryCollectionLock) {
-            entryCollection.entries.clear();
-            entryCollection.acceptedMessages = 0;
-            entryCollection.duplicateMessages = 0;
-            entryCollection.updatedAt = Instant.now().toString();
+            var next = copyCollectionState(entryCollection);
+            next.entries.clear();
+            next.acceptedMessages = 0;
+            next.duplicateMessages = 0;
+            next.updatedAt = Instant.now().toString();
+            persistCollectionConfiguration(next, true);
+            entryCollection = next;
             return entryCollectionSnapshotLocked();
         }
     }
@@ -381,8 +395,10 @@ public final class ViewerDrawService {
             }
             String key = entryCollection.provider + "\u0000" + userId;
             if (entryCollection.entries.containsKey(key)) {
+                String now = Instant.now().toString();
+                persistChatEntry(null, null, now);
                 entryCollection.duplicateMessages += 1;
-                entryCollection.updatedAt = Instant.now().toString();
+                entryCollection.updatedAt = now;
                 return false;
             }
             if (entryCollection.entries.size() >= MAX_ENTRIES) {
@@ -400,19 +416,202 @@ public final class ViewerDrawService {
                 ("viewer-draw:" + key).getBytes(StandardCharsets.UTF_8)
             ).toString();
 
-            entryCollection.entries.put(
-                key,
-                new DrawEntry(
-                    entryId,
-                    entryCollection.provider,
-                    userId,
-                    displayName,
-                    displayName
-                )
+            var entry = new DrawEntry(
+                entryId,
+                entryCollection.provider,
+                userId,
+                displayName,
+                displayName
             );
+            String now = Instant.now().toString();
+            persistChatEntry(key, entry, now);
+            entryCollection.entries.put(key, entry);
             entryCollection.acceptedMessages += 1;
-            entryCollection.updatedAt = Instant.now().toString();
+            entryCollection.updatedAt = now;
             return true;
+        }
+    }
+
+    private static EntryCollectionState copyCollectionState(
+        EntryCollectionState source
+    ) {
+        var copy = new EntryCollectionState();
+        copy.source = source.source;
+        copy.provider = source.provider;
+        copy.channelId = source.channelId;
+        copy.keyword = source.keyword;
+        copy.state = source.state;
+        copy.acceptedMessages = source.acceptedMessages;
+        copy.duplicateMessages = source.duplicateMessages;
+        copy.startedAt = source.startedAt;
+        copy.updatedAt = source.updatedAt;
+        copy.entries.putAll(source.entries);
+        return copy;
+    }
+
+    private void restoreEntryCollection() {
+        var restored = EntryCollectionState.idle();
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT source, provider, channel_id, keyword, state,
+                        accepted_messages, duplicate_messages,
+                        started_at, updated_at
+                 FROM viewer_draw_entry_collection
+                 WHERE collection_id = 1
+                 """);
+             var rows = statement.executeQuery()) {
+            if (!rows.next()) {
+                throw new IllegalStateException(
+                    "viewer draw entry collection is not initialized"
+                );
+            }
+            restored.source = rows.getString("source");
+            restored.provider = rows.getString("provider");
+            restored.channelId = rows.getString("channel_id");
+            restored.keyword = rows.getString("keyword");
+            restored.state = rows.getString("state");
+            restored.acceptedMessages = rows.getLong("accepted_messages");
+            restored.duplicateMessages = rows.getLong("duplicate_messages");
+            restored.startedAt = rows.getString("started_at");
+            restored.updatedAt = rows.getString("updated_at");
+        } catch (SQLException error) {
+            throw new IllegalStateException(
+                "failed to restore viewer draw chat collection", error
+            );
+        }
+
+        try (var connection = database.open();
+             var statement = connection.prepareStatement("""
+                 SELECT entry_key, entry_id, provider, user_id,
+                        display_name, label
+                 FROM viewer_draw_entry_collection_member
+                 ORDER BY rowid
+                 """);
+             var rows = statement.executeQuery()) {
+            while (rows.next()) {
+                if (restored.entries.size() >= MAX_ENTRIES) {
+                    throw new IllegalStateException(
+                        "persisted viewer draw collection exceeds entry limit"
+                    );
+                }
+                restored.entries.put(
+                    rows.getString("entry_key"),
+                    new DrawEntry(
+                        rows.getString("entry_id"),
+                        rows.getString("provider"),
+                        rows.getString("user_id"),
+                        rows.getString("display_name"),
+                        rows.getString("label")
+                    )
+                );
+            }
+        } catch (SQLException error) {
+            throw new IllegalStateException(
+                "failed to restore viewer draw collection members", error
+            );
+        }
+        entryCollection = restored;
+    }
+
+    private void persistCollectionConfiguration(
+        EntryCollectionState next,
+        boolean resetEntries
+    ) {
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            try {
+                try (var statement = connection.prepareStatement("""
+                    UPDATE viewer_draw_entry_collection
+                    SET source = ?, provider = ?, channel_id = ?,
+                        keyword = ?, state = ?, accepted_messages = ?,
+                        duplicate_messages = ?, started_at = ?, updated_at = ?
+                    WHERE collection_id = 1
+                    """)) {
+                    statement.setString(1, next.source);
+                    statement.setString(2, next.provider);
+                    statement.setString(3, next.channelId);
+                    statement.setString(4, next.keyword);
+                    statement.setString(5, next.state);
+                    statement.setLong(6, next.acceptedMessages);
+                    statement.setLong(7, next.duplicateMessages);
+                    statement.setString(8, next.startedAt);
+                    statement.setString(9, next.updatedAt);
+                    if (statement.executeUpdate() != 1) {
+                        throw new SQLException("missing viewer draw collection");
+                    }
+                }
+                if (resetEntries) {
+                    try (var statement = connection.prepareStatement(
+                        "DELETE FROM viewer_draw_entry_collection_member"
+                    )) {
+                        statement.executeUpdate();
+                    }
+                }
+                connection.commit();
+            } catch (Exception error) {
+                connection.rollback();
+                throw error;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (Exception error) {
+            throw new IllegalStateException(
+                "failed to persist viewer draw collection configuration", error
+            );
+        }
+    }
+
+    /** Persist each accepted identity with O(1) writes instead of rewriting
+     * the entire 10,000-member collection after every chat message. */
+    private void persistChatEntry(
+        String key,
+        DrawEntry entry,
+        String updatedAt
+    ) {
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            try {
+                if (entry != null) {
+                    try (var statement = connection.prepareStatement("""
+                        INSERT INTO viewer_draw_entry_collection_member(
+                          entry_key, entry_id, provider, user_id,
+                          display_name, label
+                        ) VALUES (?, ?, ?, ?, ?, ?)
+                        """)) {
+                        statement.setString(1, key);
+                        statement.setString(2, entry.entryId());
+                        statement.setString(3, entry.provider());
+                        statement.setString(4, entry.userId());
+                        statement.setString(5, entry.displayName());
+                        statement.setString(6, entry.label());
+                        statement.executeUpdate();
+                    }
+                }
+                try (var statement = connection.prepareStatement("""
+                    UPDATE viewer_draw_entry_collection
+                    SET accepted_messages = accepted_messages + ?,
+                        duplicate_messages = duplicate_messages + ?,
+                        updated_at = ?
+                    WHERE collection_id = 1 AND state = 'OPEN'
+                    """)) {
+                    statement.setInt(1, entry == null ? 0 : 1);
+                    statement.setInt(2, entry == null ? 1 : 0);
+                    statement.setString(3, updatedAt);
+                    if (statement.executeUpdate() != 1) {
+                        throw new SQLException("viewer draw collection was closed");
+                    }
+                }
+                connection.commit();
+            } catch (Exception error) {
+                connection.rollback();
+                throw error;
+            } finally {
+                connection.setAutoCommit(true);
+            }
+        } catch (Exception error) {
+            throw new IllegalStateException(
+                "failed to persist viewer draw collection chat entry", error
+            );
         }
     }
 
@@ -778,6 +977,13 @@ public final class ViewerDrawService {
         payload.put("startedAt", stored.startedAt());
         payload.put("completedAt", stored.completedAt());
         payload.put("createdAt", stored.createdAt());
+        // A server-side copy of client-supplied output is not an independent
+        // physics replay or cryptographic attestation of the winner order.
+        payload.put("verification", Map.of(
+            "status", "CLIENT_REPORTED",
+            "serverPhysicsReplayed", false,
+            "independentlyVerified", false
+        ));
         payload.put("audit", publicAudit);
         return payload;
     }
@@ -2807,27 +3013,48 @@ public final class ViewerDrawService {
         }
     }
 
+    /**
+     * The ID list and each assembled session use one WAL read snapshot.
+     * A concurrent retention prune must not remove an ID mid-listing.
+     */
     public List<Session> recent(int limit) throws SQLException {
         int normalizedLimit = Math.max(1, Math.min(100, limit));
-        var ids = new ArrayList<String>();
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT session_id
-                 FROM viewer_draw_session
-                 ORDER BY updated_at DESC
-                 LIMIT ?
-                 """)) {
-            statement.setInt(1, normalizedLimit);
-            try (var rows = statement.executeQuery()) {
-                while (rows.next()) ids.add(rows.getString(1));
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            var ids = new ArrayList<String>();
+            try (var statement = connection.prepareStatement("""
+                SELECT session_id
+                FROM viewer_draw_session
+                ORDER BY updated_at DESC
+                LIMIT ?
+                """)) {
+                statement.setInt(1, normalizedLimit);
+                try (var rows = statement.executeQuery()) {
+                    while (rows.next()) ids.add(rows.getString(1));
+                }
             }
+            var result = new ArrayList<Session>();
+            for (String id : ids) result.add(readSession(connection, id));
+            connection.commit();
+            return List.copyOf(result);
         }
-        var result = new ArrayList<Session>();
-        for (String id : ids) result.add(find(id));
-        return List.copyOf(result);
     }
 
+    /** Read the session, its identities, and result in one consistent view. */
     public Session find(String sessionId) throws SQLException {
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            Session session = readSession(connection, sessionId);
+            connection.commit();
+            return session;
+        }
+    }
+
+    /** Caller must already have started a read transaction on connection. */
+    private Session readSession(
+        java.sql.Connection connection,
+        String sessionId
+    ) throws SQLException {
         Map<String, Object> config;
         String publicCode;
         String name;
@@ -2840,17 +3067,18 @@ public final class ViewerDrawService {
         String updatedAt;
         String completedAt;
 
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT public_code, name, mode, entry_source, state, config_json,
-                        frozen_entry_hash, entry_count, created_at,
-                        updated_at, completed_at
-                 FROM viewer_draw_session
-                 WHERE session_id = ?
-                 """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT public_code, name, mode, entry_source, state, config_json,
+                       frozen_entry_hash, entry_count, created_at,
+                       updated_at, completed_at
+                FROM viewer_draw_session
+                WHERE session_id = ?
+                """)) {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
-                if (!rows.next()) throw new NoSuchElementException("viewer draw session not found");
+                if (!rows.next()) {
+                    throw new NoSuchElementException("viewer draw session not found");
+                }
                 publicCode = rows.getString("public_code");
                 name = rows.getString("name");
                 mode = rows.getString("mode");
@@ -2869,13 +3097,12 @@ public final class ViewerDrawService {
         }
 
         var entries = new ArrayList<DrawEntry>();
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT entry_id, provider_id, user_id, display_name, label
-                 FROM viewer_draw_entry
-                 WHERE session_id = ?
-                 ORDER BY entry_index
-                 """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT entry_id, provider_id, user_id, display_name, label
+                FROM viewer_draw_entry
+                WHERE session_id = ?
+                ORDER BY entry_index
+                """)) {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
@@ -2891,10 +3118,9 @@ public final class ViewerDrawService {
         }
 
         Object drawResult = null;
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT result_json FROM viewer_draw_result WHERE session_id = ?
-                 """)) {
+        try (var statement = connection.prepareStatement("""
+                SELECT result_json FROM viewer_draw_result WHERE session_id = ?
+                """)) {
             statement.setString(1, sessionId);
             try (var rows = statement.executeQuery()) {
                 if (rows.next()) {
@@ -2912,19 +3138,25 @@ public final class ViewerDrawService {
 
     public Session findByPublicCode(String publicCode) throws SQLException {
         String normalized = normalizePublicCode(publicCode);
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 SELECT session_id
-                 FROM viewer_draw_session
-                 WHERE public_code = ?
-                 """)) {
-            statement.setString(1, normalized);
-            try (var rows = statement.executeQuery()) {
-                if (!rows.next()) {
-                    throw new NoSuchElementException("viewer draw session not found");
+        try (var connection = database.open()) {
+            connection.setAutoCommit(false);
+            String sessionId;
+            try (var statement = connection.prepareStatement("""
+                    SELECT session_id
+                    FROM viewer_draw_session
+                    WHERE public_code = ?
+                    """)) {
+                statement.setString(1, normalized);
+                try (var rows = statement.executeQuery()) {
+                    if (!rows.next()) {
+                        throw new NoSuchElementException("viewer draw session not found");
+                    }
+                    sessionId = rows.getString(1);
                 }
-                return find(rows.getString(1));
             }
+            Session session = readSession(connection, sessionId);
+            connection.commit();
+            return session;
         }
     }
 

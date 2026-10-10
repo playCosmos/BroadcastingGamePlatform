@@ -92,6 +92,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         new ConcurrentHashMap<>();
     private final LinkedHashMap<String, HandshakeRateWindow>
         handshakeRates = new LinkedHashMap<>();
+    private final Object drawingReplayLock = new Object();
     private final Predicate<String> roomCodeValidator;
     private final DrawingSyncService drawingSync;
 
@@ -149,48 +150,61 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             return;
         }
 
-        String drawingCode = normalizeCode(query.get("drawingCode"));
-        if (
-            drawingCode != null
-            && drawingSync != null
-            && drawingSync.isActive(drawingCode)
-        ) {
-            String drawerToken = query.get("drawerToken");
-            boolean canWrite = drawerToken != null
-                && drawingSync.isAuthorizedDrawer(
-                    drawingCode,
-                    drawerToken
+        // Replay registration and new drawing broadcasts must share one order.
+        synchronized (drawingReplayLock) {
+            String drawingCode = normalizeCode(query.get("drawingCode"));
+            if (
+                drawingCode != null
+                && drawingSync != null
+                && drawingSync.isActive(drawingCode)
+            ) {
+                String drawerToken = query.get("drawerToken");
+                boolean canWrite = drawerToken != null
+                    && drawingSync.isAuthorizedDrawer(
+                        drawingCode,
+                        drawerToken
+                    );
+    
+                if (drawerToken != null && !canWrite) {
+                    connection.close(1008, "invalid drawer token");
+                    return;
+                }
+    
+                if (!registerIfCapacity(
+                    connection,
+                    new Channel(
+                        ChannelKind.DRAWING,
+                        drawingCode,
+                        drawerToken,
+                        canWrite
+                    )
+                )) {
+                    connection.close(1013, "drawing connection capacity reached");
+                    return;
+                }
+    
+                for (String event : drawingSync.history(drawingCode)) {
+                    if (!connection.isOpen()) break;
+                    connection.send(event);
+                }
+                if (connection.isOpen()) {
+                    // A final replay watermark distinguishes replay from live
+                    // events, including sessions with no retained tail events.
+                    connection.send(
+                        "{\"type\":\"drawing.history.complete\",\"sequence\":"
+                            + drawingSync.findPublic(drawingCode).lastSequence()
+                            + "}"
+                    );
+                }
+    
+                System.out.println(
+                    "[platform-ws] drawing connected role="
+                        + (canWrite ? "drawer" : "overlay")
+                        + " connections=" + connectedClients.get()
                 );
-
-            if (drawerToken != null && !canWrite) {
-                connection.close(1008, "invalid drawer token");
                 return;
             }
-
-            if (!registerIfCapacity(
-                connection,
-                new Channel(
-                    ChannelKind.DRAWING,
-                    drawingCode,
-                    drawerToken,
-                    canWrite
-                )
-            )) {
-                connection.close(1013, "drawing connection capacity reached");
-                return;
-            }
-
-            for (String event : drawingSync.history(drawingCode)) {
-                if (!connection.isOpen()) break;
-                connection.send(event);
-            }
-
-            System.out.println(
-                "[platform-ws] drawing connected role="
-                    + (canWrite ? "drawer" : "overlay")
-                    + " connections=" + connectedClients.get()
-            );
-            return;
+    
         }
 
         connection.close(1008, "valid board room or drawing code required");
@@ -387,12 +401,14 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
 
         try {
-            String canonical = drawingSync.append(
-                channel.code(),
-                channel.drawerToken(),
-                message
-            );
-            broadcastDrawing(channel.code(), canonical);
+            synchronized (drawingReplayLock) {
+                String canonical = drawingSync.append(
+                    channel.code(),
+                    channel.drawerToken(),
+                    message
+                );
+                broadcastDrawing(channel.code(), canonical);
+            }
         } catch (SecurityException error) {
             connection.close(1008, "drawing write authorization failed");
         } catch (Exception error) {
