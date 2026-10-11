@@ -216,10 +216,10 @@ try {
         }
         $previousIndex = $index
     }
-    if ($editorDom -notmatch 'id="boardRoomCreateButton"[^>]*[\s\S]*?data-placement-label>배치</span>') {
+    if ($editorDom -notmatch 'id="boardRoomCreateButton"[^>]*[\s\S]*?data-placement-label[^>]*>배치</span>') {
         throw "first placement action must contain its own icon and label"
     }
-    if ($editorDom -notmatch 'id="boardRoomCommitButton"[^>]*disabled[^>]*[\s\S]*?data-commit-label>이 배치로 확정</span>') {
+    if ($editorDom -notmatch 'id="boardRoomCommitButton"[^>]*disabled[^>]*[\s\S]*?data-commit-label[^>]*>이 배치로 확정</span>') {
         throw "confirmation must contain its icon and remain disabled until DRAFT"
     }
     if ($editorDom -notmatch 'id="boardRoomRandomOptions" hidden' -or
