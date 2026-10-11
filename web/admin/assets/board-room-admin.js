@@ -19,6 +19,7 @@
   const instructionList = $("boardRoomInstructionList");
   const instructionEmptyState = $("boardRoomInstructionEmptyState");
   const randomPoolMode = $("boardRoomRandomPoolMode");
+  const randomOptions = $("boardRoomRandomOptions");
   const result = $("boardRoomResult");
   const previewPanel = $("boardRoomPreviewPanel");
   const previewFrame = $("boardRoomPreviewFrame");
@@ -46,6 +47,12 @@
   let instructionEditorSequence = 0;
   let selectedInstructionRow = null;
 
+  function setButtonText(button, selector, label) {
+    const text = button?.querySelector?.(selector);
+    if (text) text.textContent = label;
+    else if (button) button.textContent = label;
+  }
+
   // The preview is always an actual server-created room. Until a DRAFT
   // exists, show an empty state rather than an unrelated demo board.
   function showEmptyPreview() {
@@ -58,7 +65,7 @@
     }
     if (previewMeta) previewMeta.textContent = "배치 전";
     if (createButton) {
-      createButton.textContent = "배치";
+      setButtonText(createButton, "[data-placement-label]", "배치");
       createButton.disabled = layoutBusy;
     }
     if (commitButton) commitButton.disabled = true;
@@ -478,6 +485,7 @@
     if (item.actionType === "skipThrow") return "skip";
     if (item.actionType === "multiplyNextThrow") return "multiplier";
     if (item.actionType === "ignoreNextLanding") return "ignoreLanding";
+    if (item.actionType === "randomCell" || item.randomPlaceholder) return "random";
     return "custom";
   }
 
@@ -532,6 +540,10 @@
     if (!instructionRows.querySelector(".board-room-instruction-row")) {
       seedDefaultInstructions();
     } else {
+      // Older presets predate the random cell: append it unchecked on restore.
+      if (!instructionRows.querySelector('[data-random-placeholder="true"]')) {
+        addInstruction("random", { builtIn: true, deferList: true });
+      }
       rebuildInstructionList();
       selectInstruction(
         instructionRows.querySelector(".board-room-instruction-row")
@@ -587,9 +599,9 @@
     renumberPlayers(preset.sharedBalloon !== false);
 
     randomPoolMode.value =
-      preset.randomPoolMode === "custom"
-        ? "custom"
-        : "inheritRatioInstructions";
+      preset.randomPoolMode === "inheritRatioInstructions"
+        ? "inheritRatioInstructions"
+        : "custom";
     restoreInstructions(preset.instructions);
 
     syncBoardSizing();
@@ -748,12 +760,15 @@
     const toggle = item.querySelector(".board-room-instruction-enabled");
     if (toggle) toggle.checked = enabled;
     if (label) label.textContent = title.label;
+    const actionLabel = row.querySelector("[data-action-label]");
+    if (actionLabel) actionLabel.textContent = title.label;
   }
 
   function setInstructionEnabled(row, enabled) {
     row.dataset.enabled = enabled ? "true" : "false";
     row.classList.toggle("disabled", !enabled);
     updateInstructionListItem(row);
+    syncRandomVisibility();
     updateAllocationSummaries();
   }
 
@@ -789,6 +804,7 @@
       enabled.title = "활성 / 비활성";
       enabled.addEventListener("change", () => {
         setInstructionEnabled(row, enabled.checked);
+        settingsChanged();
       });
 
       const select = document.createElement("button");
@@ -851,6 +867,14 @@
         allocationMode: "count",
         allocationValue: 1
       },
+      random: {
+        id: "RANDOM_CELL",
+        label: "랜덤",
+        action: "randomCell",
+        allocationMode: "count",
+        allocationValue: 1,
+        randomPlaceholder: true
+      },
       custom: {
         id: "CUSTOM",
         label: "사용자 지시문",
@@ -867,22 +891,21 @@
     row.className = "board-room-instruction-row";
     row.dataset.editorKey = "instruction-" + (++instructionEditorSequence);
     row.dataset.actionType = preset.action;
-    row.dataset.randomPlaceholder = "false";
+    row.dataset.randomPlaceholder = preset.randomPlaceholder ? "true" : "false";
     row.dataset.builtIn = builtIn ? "true" : "false";
-    row.dataset.enabled = "true";
+    row.dataset.enabled = kind === "random" ? "false" : "true";
     row.innerHTML = `
       <div class="board-room-instruction-head">
-        <div>
-          <strong>${escapeAttribute(preset.label)}</strong>
-          ${builtIn ? '<span class="board-room-built-in-badge">기본</span>' : ""}
-        </div>
+        <label class="board-room-instruction-title-field">
+          <span class="board-room-visually-hidden">표시 문구</span>
+          <input class="board-room-instruction-title-input" data-field="label" value="${escapeAttribute(preset.label)}" maxlength="120" required aria-label="표시 문구" />
+        </label>
+        ${builtIn ? '<span class="board-room-built-in-badge">기본</span>' : ""}
         <button type="button" class="board-room-small-button" data-action="remove" ${builtIn ? "hidden" : ""}>삭제</button>
       </div>
       <input type="hidden" data-field="instructionId" value="${escapeAttribute(id)}" />
       <div class="board-room-instruction-grid">
-        <label>표시 문구
-          <input data-field="label" value="${escapeAttribute(preset.label)}" maxlength="120" required />
-        </label>
+        
         <label>배치 방식
           <select data-field="allocationMode">
             <option value="ratio" ${preset.allocationMode === "ratio" ? "selected" : ""}>비율</option>
@@ -894,17 +917,20 @@
         </label>
       </div>
       <p class="board-room-allocation-summary" data-allocation-summary aria-live="polite"></p>
-      <div class="board-room-instruction-options">
+      <div class="board-room-instruction-options" data-random-candidate hidden>
         <label class="check-label"><input data-field="poolEnabled" type="checkbox" />랜덤 후보에 포함</label>
+      </div>
+      <div class="board-room-action-options"></div>
+      <div class="board-room-instruction-options board-room-pool-weight-section" data-random-weight hidden>
         <label class="pool-weight">랜덤 가중치
           <input data-field="poolWeight" type="number" min="0.0001" step="0.1" value="${preset.allocationValue}" />
         </label>
       </div>
-      <div class="board-room-action-options"></div>
     `;
 
     instructionRows.append(row);
     renderActionOptions(row, preset);
+    if (row.dataset.enabled === "false") row.classList.add("disabled");
     syncInstructionRow(row);
 
     if (!options.deferList) {
@@ -917,7 +943,7 @@
 
   function seedDefaultInstructions() {
     if (instructionRows.querySelector(".board-room-instruction-row")) return;
-    ["forward", "backward", "skip", "multiplier", "ignoreLanding"].forEach((kind) => {
+    ["forward", "backward", "skip", "multiplier", "ignoreLanding", "random"].forEach((kind) => {
       addInstruction(kind, { builtIn: true, deferList: true });
     });
     rebuildInstructionList();
@@ -930,7 +956,7 @@
     const root = row.querySelector(".board-room-action-options");
     if (preset.action === "move") {
       root.innerHTML = `
-        <span class="board-room-action-chip">${preset.direction === "backward" ? "{n}칸 뒤로" : "{n}칸 앞으로"}</span>
+        <span class="board-room-action-chip" data-action-label>${escapeAttribute(preset.label)}</span>
         <label>이동 칸 수 방식 ({n})
           <select data-field="stepsMode">
             <option value="fixed">고정</option>
@@ -970,6 +996,15 @@
     }
   }
 
+  function randomCellEnabled() {
+    return Array.from(instructionRows.querySelectorAll(".board-room-instruction-row"))
+      .some((row) => row.dataset.randomPlaceholder === "true" && row.dataset.enabled !== "false");
+  }
+
+  function syncRandomVisibility() {
+    if (randomOptions) randomOptions.hidden = !randomCellEnabled();
+  }
+
   function syncInstructionRow(row) {
     const allocationMode = row.querySelector('[data-field="allocationMode"]');
     const randomCell = row.dataset.randomPlaceholder === "true";
@@ -989,21 +1024,24 @@
     const poolEnabled = row.querySelector('[data-field="poolEnabled"]');
     const poolWeight = row.querySelector('[data-field="poolWeight"]');
     const inherited = randomPoolMode.value === "inheritRatioInstructions";
-
+    const randomActive = randomCellEnabled();
+    const showCandidate = randomActive && !randomCell && !inherited;
+    const candidateSection = row.querySelector("[data-random-candidate]");
+    const weightSection = row.querySelector("[data-random-weight]");
+    if (candidateSection) candidateSection.hidden = !showCandidate;
     if (randomCell) {
       poolEnabled.checked = false;
       poolEnabled.disabled = true;
-      poolWeight.value = "0";
       poolWeight.disabled = true;
     } else if (inherited) {
-      poolEnabled.checked = mode === "ratio" && Number(value.value) > 0;
+      // Preserve manually selected candidates when switching back to custom.
       poolEnabled.disabled = true;
-      poolWeight.value = mode === "ratio" ? value.value : "0";
       poolWeight.disabled = true;
     } else {
-      poolEnabled.disabled = false;
-      poolWeight.disabled = !poolEnabled.checked;
+      poolEnabled.disabled = !randomActive || row.dataset.enabled === "false";
+      poolWeight.disabled = poolEnabled.disabled || !poolEnabled.checked;
     }
+    if (weightSection) weightSection.hidden = !showCandidate || !poolEnabled.checked;
 
     const stepsMode = row.querySelector('[data-field="stepsMode"]');
     if (stepsMode) {
@@ -1014,6 +1052,7 @@
     }
 
     updateInstructionListItem(row);
+    syncRandomVisibility();
     updateAllocationSummaries();
   }
 
@@ -1105,6 +1144,7 @@
 
   function syncAllInstructionRows() {
     instructionRows.querySelectorAll(".board-room-instruction-row").forEach(syncInstructionRow);
+    syncRandomVisibility();
     updateAllocationSummaries();
   }
 
@@ -1211,9 +1251,9 @@
       .map(collectInstruction);
 
     const customPool = [];
-    if (randomPoolMode.value === "custom") {
+    if (randomCellEnabled() && randomPoolMode.value === "custom") {
       instructionRows.querySelectorAll(".board-room-instruction-row").forEach((row) => {
-        if (row.dataset.enabled === "false") return;
+        if (row.dataset.enabled === "false" || row.dataset.randomPlaceholder === "true") return;
         if (!row.querySelector('[data-field="poolEnabled"]').checked) return;
         customPool.push({
           instructionId: row.querySelector('[data-field="instructionId"]').value.trim(),
@@ -1260,7 +1300,7 @@
       instructions,
       randomPool: {
         mode: randomPoolMode.value,
-        entries: randomPoolMode.value === "custom" ? customPool : [],
+        entries: randomCellEnabled() && randomPoolMode.value === "custom" ? customPool : [],
         allowSameInstruction: null
       }
     };
@@ -1366,10 +1406,10 @@
       ", 유지 " + (lifecycle.retentionMinutes || 240) + "분" +
       (lifecycle.queuedDonations ? ", 대기 후원 " + lifecycle.queuedDonations + "건" : "");
 
-    createButton.textContent = ready ? "배치 확정됨" : "다시 배치";
+    setButtonText(createButton, "[data-placement-label]", ready ? "배치 확정됨" : "다시 배치");
     createButton.disabled = layoutBusy || ready || terminated;
     commitButton.disabled = layoutBusy || ready || terminated;
-    commitButton.textContent = ready ? "배치 확정됨" : "이 배치로 확정";
+    setButtonText(commitButton, "[data-commit-label]", ready ? "배치 확정됨" : "이 배치로 확정");
 
     const pauseModeField = form.elements.namedItem("pauseDonationMode");
     if (pauseModeField && lifecycle.pauseDonationMode) {
@@ -1534,7 +1574,10 @@
 
   instructionRows.addEventListener("change", (event) => {
     const row = event.target.closest(".board-room-instruction-row");
-    if (row) syncInstructionRow(row);
+    if (row) {
+      syncInstructionRow(row);
+      syncAllInstructionRows();
+    }
   });
   instructionRows.addEventListener("input", (event) => {
     const row = event.target.closest(".board-room-instruction-row");
@@ -1547,6 +1590,7 @@
       return;
     }
     syncInstructionRow(row);
+    if (event.target.dataset.field === "poolEnabled") syncAllInstructionRows();
   });
   instructionRows.addEventListener("click", (event) => {
     const button = event.target.closest('[data-action="remove"]');
