@@ -846,9 +846,9 @@
 }
 
 
-/* Board room editor: exactly two top-level panels.
-   Basic information, participants and movement are grouped in panel one.
-   Panel two holds both board tabs and a persistent preview/commit surface. */
+/* Room creation contains exactly two top-level panels.
+   The left workspace column always edits cell effects; sizing stays over the
+   actual server-generated preview on the right. */
 .board-room-admin-shell {
   width: min(1560px, calc(100% - 40px));
 }
@@ -917,53 +917,17 @@
 .board-room-editor-pane {
   min-width: 0;
 }
-.board-room-editor-tabs {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 7px;
-  margin-bottom: 16px;
-  padding: 5px;
-  border: 1px solid #303c4a;
-  border-radius: 11px;
-  background: #0c1219;
-}
-.board-room-editor-tabs [role="tab"] {
-  min-width: 0;
-  border: 0;
-  background: transparent;
-  color: #aab7c7;
-  font-size: 13px;
-  font-weight: 750;
-}
-.board-room-editor-tabs [role="tab"][aria-selected="true"] {
-  background: #2b4056;
-  color: #f4f8ff;
-  box-shadow: inset 0 0 0 1px #627c98;
-}
-.board-room-editor-tabs [role="tab"]:focus-visible {
-  outline: 2px solid #a0c8f1;
-  outline-offset: 2px;
-}
-.board-room-tab-content[hidden] {
-  display: none !important;
-}
-.board-room-editor-pane .board-room-settings-section {
+.board-room-editor-pane .board-room-settings-section,
+.board-room-board-preview .board-room-settings-section {
   padding: 0;
   border-top: 0;
 }
-.board-room-editor-pane .board-room-settings-section > h3 {
-  display: none;
-}
-.board-room-editor-pane .board-room-board-grid,
 .board-room-editor-pane .board-room-instruction-grid,
 .board-room-editor-pane .board-room-random-row {
   grid-template-columns: repeat(2, minmax(0, 1fr));
 }
-.board-room-editor-pane .board-room-field-cluster {
-  grid-column: 1 / -1;
-}
 .board-room-editor-pane .board-room-instruction-editor {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 .board-room-editor-pane .board-room-instruction-master-list {
   max-height: 240px;
@@ -972,12 +936,21 @@
   min-height: 42px;
 }
 .board-room-editor-pane .board-room-instruction-sidebar .board-room-instruction-toolbar {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
 }
 .board-room-board-preview {
   min-width: 0;
   position: sticky;
   top: 16px;
+}
+.board-room-board-preview .board-room-size-controls {
+  margin-bottom: 17px;
+}
+.board-room-board-preview .board-room-board-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+.board-room-board-preview .board-room-field-cluster {
+  display: contents;
 }
 .board-room-board-preview .board-room-preview-panel {
   margin: 0;
@@ -987,15 +960,12 @@
 .board-room-board-preview .board-room-preview-head {
   align-items: flex-start;
   flex-direction: column;
-  gap: 7px;
+  gap: 5px;
 }
 .board-room-board-preview .board-room-preview-head h3 {
   margin: 0;
   color: #e5ebf3;
   font-size: 15px;
-}
-.board-room-board-preview .board-room-preview-actions {
-  order: 2;
 }
 .board-room-board-preview .board-room-preview-shell {
   position: relative;
@@ -1036,14 +1006,28 @@
   margin-top: 14px;
   align-items: stretch;
   flex-direction: column;
+  gap: 8px;
 }
-.board-room-board-preview .board-room-create-actions > button {
+.board-room-layout-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  width: 100%;
+}
+.board-room-layout-actions > button {
   min-height: 46px;
+  font-weight: 800;
+}
+.board-room-layout-actions > #boardRoomCreateButton {
   border-color: #678bad;
   background: #284660;
 }
-.board-room-board-preview .board-room-create-actions > button:hover:not(:disabled) {
+.board-room-layout-actions > #boardRoomCreateButton:hover:not(:disabled) {
   background: #365b7c;
+}
+.board-room-layout-actions > button:disabled {
+  cursor: not-allowed;
+  opacity: .55;
 }
 .board-room-board-preview .board-room-create-actions > p {
   margin-top: 0;
@@ -1066,15 +1050,14 @@
   }
   .board-room-board-preview {
     position: static;
-    grid-row: 1;
   }
   .board-room-primary-panel .board-room-generator-choice-grid {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
   }
 }
 @media (max-width: 540px) {
   .board-room-primary-panel .board-room-settings-section .board-room-basic-grid,
-  .board-room-editor-pane .board-room-board-grid,
+  .board-room-board-preview .board-room-board-grid,
   .board-room-editor-pane .board-room-instruction-grid,
   .board-room-editor-pane .board-room-random-row {
     grid-template-columns: minmax(0, 1fr);
