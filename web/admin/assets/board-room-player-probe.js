@@ -18,7 +18,7 @@ function assert(value, name) {
 }
 function createRow(id, displayName) {
   const nodes = {
-    status: { textContent: "", dataset: {}, removeAttribute(attr) { delete this[attr]; } },
+    status: { textContent: "", dataset: {}, removeAttribute(attr) { if (attr === "data-status") delete this.dataset.status; else delete this[attr]; } },
     image: {
       hidden: true, onload: null, onerror: null, attributes: {},
       set src(value) { this.attributes.src = value; },
