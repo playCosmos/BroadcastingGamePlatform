@@ -216,11 +216,15 @@ try {
         }
         $previousIndex = $index
     }
-    if ($editorDom -notmatch 'id="boardRoomCreateButton"[^>]*>배치</button>') {
-        throw "first placement action must be labeled 배치"
+    if ($editorDom -notmatch 'id="boardRoomCreateButton"[^>]*[\\s\\S]*?data-placement-label>배치</span>') {
+        throw "first placement action must contain its own icon and label"
     }
-    if ($editorDom -notmatch 'id="boardRoomCommitButton"[^>]*disabled[^>]*>이 배치로 확정</button>') {
-        throw "board confirmation must be disabled until an actual DRAFT exists"
+    if ($editorDom -notmatch 'id="boardRoomCommitButton"[^>]*disabled[^>]*[\\s\\S]*?data-commit-label>이 배치로 확정</span>') {
+        throw "confirmation must contain its icon and remain disabled until DRAFT"
+    }
+    if ($editorDom -notmatch 'id="boardRoomRandomOptions" hidden' -or
+        $editorDom -notmatch 'id="boardRoomRandomPoolMode"') {
+        throw "random effects must start hidden but retain pool configuration"
     }
     if ($editorDom -match 'id="boardRoomSampleFrame"' -or
         $editorDom -match 'id="boardRoomPreviewFrame"[^>]+src="[^"]*demo=1') {
