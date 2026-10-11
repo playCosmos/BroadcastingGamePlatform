@@ -66,6 +66,16 @@ try {
             Name = "rect-12x8"
             Url = "$baseUrl/games/board/rect.html?demo=1&players=4&cols=12&rows=8"
             Engine = "rectilinear-loop-experimental"
+        },
+        @{
+            Name = "rounded-minimum-8x6"
+            Url = "$baseUrl/games/board/index.html?demo=1&players=4&cols=8&rows=6"
+            Engine = "reserve-first-loop-v4"
+        },
+        @{
+            Name = "rect-minimum-8x6"
+            Url = "$baseUrl/games/board/rect.html?demo=1&players=4&cols=8&rows=6"
+            Engine = "rectilinear-loop-experimental"
         }
     )
 
@@ -91,6 +101,22 @@ try {
         }
         if ($dom -notmatch 'data-cell-index="0"') {
             throw "$($case.Name) board did not render cells"
+        }
+        # Every displayed cell must receive the readable instruction font-size
+        # from the geometry pass (not the previous <=7.5px floor).
+        $fontMatches = [regex]::Matches(
+            $dom, '--cell-label-font:\s*(\d+(?:\.\d+)?)px'
+        )
+        if ($fontMatches.Count -lt 24) {
+            throw "$($case.Name) did not size every instruction label"
+        }
+        foreach ($fontMatch in $fontMatches) {
+            if ([double]::Parse(
+                $fontMatch.Groups[1].Value,
+                [System.Globalization.CultureInfo]::InvariantCulture
+            ) -lt 9.99) {
+                throw "$($case.Name) instruction font is below 10px baseline"
+            }
         }
     }
 
