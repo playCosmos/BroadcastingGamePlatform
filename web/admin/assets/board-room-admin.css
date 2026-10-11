@@ -183,10 +183,42 @@
 
 .board-room-instruction-head {
   display: flex;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 10px;
   align-items: center;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #292f37;
+}
+.board-room-instruction-title-field {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.board-room-instruction-title-field .board-room-instruction-title-input {
+  width: 100%;
+  margin-top: 0;
+  border-color: transparent;
+  background: transparent;
+  padding: 4px 2px;
+  color: #f4f6f8;
+  font-size: 16px;
+  font-weight: 850;
+}
+.board-room-instruction-title-field .board-room-instruction-title-input:hover,
+.board-room-instruction-title-field .board-room-instruction-title-input:focus {
+  border-color: #657c95;
+  background: #151e28;
+}
+.board-room-visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+.board-room-instruction-head > [data-action="remove"] {
+  flex: 0 0 auto;
 }
 
 .board-room-instruction-grid {
@@ -204,6 +236,11 @@
   margin-top: 10px;
 }
 
+.board-room-instruction-options[hidden],
+.board-room-pool-weight-section[hidden],
+.board-room-random-row[hidden] {
+  display: none !important;
+}
 .board-room-instruction-options .check-label {
   display: flex;
   align-items: center;
@@ -217,7 +254,12 @@
 }
 
 .board-room-instruction-options .pool-weight {
-  width: 140px;
+  width: min(100%, 180px);
+}
+.board-room-pool-weight-section {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid #29333e;
 }
 
 .board-room-action-options label {
@@ -437,9 +479,12 @@
 
 .board-room-instruction-sidebar {
   padding: 10px;
+  align-self: start;
 }
 
 .board-room-instruction-sidebar .board-room-instruction-toolbar {
+  position: relative;
+  z-index: 1;
   display: grid;
   grid-template-columns: 1fr;
   gap: 7px;
@@ -453,9 +498,14 @@
 
 .board-room-instruction-master-list {
   display: grid;
+  align-content: start;
+  grid-auto-rows: 45px;
   gap: 6px;
-  max-height: 460px;
-  overflow: auto;
+  height: 198px;
+  max-height: 198px;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .board-room-instruction-list-item {
@@ -482,7 +532,10 @@
 }
 
 .board-room-instruction-list-item strong {
-  overflow-wrap: anywhere;
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 12px;
 }
 
@@ -543,7 +596,8 @@
   }
 
   .board-room-instruction-master-list {
-    max-height: 240px;
+    height: 198px;
+    max-height: 198px;
   }
 }
 
@@ -625,7 +679,9 @@
 
 .board-room-instruction-select {
   display: grid;
+  align-items: center;
   gap: 3px;
+  min-width: 0;
   width: 100%;
   padding: 9px 10px;
   border: 0;
@@ -860,7 +916,7 @@
 .board-room-settings-section h3 {
   margin: 0 0 12px;
   color: #e5ebf3;
-  font-size: 15px;
+  font-size: 17px;
   font-weight: 800;
 }
 .board-room-settings-section .board-room-basic-grid {
@@ -954,7 +1010,8 @@
   grid-template-columns: minmax(0, 1fr);
 }
 .board-room-editor-pane .board-room-instruction-master-list {
-  max-height: 240px;
+  height: 198px;
+  max-height: 198px;
 }
 .board-room-editor-pane .board-room-instruction-list-item {
   min-height: 42px;
@@ -1005,14 +1062,27 @@
   border: 0;
 }
 .board-room-board-preview .board-room-preview-head {
-  align-items: flex-start;
-  flex-direction: column;
-  gap: 5px;
+  display: flex;
+  align-items: baseline;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  gap: 10px;
+  min-width: 0;
 }
 .board-room-board-preview .board-room-preview-head h3 {
+  flex: 0 0 auto;
   margin: 0;
   color: #e5ebf3;
-  font-size: 15px;
+  font-size: 17px;
+  white-space: nowrap;
+}
+.board-room-board-preview .board-room-preview-meta {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .board-room-board-preview .board-room-preview-shell {
   position: relative;
@@ -1062,8 +1132,20 @@
   width: 100%;
 }
 .board-room-layout-actions > button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
   min-height: 46px;
   font-weight: 800;
+}
+.board-room-action-icon {
+  display: block;
+  flex: 0 0 auto;
+  width: 25px;
+  height: 25px;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .board-room-layout-actions > #boardRoomCreateButton {
   border-color: #678bad;
