@@ -31,11 +31,20 @@
         const idInput = one('.board-room-player-row [data-field="soopId"]');
         const displayInput = one('.board-room-player-row [data-field="displayName"]');
         const balloonInput = one('.board-room-player-row [data-field="balloonTrigger"]');
-        requireLayout(
-          [deleteButton, status, displayInput, balloonInput]
-            .every(box => closeEnough(box.bottom, idInput.bottom, 5)),
-          "delete/status/input bottom alignment"
-        );
+        if (window.innerWidth >= 900) {
+          requireLayout(
+            [deleteButton, status, displayInput, balloonInput]
+              .every(box => closeEnough(box.bottom, idInput.bottom, 5)),
+            "delete/status/input bottom alignment"
+          );
+        } else {
+          // Below 900px the player row wraps into two logical rows:
+          // delete and ID input on the first, balloon input and status on the second.
+          requireLayout(closeEnough(deleteButton.bottom, idInput.bottom, 5),
+            "wrapped delete button should line up with SOOP ID input");
+          requireLayout(closeEnough(status.bottom, balloonInput.bottom, 5),
+            "wrapped status should line up with balloon input");
+        }
 
         const cards = Array.from(d.querySelectorAll(".board-room-primary-panel .board-room-generator-card"));
         requireLayout(cards.length === 2, "two movement rows");
