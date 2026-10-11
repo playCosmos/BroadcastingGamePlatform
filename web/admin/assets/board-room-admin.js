@@ -20,7 +20,6 @@
   const instructionEmptyState = $("boardRoomInstructionEmptyState");
   const randomPoolMode = $("boardRoomRandomPoolMode");
   const result = $("boardRoomResult");
-  const liveSummary = $("boardRoomLiveSummary");
   const previewPanel = $("boardRoomPreviewPanel");
   const previewFrame = $("boardRoomPreviewFrame");
   const previewMeta = $("boardRoomPreviewMeta");
@@ -184,6 +183,27 @@
     syncSharedBalloonMode();
   }
 
+  function resetPlayerPresentation(row) {
+    const inline = row.querySelector("[data-live-status]");
+    if (inline) {
+      inline.textContent = "배치 시 확인";
+      inline.removeAttribute("data-status");
+      inline.removeAttribute("title");
+    }
+    const image = row.querySelector(".board-room-live-avatar");
+    if (image) {
+      image.hidden = true;
+      image.removeAttribute("src");
+    }
+    const fallback = row.querySelector(".board-room-live-avatar-fallback");
+    if (fallback) {
+      const displayName = row.querySelector('[data-field="displayName"]')?.value.trim();
+      const soopId = row.querySelector('[data-field="soopId"]')?.value.trim();
+      fallback.textContent = Array.from(displayName || soopId || "?")[0] || "?";
+      fallback.hidden = false;
+    }
+  }
+
   function addPlayerRow(initial = {}) {
     if (playerRows().length >= 6) return;
 
@@ -191,7 +211,13 @@
     row.className = "board-room-player-row";
     row.innerHTML = `
       <button type="button" class="board-room-player-remove" data-remove-player aria-label="참가자 삭제">삭제</button>
-      <span class="board-room-player-index"></span>
+      <span class="board-room-player-identity">
+        <span class="board-room-live-avatar-shell">
+          <img class="board-room-live-avatar" alt="" referrerpolicy="no-referrer" hidden />
+          <span class="board-room-live-avatar-fallback" aria-hidden="true">?</span>
+        </span>
+        <span class="board-room-player-index"></span>
+      </span>
       <label>SOOP ID
         <input data-field="soopId" autocomplete="off" maxlength="120" required value="${escapeAttribute(initial.soopId || "")}" />
       </label>
@@ -205,6 +231,7 @@
       <span class="board-room-inline-status" data-live-status>생성 시 확인</span>
     `;
     playersRoot.append(row);
+    resetPlayerPresentation(row);
     renumberPlayers();
   }
 
@@ -216,15 +243,10 @@
     const balloonTrigger = row.querySelector(
       '[data-field="balloonTrigger"]'
     );
-    const liveStatus = row.querySelector("[data-live-status]");
-
     if (soopId) soopId.value = "";
     if (displayName) displayName.value = "";
     if (balloonTrigger) balloonTrigger.value = "100";
-    if (liveStatus) {
-      liveStatus.textContent = "생성 시 확인";
-      liveStatus.removeAttribute("data-status");
-    }
+    resetPlayerPresentation(row);
 
     const checkbox = sharedBalloonCheckbox();
     if (checkbox) checkbox.checked = true;
@@ -573,7 +595,6 @@
     syncBoardSizing();
     syncMovement();
     syncPauseDonationPolicy();
-    liveSummary.innerHTML = "";
     settingsRevision += 1;
     showEmptyPreview();
     if (!options.silent) {
@@ -1188,54 +1209,42 @@
   }
 
   function renderLiveStatuses(snapshot) {
-    liveSummary.innerHTML = "";
+    // Participant rows own both the status and profile; no duplicate cards.
     const players = snapshot?.config?.players || [];
-    players.forEach((player, index) => {
+    playerRows().forEach((row, index) => {
+      const player = players[index];
+      resetPlayerPresentation(row);
+      if (!player) return;
       const [label, tone] = liveText(player.live?.status);
-      const card = document.createElement("article");
-      card.className = "board-room-live-card " + tone;
+      const inline = row.querySelector("[data-live-status]");
       const detail = player.live?.status === "LIVE"
         ? (player.live?.title || "방송 중")
         : (player.live?.error || "현재 방송을 찾지 못했습니다.");
-      const profileImageUrl = normalizeProfileImageUrl(player.profileImageUrl);
-      const avatarFallback = escapeAttribute(
-        String(player.displayName || player.soopId || "?").slice(0, 1)
-      );
-      const avatarMarkup = profileImageUrl
-        ? `<span class="board-room-live-avatar-shell"><img class="board-room-live-avatar" src="${escapeAttribute(profileImageUrl)}" alt="" referrerpolicy="no-referrer" /><span class="board-room-live-avatar-fallback">${avatarFallback}</span></span>`
-        : `<span class="board-room-live-avatar-fallback">${avatarFallback}</span>`;
-      card.innerHTML = `
-        <div class="board-room-live-identity">
-          ${avatarMarkup}
-          <div>
-            <strong>P${index + 1} ${escapeAttribute(player.displayName || player.soopId)}</strong>
-            <span>${escapeAttribute(player.soopId)}</span>
-          </div>
-        </div>
-        <div class="board-room-live-state">
-          <b>${label}</b>
-          <span>${escapeAttribute(detail)}</span>
-        </div>
-      `;
-      const profileImage = card.querySelector(".board-room-live-avatar");
-      const profileFallback = card.querySelector(".board-room-live-avatar-shell .board-room-live-avatar-fallback");
-      if (profileImage && profileFallback) {
-        profileImage.addEventListener("load", () => {
-          profileFallback.hidden = true;
-        }, { once: true });
-        profileImage.addEventListener("error", () => {
-          profileImage.hidden = true;
-          profileFallback.hidden = false;
-        }, { once: true });
-      }
-
-      liveSummary.append(card);
-
-      const row = playersRoot.querySelectorAll(".board-room-player-row")[index];
-      const inline = row?.querySelector("[data-live-status]");
       if (inline) {
         inline.textContent = label;
         inline.dataset.status = tone;
+        inline.title = detail;
+      }
+      const profileUrl = normalizeProfileImageUrl(player.profileImageUrl);
+      const fallback = row.querySelector(".board-room-live-avatar-fallback");
+      const image = row.querySelector(".board-room-live-avatar");
+      if (fallback) {
+        fallback.textContent = Array.from(
+          String(player.displayName || player.soopId || "?")
+        )[0] || "?";
+      }
+      if (image && profileUrl) {
+        image.onload = () => {
+          if (image.getAttribute("src") === profileUrl) {
+            image.hidden = false;
+            if (fallback) fallback.hidden = true;
+          }
+        };
+        image.onerror = () => {
+          image.hidden = true;
+          if (fallback) fallback.hidden = false;
+        };
+        image.src = profileUrl;
       }
     });
   }
@@ -1419,6 +1428,7 @@
   function settingsChanged() {
     settingsRevision += 1;
     if (!currentRoom || currentRoom.status === "READY") return;
+    playerRows().forEach(resetPlayerPresentation);
     showEmptyPreview();
     showResult("설정이 변경됐습니다. 배치를 다시 실행하세요.", "working");
   }
@@ -1426,6 +1436,9 @@
     if (!event.target.matches("input, select, textarea")) return;
     // Preset name/selection does not affect the board or request.
     if (["boardRoomPresetName", "boardRoomPresetSelect"].includes(event.target.id)) return;
+    if (["soopId", "displayName"].includes(event.target.dataset.field)) {
+      resetPlayerPresentation(event.target.closest(".board-room-player-row"));
+    }
     settingsChanged();
   }
   form.addEventListener("input", invalidateDraftOnEdit);
