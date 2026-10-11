@@ -952,6 +952,10 @@
 .board-room-board-preview .board-room-field-cluster {
   display: contents;
 }
+.board-room-board-preview #boardRoomDimensionsFields[hidden],
+.board-room-board-preview #boardRoomCellCountField[hidden] {
+  display: none !important;
+}
 .board-room-board-preview .board-room-preview-panel {
   margin: 0;
   padding: 0;
