@@ -25,21 +25,8 @@
   const previewFrame = $("boardRoomPreviewFrame");
   const previewMeta = $("boardRoomPreviewMeta");
   const previewPlaceholder = $("boardRoomPreviewPlaceholder");
-  const boardTabButtons = Array.from(document.querySelectorAll("[data-board-room-tab]"));
-  const rerollButton = $("boardRoomRerollButton");
   const commitButton = $("boardRoomCommitButton");
-  const pauseButton = $("boardRoomPauseButton");
-  const resumeButton = $("boardRoomResumeButton");
-  const terminateButton = $("boardRoomTerminateButton");
-  const extendControl = $("boardRoomExtendControl");
-  const extendMinutes = $("boardRoomExtendMinutes");
-  const extendButton = $("boardRoomExtendButton");
   const createButton = $("boardRoomCreateButton");
-  const overlayRow = $("boardRoomOverlayRow");
-  const overlayUrl = $("boardRoomOverlayUrl");
-  const copyOverlayButton = $("boardRoomCopyOverlayButton");
-  const openOverlayButton = $("boardRoomOpenOverlayButton");
-  const bridgeOverlayUrl = $("overlayUrlInput");
   const presetNameInput = $("boardRoomPresetName");
   const presetSelect = $("boardRoomPresetSelect");
   const presetSaveButton = $("boardRoomPresetSave");
@@ -54,21 +41,11 @@
   const DEFAULT_PLAYER_COUNT = 2;
 
   let currentRoom = null;
+  let settingsRevision = 0;
+  let layoutBusy = false;
   let instructionSequence = 0;
   let instructionEditorSequence = 0;
   let selectedInstructionRow = null;
-
-  function activateBoardTab(tabName, focus = false) {
-    const selected = tabName === "effects" ? "effects" : "board";
-    boardTabButtons.forEach((button) => {
-      const active = button.dataset.boardRoomTab === selected;
-      button.setAttribute("aria-selected", String(active));
-      button.tabIndex = active ? 0 : -1;
-      const panel = document.getElementById(button.getAttribute("aria-controls"));
-      if (panel) panel.hidden = !active;
-      if (active && focus) button.focus();
-    });
-  }
 
   // The preview is always an actual server-created room. Until a DRAFT
   // exists, show an empty state rather than an unrelated demo board.
@@ -80,15 +57,12 @@
       previewFrame.hidden = true;
       previewFrame.removeAttribute("src");
     }
-    if (previewMeta) previewMeta.textContent = "룸 초안 생성 전";
-    if (rerollButton) rerollButton.disabled = true;
+    if (previewMeta) previewMeta.textContent = "배치 전";
+    if (createButton) {
+      createButton.textContent = "배치";
+      createButton.disabled = layoutBusy;
+    }
     if (commitButton) commitButton.disabled = true;
-    if (overlayRow) overlayRow.hidden = true;
-    if (pauseButton) pauseButton.hidden = true;
-    if (resumeButton) resumeButton.hidden = true;
-    if (terminateButton) terminateButton.hidden = true;
-    if (extendControl) extendControl.hidden = true;
-    if (extendButton) extendButton.hidden = true;
   }
 
   function showResult(text, tone = "") {
@@ -600,6 +574,7 @@
     syncMovement();
     syncPauseDonationPolicy();
     liveSummary.innerHTML = "";
+    settingsRevision += 1;
     showEmptyPreview();
     if (!options.silent) {
       showResult("저장된 룸 설정을 불러왔습니다.", "success");
@@ -1265,42 +1240,6 @@
     });
   }
 
-  function clientBaseUrl() {
-    const raw = bridgeOverlayUrl?.value?.trim();
-    if (raw) {
-      try {
-        const parsed = new URL(raw, window.location.href);
-        return parsed.origin;
-      } catch (_) {
-      }
-    }
-    return window.location.origin;
-  }
-
-  function currentWebSocketUrl() {
-    const raw = bridgeOverlayUrl?.value?.trim();
-    if (raw) {
-      try {
-        const parsed = new URL(raw, window.location.href);
-        const configured = parsed.searchParams.get("ws");
-        if (configured) return configured;
-      } catch (_) {
-      }
-    }
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    return scheme + "://" + window.location.hostname + ":17831";
-  }
-
-  function roomOverlayUrl(snapshot) {
-    const style = snapshot?.config?.board?.layoutStyle || "rounded";
-    const page = style === "rect"
-      ? "/games/board/rect.html"
-      : "/games/board/index.html";
-    const url = new URL(page, clientBaseUrl());
-    url.searchParams.set("roomCode", snapshot.roomId);
-    return url.toString();
-  }
-
   function previewUrl(snapshot) {
     const style = snapshot?.config?.board?.layoutStyle || "rounded";
     const page = style === "rect" ? "/games/board/rect.html" : "/games/board/index.html";
@@ -1309,34 +1248,6 @@
     url.searchParams.set("preview", "1");
     url.searchParams.set("_", String(Date.now()));
     return url.toString();
-  }
-
-  function syncExtensionAvailability() {
-    if (!extendButton || !extendControl || !extendMinutes) return;
-
-    const lifecycle = currentRoom?.lifecycle || {};
-    const terminated = lifecycle.state === "TERMINATED";
-    const expiresAt = lifecycle.expiresAt ? new Date(lifecycle.expiresAt) : null;
-    const remainingMs = expiresAt && !Number.isNaN(expiresAt.getTime())
-      ? expiresAt.getTime() - Date.now()
-      : Number.POSITIVE_INFINITY;
-
-    const withinFinalHour = remainingMs > 0 && remainingMs <= 60 * 60 * 1000;
-    extendControl.hidden = terminated;
-    extendButton.hidden = terminated;
-    extendButton.disabled = terminated || !withinFinalHour;
-
-    const requested = Number(extendMinutes.value);
-    if (!Number.isFinite(requested) || requested < 1) extendMinutes.value = "1";
-    if (requested > 120) extendMinutes.value = "120";
-
-    if (terminated) {
-      extendButton.title = "종료된 룸은 연장할 수 없습니다.";
-    } else if (!withinFinalHour) {
-      extendButton.title = "룸 종료까지 60분 이하로 남았을 때 연장할 수 있습니다.";
-    } else {
-      extendButton.title = "1회 최대 120분까지 연장할 수 있습니다.";
-    }
   }
 
   function renderRoom(snapshot) {
@@ -1365,13 +1276,10 @@
       ", 유지 " + (lifecycle.retentionMinutes || 240) + "분" +
       (lifecycle.queuedDonations ? ", 대기 후원 " + lifecycle.queuedDonations + "건" : "");
 
-    rerollButton.disabled = ready || terminated;
-    commitButton.disabled = ready || terminated;
-    commitButton.textContent = ready ? "배치 확정됨" : (terminated ? "종료된 룸" : "이 배치로 확정");
-
-    pauseButton.hidden = lifecycleState !== "ACTIVE";
-    resumeButton.hidden = lifecycleState !== "PAUSED";
-    terminateButton.hidden = terminated;
+    createButton.textContent = ready ? "배치 확정됨" : "다시 배치";
+    createButton.disabled = layoutBusy || ready || terminated;
+    commitButton.disabled = layoutBusy || ready || terminated;
+    commitButton.textContent = ready ? "배치 확정됨" : "이 배치로 확정";
 
     const pauseModeField = form.elements.namedItem("pauseDonationMode");
     if (pauseModeField && lifecycle.pauseDonationMode) {
@@ -1389,72 +1297,66 @@
       }
     }
 
-    if (overlayRow && overlayUrl) {
-      const overlayAvailable = ready && !terminated;
-      overlayRow.hidden = !overlayAvailable;
-      overlayUrl.value = overlayAvailable ? roomOverlayUrl(snapshot) : "";
-    }
-
-    syncExtensionAvailability();
+  
   }
 
-  async function createRoom(event) {
+  // One button starts the first real DRAFT and rerolls the existing DRAFT.
+  // A settings change invalidates the DRAFT and makes the next click create anew.
+  async function placeBoard(event) {
     event.preventDefault();
+    if (layoutBusy || currentRoom?.status === "READY") return;
+    const revision = settingsRevision;
+    const existing = currentRoom;
+    layoutBusy = true;
     createButton.disabled = true;
-    showResult("룸 설정 검증 및 참가자 방송 상태 확인 중…", "working");
+    commitButton.disabled = true;
+    showResult(
+      existing ? "보드 지시문을 다시 배치하는 중…" : "룸 설정 및 참가자 확인 후 배치하는 중…",
+      "working"
+    );
     try {
-      const snapshot = await fetchJson("/api/board/rooms", {
-        method: "POST",
-        body: JSON.stringify(collectRequest())
-      });
+      const snapshot = existing
+        ? await fetchJson(
+          "/api/board/rooms/" + encodeURIComponent(existing.roomId) + "/preview/reroll",
+          { method: "POST" }
+        )
+        : await fetchJson("/api/board/rooms", {
+          method: "POST",
+          body: JSON.stringify(collectRequest())
+        });
+      if (revision !== settingsRevision) {
+        showEmptyPreview();
+        showResult("배치 중 설정이 변경됐습니다. 배치를 다시 실행하세요.", "working");
+        return;
+      }
       renderRoom(snapshot);
-      try {
-        saveLastCreatedRoomCookie();
-        showResult(
-          "룸을 생성했습니다. 입력한 참가자/보드/지시문 설정을 쿠키에 기억했습니다.",
-          "success"
-        );
-      } catch (cookieError) {
-        console.warn(
-          "[board-room-admin] last room cookie save failed",
-          cookieError
-        );
-        showResult(
-          "룸을 생성했습니다. 다만 마지막 룸 설정을 쿠키에 저장하지 못했습니다: "
-            + cookieError.message,
-          "working"
-        );
+      if (!existing) {
+        try {
+          saveLastCreatedRoomCookie();
+          showResult("실제 룸 보드를 배치했습니다. 확인 후 확정하세요.", "success");
+        } catch (cookieError) {
+          console.warn("[board-room-admin] last room cookie save failed", cookieError);
+          showResult("배치했습니다. 설정 쿠키 저장 실패: " + cookieError.message, "working");
+        }
+      } else {
+        showResult("새 배치를 생성했습니다. 확인 후 확정하세요.", "success");
       }
     } catch (error) {
-      showResult("룸 생성 실패: " + error.message, "error-text");
+      if (revision === settingsRevision) {
+        showResult((existing ? "재배치 실패: " : "배치 실패: ") + error.message, "error-text");
+      }
     } finally {
-      createButton.disabled = false;
-    }
-  }
-
-  async function rerollPreview() {
-    if (!currentRoom) return;
-    rerollButton.disabled = true;
-    showResult("보드 지시문을 다시 배치하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/preview/reroll",
-        { method: "POST" }
-      );
-      renderRoom(snapshot);
-      showResult("새 배치를 생성했습니다. START는 일반 칸으로 고정되어 있습니다.", "success");
-    } catch (error) {
-      showResult("재배치 실패: " + error.message, "error-text");
-    } finally {
-      if (currentRoom?.status !== "READY") rerollButton.disabled = false;
+      layoutBusy = false;
+      createButton.disabled = currentRoom?.status === "READY";
+      commitButton.disabled = !currentRoom || currentRoom.status !== "DRAFT";
     }
   }
 
   async function commitPreview() {
     if (!currentRoom) return;
-    rerollButton.disabled = true;
+    createButton.disabled = true;
     commitButton.disabled = true;
-    showResult("현재 프리뷰를 룸 보드로 확정하는 중…", "working");
+    showResult("현재 배치를 룸 보드로 확정하는 중…", "working");
     try {
       const snapshot = await fetchJson(
         "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/preview/commit",
@@ -1467,104 +1369,8 @@
       window.location.assign(operationUrl.toString());
     } catch (error) {
       showResult("배치 확정 실패: " + error.message, "error-text");
-      rerollButton.disabled = false;
-      commitButton.disabled = false;
-    }
-  }
-
-  async function pauseRoom() {
-    if (!currentRoom) return;
-    pauseButton.disabled = true;
-    showResult("룸을 일시정지하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/pause",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            donationMode: form.elements.namedItem("pauseDonationMode").value || "QUEUE",
-            graceSeconds: Number(form.elements.namedItem("pauseGraceSeconds").value) || 0
-          })
-        }
-      );
-      renderRoom(snapshot);
-      const graceSeconds = Number(snapshot.lifecycle?.pauseGraceSeconds) || 0;
-      showResult(
-        snapshot.lifecycle?.pauseDonationMode === "IGNORE"
-          ? "일시정지했습니다. 이후 후원은 즉시 무시됩니다."
-          : "일시정지했습니다. " + graceSeconds + "초 동안 들어온 후원만 큐에 저장하고 이후 후원은 무시합니다.",
-        "success"
-      );
-    } catch (error) {
-      showResult("일시정지 실패: " + error.message, "error-text");
-    } finally {
-      pauseButton.disabled = false;
-    }
-  }
-
-  async function resumeRoom() {
-    if (!currentRoom) return;
-    resumeButton.disabled = true;
-    showResult("대기 후원을 순서대로 처리하며 재개하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/resume",
-        { method: "POST" }
-      );
-      renderRoom(snapshot);
-      showResult("룸을 재개했습니다. 대기 후원은 수신 순서대로 처리됩니다.", "success");
-    } catch (error) {
-      showResult("재개 실패: " + error.message, "error-text");
-    } finally {
-      resumeButton.disabled = false;
-    }
-  }
-
-  async function extendRoomLifetime() {
-    if (!currentRoom || !extendButton || !extendMinutes) return;
-
-    const minutes = Number(extendMinutes.value);
-    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 120) {
-      showResult("연장 시간은 1~120분으로 입력하세요.", "error-text");
-      return;
-    }
-
-    extendButton.disabled = true;
-    showResult("룸 종료 시간을 연장하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/extend",
-        {
-          method: "POST",
-          body: JSON.stringify({ minutes })
-        }
-      );
-      renderRoom(snapshot);
-      showResult(
-        "룸 종료 시간을 " + minutes + "분 연장했습니다. 누적 유지시간에는 8시간 상한을 적용하지 않습니다.",
-        "success"
-      );
-    } catch (error) {
-      showResult("시간 연장 실패: " + error.message, "error-text");
-      syncExtensionAvailability();
-    }
-  }
-
-  async function terminateRoom() {
-    if (!currentRoom) return;
-    terminateButton.disabled = true;
-    showResult("룸을 종료하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/terminate",
-        { method: "POST" }
-      );
-      renderRoom(snapshot);
-      showResult("룸을 TERMINATED 처리했습니다.", "success");
-    } catch (error) {
-      showResult("룸 종료 실패: " + error.message, "error-text");
-    } finally {
-      terminateButton.disabled = false;
+      createButton.disabled = currentRoom?.status === "READY";
+      commitButton.disabled = currentRoom?.status !== "DRAFT";
     }
   }
 
@@ -1580,13 +1386,17 @@
   addPlayerButton?.addEventListener("click", () => {
     const p1Value = p1BalloonInput()?.value || "100";
     addPlayerRow({ balloonTrigger: p1Value });
+    settingsChanged();
   });
 
   playersRoot.addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-player]");
     if (!button) return;
     const row = button.closest(".board-room-player-row");
-    if (row) removePlayerRow(row);
+    if (row) {
+      removePlayerRow(row);
+      settingsChanged();
+    }
   });
 
   playersRoot.addEventListener("change", (event) => {
@@ -1606,36 +1416,17 @@
       syncSharedBalloonMode();
     }
   });
-  boardTabButtons.forEach((button, index) => {
-    button.addEventListener("click", () => activateBoardTab(button.dataset.boardRoomTab));
-    button.addEventListener("keydown", (event) => {
-      if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-      event.preventDefault();
-      const next = event.key === "Home" ? 0
-        : event.key === "End" ? boardTabButtons.length - 1
-        : (index + (event.key === "ArrowRight" ? 1 : -1) + boardTabButtons.length)
-            % boardTabButtons.length;
-      activateBoardTab(boardTabButtons[next].dataset.boardRoomTab, true);
-    });
-  });
-  form.addEventListener("invalid", (event) => {
-    if (document.getElementById("boardRoomTabPanelEffects")?.contains(event.target)) {
-      activateBoardTab("effects");
-    } else if (document.getElementById("boardRoomTabPanelBoard")?.contains(event.target)) {
-      activateBoardTab("board");
-    }
-  }, true);
-  function invalidateDraftOnEdit(event) {
-    if (!event.target.matches("input, select, textarea")) return;
-    // Preset naming/selection and post-commit controls are not room settings.
-    if ([
-      "boardRoomPresetName", "boardRoomPresetSelect",
-      "boardRoomExtendMinutes", "boardRoomOverlayUrl"
-    ].includes(event.target.id)) return;
-    // Never allow confirmation of a prior DRAFT after settings change.
+  function settingsChanged() {
+    settingsRevision += 1;
     if (!currentRoom || currentRoom.status === "READY") return;
     showEmptyPreview();
-    showResult("설정이 변경됐습니다. 새 룸 초안을 생성해 실제 배치를 확인하세요.", "working");
+    showResult("설정이 변경됐습니다. 배치를 다시 실행하세요.", "working");
+  }
+  function invalidateDraftOnEdit(event) {
+    if (!event.target.matches("input, select, textarea")) return;
+    // Preset name/selection does not affect the board or request.
+    if (["boardRoomPresetName", "boardRoomPresetSelect"].includes(event.target.id)) return;
+    settingsChanged();
   }
   form.addEventListener("input", invalidateDraftOnEdit);
   form.addEventListener("change", invalidateDraftOnEdit);
@@ -1668,6 +1459,7 @@
     if (!row) return;
     const next = row.nextElementSibling || row.previousElementSibling;
     row.remove();
+    settingsChanged();
     selectedInstructionRow = null;
     rebuildInstructionList();
     if (next?.classList?.contains("board-room-instruction-row") && next.isConnected) {
@@ -1679,34 +1471,12 @@
     button.addEventListener("click", () => {
       if (button.dataset.addBoardInstruction !== "custom") return;
       addInstruction("custom");
+      settingsChanged();
     });
   });
 
-  form.addEventListener("submit", createRoom);
-  rerollButton.addEventListener("click", rerollPreview);
+  form.addEventListener("submit", placeBoard);
   commitButton.addEventListener("click", commitPreview);
-  extendButton?.addEventListener("click", extendRoomLifetime);
-  extendMinutes?.addEventListener("input", syncExtensionAvailability);
-  pauseButton?.addEventListener("click", pauseRoom);
-  resumeButton?.addEventListener("click", resumeRoom);
-  terminateButton?.addEventListener("click", terminateRoom);
-
-  copyOverlayButton?.addEventListener("click", async () => {
-    if (!overlayUrl?.value) return;
-    try {
-      await navigator.clipboard.writeText(overlayUrl.value);
-      showResult("보드게임 OBS 주소를 복사했습니다.", "success");
-    } catch (_) {
-      overlayUrl.select();
-      document.execCommand("copy");
-      showResult("보드게임 OBS 주소를 복사했습니다.", "success");
-    }
-  });
-
-  openOverlayButton?.addEventListener("click", () => {
-    if (!overlayUrl?.value) return;
-    window.open(overlayUrl.value, "_blank", "noopener,noreferrer");
-  });
 
   refreshPresetSelect();
   renderPlayers();
@@ -1717,8 +1487,5 @@
   syncAllInstructionRows();
   rebuildInstructionList();
   restoreLastCreatedRoomCookie();
-  activateBoardTab("board");
   showEmptyPreview();
-  syncExtensionAvailability();
-  window.setInterval(syncExtensionAvailability, 1000);
 })();
