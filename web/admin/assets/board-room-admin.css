@@ -55,7 +55,8 @@
 }
 
 .board-room-player-remove {
-  align-self: center;
+  align-self: end;
+  min-height: 40px;
   padding: 6px 8px;
   border: 1px solid #5d3639;
   border-radius: 7px;
@@ -120,6 +121,8 @@
 }
 .board-room-player-identity {
   display: flex;
+  align-self: end;
+  min-height: 40px;
   align-items: center;
   justify-content: center;
   gap: 7px;
@@ -131,8 +134,12 @@
 }
 
 .board-room-inline-status {
-  align-self: center;
+  display: inline-flex;
+  align-self: end;
+  align-items: center;
+  justify-content: center;
   justify-self: end;
+  min-height: 40px;
   padding: 6px 9px;
   border: 1px solid #343a43;
   border-radius: 999px;
@@ -856,13 +863,52 @@
   margin-top: 12px;
 }
 .board-room-primary-panel .board-room-generator-choice-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: minmax(0, 1fr);
+  gap: 8px;
 }
-.board-room-primary-panel .board-room-generator-card,
+.board-room-primary-panel .board-room-generator-card {
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 2vw, 24px);
+  min-height: 54px;
+  padding: 7px 12px;
+}
+.board-room-primary-panel .board-room-generator-toggle {
+  flex: 0 0 104px;
+  white-space: nowrap;
+}
 .board-room-primary-panel .board-room-generator-suboptions {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 22px;
+  min-width: 0;
+}
+.board-room-primary-panel .board-room-generator-suboptions[hidden] {
+  display: none !important;
+}
+.board-room-primary-panel .board-room-generator-primary-option {
+  display: inline-flex;
+  align-items: center;
   gap: 10px;
+  white-space: nowrap;
+}
+.board-room-primary-panel .board-room-generator-primary-option select {
+  width: 100px;
+  margin-top: 0;
+}
+.board-room-primary-panel .board-room-generator-bonus-option {
+  display: inline-flex;
+  align-items: center;
+  min-height: 38px;
+  gap: 8px;
+  padding-top: 0;
+  white-space: nowrap;
+}
+.board-room-primary-panel .board-room-generator-bonus-option input {
+  width: auto;
+  margin: 0;
 }
 .board-room-primary-panel .board-room-generator-option-spacer {
   display: none;
@@ -903,10 +949,29 @@
   top: 16px;
 }
 .board-room-board-preview .board-room-size-controls {
+  container: board-sizing / inline-size;
   margin-bottom: 17px;
 }
 .board-room-board-preview .board-room-board-grid {
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  align-items: end;
+  gap: 10px;
+}
+.board-room-board-preview #boardRoomCellCountField:not([hidden]) {
+  grid-column: span 2;
+}
+@container board-sizing (max-width: 760px) {
+  .board-room-board-preview .board-room-board-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@container board-sizing (max-width: 420px) {
+  .board-room-board-preview .board-room-board-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .board-room-board-preview #boardRoomCellCountField:not([hidden]) {
+    grid-column: auto;
+  }
 }
 .board-room-board-preview .board-room-field-cluster {
   display: contents;
@@ -1014,15 +1079,32 @@
   .board-room-board-preview {
     position: static;
   }
-  .board-room-primary-panel .board-room-generator-choice-grid {
-    grid-template-columns: minmax(0, 1fr);
+  .board-room-primary-panel .board-room-generator-card {
+    gap: 12px;
   }
 }
 @media (max-width: 540px) {
   .board-room-primary-panel .board-room-settings-section .board-room-basic-grid,
-  .board-room-board-preview .board-room-board-grid,
   .board-room-editor-pane .board-room-instruction-grid,
   .board-room-editor-pane .board-room-random-row {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Give the header navigation button its own line box and consistent clearance. */
+.board-room-admin-shell .admin-header .nav-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  margin-top: 10px;
+  padding: 7px 12px;
+}
+@media (max-width: 680px) {
+  .board-room-primary-panel .board-room-generator-card {
+    flex-wrap: wrap;
+  }
+  .board-room-primary-panel .board-room-generator-toggle {
+    flex: 0 0 auto;
   }
 }
