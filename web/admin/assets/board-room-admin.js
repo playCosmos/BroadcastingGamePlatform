@@ -713,11 +713,7 @@
 
   function instructionTitle(row) {
     const label = row.querySelector('[data-field="label"]')?.value?.trim();
-    const id = row.querySelector('[data-field="instructionId"]')?.value?.trim();
-    return {
-      label: label || id || "새 지시문",
-      id: id || "UNNAMED"
-    };
+    return { label: label || "새 지시문" };
   }
 
   function selectInstruction(row) {
@@ -747,19 +743,18 @@
     if (!item) return;
     const title = instructionTitle(row);
     const label = item.querySelector("[data-list-label]");
-    const id = item.querySelector("[data-list-id]");
     const enabled = row.dataset.enabled !== "false";
     item.classList.toggle("disabled", !enabled);
     const toggle = item.querySelector(".board-room-instruction-enabled");
     if (toggle) toggle.checked = enabled;
     if (label) label.textContent = title.label;
-    if (id) id.textContent = title.id;
   }
 
   function setInstructionEnabled(row, enabled) {
     row.dataset.enabled = enabled ? "true" : "false";
     row.classList.toggle("disabled", !enabled);
     updateInstructionListItem(row);
+    updateAllocationSummaries();
   }
 
   function rebuildInstructionList() {
@@ -804,11 +799,7 @@
       label.dataset.listLabel = "";
       label.textContent = title.label;
 
-      const id = document.createElement("span");
-      id.dataset.listId = "";
-      id.textContent = title.id;
-
-      select.append(label, id);
+      select.append(label);
       select.addEventListener("click", () => selectInstruction(row));
       item.append(enabled, select);
       instructionList.append(item);
@@ -887,10 +878,8 @@
         </div>
         <button type="button" class="board-room-small-button" data-action="remove" ${builtIn ? "hidden" : ""}>삭제</button>
       </div>
+      <input type="hidden" data-field="instructionId" value="${escapeAttribute(id)}" />
       <div class="board-room-instruction-grid">
-        <label>ID
-          <input data-field="instructionId" value="${escapeAttribute(id)}" maxlength="80" required ${builtIn ? "readonly" : ""} />
-        </label>
         <label>표시 문구
           <input data-field="label" value="${escapeAttribute(preset.label)}" maxlength="120" required />
         </label>
@@ -904,6 +893,7 @@
           <input data-field="allocationValue" type="number" min="0" max="100" step="1" value="${preset.allocationValue}" required />
         </label>
       </div>
+      <p class="board-room-allocation-summary" data-allocation-summary aria-live="polite"></p>
       <div class="board-room-instruction-options">
         <label class="check-label"><input data-field="poolEnabled" type="checkbox" />랜덤 후보에 포함</label>
         <label class="pool-weight">랜덤 가중치
@@ -941,13 +931,13 @@
     if (preset.action === "move") {
       root.innerHTML = `
         <span class="board-room-action-chip">${preset.direction === "backward" ? "{n}칸 뒤로" : "{n}칸 앞으로"}</span>
-        <label>{n} 설정
+        <label>이동 칸 수 방식 ({n})
           <select data-field="stepsMode">
             <option value="fixed">고정</option>
             <option value="range">범위 랜덤</option>
           </select>
         </label>
-        <label data-fixed-steps>{n}
+        <label data-fixed-steps>이동 칸 수 ({n})
           <input data-field="stepsValue" type="number" min="1" max="999" step="1" value="1" />
         </label>
         <label data-range-min hidden>최소
@@ -956,6 +946,7 @@
         <label data-range-max hidden>최대
           <input data-field="stepsMax" type="number" min="1" max="999" step="1" value="4" />
         </label>
+        <p class="board-room-action-help">{n}은 이 칸에 도착했을 때 움직이는 칸 수입니다. 고정은 항상 같은 수, 범위 랜덤은 설정 범위에서 결정됩니다.</p>
       `;
       row.dataset.direction = preset.direction;
     } else if (preset.action === "moveToStart") {
@@ -965,9 +956,10 @@
     } else if (preset.action === "multiplyNextThrow") {
       root.innerHTML = `
         <span class="board-room-action-chip">다음 던지기 이동값 배율</span>
-        <label>{m}
+        <label>이동 배수 ({m})
           <input data-field="multiplierValue" type="number" min="2" max="100" step="1" value="2" />
         </label>
+        <p class="board-room-action-help">{m}은 다음 던지기의 이동 칸 수에 곱할 배수입니다. 예: 2를 입력하면 2배 이동합니다.</p>
       `;
     } else if (preset.action === "ignoreNextLanding") {
       root.innerHTML = '<span class="board-room-action-chip">다음 칸 지시문을 1회 무효화</span>';
@@ -1022,16 +1014,105 @@
     }
 
     updateInstructionListItem(row);
+    updateAllocationSummaries();
+  }
+
+  // Mirror RoomLayoutGenerator: fixed-count allocations first, then
+  // largest-remainder distribution of ratios across the remaining slots.
+  function calculateAllocationEstimate(definitions, cellCount) {
+    if (!Number.isInteger(cellCount) || cellCount < 24) {
+      return { error: "보드 칸 수를 확인하세요.", counts: [] };
+    }
+    const assignable = cellCount - 1; // START is never assigned an instruction.
+    const counts = Array(definitions.length).fill(0);
+    let fixedTotal = 0;
+    let ratioTotal = 0;
+    definitions.forEach((item, index) => {
+      if (!item.enabled) return;
+      if (!Number.isFinite(item.value) || item.value < 0) return;
+      if (item.mode === "count") {
+        counts[index] = Math.round(item.value);
+        fixedTotal += counts[index];
+      } else if (item.mode === "ratio") {
+        ratioTotal += item.value;
+      }
+    });
+    if (fixedTotal > assignable) {
+      return { error: "고정 수량이 배치 가능한 칸 수를 초과했습니다.", counts };
+    }
+    if (ratioTotal > 100.000001) {
+      return { error: "비율의 합계가 100%를 초과했습니다.", counts };
+    }
+    const ratioBase = assignable - fixedTotal;
+    const ratioTarget = Math.min(ratioBase, Math.round(ratioBase * ratioTotal / 100));
+    const fractions = [];
+    let assigned = 0;
+    definitions.forEach((item, index) => {
+      if (!item.enabled || item.mode !== "ratio") return;
+      const exact = ratioBase * Math.max(0, item.value) / 100;
+      const whole = Math.floor(exact);
+      counts[index] = whole;
+      assigned += whole;
+      fractions.push({ index, remainder: exact - whole });
+    });
+    fractions.sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+    for (let extra = 0; extra < Math.max(0, ratioTarget - assigned) && extra < fractions.length; extra++) {
+      counts[fractions[extra].index] += 1;
+    }
+    return { counts, assignable, fixedTotal, ratioBase, cellCount };
+  }
+
+  function selectedBoardCellCount() {
+    if (sizingMode.value === "cellCount") {
+      const count = Number(form.elements.namedItem("cellCount").value);
+      return Number.isInteger(count) && count >= 24 && count <= 220 && count % 2 === 0
+        ? count : NaN;
+    }
+    const columns = Number(form.elements.namedItem("columns").value);
+    const rows = Number(form.elements.namedItem("rows").value);
+    return Number.isInteger(columns) && Number.isInteger(rows)
+      && columns >= 8 && columns <= 64 && rows >= 6 && rows <= 48
+      ? 2 * columns + 2 * (rows - 2) : NaN;
+  }
+
+  function updateAllocationSummaries() {
+    if (!instructionRows || !sizingMode || !form) return;
+    const rows = Array.from(instructionRows.querySelectorAll(".board-room-instruction-row"));
+    const definitions = rows.map((row) => ({
+      enabled: row.dataset.enabled !== "false",
+      mode: row.querySelector('[data-field="allocationMode"]')?.value,
+      value: Number(row.querySelector('[data-field="allocationValue"]')?.value)
+    }));
+    const estimate = calculateAllocationEstimate(definitions, selectedBoardCellCount());
+    rows.forEach((row, index) => {
+      const output = row.querySelector("[data-allocation-summary]");
+      if (!output) return;
+      const item = definitions[index];
+      output.dataset.invalid = estimate.error ? "true" : "false";
+      if (!item.enabled) {
+        output.textContent = "비활성 효과 · 배치되지 않음";
+      } else if (estimate.error) {
+        output.textContent = estimate.error;
+      } else if (item.mode === "ratio") {
+        output.textContent = "예상 " + estimate.counts[index] + "칸 · 비율 적용 대상 "
+          + estimate.ratioBase + "칸 (START와 고정 수량 제외, 소수점 배분 반영)";
+      } else {
+        output.textContent = "고정 " + estimate.counts[index] + "칸 · 전체 "
+          + estimate.assignable + "개 배치 가능 칸 (START 제외)";
+      }
+    });
   }
 
   function syncAllInstructionRows() {
     instructionRows.querySelectorAll(".board-room-instruction-row").forEach(syncInstructionRow);
+    updateAllocationSummaries();
   }
 
   function syncBoardSizing() {
     const cellMode = sizingMode.value === "cellCount";
     dimensionsFields.hidden = cellMode;
     cellCountField.hidden = !cellMode;
+    updateAllocationSummaries();
   }
 
   function syncMovement() {
@@ -1443,6 +1524,8 @@
   }
   form.addEventListener("input", invalidateDraftOnEdit);
   form.addEventListener("change", invalidateDraftOnEdit);
+  form.addEventListener("input", updateAllocationSummaries);
+  form.addEventListener("change", updateAllocationSummaries);
   sizingMode.addEventListener("change", syncBoardSizing);
   diceEnabled.addEventListener("change", syncMovement);
   yutEnabled.addEventListener("change", syncMovement);
@@ -1478,6 +1561,7 @@
     if (next?.classList?.contains("board-room-instruction-row") && next.isConnected) {
       selectInstruction(next);
     }
+    updateAllocationSummaries();
   });
 
   document.querySelectorAll("[data-add-board-instruction]").forEach((button) => {
@@ -1501,4 +1585,5 @@
   rebuildInstructionList();
   restoreLastCreatedRoomCookie();
   showEmptyPreview();
+  updateAllocationSummaries();
 })();
