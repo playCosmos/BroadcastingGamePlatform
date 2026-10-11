@@ -120,8 +120,8 @@ try {
         }
     }
 
-    # The room editor must be one basic panel plus one tabbed workspace,
-    # with a disabled preview until the server has created a real DRAFT.
+    # Room creation retains two top-level panels, with persistent cell effects
+    # on the left, sizing above the real preview, and only two buttons below it.
     $editorUrl = "$baseUrl/admin/games/board/index.html"
     $editorDom = & $browser @(
         "--headless",
@@ -141,12 +141,17 @@ try {
         throw "board room editor should have exactly two top-level panels, found $panelCount"
     }
     foreach ($required in @(
-        'id="boardRoomTabBoard"',
-        'id="boardRoomTabEffects"',
-        'id="boardRoomTabPanelBoard"',
-        'id="boardRoomTabPanelEffects"',
+        'class="board-room-editor-pane"',
+        'id="boardRoomInstructionList"',
+        'id="boardRoomInstructionRows"',
+        'class="board-room-size-controls"',
+        'id="boardRoomSizingMode"',
+        'id="boardRoomDimensionsFields"',
+        'id="boardRoomCellCountField"',
+        'id="boardRoomPreviewPanel"',
         'id="boardRoomPreviewPlaceholder"',
         'id="boardRoomPreviewFrame"',
+        'class="board-room-layout-actions"',
         'id="boardRoomCreateButton"',
         'id="boardRoomCommitButton"'
     )) {
@@ -154,20 +159,57 @@ try {
             throw "board room editor is missing $required"
         }
     }
-    if ($editorDom -notmatch 'id="boardRoomTabBoard"[^>]*aria-selected="true"') {
-        throw "board size/shape tab must be selected on load"
+    foreach ($removed in @(
+        'id="boardRoomTabBoard"',
+        'id="boardRoomTabEffects"',
+        'id="boardRoomRerollButton"',
+        'id="boardRoomOverlayRow"',
+        'id="boardRoomExtendButton"',
+        'id="boardRoomExtendMinutes"',
+        'id="boardRoomTerminateButton"',
+        'id="boardRoomPauseButton"',
+        'id="boardRoomResumeButton"',
+        'OBS 주소 복사',
+        '새 창에서 열기',
+        '룸 초안 생성 · 실제 배치 확인'
+    )) {
+        if ($editorDom.Contains($removed)) {
+            throw "room creation must not contain $removed"
+        }
+    }
+    $editorOrder = @(
+        'class="board-room-editor-pane"',
+        'id="boardRoomInstructionList"',
+        'class="board-room-board-preview"',
+        'class="board-room-size-controls"',
+        'id="boardRoomPreviewPanel"',
+        'id="boardRoomPreviewFrame"',
+        'class="board-room-layout-actions"',
+        'id="boardRoomCreateButton"',
+        'id="boardRoomCommitButton"'
+    )
+    $previousIndex = -1
+    foreach ($item in $editorOrder) {
+        $index = $editorDom.IndexOf($item)
+        if ($index -le $previousIndex) {
+            throw "room creation controls are in the wrong order: $item"
+        }
+        $previousIndex = $index
+    }
+    if ($editorDom -notmatch 'id="boardRoomCreateButton"[^>]*>배치</button>') {
+        throw "first placement action must be labeled 배치"
+    }
+    if ($editorDom -notmatch 'id="boardRoomCommitButton"[^>]*disabled[^>]*>이 배치로 확정</button>') {
+        throw "board confirmation must be disabled until an actual DRAFT exists"
     }
     if ($editorDom -match 'id="boardRoomSampleFrame"' -or
         $editorDom -match 'id="boardRoomPreviewFrame"[^>]+src="[^"]*demo=1') {
         throw "room editor must not substitute a demo board for real DRAFT preview"
     }
     if ($editorDom -notmatch 'id="boardRoomPreviewFrame"[^>]*hidden') {
-        throw "room editor real-board iframe must start hidden before DRAFT creation"
+        throw "room editor real-board iframe must start hidden before first placement"
     }
-    if ($editorDom -notmatch 'id="boardRoomPreviewPlaceholder"[^>]*>') {
-        throw "room editor must show empty state before DRAFT creation"
-    }
-    Write-Host "[board-smoke] room editor two panels and server-only preview passed"
+    Write-Host "[board-smoke] room creation layout, two actions and real server preview passed"
 
     Write-Host "[board-smoke] rounded and rect layouts passed"
 }
