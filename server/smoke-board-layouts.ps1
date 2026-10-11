@@ -193,7 +193,7 @@ try {
     if ($avatarCount -lt 2 -or $identityCount -lt 2 -or $inlineStatusCount -lt 2) {
         throw "every participant row must own its profile photo and live status"
     }
-    if ($editorDom -notmatch 'class="board-room-player-identity"[\\s\\S]*?class="board-room-live-avatar-shell"') {
+    if ($editorDom -notmatch 'class="board-room-player-identity"[\s\S]*?class="board-room-live-avatar-shell"') {
         throw "profile photos must be within participant identity rows"
     }
     $editorOrder = @(
