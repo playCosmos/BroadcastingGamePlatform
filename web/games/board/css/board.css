@@ -267,7 +267,7 @@ body {
   position: relative;
   display: -webkit-box;
   width: 100%;
-  max-height: 4.8em;
+  max-height: calc(4.8em + 10px);
   padding: clamp(2px, .24vw, 5px) clamp(2px, .24vw, 5px);
   overflow: hidden;
   color: #f2f6fc;
@@ -297,7 +297,7 @@ body {
 
 /* 플레이어가 없는 지시문 칸은 셀 중앙에서 더 크게 읽히게 한다. */
 .board-cell:is([data-kind="instruction"], [data-kind="start"])[data-occupied="false"] .cell-label {
-  max-height: 4.8em;
+  max-height: calc(4.8em + 10px);
   padding: clamp(2px, .22vw, 5px);
   color: #f8fbff;
   font-size: calc(var(--cell-label-font, 11px) * 1.20);
