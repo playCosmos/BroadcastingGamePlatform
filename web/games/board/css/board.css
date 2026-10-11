@@ -312,19 +312,20 @@ body {
 }
 
 /*
- * 좌/우 세로칸의 지시문은 실제로 확보된 절반 폭을 모두 사용한다.
- * 기존 3.15em 고정 폭은 빈 공간이 남아도 강제 줄바꿈을 일으켰다.
+ * 플레이어가 있는 좌/우 세로칸은 지시문 폭을 한 줄 약 3글자로 제한한다.
+ * 이 공간 계약은 플레이어 반쪽 영역을 침범하지 않게 하기 위한 기존 결정이다.
+ * 가독성 개선에서는 이 상한을 해제하지 않는다.
  */
 .board-cell:is([data-kind="instruction"], [data-kind="start"])[data-occupied="true"][data-instruction-edge="left"] .cell-label,
 .board-cell:is([data-kind="instruction"], [data-kind="start"])[data-occupied="true"][data-instruction-edge="right"] .cell-label {
-  width: 100%;
-  max-width: 100%;
-  max-height: 4.8em;
-  padding: 0 1px;
-  line-height: 1.17;
+  width: 3.15em;
+  max-width: calc(100% - 4px);
+  max-height: 3.55em;
+  padding: 0;
+  line-height: 1.12;
   word-break: keep-all;
   overflow-wrap: anywhere;
-  -webkit-line-clamp: 4;
+  -webkit-line-clamp: 3;
 }
 
 /* START도 동일한 위치 규칙을 따르되 강조 색과 굵기는 유지한다. */
