@@ -5,6 +5,7 @@ $RepoRoot = Split-Path -Parent $ServerRoot
 
 Push-Location $RepoRoot
 $server = $null
+$geometryFixture = Join-Path $RepoRoot "web/__board_room_geometry_probe.html"
 try {
     $server = Start-Process -FilePath "python" -ArgumentList @(
         "-m", "http.server", "8124",
@@ -230,9 +231,32 @@ try {
     }
     Write-Host "[board-smoke] room creation layout, two actions and real server preview passed"
 
+    # Inspect actual element geometry at wide and compact browser widths.
+    # The fixture is temporary and never included in the Windows package.
+    Copy-Item "server/fixtures/board-room-layout-probe.html" $geometryFixture -Force
+    foreach ($width in @(1600, 1100, 820)) {
+        $layoutDom = & $browser @(
+            "--headless",
+            "--disable-gpu",
+            "--no-sandbox",
+            "--window-size=${width},900",
+            "--virtual-time-budget=4500",
+            "--dump-dom",
+            "$baseUrl/__board_room_geometry_probe.html"
+        ) 2>&1 | Out-String
+        if ($LASTEXITCODE -ne 0 -or $layoutDom -notmatch 'data-geometry-state="pass"') {
+            $details = [regex]::Match($layoutDom, 'data-geometry-details="([^"]*)"').Groups[1].Value
+            throw "board room layout geometry failed at ${width}px: $details"
+        }
+    }
+    Write-Host "[board-smoke] player alignment, movement rows, board sizing and top navigation geometry passed"
+
     Write-Host "[board-smoke] rounded and rect layouts passed"
 }
 finally {
+    if ($geometryFixture -and (Test-Path $geometryFixture)) {
+        Remove-Item $geometryFixture -Force
+    }
     if ($server -and -not $server.HasExited) {
         Stop-Process -Id $server.Id -Force
     }
