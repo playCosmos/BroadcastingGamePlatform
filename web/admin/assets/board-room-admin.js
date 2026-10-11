@@ -804,6 +804,7 @@
       enabled.title = "활성 / 비활성";
       enabled.addEventListener("change", () => {
         setInstructionEnabled(row, enabled.checked);
+        syncAllInstructionRows();
         settingsChanged();
       });
 
