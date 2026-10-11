@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head><meta charset="utf-8"><title>Board room geometry probe</title>
+<style>*{box-sizing:border-box}body{margin:0}iframe{display:block;border:0;width:100vw;height:100vh}</style>
+</head>
+<body data-geometry-state="pending">
+<iframe id="editor" src="/admin/games/board/index.html"></iframe>
+<script>
+(function () {
+  "use strict";
+  const frame = document.getElementById("editor");
+  function closeEnough(a, b, margin) {
+    return Math.abs(a - b) <= margin;
+  }
+  frame.addEventListener("load", () => {
+    setTimeout(() => {
+      try {
+        const d = frame.contentDocument;
+        const one = (selector) => {
+          const el = d.querySelector(selector);
+          if (!el) throw new Error("Missing " + selector);
+          return el.getBoundingClientRect();
+        };
+        const differences = [];
+        const requireLayout = (condition, message) => {
+          if (!condition) differences.push(message);
+        };
+
+        const deleteButton = one(".board-room-player-remove");
+        const status = one(".board-room-inline-status");
+        const idInput = one('.board-room-player-row [data-field="soopId"]');
+        const displayInput = one('.board-room-player-row [data-field="displayName"]');
+        const balloonInput = one('.board-room-player-row [data-field="balloonTrigger"]');
+        requireLayout(
+          [deleteButton, status, displayInput, balloonInput]
+            .every(box => closeEnough(box.bottom, idInput.bottom, 5)),
+          "delete/status/input bottom alignment"
+        );
+
+        const cards = Array.from(d.querySelectorAll(".board-room-primary-panel .board-room-generator-card"));
+        requireLayout(cards.length === 2, "two movement rows");
+        for (let i = 0; i < cards.length; i += 1) {
+          const card = cards[i].getBoundingClientRect();
+          const toggle = cards[i].querySelector(".board-room-generator-toggle").getBoundingClientRect();
+          const options = cards[i].querySelector(".board-room-generator-suboptions").getBoundingClientRect();
+          if (window.innerWidth >= 900) {
+            requireLayout(card.height <= 76, "movement row " + i + " too tall: " + card.height);
+            requireLayout(closeEnough((toggle.top + toggle.bottom) / 2, (options.top + options.bottom) / 2, 6),
+              "movement row " + i + " not vertically aligned");
+            requireLayout(options.left > toggle.right - 4, "movement options should be beside toggle");
+          }
+        }
+
+        const size = one(".board-room-size-controls");
+        const mode = one("#boardRoomSizingMode");
+        const style = one('[name="layoutStyle"]');
+        const cols = one('[name="columns"]');
+        const rows = one('[name="rows"]');
+        if (size.width > 760) {
+          requireLayout([style, cols, rows].every(item => closeEnough(item.top, mode.top, 5)),
+            "board size fields must occupy one line when space permits");
+          requireLayout(rows.right <= size.right + 2, "size controls exceed available space");
+        } else if (size.width > 420) {
+          requireLayout(closeEnough(style.top, mode.top, 5), "sizing mode and corner style should share first row");
+          requireLayout(closeEnough(cols.top, rows.top, 5) && cols.top > mode.bottom,
+            "columns and rows should share second row when narrow");
+        }
+        const nav = one(".board-room-admin-shell .admin-header .nav-link");
+        const title = one(".board-room-admin-shell .admin-header h1");
+        requireLayout(nav.top - title.bottom >= 6, "header navigation needs separation from title");
+
+        document.body.dataset.geometryState = differences.length ? "fail" : "pass";
+        document.body.dataset.geometryDetails = differences.join(" | ") || "ok";
+      } catch (error) {
+        document.body.dataset.geometryState = "fail";
+        document.body.dataset.geometryDetails = error.message;
+      }
+    }, 250);
+  });
+})();
+</script>
+</body>
+</html>
