@@ -177,6 +177,25 @@ try {
             throw "room creation must not contain $removed"
         }
     }
+    if ($editorDom.Contains('id="boardRoomLiveSummary"') -or
+        $editorDom.Contains('class="board-room-live-card"')) {
+        throw "duplicate player status cards must not exist"
+    }
+    $avatarCount = ([regex]::Matches(
+        $editorDom, 'class="board-room-live-avatar-shell"'
+    )).Count
+    $identityCount = ([regex]::Matches(
+        $editorDom, 'class="board-room-player-identity"'
+    )).Count
+    $inlineStatusCount = ([regex]::Matches(
+        $editorDom, 'data-live-status'
+    )).Count
+    if ($avatarCount -lt 2 -or $identityCount -lt 2 -or $inlineStatusCount -lt 2) {
+        throw "every participant row must own its profile photo and live status"
+    }
+    if ($editorDom -notmatch 'class="board-room-player-identity"[\\s\\S]*?class="board-room-live-avatar-shell"') {
+        throw "profile photos must be within participant identity rows"
+    }
     $editorOrder = @(
         'class="board-room-editor-pane"',
         'id="boardRoomInstructionList"',
