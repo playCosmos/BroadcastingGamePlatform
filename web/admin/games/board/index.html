@@ -37,8 +37,6 @@
       </div>
     </header>
 
-    <input id="overlayUrlInput" type="hidden" />
-
     <section class="board-room-panel" id="boardRoomPanel">
       <form class="board-room-form" id="boardRoomForm">
         <section class="board-room-primary-panel" aria-labelledby="boardRoomBasicsHeading">
@@ -137,11 +135,38 @@
           <h2 id="boardRoomWorkspaceHeading">보드 설정</h2>
           <div class="board-room-workspace-grid">
             <div class="board-room-editor-pane">
-              <div class="board-room-editor-tabs" role="tablist" aria-label="보드 설정 항목">
-                <button type="button" role="tab" id="boardRoomTabBoard" aria-controls="boardRoomTabPanelBoard" aria-selected="true" tabindex="0" data-board-room-tab="board">크기·모양</button>
-                <button type="button" role="tab" id="boardRoomTabEffects" aria-controls="boardRoomTabPanelEffects" aria-selected="false" tabindex="-1" data-board-room-tab="effects">칸 효과</button>
+              <section class="board-room-settings-section">
+          <h3>칸 효과</h3>
+          
+          <div class="board-room-instruction-editor">
+            <aside class="board-room-instruction-sidebar">
+              <div class="board-room-instruction-toolbar">
+                <button type="button" class="board-room-small-button" data-add-board-instruction="custom">+ 사용자 지시문 추가</button>
               </div>
-              <div role="tabpanel" id="boardRoomTabPanelBoard" aria-labelledby="boardRoomTabBoard" class="board-room-tab-content">
+              <div class="board-room-instruction-master-list" id="boardRoomInstructionList"></div>
+            </aside>
+
+            <section class="board-room-instruction-property-view">
+              <div class="board-room-property-empty" id="boardRoomInstructionEmptyState">
+                왼쪽 목록에서 지시문을 선택하세요.
+              </div>
+              <div class="board-room-instruction-list" id="boardRoomInstructionRows"></div>
+            </section>
+          </div>
+
+          <div class="board-room-random-row">
+            <label>랜덤 변경 후보 설정
+              <select id="boardRoomRandomPoolMode">
+                <option value="inheritRatioInstructions">활성 비율 지시문 자동 포함 + 원 비율 상속</option>
+                <option value="custom">활성 지시문 중 후보/가중치 직접 설정</option>
+              </select>
+            </label>
+            <p class="board-room-rule-note">비활성 지시문은 보드에 배치되지 않고 랜덤 후보에서도 제외됩니다. 기본 preset은 앞으로/뒤로 10%, 다음 주사위 무효·{m}배·다음 칸 무효화는 각각 1개입니다.</p>
+          </div>
+        </section>
+            </div>
+            <section class="board-room-board-preview" aria-label="보드 크기·모양과 실제 배치">
+              <div class="board-room-size-controls">
                 <section class="board-room-settings-section">
           <h3>보드 크기·모양</h3>
           <div class="board-room-board-grid">
@@ -171,74 +196,26 @@
           </div>
         </section>
               </div>
-              <div role="tabpanel" id="boardRoomTabPanelEffects" aria-labelledby="boardRoomTabEffects" class="board-room-tab-content" hidden>
-                <section class="board-room-settings-section">
-          <h3>칸 효과</h3>
-          
-          <div class="board-room-instruction-editor">
-            <aside class="board-room-instruction-sidebar">
-              <div class="board-room-instruction-toolbar">
-                <button type="button" class="board-room-small-button" data-add-board-instruction="custom">+ 사용자 지시문 추가</button>
-              </div>
-              <div class="board-room-instruction-master-list" id="boardRoomInstructionList"></div>
-            </aside>
-
-            <section class="board-room-instruction-property-view">
-              <div class="board-room-property-empty" id="boardRoomInstructionEmptyState">
-                왼쪽 목록에서 지시문을 선택하세요.
-              </div>
-              <div class="board-room-instruction-list" id="boardRoomInstructionRows"></div>
-            </section>
-          </div>
-
-          <div class="board-room-random-row">
-            <label>랜덤 변경 후보 설정
-              <select id="boardRoomRandomPoolMode">
-                <option value="inheritRatioInstructions">활성 비율 지시문 자동 포함 + 원 비율 상속</option>
-                <option value="custom">활성 지시문 중 후보/가중치 직접 설정</option>
-              </select>
-            </label>
-            <p class="board-room-rule-note">비활성 지시문은 보드에 배치되지 않고 랜덤 후보에서도 제외됩니다. 기본 preset은 앞으로/뒤로 10%, 다음 주사위 무효·{m}배·다음 칸 무효화는 각각 1개입니다.</p>
-          </div>
-        </section>
-              </div>
-            </div>
-            <section class="board-room-board-preview" aria-label="보드 미리보기와 배치 확정">
               <div class="board-room-preview-panel" id="boardRoomPreviewPanel">
-        <div class="board-room-preview-head">
-          <div>
-            <h3>실제 보드 배치</h3>
-            <p class="board-room-preview-meta" id="boardRoomPreviewMeta"></p>
-          </div>
-          <div class="board-room-preview-actions">
-            <button type="button" id="boardRoomRerollButton" disabled>다시 배치</button>
-            <button type="button" id="boardRoomCommitButton" disabled>이 배치로 확정</button>
-            <label class="board-room-inline-control" id="boardRoomExtendControl" hidden>연장(분, 최대 120)
-              <input id="boardRoomExtendMinutes" type="number" min="1" max="120" step="1" value="60" />
-            </label>
-            <button type="button" id="boardRoomExtendButton" hidden disabled>시간 연장</button>
-            <button type="button" id="boardRoomPauseButton" hidden>일시정지</button>
-            <button type="button" id="boardRoomResumeButton" hidden>재개</button>
-            <button type="button" id="boardRoomTerminateButton" hidden>룸 종료</button>
-          </div>
-        </div>
-        <div class="board-room-preview-shell">
-          <div class="board-room-preview-placeholder" id="boardRoomPreviewPlaceholder">
-            <strong>실제 보드 배치 대기 중</strong>
-            <span>룸 초안을 생성하면 서버가 배치한 보드가 표시됩니다.</span>
-          </div>
-          <iframe id="boardRoomPreviewFrame" title="실제 룸 배치" loading="lazy" hidden></iframe>
-        </div>
-        <div class="board-room-overlay-row" id="boardRoomOverlayRow" hidden>
-          <input id="boardRoomOverlayUrl" type="text" readonly aria-label="보드게임 OBS 오버레이 주소" />
-          <button type="button" id="boardRoomCopyOverlayButton">OBS 주소 복사</button>
-          <button type="button" id="boardRoomOpenOverlayButton">새 창에서 열기</button>
-        </div>
-      </div>
+                <div class="board-room-preview-head">
+                  <h3>실제 보드 배치</h3>
+                  <p class="board-room-preview-meta" id="boardRoomPreviewMeta"></p>
+                </div>
+                <div class="board-room-preview-shell">
+                  <div class="board-room-preview-placeholder" id="boardRoomPreviewPlaceholder">
+                    <strong>실제 보드 배치 대기 중</strong>
+                    <span>배치를 누르면 서버에서 생성된 실제 룸 보드가 표시됩니다.</span>
+                  </div>
+                  <iframe id="boardRoomPreviewFrame" title="실제 룸 배치" loading="lazy" hidden></iframe>
+                </div>
+              </div>
               <div class="board-room-create-actions">
-          <button type="submit" id="boardRoomCreateButton">룸 초안 생성 · 실제 배치 확인</button>
-          <p class="operation-result" id="boardRoomResult">룸 초안을 생성하면 실제 배치를 확인하고 확정할 수 있습니다.</p>
-        </div>
+                <div class="board-room-layout-actions">
+                  <button type="submit" id="boardRoomCreateButton">배치</button>
+                  <button type="button" id="boardRoomCommitButton" disabled>이 배치로 확정</button>
+                </div>
+                <p class="operation-result" id="boardRoomResult" aria-live="polite"></p>
+              </div>
             </section>
           </div>
         </section>
@@ -259,13 +236,6 @@
           document.getElementById("boardServerVersion").textContent =
             "서버 v" + (state.version || "-");
 
-          const carrier = document.getElementById("overlayUrlInput");
-          if (carrier) {
-            carrier.value =
-              (state.clientBaseUrl || location.origin)
-              + "/?ws="
-              + encodeURIComponent(state.websocketUrl || "");
-          }
         } catch (_) {
         }
       }
