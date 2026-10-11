@@ -45,7 +45,7 @@
 
 .board-room-player-row {
   display: grid;
-  grid-template-columns: auto 44px minmax(160px, 1fr) minmax(150px, 1fr) minmax(150px, .72fr) minmax(86px, auto);
+  grid-template-columns: auto 82px minmax(160px, 1fr) minmax(150px, 1fr) minmax(150px, .72fr) minmax(86px, auto);
   gap: 9px;
   align-items: end;
   padding: 10px;
@@ -114,10 +114,20 @@
 }
 
 .board-room-player-index {
-  align-self: center;
   color: #d3d8df;
   font-weight: 900;
-  text-align: center;
+  white-space: nowrap;
+}
+.board-room-player-identity {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  min-width: 0;
+}
+.board-room-player-identity .board-room-live-avatar[hidden],
+.board-room-player-identity .board-room-live-avatar-fallback[hidden] {
+  display: none !important;
 }
 
 .board-room-inline-status {
@@ -239,49 +249,6 @@
   align-items: center;
 }
 
-.board-room-live-summary {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-  margin-top: 12px;
-}
-
-.board-room-live-card {
-  display: flex;
-  justify-content: space-between;
-  gap: 14px;
-  padding: 11px 12px;
-  border: 1px solid #2b3139;
-  border-radius: 10px;
-  background: #0d1014;
-}
-
-.board-room-live-card > div:first-child {
-  min-width: 0;
-}
-
-.board-room-live-card strong,
-.board-room-live-card span {
-  display: block;
-  overflow-wrap: anywhere;
-}
-
-.board-room-live-card > div:first-child span,
-.board-room-live-state span {
-  margin-top: 3px;
-  color: #85909e;
-  font-size: 11px;
-}
-
-.board-room-live-state {
-  min-width: 130px;
-  text-align: right;
-}
-
-.board-room-live-card.live .board-room-live-state b { color: #8bd5a4; }
-.board-room-live-card.offline .board-room-live-state b { color: #c9bd77; }
-.board-room-live-card.failed .board-room-live-state b { color: #e28c8f; }
-
 .board-room-preview-panel {
   margin-top: 14px;
   padding-top: 14px;
@@ -339,7 +306,7 @@
   }
 
   .board-room-player-row {
-    grid-template-columns: auto 38px 1fr 1fr;
+    grid-template-columns: auto 82px minmax(0, 1fr) minmax(0, 1fr);
   }
 
   .board-room-balloon-field,
@@ -357,13 +324,12 @@
   .board-room-board-grid,
   .board-room-movement-grid,
   .board-room-instruction-grid,
-  .board-room-random-row,
-  .board-room-live-summary {
+  .board-room-random-row {
     grid-template-columns: 1fr;
   }
 
   .board-room-player-row {
-    grid-template-columns: auto 34px 1fr;
+    grid-template-columns: auto 82px minmax(0, 1fr);
   }
 
   .board-room-player-row label {
@@ -375,7 +341,7 @@
     grid-row: 1;
   }
 
-  .board-room-player-index {
+  .board-room-player-identity {
     grid-column: 2;
     grid-row: 1;
   }
@@ -755,13 +721,6 @@
   }
 }
 
-
-.board-room-live-identity {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
 
 .board-room-live-avatar,
 .board-room-live-avatar-fallback {
