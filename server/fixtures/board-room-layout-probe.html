@@ -78,6 +78,62 @@
         const title = one(".board-room-admin-shell .admin-header h1");
         requireLayout(nav.top - title.bottom >= 6, "header navigation needs separation from title");
 
+        const list = d.getElementById("boardRoomInstructionList");
+        const listItems = Array.from(list.querySelectorAll(".board-room-instruction-list-item"));
+        const listRect = list.getBoundingClientRect();
+        requireLayout(listItems.length >= 6, "random cell must appear as sixth option");
+        requireLayout(listRect.height <= 205 && listRect.height >= 190,
+          "instruction list must show exactly four 45px entries");
+        requireLayout(listItems[3].getBoundingClientRect().bottom <= listRect.bottom + 2,
+          "fourth effect must fit within list");
+        requireLayout(listItems[4].getBoundingClientRect().bottom > listRect.bottom + 2,
+          "fifth effect must require scrolling");
+        const toolbar = one(".board-room-instruction-toolbar");
+        requireLayout(toolbar.bottom <= listRect.top + 2, "add-instruction button must be above scroll list");
+        const titleEdit = d.querySelector(".board-room-instruction-row:not([hidden]) .board-room-instruction-title-input");
+        requireLayout(Boolean(titleEdit), "effect title must be editable at the heading");
+        requireLayout(!d.querySelector(".board-room-instruction-row label:not(.board-room-instruction-title-field) [data-field='label']"),
+          "no duplicate effect title field should appear beneath the heading");
+        const chip = d.querySelector(".board-room-instruction-row:not([hidden]) [data-action-label]");
+        if (titleEdit && chip) {
+          titleEdit.value = "테스트 {n}칸 이동";
+          titleEdit.dispatchEvent(new frame.contentWindow.Event("input", { bubbles: true }));
+          requireLayout(chip.textContent === titleEdit.value, "movement label should mirror title input");
+          requireLayout(listItems[0].querySelector("strong")?.textContent === titleEdit.value,
+            "selected list label should mirror title input");
+        }
+
+        const randomSettings = d.getElementById("boardRoomRandomOptions");
+        const randomToggle = listItems[listItems.length - 1]?.querySelector("input[type='checkbox']");
+        const firstRow = d.querySelector(".board-room-instruction-row:not([hidden])");
+        const candidate = firstRow?.querySelector("[data-random-candidate]");
+        const weight = firstRow?.querySelector("[data-random-weight]");
+        requireLayout(Boolean(randomToggle) && !randomToggle.checked, "random effect should default off");
+        requireLayout(randomSettings.hidden && candidate?.hidden && weight?.hidden,
+          "random controls must initially be hidden");
+        if (randomToggle) {
+          randomToggle.checked = true;
+          randomToggle.dispatchEvent(new frame.contentWindow.Event("change", { bubbles: true }));
+          requireLayout(!randomSettings.hidden && !candidate.hidden,
+            "enabling random effect should reveal candidate checkboxes");
+          const candidateCheckbox = candidate.querySelector("input");
+          requireLayout(!candidateCheckbox.checked && weight.hidden,
+            "candidate and its weight should initially be inactive");
+          candidateCheckbox.checked = true;
+          candidateCheckbox.dispatchEvent(new frame.contentWindow.Event("change", { bubbles: true }));
+          requireLayout(!weight.hidden, "weight should appear at bottom after selecting a candidate");
+        }
+        const previewTitle = d.querySelector(".board-room-preview-head h3");
+        const previewMeta = d.getElementById("boardRoomPreviewMeta");
+        const titleStyle = frame.contentWindow.getComputedStyle(previewTitle);
+        const metaStyle = frame.contentWindow.getComputedStyle(previewMeta);
+        requireLayout(parseFloat(titleStyle.fontSize) >= 17, "board preview heading should be enlarged");
+        requireLayout(parseFloat(metaStyle.fontSize) === 12, "board details must keep existing 12px font");
+        requireLayout(Math.abs(previewTitle.getBoundingClientRect().top -
+          previewMeta.getBoundingClientRect().top) < 15, "board details should follow heading on the same line");
+        requireLayout(d.querySelectorAll(".board-room-layout-actions .board-room-action-icon").length === 2,
+          "placement and confirmation buttons should each contain a pictogram");
+
         document.body.dataset.geometryState = differences.length ? "fail" : "pass";
         document.body.dataset.geometryDetails = differences.join(" | ") || "ok";
       } catch (error) {
