@@ -1568,7 +1568,15 @@
     if (!cell) return;
 
     const baseTypography = Math.sqrt(baseWidth * baseHeight);
-    const labelFontSize = clamp(baseTypography * 0.115, 7.5, 15.5);
+    // The previous 7.5–15.5px scale made Korean instructions hard to read.
+    // Increase the baseline for typical instructions; keep long custom labels
+    // slightly smaller so the occupied half-cell is less likely to clip them.
+    const instructionLength = Array.from(
+      cell.querySelector(".cell-label")?.textContent || ""
+    ).length;
+    const densityScale = instructionLength > 16 ? 0.82
+      : instructionLength > 10 ? 0.92 : 1;
+    const labelFontSize = clamp(baseTypography * 0.15 * densityScale, 10, 19);
     const cellRadius = clamp(Math.min(baseWidth, baseHeight) * 0.09, 2, 10);
     const scale = geometry.width / Math.max(0.01, baseWidth);
     const targetX = geometry.centerX - (baseWidth * 0.5);
