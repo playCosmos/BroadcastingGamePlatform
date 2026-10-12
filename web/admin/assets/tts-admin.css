@@ -22,3 +22,9 @@ body{background:#090d12;color:#eaf0f7;font-family:system-ui,-apple-system,"Segoe
 .tts-actions{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:17px}
 #speechPreview{width:100%;margin-top:12px}
 @media(max-width:720px){.tts-fields{grid-template-columns:1fr}.tts-card{padding:16px}}
+
+.tts-catalog-filters{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:520px;margin-top:17px}
+.tts-catalog-filters select{min-width:0;margin-top:5px}
+.tts-voice-details{display:block;color:#9db2c7;font-size:12px;font-weight:500;line-height:1.5;min-height:18px}
+.tts-default-status{border-top:1px solid #303e4c;padding-top:12px;margin:18px 0 0;font-size:13px}
+@media(max-width:520px){.tts-catalog-filters{grid-template-columns:1fr}}
