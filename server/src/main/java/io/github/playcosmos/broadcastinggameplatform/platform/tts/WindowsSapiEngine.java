@@ -26,6 +26,10 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
 
     @Override public String id() { return "windows-sapi"; }
 
+    @Override public synchronized void invalidateVoiceCatalog() {
+        cachedAt = 0;
+    }
+
     @Override
     public synchronized List<TtsService.Voice> voices() throws Exception {
         if (!supported) return List.of();
