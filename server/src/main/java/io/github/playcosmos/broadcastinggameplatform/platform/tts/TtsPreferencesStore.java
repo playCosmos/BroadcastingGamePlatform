@@ -36,9 +36,31 @@ public final class TtsPreferencesStore {
     private Preferences current;
 
     public TtsPreferencesStore(Path path) throws IOException {
+        this(path, false);
+    }
+
+    /**
+     * Platform startup must continue even if optional TTS settings are corrupt.
+     * Preserve the file until an administrator explicitly saves new settings.
+     */
+    public static TtsPreferencesStore loadOrDefault(Path path) {
+        try {
+            return new TtsPreferencesStore(path);
+        } catch (IOException error) {
+            System.err.println("[tts] persisted voice settings unavailable; "
+                + "using defaults until an administrator saves them");
+            try {
+                return new TtsPreferencesStore(path, true);
+            } catch (IOException impossible) {
+                throw new IllegalStateException(impossible);
+            }
+        }
+    }
+
+    private TtsPreferencesStore(Path path, boolean skipExisting) throws IOException {
         this.path = path == null ? null : path.toAbsolutePath().normalize();
         current = DEFAULTS;
-        if (this.path != null && Files.exists(this.path)) {
+        if (!skipExisting && this.path != null && Files.exists(this.path)) {
             try {
                 if (Files.size(this.path) > 8192) {
                     throw new IOException("TTS settings file is too large");
