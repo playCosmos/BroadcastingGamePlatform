@@ -25,9 +25,18 @@
       </div>
       <p class="tts-muted" id="voiceAvailability" role="status">음성을 확인하는 중입니다.</p>
       <form id="speechForm">
+        <div class="tts-catalog-filters">
+          <label for="voiceLanguage">언어 필터
+            <select id="voiceLanguage"><option value="all">전체 언어</option></select>
+          </label>
+          <label for="voiceEngine">음성 엔진
+            <select id="voiceEngine"><option value="all">전체 엔진</option></select>
+          </label>
+        </div>
         <div class="tts-fields">
           <label for="voiceChoice">음성
             <select id="voiceChoice" required disabled><option value="">검색 중…</option></select>
+            <span class="tts-voice-details" id="voiceDetails">목소리 정보를 확인하는 중입니다.</span>
           </label>
           <label for="rateChoice">말하기 속도 <output id="rateValue">0</output>
             <input id="rateChoice" type="range" min="-10" max="10" value="0" step="1">
@@ -41,10 +50,13 @@
         </label>
         <div class="tts-actions">
           <button type="submit" id="speakButton" class="tts-primary" disabled>음성 생성</button>
+          <button type="button" id="saveDefaults" disabled>현재 값을 기본 설정으로 저장</button>
+          <button type="button" id="restoreDefaults">저장값 불러오기</button>
           <button type="button" id="clearQueue">대기열 비우기</button>
           <span id="ttsQueueStatus" class="tts-muted" aria-live="polite">대기 상태 확인 중</span>
         </div>
       </form>
+      <p class="tts-muted tts-default-status" id="defaultsStatus" role="status">기본 음성 설정을 읽는 중입니다.</p>
     </section>
     <section class="tts-card" aria-labelledby="preview-heading">
       <h2 id="preview-heading">음성 미리듣기</h2>
