@@ -23,6 +23,20 @@ without altering Board or Drawing Guess logic.
   Text and voice names are passed as base64 UTF-8 within a UTF-16 command.
   No shell interpolation or third-party TTS runtime; temporary files are
   removed and synthesis has a 30-second timeout.
+- `EspeakNgEngine`: optional eSpeak NG adapter; automatically detects the
+  executable on the server PATH and enumerates installed local voice packs.
+  Works on Windows when eSpeak NG is installed separately; without the
+  executable it reports zero voices. It never downloads an engine or model.
+- `TtsEngineRegistry`: built-in engine registration plus trusted on-classpath
+  Java SPI engine discovery. Avoid loading untrusted plugins from arbitrary
+  folders; duplicates and broken optional providers are ignored.
+- Rich voice catalog metadata: language, engine, gender (when reported), style
+  labels and source. These are metadata, not guarantees about audio quality.
+- `TtsPreferencesStore`: administrator defaults (voice ID, speed and volume)
+  saved atomically to `tts-settings.json` in the application root.
+  A missing voice stays selected in the saved profile for later restoration.
+  Invalid or unreadable optional settings recover to safe defaults without
+  blocking the game server; the original file is preserved for inspection.
 - Admin-only `/api/v1/tts` API with same-Origin mutation policy and
   existing admin session validation.
 - Dedicated `/admin/tts/` page to inspect available voices, select a voice,
@@ -39,7 +53,8 @@ All routes require a valid admin session.
 
 | Method | Route | Purpose |
 |---|---|---|
-| GET | `/api/v1/tts/voices` | Installed voice catalog with engine IDs |
+| GET | `/api/v1/tts/voices[?refresh=1]` | Installed voice catalog, metadata, manual refresh |
+| GET/PUT | `/api/v1/tts/settings` | Persisted default voice, rate and volume |
 | GET | `/api/v1/tts/status` | Queued / active synthesis and engine status |
 | POST | `/api/v1/tts/speak` | Submit a manually entered text/voice/rate/volume |
 | GET | `/api/v1/tts/jobs/{uuid}` | Observe QUEUED/SYNTHESIZING/READY/FAILED/CANCELLED |
@@ -57,20 +72,28 @@ is **not** a guarantee that the named voice exists on the host computer.
 Jobs and audio are volatile and expire/evict; restarting the server does not
 replay previous speech. Speech content is not persisted or logged.
 
-## Extension contracts and phased follow-up
+## Current administrator workflow
 
-1. Foundation validation: compile, run fake multi-engine / queue probes, then
-   test voice discovery and WAV preview on a Windows machine with an installed
-   compatible speech voice.
-2. Multi-voice engine adapters: add an installed voice pack provider and/or
-   additional native/cloud adapters; support voice metadata (gender, style,
-   expressive characteristics, license) and capabilities without switching
-   existing IDs; show per-voice preview and explicit download/install consent.
-3. Persistent administrator defaults: voice, speed, volume and policy settings.
-   Do not store generated audio in DB. Use bounded file caching if needed.
-4. Exclusive OBS speech output per broadcast channel and audio focus,
-   only after a separate output/security specification is approved.
-5. Game and SOOP event integration stays deferred until the user requests it.
+1. Open `http://127.0.0.1:17832/admin/tts/` after administrator login.
+2. Filter the installed voice catalog by language or engine. Windows SAPI
+   voices appear where installed; eSpeak NG voices appear **only if that
+   third-party executable is already installed** and available on PATH.
+3. Select a voice, inspect the supplied gender/style/source metadata and
+   synthesize a sample sentence to hear its output.
+4. Save the chosen voice/rate/volume as administrator defaults. Reload to
+   verify persistence. If a previously selected voice is uninstalled, the
+   administrator should be notified rather than silently deleting its ID.
+5. Use Refresh after installing a new local voice. Voice pack
+   installation/update/removal is deliberately **not** implemented here.
+
+## Next milestones (not implemented)
+
+1. Safe optional local voice pack management after publishing a trusted pack
+   manifest, licenses, version checks, checksums and rollback behavior.
+2. Additional native/neural adapters using `TtsService.TtsEngine`.
+3. Audio generation efficiency improvements and bounded caching.
+4. Optional OBS speech output and game/provider integrations **only after**
+   explicit approval of their separate execution contracts.
 
 ## Security and constraints
 
@@ -79,6 +102,6 @@ replay previous speech. Speech content is not persisted or logged.
 - Set per-request size limits, process timeout, bounded queue and WAV size.
 - Never include speech text in logs, player payloads or public errors.
 - Native voice availability varies by Windows user/installation; SAPI may not
-  expose modern OneCore voices. Additional engines are future adapters, not
-  a hidden automatic installation.
+  expose modern OneCore voices. eSpeak NG must be separately installed and
+  is never bundled or downloaded by the platform.
 - Engine failure must never affect game state or room lifecycle.
