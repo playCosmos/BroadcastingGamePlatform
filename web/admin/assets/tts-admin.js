@@ -8,6 +8,13 @@
   const result = $("speechResult");
   const audio = $("speechPreview");
   const queueStatus = $("ttsQueueStatus");
+  const languageFilter = $("voiceLanguage");
+  const engineFilter = $("voiceEngine");
+  const voiceDetails = $("voiceDetails");
+  const savedStatus = $("defaultsStatus");
+  const saveDefaults = $("saveDefaults");
+  let catalog = [];
+  let saved = { voiceId: "", rate: 0, volume: 80 };
   let currentAudioUrl = null;
   let pollGeneration = 0;
 
@@ -32,42 +39,110 @@
 
   function status(text) { result.textContent = text; }
 
+  function setOptions(target, options, allLabel) {
+    const previous = target.value;
+    target.replaceChildren();
+    const any = document.createElement("option");
+    any.value = "all";
+    any.textContent = allLabel;
+    target.append(any);
+    for (const value of options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = value;
+      target.append(option);
+    }
+    target.value = options.includes(previous) ? previous : "all";
+  }
+
+  function formatVoice(voice) {
+    const traits = [
+      voice.language,
+      voice.gender && voice.gender !== "unknown" ? voice.gender : null,
+      voice.styles?.length ? voice.styles.join(", ") : null,
+      voice.source || voice.engineId
+    ].filter(Boolean);
+    return traits.join(" · ");
+  }
+
+  function showSelectedVoiceDetails() {
+    const voice = catalog.find(entry => entry.id === voices.value);
+    voiceDetails.textContent = voice
+      ? formatVoice(voice)
+      : "선택 가능한 목소리가 없습니다.";
+    submit.disabled = !voice;
+    saveDefaults.disabled = !voice;
+  }
+
+  function renderVoiceOptions(preferred = voices.value) {
+    const filtered = catalog.filter(voice =>
+      (languageFilter.value === "all" || voice.language === languageFilter.value)
+      && (engineFilter.value === "all" || voice.engineId === engineFilter.value)
+    );
+    voices.replaceChildren();
+    for (const voice of filtered) {
+      const option = document.createElement("option");
+      option.value = voice.id;
+      option.textContent = voice.name + " · " + voice.language
+        + " · " + voice.engineId;
+      voices.append(option);
+    }
+    const selected = filtered.find(v => v.id === preferred)
+      || filtered.find(v => v.id === saved.voiceId)
+      || filtered.find(v => /^ko([-_]|$)/i.test(v.language))
+      || filtered[0];
+    if (!selected) {
+      const blank = document.createElement("option");
+      blank.textContent = "해당 조건의 음성 없음";
+      blank.value = "";
+      voices.append(blank);
+    }
+    voices.value = selected?.id || "";
+    voices.disabled = !selected;
+    showSelectedVoiceDetails();
+    if (saved.voiceId && !catalog.some(v => v.id === saved.voiceId)) {
+      savedStatus.textContent = "저장한 음성이 현재 설치되어 있지 않습니다. "
+        + "사용 가능한 음성을 선택하고 기본값을 다시 저장하세요.";
+    }
+  }
+
+  async function loadPreferences() {
+    try {
+      saved = await json("/api/v1/tts/settings");
+      $("rateChoice").value = saved.rate;
+      $("volumeChoice").value = saved.volume;
+      $("rateValue").value = saved.rate;
+      $("volumeValue").value = saved.volume + "%";
+      savedStatus.textContent = saved.voiceId
+        ? "기본 음성·속도·음량 설정을 불러왔습니다."
+        : "저장된 기본 음성이 없습니다. 처음 사용할 목소리를 선택하고 저장하세요.";
+    } catch (error) {
+      savedStatus.textContent = "기본값 불러오기 실패: " + error.message;
+    }
+  }
+
   async function loadVoices(refresh = false) {
     submit.disabled = true;
     voices.disabled = true;
     availability.textContent = "설치된 음성을 검색하는 중입니다…";
+    const previouslySelected = voices.value;
     try {
       const payload = await json("/api/v1/tts/voices" + (refresh ? "?refresh=1" : ""));
       const list = Array.isArray(payload.voices) ? payload.voices : [];
-      voices.replaceChildren();
-      const ordered = [...list].sort((left, right) =>
+      catalog = [...list].sort((left, right) =>
         String(left.language).localeCompare(String(right.language))
+        || String(left.engineId).localeCompare(String(right.engineId))
         || String(left.name).localeCompare(String(right.name))
       );
-      for (const voice of ordered) {
-        const option = document.createElement("option");
-        option.value = voice.id;
-        option.textContent = voice.name + " · " + voice.language
-          + " · " + voice.engineId;
-        voices.append(option);
-      }
-      if (ordered.length === 0) {
-        const option = document.createElement("option");
-        option.value = "";
-        option.textContent = "사용 가능한 음성 없음";
-        voices.append(option);
-        availability.textContent =
-          "Windows에 사용 가능한 음성이 없습니다. 한국어 음성을 설치한 뒤 다시 검색하세요.";
-        return;
-      }
-      const korean = ordered.find(v => /^ko([-_]|$)/i.test(v.language));
-      voices.value = korean?.id || ordered[0].id;
-      voices.disabled = false;
-      submit.disabled = false;
-      availability.textContent = ordered.length
-        + "개의 음성 사용 가능 · 한국어 음성을 우선 선택했습니다.";
+      setOptions(languageFilter, [...new Set(catalog.map(v => v.language))], "전체 언어");
+      setOptions(engineFilter, [...new Set(catalog.map(v => v.engineId))], "전체 엔진");
+      renderVoiceOptions(previouslySelected || saved.voiceId);
+      availability.textContent = catalog.length
+        ? catalog.length + "개의 음성 검색됨 · 설치된 음성만 표시됩니다."
+        : "설치된 호환 음성이 없습니다. Windows 음성을 설치한 후 다시 검색하세요.";
     } catch (error) {
-      voices.replaceChildren();
+      catalog = [];
+      renderVoiceOptions("");
       availability.textContent = "음성 조회 실패: " + error.message;
     }
   }
@@ -134,6 +209,44 @@
   });
 
   $("reloadVoices").addEventListener("click", () => loadVoices(true));
+  languageFilter.addEventListener("change", () => renderVoiceOptions());
+  engineFilter.addEventListener("change", () => renderVoiceOptions());
+  voices.addEventListener("change", showSelectedVoiceDetails);
+  saveDefaults.addEventListener("click", async () => {
+    if (!voices.value) return;
+    saveDefaults.disabled = true;
+    try {
+      saved = await json("/api/v1/tts/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          voiceId: voices.value,
+          rate: Number($("rateChoice").value),
+          volume: Number($("volumeChoice").value)
+        })
+      });
+      savedStatus.textContent = "현재 목소리와 말하기 속도·음량을 서버 기본값으로 저장했습니다.";
+    } catch (error) {
+      savedStatus.textContent = "기본값 저장 실패: " + error.message;
+    } finally {
+      saveDefaults.disabled = !voices.value;
+    }
+  });
+  $("restoreDefaults").addEventListener("click", () => {
+    languageFilter.value = "all";
+    engineFilter.value = "all";
+    renderVoiceOptions(saved.voiceId);
+    $("rateChoice").value = saved.rate;
+    $("volumeChoice").value = saved.volume;
+    $("rateValue").value = saved.rate;
+    $("volumeValue").value = saved.volume + "%";
+    if (saved.voiceId && !catalog.some(v => v.id === saved.voiceId)) {
+      savedStatus.textContent = "기존 기본 음성이 설치되어 있지 않습니다. "
+        + "다른 목소리를 선택해 저장할 수 있습니다.";
+    } else {
+      savedStatus.textContent = "서버에 저장된 설정을 화면에 불러왔습니다.";
+    }
+  });
   $("clearQueue").addEventListener("click", async () => {
     try {
       const payload = await json("/api/v1/tts/queue", { method: "DELETE" });
@@ -155,6 +268,9 @@
     if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
   });
 
-  loadVoices();
-  updateQueue();
+  (async () => {
+    await loadPreferences();
+    await loadVoices();
+    await updateQueue();
+  })();
 })();
