@@ -265,7 +265,7 @@ public final class PlatformServerMain {
 
         var adminAuthStore = new AdminAuthStore(database);
         // Standalone voice preview only: no game/event bus subscriptions yet.
-        var ttsPreferences = new TtsPreferencesStore(root.resolve("tts-settings.json"));
+        var ttsPreferences = TtsPreferencesStore.loadOrDefault(root.resolve("tts-settings.json"));
         var ttsService = new TtsService(
             TtsEngineRegistry.installed(),
             ttsPreferences
