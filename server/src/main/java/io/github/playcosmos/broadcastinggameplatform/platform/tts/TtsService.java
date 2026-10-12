@@ -20,6 +20,7 @@ public final class TtsService implements AutoCloseable {
     public interface TtsEngine {
         String id();
         List<Voice> voices() throws Exception;
+        default void invalidateVoiceCatalog() {}
         byte[] synthesize(String voiceId, String text, int rate, int volume)
             throws Exception;
     }
@@ -105,6 +106,12 @@ public final class TtsService implements AutoCloseable {
             }
         }
         return List.copyOf(result);
+    }
+
+    /** Explicit refresh after installing or removing voice packages. */
+    public List<Voice> refreshVoices() {
+        for (var engine : engines) engine.invalidateVoiceCatalog();
+        return voices();
     }
 
     public Job enqueue(Request request) {
