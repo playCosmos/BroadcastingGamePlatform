@@ -7,6 +7,7 @@ Push-Location $RepoRoot
 try {
     $JavaScriptFiles = @(
         "web/admin/assets/platform-admin.js",
+        "web/admin/assets/tts-admin.js",
         "web/admin/assets/viewer-draw-number.js",
         "web/admin/assets/viewer-draw.js",
         "web/admin/assets/viewer-draw-map-engine.js",
