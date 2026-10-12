@@ -60,10 +60,12 @@ public final class TtsEngineExpansionProbe {
             require(rejected, "invalid rate must be rejected");
             Files.writeString(settings, "{invalid",
                 StandardCharsets.UTF_8);
-            rejected = false;
-            try { new TtsPreferencesStore(settings); }
-            catch (java.io.IOException expected) { rejected = true; }
-            require(rejected, "malformed persisted preferences must fail safely");
+            var safeFallback = new TtsPreferencesStore(settings);
+            require(safeFallback.get().voiceId().isEmpty()
+                && safeFallback.get().volume() == 80,
+                "corrupt optional settings should not block platform startup");
+            require(Files.readString(settings, StandardCharsets.UTF_8)
+                .equals("{invalid"), "invalid settings preserved for inspection");
         } finally {
             Files.deleteIfExists(settings);
             Files.deleteIfExists(temporary);
