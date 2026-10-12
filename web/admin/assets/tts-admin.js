@@ -32,12 +32,12 @@
 
   function status(text) { result.textContent = text; }
 
-  async function loadVoices() {
+  async function loadVoices(refresh = false) {
     submit.disabled = true;
     voices.disabled = true;
     availability.textContent = "설치된 음성을 검색하는 중입니다…";
     try {
-      const payload = await json("/api/v1/tts/voices");
+      const payload = await json("/api/v1/tts/voices" + (refresh ? "?refresh=1" : ""));
       const list = Array.isArray(payload.voices) ? payload.voices : [];
       voices.replaceChildren();
       const ordered = [...list].sort((left, right) =>
@@ -83,7 +83,7 @@
   }
 
   async function waitForJob(jobId, generation) {
-    for (let i = 0; i < 45; i++) {
+    for (let i = 0; i < 70; i++) {
       if (generation !== pollGeneration) return;
       await new Promise(resolve => setTimeout(resolve, 550));
       const job = await json("/api/v1/tts/jobs/" + encodeURIComponent(jobId));
@@ -133,7 +133,7 @@
     }
   });
 
-  $("reloadVoices").addEventListener("click", loadVoices);
+  $("reloadVoices").addEventListener("click", () => loadVoices(true));
   $("clearQueue").addEventListener("click", async () => {
     try {
       const payload = await json("/api/v1/tts/queue", { method: "DELETE" });
