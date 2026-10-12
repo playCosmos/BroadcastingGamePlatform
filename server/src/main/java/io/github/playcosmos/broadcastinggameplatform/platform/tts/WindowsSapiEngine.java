@@ -49,6 +49,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
                   [pscustomobject]@{
                     name = $_.VoiceInfo.Name
                     language = $_.VoiceInfo.Culture.Name
+                    gender = $_.VoiceInfo.Gender.ToString()
                   }
                 })
               [Console]::Out.Write((ConvertTo-Json -InputObject $installed -Compress -Depth 3))
@@ -64,11 +65,15 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
             if (!object.has("name") || !object.has("language")) continue;
             String name = object.get("name").getAsString();
             String language = object.get("language").getAsString();
+            String gender = object.has("gender")
+                ? object.get("gender").getAsString().toLowerCase(Locale.ROOT)
+                : "unknown";
             if (name.isBlank() || name.contains("/") || name.length() > 120) {
                 continue;
             }
             discovered.add(new TtsService.Voice(
-                id() + "/" + name, id(), name, language
+                id() + "/" + name, id(), name, language,
+                gender, List.of(), "windows-installed"
             ));
         }
         cachedVoices = List.copyOf(discovered);
