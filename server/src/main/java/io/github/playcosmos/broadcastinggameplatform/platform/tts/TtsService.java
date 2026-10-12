@@ -1,11 +1,10 @@
 package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 
+import java.io.IOException;
 import java.time.Instant;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
@@ -26,8 +25,24 @@ public final class TtsService implements AutoCloseable {
     }
 
     public record Voice(
-        String id, String engineId, String name, String language
-    ) {}
+        String id, String engineId, String name, String language,
+        String gender, List<String> styles, String source
+    ) {
+        public Voice {
+            Objects.requireNonNull(id, "id");
+            Objects.requireNonNull(engineId, "engineId");
+            Objects.requireNonNull(name, "name");
+            Objects.requireNonNull(language, "language");
+            gender = gender == null ? "unknown" : gender;
+            styles = styles == null ? List.of() : List.copyOf(styles);
+            source = source == null ? "engine" : source;
+        }
+
+        /** Preserve the four-field adapter contract for older engines. */
+        public Voice(String id, String engineId, String name, String language) {
+            this(id, engineId, name, language, "unknown", List.of(), "engine");
+        }
+    }
     public record Job(
         String id, String status, String voiceId, long createdAt,
         String error, boolean audioAvailable
@@ -47,6 +62,7 @@ public final class TtsService implements AutoCloseable {
     private static final int RETAINED_JOBS = 24;
     private static final int MAX_AUDIO_BYTES = 5 * 1024 * 1024;
     private final List<TtsEngine> engines;
+    private final TtsPreferencesStore preferences;
     private final ArrayBlockingQueue<Entry> pending =
         new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final LinkedHashMap<String, Entry> jobs = new LinkedHashMap<>();
@@ -78,8 +94,13 @@ public final class TtsService implements AutoCloseable {
     }
 
     public TtsService(List<TtsEngine> engines) {
+        this(engines, null);
+    }
+
+    public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences) {
         Objects.requireNonNull(engines, "engines");
         this.engines = List.copyOf(engines);
+        this.preferences = preferences;
         if (this.engines.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("null engine");
         }
@@ -89,6 +110,21 @@ public final class TtsService implements AutoCloseable {
         }
         worker = Thread.ofVirtual().name("platform-tts-worker")
             .start(this::work);
+    }
+
+    public TtsPreferencesStore.Preferences settings() {
+        return preferences == null
+            ? new TtsPreferencesStore.Preferences("", 0, 80)
+            : preferences.get();
+    }
+
+    public TtsPreferencesStore.Preferences saveSettings(
+        TtsPreferencesStore.Preferences next
+    ) throws IOException {
+        if (preferences == null) throw new IllegalStateException("settings unavailable");
+        // Voice may have been uninstalled. Preserve its identifier so the UI
+        // can display a missing-voice warning without silently replacing it.
+        return preferences.save(next);
     }
 
     public List<Voice> voices() {
