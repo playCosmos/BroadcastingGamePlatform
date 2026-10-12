@@ -69,9 +69,9 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
             result.putIfAbsent(identifier, new TtsService.Voice(
                 "espeak-ng/" + identifier, "espeak-ng", name,
                 language.replace('_', '-'),
-                "F".equalsIgnoreCase(gender) ? "FEMALE"
-                    : "M".equalsIgnoreCase(gender) ? "MALE" : "UNKNOWN",
-                "standard", List.of("offline", "wav")
+                "F".equalsIgnoreCase(gender) ? "female"
+                    : "M".equalsIgnoreCase(gender) ? "male" : "unknown",
+                List.of("standard"), "espeak-ng-installed"
             ));
         }
         return List.copyOf(result.values());
