@@ -10,8 +10,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEve
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
-import io.github.playcosmos.broadcastinggameplatform.platform.tts.WindowsSapiEngine;
-import io.github.playcosmos.broadcastinggameplatform.platform.tts.EspeakNgEngine;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsEngineRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
@@ -268,7 +267,7 @@ public final class PlatformServerMain {
         // Standalone voice preview only: no game/event bus subscriptions yet.
         var ttsPreferences = new TtsPreferencesStore(root.resolve("tts-settings.json"));
         var ttsService = new TtsService(
-            java.util.List.of(new WindowsSapiEngine(), new EspeakNgEngine()),
+            TtsEngineRegistry.installed(),
             ttsPreferences
         );
         var clientHttp = new GameClientHttpServer(
