@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
  * by machine; this backend does not install or download voices.
  */
 public final class WindowsSapiEngine implements TtsService.TtsEngine {
-    private static final int PROCESS_TIMEOUT_SECONDS = 15;
+    private static final int PROCESS_TIMEOUT_SECONDS = 30;
     private static final int MAX_STDOUT_BYTES = 32_768;
     private final boolean supported = System.getProperty("os.name", "")
         .toLowerCase(Locale.ROOT).contains("windows");
@@ -35,6 +35,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
         }
         String script = """
             $ErrorActionPreference='Stop'
+            [Console]::OutputEncoding = [Text.Encoding]::UTF8
             Add-Type -AssemblyName System.Speech
             $speech = New-Object System.Speech.Synthesis.SpeechSynthesizer
             try {
@@ -84,6 +85,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
         try {
             String script = """
                 $ErrorActionPreference='Stop'
+                [Console]::OutputEncoding = [Text.Encoding]::UTF8
                 Add-Type -AssemblyName System.Speech
                 $speech = New-Object System.Speech.Synthesis.SpeechSynthesizer
                 try {
