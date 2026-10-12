@@ -1,0 +1,61 @@
+name: Platform TTS v0.1.1-alpha.6 Prerelease
+on:
+  push:
+    branches:
+      - release/tts-multivoice-v0.1.1-alpha.6
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: platform-tts-release-v0.1.1-alpha.6
+  cancel-in-progress: false
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release notes
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: Download CI-validated Windows package
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh run download 38255334107 \
+            --repo playCosmos/BroadcastingGamePlatform \
+            --name BroadcastingGamePlatformServer-Windows-x64-v0.1.0 \
+            --dir "$RUNNER_TEMP/package/BroadcastingGamePlatformServer"
+          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/BroadcastingGamePlatformServer.exe"
+          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/web/admin/assets/tts-admin.js"
+          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/web/admin/tts/index.html"
+      - name: Build distributable ZIP and checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive="BroadcastingGamePlatformServer-Windows-x64-v0.1.1-alpha.6.zip"
+          (cd "$RUNNER_TEMP/package" && zip -qr "$GITHUB_WORKSPACE/$archive" BroadcastingGamePlatformServer)
+          sha256sum "$archive" > "$archive.sha256"
+          unzip -l "$archive" | grep -q 'BroadcastingGamePlatformServer/BroadcastingGamePlatformServer.exe'
+          cat "$archive.sha256"
+      - name: Publish GitHub prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="v0.1.1-alpha.6"
+          archive="BroadcastingGamePlatformServer-Windows-x64-$tag.zip"
+          notes="docs/releases/$tag.md"
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$tag" --repo "$GITHUB_REPOSITORY" \
+              --title "Broadcasting Game Platform $tag (Multi-engine voice foundation test)" \
+              --notes-file "$notes" --prerelease
+            gh release upload "$tag" "$archive" "$archive.sha256" \
+              --repo "$GITHUB_REPOSITORY" --clobber
+          else
+            gh release create "$tag" "$archive" "$archive.sha256" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target e38601dfc4b011013d83505649d27d59a717aa2c \
+              --title "Broadcasting Game Platform $tag (Multi-engine voice foundation test)" \
+              --notes-file "$notes" --prerelease
+          fi
