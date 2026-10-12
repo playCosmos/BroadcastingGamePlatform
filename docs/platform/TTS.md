@@ -47,6 +47,37 @@ without altering Board or Drawing Guess logic.
 - No audio is included in public HTTP/WS contracts. No chat, donation,
   Board or Drawing Guess event is read or spoken by this initial module.
 
+## Voice-engine extension and saved preferences
+
+The foundation now includes **two optional local backends** and a Java SPI
+extension point. Windows SAPI uses installed Windows desktop voices; eSpeak NG
+is detected only when its `espeak-ng` executable is already available on
+`PATH`. No external executable or voice pack is installed by the platform.
+`TtsEngineRegistry.installed()` registers both built-ins, then accepts trusted
+classpath `ServiceLoader<TtsService.TtsEngine>` adapters with unique engine IDs.
+
+The voice catalog provides namespaced voice IDs, localized language tags,
+known gender, optional styles, and source metadata. Unknown attributes are
+reported as unknown rather than inferred. Not every Windows voice is exposed
+by the legacy SAPI API; do not promise specific installed voices.
+
+The administrator voice laboratory supports language and engine filters,
+per-voice metadata and an explicit **Save as defaults** action. Global defaults
+(`voiceId`, `rate`, `volume`) are written atomically to
+`tts-settings.json` in the application root. Only these three fields are
+persisted: sample text, synthesized speech, tokens and jobs are **not**
+written to settings. An empty `voiceId` uses the first matching Korean voice
+shown by the UI. A saved voice removed from the host is reported as missing;
+the stored selection is not silently rewritten. Malformed settings cannot
+prevent the entire platform from starting; the original file is preserved
+until an administrator explicitly saves corrected settings.
+
+Additional installed engines can implement `TtsEngine` and be included in
+the trusted application classpath with
+`META-INF/services/io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService$TtsEngine`.
+The SPI mechanism **does not** automatically load external jars, download
+models, execute arbitrary paths, or grant OBS/game access.
+
 ## Admin API
 
 All routes require a valid admin session.
@@ -55,6 +86,8 @@ All routes require a valid admin session.
 |---|---|---|
 | GET | `/api/v1/tts/voices[?refresh=1]` | Installed voice catalog, metadata, manual refresh |
 | GET/PUT | `/api/v1/tts/settings` | Persisted default voice, rate and volume |
+| GET | `/api/v1/tts/settings` | Retrieve saved default voice, rate and volume |
+| PUT | `/api/v1/tts/settings` | Persist new defaults (admin-only, same-origin) |
 | GET | `/api/v1/tts/status` | Queued / active synthesis and engine status |
 | POST | `/api/v1/tts/speak` | Submit a manually entered text/voice/rate/volume |
 | GET | `/api/v1/tts/jobs/{uuid}` | Observe QUEUED/SYNTHESIZING/READY/FAILED/CANCELLED |
