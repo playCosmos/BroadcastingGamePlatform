@@ -9,6 +9,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessage
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.WindowsSapiEngine;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
@@ -264,7 +265,11 @@ public final class PlatformServerMain {
 
         var adminAuthStore = new AdminAuthStore(database);
         // Standalone voice preview only: no game/event bus subscriptions yet.
-        var ttsService = new TtsService(java.util.List.of(new WindowsSapiEngine()));
+        var ttsPreferences = new TtsPreferencesStore(root.resolve("tts-settings.json"));
+        var ttsService = new TtsService(
+            java.util.List.of(new WindowsSapiEngine()),
+            ttsPreferences
+        );
         var clientHttp = new GameClientHttpServer(
             config,
             root,
