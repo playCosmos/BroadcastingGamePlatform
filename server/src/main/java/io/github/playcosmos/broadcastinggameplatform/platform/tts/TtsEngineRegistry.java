@@ -16,8 +16,10 @@ public final class TtsEngineRegistry {
     public static List<TtsService.TtsEngine> installed() {
         var engines = new ArrayList<TtsService.TtsEngine>();
         engines.add(new WindowsSapiEngine());
+        engines.add(new EspeakNgEngine());
         var ids = new HashSet<String>();
         ids.add("windows-sapi");
+        ids.add("espeak-ng");
         try {
             for (TtsService.TtsEngine candidate :
                 ServiceLoader.load(TtsService.TtsEngine.class)) {
