@@ -60,7 +60,7 @@ public final class TtsEngineExpansionProbe {
             require(rejected, "invalid rate must be rejected");
             Files.writeString(settings, "{invalid",
                 StandardCharsets.UTF_8);
-            var safeFallback = new TtsPreferencesStore(settings);
+            var safeFallback = TtsPreferencesStore.loadOrDefault(settings);
             require(safeFallback.get().voiceId().isEmpty()
                 && safeFallback.get().volume() == 80,
                 "corrupt optional settings should not block platform startup");
