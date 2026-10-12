@@ -49,8 +49,14 @@ public final class TtsPreferencesStore {
                 );
                 if (parsed == null) throw new IOException("TTS settings file is empty");
                 current = new Preferences(parsed.voiceId(), parsed.rate(), parsed.volume());
-            } catch (RuntimeException error) {
-                throw new IOException("invalid persisted TTS settings", error);
+            } catch (IOException | RuntimeException error) {
+                // A corrupted optional TTS preference must not prevent the
+                // games/platform server from starting. Keep the file intact
+                // for operator inspection and use safe in-memory defaults.
+                current = DEFAULTS;
+                System.err.println("[tts] preferences could not be loaded: "
+                    + error.getClass().getSimpleName()
+                    + " (using defaults; original file preserved)");
             }
         }
     }
