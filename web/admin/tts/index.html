@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>공통 TTS · 음성 실험실</title>
+  <link rel="stylesheet" href="/assets/platform.css">
+  <link rel="stylesheet" href="/admin/assets/tts-admin.css">
+</head>
+<body>
+  <main class="tts-shell">
+    <header class="tts-header">
+      <div>
+        <p class="tts-eyebrow">PLATFORM / SPEECH FOUNDATION</p>
+        <h1>공통 TTS · 음성 실험실</h1>
+        <p class="tts-muted">게임 연동 없이 설치된 음성을 탐색하고 한국어 발화를 테스트합니다.</p>
+      </div>
+      <a class="tts-back" href="/admin/">← 운영자 홈</a>
+    </header>
+    <section class="tts-card" aria-labelledby="voices-heading">
+      <div class="tts-section-heading">
+        <h2 id="voices-heading">음성 카탈로그</h2>
+        <button type="button" id="reloadVoices">목소리 다시 검색</button>
+      </div>
+      <p class="tts-muted" id="voiceAvailability" role="status">음성을 확인하는 중입니다.</p>
+      <form id="speechForm">
+        <div class="tts-fields">
+          <label for="voiceChoice">음성
+            <select id="voiceChoice" required disabled><option value="">검색 중…</option></select>
+          </label>
+          <label for="rateChoice">말하기 속도 <output id="rateValue">0</output>
+            <input id="rateChoice" type="range" min="-10" max="10" value="0" step="1">
+          </label>
+          <label for="volumeChoice">음량 <output id="volumeValue">80%</output>
+            <input id="volumeChoice" type="range" min="0" max="100" value="80" step="5">
+          </label>
+        </div>
+        <label for="speechText">시험 문장 <span class="tts-muted">최대 200자</span>
+          <textarea id="speechText" maxlength="200" rows="3" required>안녕하세요. 방송 게임 플랫폼 음성 테스트입니다.</textarea>
+        </label>
+        <div class="tts-actions">
+          <button type="submit" id="speakButton" class="tts-primary" disabled>음성 생성</button>
+          <button type="button" id="clearQueue">대기열 비우기</button>
+          <span id="ttsQueueStatus" class="tts-muted" aria-live="polite">대기 상태 확인 중</span>
+        </div>
+      </form>
+    </section>
+    <section class="tts-card" aria-labelledby="preview-heading">
+      <h2 id="preview-heading">음성 미리듣기</h2>
+      <p id="speechResult" class="tts-muted" role="status" aria-live="polite">문장을 생성하면 아래에서 직접 재생할 수 있습니다.</p>
+      <audio controls preload="none" id="speechPreview" hidden></audio>
+    </section>
+    <p class="tts-note">현재는 관리자 수동 테스트 전용입니다. 채팅·후원·게임 이벤트 연결, OBS 자동 낭독 및 음성 팩 설치 기능은 구현하지 않았습니다. Windows에 설치된 목소리만 표시되며, 지원 음성이 없을 경우 합성할 수 없습니다.</p>
+    <script src="/admin/assets/tts-admin.js" defer></script>
+  </main>
+</body>
+</html>
