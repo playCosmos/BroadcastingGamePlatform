@@ -13,6 +13,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persiste
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomModels;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -1587,6 +1588,27 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "1".equals(queryParameter(
                         exchange.getRequestURI().getRawQuery(), "refresh"
                     )) ? tts.refreshVoices() : tts.voices()));
+                return;
+            }
+            if ("/api/v1/tts/settings".equals(path) && "GET".equals(method)) {
+                sendJson(exchange, 200, tts.settings());
+                return;
+            }
+            if ("/api/v1/tts/settings".equals(path) && "PUT".equals(method)) {
+                byte[] json = exchange.getRequestBody().readNBytes(4097);
+                if (json.length > 4096) {
+                    sendJson(exchange, 413, Map.of("error", "request too large"));
+                    return;
+                }
+                var requested = GSON.fromJson(
+                    new String(json, StandardCharsets.UTF_8),
+                    TtsPreferencesStore.Preferences.class
+                );
+                if (requested == null) {
+                    sendJson(exchange, 400, Map.of("error", "settings required"));
+                    return;
+                }
+                sendJson(exchange, 200, tts.saveSettings(requested));
                 return;
             }
             if ("/api/v1/tts/status".equals(path) && "GET".equals(method)) {
