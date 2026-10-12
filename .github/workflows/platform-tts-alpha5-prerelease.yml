@@ -7,7 +7,7 @@ permissions:
   contents: write
   actions: read
 concurrency:
-  group: board-room-release-v0.1.1-alpha.5
+  group: platform-tts-release-v0.1.1-alpha.5
   cancel-in-progress: false
 jobs:
   publish:
@@ -26,8 +26,8 @@ jobs:
             --name BroadcastingGamePlatformServer-Windows-x64-v0.1.0 \
             --dir "$RUNNER_TEMP/package/BroadcastingGamePlatformServer"
           test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/BroadcastingGamePlatformServer.exe"
-          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/web/admin/assets/board-room-admin.js"
-          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/web/admin/games/board/index.html"
+          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/web/admin/assets/tts-admin.js"
+          test -f "$RUNNER_TEMP/package/BroadcastingGamePlatformServer/web/admin/tts/index.html"
       - name: Build distributable ZIP and checksum
         shell: bash
         run: |
