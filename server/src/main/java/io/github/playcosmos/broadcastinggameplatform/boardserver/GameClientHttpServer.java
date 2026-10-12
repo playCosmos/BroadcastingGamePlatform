@@ -1583,7 +1583,10 @@ public final class GameClientHttpServer implements AutoCloseable {
         String method = exchange.getRequestMethod();
         try {
             if ("/api/v1/tts/voices".equals(path) && "GET".equals(method)) {
-                sendJson(exchange, 200, Map.of("voices", tts.voices()));
+                sendJson(exchange, 200, Map.of("voices",
+                    "1".equals(queryParameter(
+                        exchange.getRequestURI().getRawQuery(), "refresh"
+                    )) ? tts.refreshVoices() : tts.voices()));
                 return;
             }
             if ("/api/v1/tts/status".equals(path) && "GET".equals(method)) {
