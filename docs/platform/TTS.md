@@ -13,7 +13,9 @@ without altering Board or Drawing Guess logic.
 ## Implemented in foundation
 
 - `TtsService`: bounded FIFO synthesis queue (16 waiting), one worker,
-  24 recent in-memory job records, 5 MiB WAV cap per job, input length
+  24 recent in-memory job records, 5 MiB WAV cap per job and an aggregate
+  **16 MiB preview-audio retention cap**. Older audio is evicted first while
+  its retained job metadata changes to `EXPIRED`. Input length is
   1–200 Unicode code points, speed -10…10, volume 0…100.
 - `TtsEngine`: `id()`, `voices()`, `synthesize(...)` abstract contract.
   Voice IDs are namespaced `engine-id/voice-name`; catalogs can merge voices
@@ -98,9 +100,9 @@ All routes require a valid admin session.
 | GET/PUT | `/api/v1/tts/settings` | Persisted default voice, rate and volume |
 | GET | `/api/v1/tts/settings` | Retrieve saved default voice, rate and volume |
 | PUT | `/api/v1/tts/settings` | Persist new defaults (admin-only, same-origin) |
-| GET | `/api/v1/tts/status` | Queued / active synthesis and engine status |
+| GET | `/api/v1/tts/status` | Queued / active synthesis, engine status, retained audio bytes and cache limit |
 | POST | `/api/v1/tts/speak` | Submit a manually entered text/voice/rate/volume |
-| GET | `/api/v1/tts/jobs/{uuid}` | Observe QUEUED/SYNTHESIZING/READY/FAILED/CANCELLED |
+| GET | `/api/v1/tts/jobs/{uuid}` | Observe QUEUED/SYNTHESIZING/READY/FAILED/CANCELLED/EXPIRED |
 | GET | `/api/v1/tts/jobs/{uuid}/audio` | Retrieve generated WAV after READY |
 | DELETE | `/api/v1/tts/queue` | Discard waiting jobs; no interruption of active job |
 
@@ -114,6 +116,15 @@ Always select the `voiceId` from the actual `voices` response. This example
 is **not** a guarantee that the named voice exists on the host computer.
 Jobs and audio are volatile and expire/evict; restarting the server does not
 replay previous speech. Speech content is not persisted or logged.
+
+Each `READY` WAV is held in memory for administrator preview only. Once the
+aggregate 16 MiB cache budget would be exceeded, the oldest retained WAV is
+discarded and its job becomes `EXPIRED` (metadata stays available until the
+normal 24-record retention policy prunes it). `EXPIRED` audio is unavailable
+and administrators must synthesize a new preview if needed. A status-to-audio
+request may race with eviction; `GET .../audio` then returns HTTP 409.
+The 16 MiB limit applies to **retained previews**, not transient engine output
+buffers, HTTP response copies, process memory, or the total server heap.
 
 ## Current administrator workflow
 
@@ -154,7 +165,9 @@ foundation release.
    manifest, licenses, version checks, checksums and rollback behavior.
 2. Additional trusted local/cloud adapters through `TtsService.TtsEngine`,
    and real-device Piper compatibility/quality verification.
-3. Audio generation efficiency improvements and bounded caching.
+3. Further audio-generation efficiency work, optional cache expiration by age,
+   and runtime memory profiling. The bounded in-memory preview cache is already
+   implemented; persistent/cross-session caching is not planned for this stage.
 4. Optional OBS speech output and game/provider integrations **only after**
    explicit approval of their separate execution contracts.
 
