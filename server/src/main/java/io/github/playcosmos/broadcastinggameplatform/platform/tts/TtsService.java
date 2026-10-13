@@ -141,7 +141,7 @@ public final class TtsService implements AutoCloseable {
                         result.add(voice);
                     }
                 }
-            } catch (Exception error) {
+            } catch (Exception | LinkageError error) {
                 System.err.println("[tts] voice discovery failed for "
                     + engine.id() + ": " + error.getClass().getSimpleName());
             }
@@ -154,7 +154,7 @@ public final class TtsService implements AutoCloseable {
         for (var engine : engines) {
             try {
                 engine.invalidateVoiceCatalog();
-            } catch (Exception error) {
+            } catch (Exception | LinkageError error) {
                 // A broken optional voice adapter must not disable the admin API.
                 System.err.println("[tts] voice refresh failed for "
                     + engine.id() + ": " + error.getClass().getSimpleName());
@@ -268,7 +268,7 @@ public final class TtsService implements AutoCloseable {
                         entry.state = "READY";
                     }
                 }
-            } catch (Exception error) {
+            } catch (Exception | LinkageError error) {
                 synchronized (guard) {
                     if (running.get() && "SYNTHESIZING".equals(entry.state)) {
                         entry.error = "speech synthesis failed: "
