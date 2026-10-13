@@ -267,7 +267,7 @@ public final class PlatformServerMain {
         // Standalone voice preview only: no game/event bus subscriptions yet.
         var ttsPreferences = TtsPreferencesStore.loadOrDefault(root.resolve("tts-settings.json"));
         var ttsService = new TtsService(
-            TtsEngineRegistry.installed(),
+            TtsEngineRegistry.installed(root),
             ttsPreferences
         );
         var clientHttp = new GameClientHttpServer(
