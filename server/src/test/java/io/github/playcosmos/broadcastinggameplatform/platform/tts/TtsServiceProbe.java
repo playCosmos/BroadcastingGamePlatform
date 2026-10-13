@@ -179,6 +179,28 @@ public final class TtsServiceProbe {
         } finally {
             TtsProcessCleanup.terminate(sleeping);
         }
+        Process parent = new ProcessBuilder(javaExe, "-cp",
+            System.getProperty("java.class.path"),
+            SpawnProcess.class.getName())
+            .redirectError(ProcessBuilder.Redirect.DISCARD)
+            .redirectOutput(ProcessBuilder.Redirect.DISCARD).start();
+        ProcessHandle descendant = null;
+        try {
+            long startupDeadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (descendant == null && System.nanoTime() < startupDeadline) {
+                descendant = parent.toHandle().descendants().findFirst().orElse(null);
+                if (descendant == null) Thread.sleep(25);
+            }
+            require(descendant != null && descendant.isAlive(),
+                "subprocess tree probe must observe a running grandchild");
+            TtsProcessCleanup.terminate(parent);
+            require(!parent.isAlive() && !descendant.isAlive(),
+                "subprocess cleanup must terminate parent and its descendants");
+        } finally {
+            TtsProcessCleanup.terminate(parent);
+            if (descendant != null && descendant.isAlive())
+                descendant.destroyForcibly();
+        }
         // A child that never reads stdin must not block the TTS worker forever.
         Process blockedInput = new ProcessBuilder(javaExe, "-cp",
             System.getProperty("java.class.path"),
@@ -309,6 +331,20 @@ public final class TtsServiceProbe {
             byte[] bytes = System.in.readAllBytes();
             if (!"hello\\n".equals(new String(bytes,
                 java.nio.charset.StandardCharsets.UTF_8))) System.exit(1);
+        }
+    }
+
+    public static final class SpawnProcess {
+        public static void main(String[] args) throws Exception {
+            String javaExe = java.nio.file.Path.of(System.getProperty("java.home"),
+                "bin", System.getProperty("os.name", "").toLowerCase().contains("win")
+                    ? "java.exe" : "java").toString();
+            new ProcessBuilder(javaExe, "-cp", System.getProperty("java.class.path"),
+                SleepProcess.class.getName())
+                .redirectError(ProcessBuilder.Redirect.DISCARD)
+                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                .start();
+            Thread.sleep(30_000);
         }
     }
 
