@@ -123,8 +123,13 @@ discarded and its job becomes `EXPIRED` (metadata stays available until the
 normal 24-record retention policy prunes it). `EXPIRED` audio is unavailable
 and administrators must synthesize a new preview if needed. A status-to-audio
 request may race with eviction; `GET .../audio` then returns HTTP 409.
-The 16 MiB limit applies to **retained previews**, not transient engine output
-buffers, HTTP response copies, process memory, or the total server heap.
+All preview WAVs additionally expire **15 minutes after synthesis completes**,
+independent of the cache's byte utilization or the administrator's page activity.
+The service reclaims expired WAVs during ordinary API activity and in its idle
+worker loop. Both time-based expiry and byte-budget eviction preserve an
+`EXPIRED` job record until normal metadata pruning. The 16 MiB limit applies
+to **retained previews**, not transient engine output buffers, HTTP response
+copies, process memory, or the total server heap.
 
 ## Current administrator workflow
 
@@ -165,9 +170,10 @@ foundation release.
    manifest, licenses, version checks, checksums and rollback behavior.
 2. Additional trusted local/cloud adapters through `TtsService.TtsEngine`,
    and real-device Piper compatibility/quality verification.
-3. Further audio-generation efficiency work, optional cache expiration by age,
-   and runtime memory profiling. The bounded in-memory preview cache is already
-   implemented; persistent/cross-session caching is not planned for this stage.
+3. Further audio-generation efficiency work and runtime memory profiling.
+   The bounded in-memory preview cache now enforces both a 16 MiB budget and a
+   15-minute age limit. Persistent/cross-session caching is not planned for
+   this stage.
 4. Optional OBS speech output and game/provider integrations **only after**
    explicit approval of their separate execution contracts.
 
