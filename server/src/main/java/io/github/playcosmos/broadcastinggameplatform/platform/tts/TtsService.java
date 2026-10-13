@@ -188,6 +188,7 @@ public final class TtsService implements AutoCloseable {
             text, selected.id(), request.rate(), request.volume()
         ));
         synchronized (guard) {
+            if (!running.get()) throw new IllegalStateException("TTS closed");
             pruneCompleted();
             if (jobs.size() >= RETAINED_JOBS || !pending.offer(entry)) {
                 throw new CapacityException("TTS queue is full");
@@ -243,7 +244,10 @@ public final class TtsService implements AutoCloseable {
             }
             if (entry == null) continue;
             synchronized (guard) {
-                if ("CANCELLED".equals(entry.state)) continue;
+                if (!running.get() || "CANCELLED".equals(entry.state)) {
+                    entry.state = "CANCELLED";
+                    continue;
+                }
                 entry.state = "SYNTHESIZING";
                 activeJobId = entry.id;
             }
@@ -261,12 +265,20 @@ public final class TtsService implements AutoCloseable {
                     || wav[2] != 'F' || wav[3] != 'F') {
                     throw new IllegalStateException("invalid or oversized WAV");
                 }
-                entry.audio = wav.clone();
-                entry.state = "READY";
+                synchronized (guard) {
+                    if (running.get() && "SYNTHESIZING".equals(entry.state)) {
+                        entry.audio = wav.clone();
+                        entry.state = "READY";
+                    }
+                }
             } catch (Exception error) {
-                entry.error = "speech synthesis failed: "
-                    + error.getClass().getSimpleName();
-                entry.state = "FAILED";
+                synchronized (guard) {
+                    if (running.get() && "SYNTHESIZING".equals(entry.state)) {
+                        entry.error = "speech synthesis failed: "
+                            + error.getClass().getSimpleName();
+                        entry.state = "FAILED";
+                    }
+                }
                 System.err.println("[tts] job failed id=" + entry.id
                     + " engine=" + entry.voiceId.split("/", 2)[0]
                     + " reason=" + error.getClass().getSimpleName());
@@ -294,8 +306,14 @@ public final class TtsService implements AutoCloseable {
 
     @Override
     public void close() {
-        if (!running.compareAndSet(true, false)) return;
-        clearQueued();
+        synchronized (guard) {
+            if (!running.compareAndSet(true, false)) return;
+            clearQueued();
+            if (activeJobId != null) {
+                Entry active = jobs.get(activeJobId);
+                if (active != null) active.state = "CANCELLED";
+            }
+        }
         worker.interrupt();
         try { worker.join(1500); }
         catch (InterruptedException error) {
