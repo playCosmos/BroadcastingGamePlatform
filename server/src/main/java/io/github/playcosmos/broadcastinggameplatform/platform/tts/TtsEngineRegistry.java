@@ -2,6 +2,7 @@ package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.ServiceLoader;
 import java.util.ServiceConfigurationError;
@@ -26,25 +27,39 @@ public final class TtsEngineRegistry {
         }
         var ids = new HashSet<String>();
         for (var engine : engines) ids.add(engine.id());
-        try {
-            for (TtsService.TtsEngine candidate :
-                ServiceLoader.load(TtsService.TtsEngine.class)) {
-                if (candidate == null
-                    || candidate.id() == null
-                    || !candidate.id().matches("[a-z0-9][a-z0-9-]{1,63}")) {
+        // Handle each SPI entry individually: one broken native adapter must
+        // not suppress otherwise healthy providers later in the manifest.
+        Iterator<TtsService.TtsEngine> providers =
+            ServiceLoader.load(TtsService.TtsEngine.class).iterator();
+        int consecutiveFailures = 0;
+        while (true) {
+            TtsService.TtsEngine candidate;
+            try {
+                if (!providers.hasNext()) break;
+                candidate = providers.next();
+                consecutiveFailures = 0;
+            } catch (ServiceConfigurationError | RuntimeException | LinkageError error) {
+                System.err.println("[tts] optional provider load failed: "
+                    + error.getClass().getSimpleName());
+                // A malformed descriptor may throw repeatedly without advancing.
+                if (++consecutiveFailures >= 8) break;
+                continue;
+            }
+            try {
+                String id = candidate == null ? null : candidate.id();
+                if (id == null || !id.matches("[a-z0-9][a-z0-9-]{1,63}")) {
                     System.err.println("[tts] ignored invalid SPI engine");
                     continue;
                 }
-                if (!ids.add(candidate.id())) {
+                if (!ids.add(id)) {
                     System.err.println("[tts] ignored duplicate SPI engine id");
                     continue;
                 }
                 engines.add(candidate);
+            } catch (RuntimeException | LinkageError error) {
+                System.err.println("[tts] optional provider metadata failed: "
+                    + error.getClass().getSimpleName());
             }
-        } catch (ServiceConfigurationError | RuntimeException error) {
-            // A broken optional provider cannot prevent the platform starting.
-            System.err.println("[tts] optional provider discovery failed: "
-                + error.getClass().getSimpleName());
         }
         return List.copyOf(engines);
     }
