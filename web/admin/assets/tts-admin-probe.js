@@ -92,7 +92,7 @@ async function scenario(mode) {
   const submit = getElement("speechForm").events.submit;
   assert.equal(typeof submit, "function", "voice form submit must be bound");
   await submit({ preventDefault() {} });
-  assert.match(getElement("ttsQueueStatus").textContent, /4\\.0\\/16 MiB/,
+  assert.ok(getElement("ttsQueueStatus").textContent.includes("4.0/16 MiB"),
     "queue status must show bounded preview memory usage");
   if (mode === "ready") {
     assert.equal(polls, 86, "valid queued synthesis must outlive old 70-poll cap");
