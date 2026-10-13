@@ -63,7 +63,7 @@
       <p id="speechResult" class="tts-muted" role="status" aria-live="polite">문장을 생성하면 아래에서 직접 재생할 수 있습니다.</p>
       <audio controls preload="none" id="speechPreview" hidden></audio>
     </section>
-    <p class="tts-note">현재는 관리자 수동 테스트 전용입니다. 채팅·후원·게임 이벤트 연결, OBS 자동 낭독 및 음성 팩 설치 기능은 구현하지 않았습니다. Windows에 설치된 목소리만 표시되며, 지원 음성이 없을 경우 합성할 수 없습니다.</p>
+    <p class="tts-note">현재는 관리자 수동 테스트 전용입니다. 채팅·후원·게임 이벤트 연결, OBS 자동 낭독 및 음성 팩 설치 기능은 구현하지 않았습니다. Windows 내장 음성 외에도 별도로 설치된 eSpeak NG와 Piper의 음성을 사용할 수 있습니다. Piper의 ONNX 모델 및 대응 JSON 파일은 서버의 tts/voices 폴더에 직접 배치해야 합니다. 지원 음성이 없으면 합성할 수 없습니다.</p>
     <script src="/admin/assets/tts-admin.js" defer></script>
   </main>
 </body>
