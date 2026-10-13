@@ -62,6 +62,25 @@ public final class TtsServiceProbe {
                 require(block.calls.get() == 1, "cancelled audio must not synthesize");
             }
         }
+        // Shutdown must reject new requests and discard outstanding speech.
+        var shutdownEngine = new BlockingEngine();
+        var shutdown = new TtsService(List.of(shutdownEngine));
+        String shutdownVoice = shutdown.voices().getFirst().id();
+        var inFlight = shutdown.enqueue(new TtsService.Request(
+            "active at shutdown", shutdownVoice, 0, 80));
+        require(shutdownEngine.started.await(2, TimeUnit.SECONDS),
+            "shutdown test must begin synthesis");
+        var waiting = shutdown.enqueue(new TtsService.Request(
+            "queued at shutdown", shutdownVoice, 0, 80));
+        shutdown.close();
+        require(shutdown.audio(inFlight.id()) == null && shutdown.audio(waiting.id()) == null,
+            "shutdown must not expose pending or active audio");
+        boolean closedRejected = false;
+        try {
+            shutdown.enqueue(new TtsService.Request("after close", shutdownVoice, 0, 80));
+        } catch (IllegalStateException expected) { closedRejected = true; }
+        require(closedRejected, "closed service must reject enqueue");
+        shutdownEngine.release.countDown();
         // An optional provider can return duplicate/malformed IDs or fail on refresh.
         // Neither condition may poison the combined catalog or administrator API.
         TtsService.TtsEngine faulty = new TtsService.TtsEngine() {
