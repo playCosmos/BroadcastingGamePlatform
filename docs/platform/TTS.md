@@ -27,6 +27,14 @@ without altering Board or Drawing Guess logic.
   executable on the server PATH and enumerates installed local voice packs.
   Works on Windows when eSpeak NG is installed separately; without the
   executable it reports zero voices. It never downloads an engine or model.
+- `PiperEngine`: optional neural-voice adapter, using an independently
+  installed `piper` executable on PATH and trusted model pairs from
+  `<application-root>/tts/voices/<model>.onnx` and matching
+  `<model>.onnx.json`. The platform never downloads these files. Speaker maps
+  in multi-speaker models create distinct selectable voices. The adapter
+  supports rate through Piper `--length_scale` and volume through checked
+  16-bit PCM WAV scaling. The output remains bounded by the same WAV limit.
+  The voice pack directory is not exposed through the public web root.
 - `TtsEngineRegistry`: built-in engine registration plus trusted on-classpath
   Java SPI engine discovery. Avoid loading untrusted plugins from arbitrary
   folders; duplicates and broken optional providers are ignored.
@@ -49,10 +57,12 @@ without altering Board or Drawing Guess logic.
 
 ## Voice-engine extension and saved preferences
 
-The foundation now includes **two optional local backends** and a Java SPI
+The foundation now includes **three optional local backends** and a Java SPI
 extension point. Windows SAPI uses installed Windows desktop voices; eSpeak NG
 is detected only when its `espeak-ng` executable is already available on
-`PATH`. No external executable or voice pack is installed by the platform.
+`PATH`. Piper is discovered only when the independently installed `piper`
+command is available and matching ONNX/JSON models are in `tts/voices`.
+No external executable or voice pack is installed by the platform.
 `TtsEngineRegistry.installed()` registers both built-ins, then accepts trusted
 classpath `ServiceLoader<TtsService.TtsEngine>` adapters with unique engine IDs.
 
@@ -111,6 +121,9 @@ replay previous speech. Speech content is not persisted or logged.
 2. Filter the installed voice catalog by language or engine. Windows SAPI
    voices appear where installed; eSpeak NG voices appear **only if that
    third-party executable is already installed** and available on PATH.
+   Optional neural Piper voices appear only when the separate `piper` command
+   works and model/config pairs have been manually placed in `tts/voices`.
+   Run **Refresh** after adding files.
 3. Select a voice, inspect the supplied gender/style/source metadata and
    synthesize a sample sentence to hear its output.
 4. Save the chosen voice/rate/volume as administrator defaults. Reload to
@@ -123,7 +136,8 @@ replay previous speech. Speech content is not persisted or logged.
 
 1. Safe optional local voice pack management after publishing a trusted pack
    manifest, licenses, version checks, checksums and rollback behavior.
-2. Additional native/neural adapters using `TtsService.TtsEngine`.
+2. Additional trusted local/cloud adapters through `TtsService.TtsEngine`,
+   and real-device Piper compatibility/quality verification.
 3. Audio generation efficiency improvements and bounded caching.
 4. Optional OBS speech output and game/provider integrations **only after**
    explicit approval of their separate execution contracts.
@@ -135,6 +149,7 @@ replay previous speech. Speech content is not persisted or logged.
 - Set per-request size limits, process timeout, bounded queue and WAV size.
 - Never include speech text in logs, player payloads or public errors.
 - Native voice availability varies by Windows user/installation; SAPI may not
-  expose modern OneCore voices. eSpeak NG must be separately installed and
-  is never bundled or downloaded by the platform.
+  expose modern OneCore voices. eSpeak NG and Piper must be separately installed
+  and are never bundled or downloaded by the platform. Piper ONNX model
+  execution and voice licensing remain the operator's responsibility.
 - Engine failure must never affect game state or room lifecycle.
