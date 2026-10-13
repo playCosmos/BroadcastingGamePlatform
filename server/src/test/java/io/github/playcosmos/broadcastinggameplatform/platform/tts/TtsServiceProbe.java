@@ -73,6 +73,57 @@ public final class TtsServiceProbe {
                     "corrupted WAV must never become available");
             }
         }
+        // Large but valid WAV previews must not accumulate without a byte cap.
+        var bigVoice = new LargeWavEngine();
+        try (var bounded = new TtsService(List.of(bigVoice))) {
+            String voiceId = bounded.voices().getFirst().id();
+            var ids = new java.util.ArrayList<String>();
+            for (int i = 0; i < 5; i++) {
+                var next = bounded.enqueue(new TtsService.Request(
+                    "large " + i, voiceId, 0, 80));
+                ids.add(next.id());
+                waitFor(bounded, next.id(), "READY");
+                var stats = bounded.status();
+                require(stats.retainedAudioBytes() <= stats.maxRetainedAudioBytes(),
+                    "retained preview bytes must stay within the total cap");
+            }
+            var stats = bounded.status();
+            require(stats.maxRetainedAudioBytes() == 16 * 1024 * 1024,
+                "preview cache must have a 16 MiB hard cap");
+            require(stats.retainedJobs() == 5,
+                "evicting preview bytes must preserve job status records");
+            for (int i = 0; i < 2; i++) {
+                require("EXPIRED".equals(bounded.job(ids.get(i)).status())
+                    && !bounded.job(ids.get(i)).audioAvailable()
+                    && bounded.audio(ids.get(i)) == null,
+                    "oldest large previews must expire without exposing audio");
+            }
+            for (int i = 2; i < ids.size(); i++) {
+                require("READY".equals(bounded.job(ids.get(i)).status())
+                    && bounded.job(ids.get(i)).audioAvailable(),
+                    "newer previews must remain playable");
+            }
+            require(stats.retainedAudioBytes() == 3 * (4 * 1024 * 1024 + 44),
+                "byte accounting must match three retained large WAV files");
+            // Pruning old terminal job records must also refund their byte cost.
+            for (int i = 0; i < 25; i++) {
+                var next = bounded.enqueue(new TtsService.Request(
+                    "small " + i, voiceId, 0, 80));
+                waitFor(bounded, next.id(), "READY");
+            }
+            stats = bounded.status();
+            require(stats.retainedJobs() <= 24,
+                "completed job metadata must also remain bounded");
+            require(stats.retainedAudioBytes() <= stats.maxRetainedAudioBytes(),
+                "cache usage must stay bounded after metadata pruning");
+            int observedBytes = 0;
+            for (String id : ids) {
+                byte[] available = bounded.audio(id);
+                if (available != null) observedBytes += available.length;
+            }
+            require(stats.retainedAudioBytes() >= observedBytes,
+                "cache accounting must not undercount retained previews");
+        }
         // Shutdown must reject new requests and discard outstanding speech.
         var shutdownEngine = new BlockingEngine();
         var shutdown = new TtsService(List.of(shutdownEngine));
@@ -309,6 +360,21 @@ public final class TtsServiceProbe {
     private static void put32(byte[] wav, int at, int n) {
         put16(wav, at, n);
         put16(wav, at + 2, n >>> 16);
+    }
+
+    private static final class LargeWavEngine extends MockEngine {
+        LargeWavEngine() { super("large-wav", "Memory test"); }
+        @Override public byte[] synthesize(
+            String voiceId, String text, int rate, int volume
+        ) {
+            if (text.startsWith("small")) return sampleWav();
+            byte[] data = new byte[4 * 1024 * 1024 + 44];
+            byte[] header = sampleWav();
+            System.arraycopy(header, 0, data, 0, 44);
+            put32(data, 4, data.length - 8);
+            put32(data, 40, data.length - 44);
+            return data;
+        }
     }
 
     private static final class CorruptWavEngine extends MockEngine {
