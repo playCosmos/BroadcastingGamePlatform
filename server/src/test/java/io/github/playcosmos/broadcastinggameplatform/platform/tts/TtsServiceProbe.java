@@ -62,6 +62,31 @@ public final class TtsServiceProbe {
                 require(block.calls.get() == 1, "cancelled audio must not synthesize");
             }
         }
+        // An optional provider can return duplicate/malformed IDs or fail on refresh.
+        // Neither condition may poison the combined catalog or administrator API.
+        TtsService.TtsEngine faulty = new TtsService.TtsEngine() {
+            @Override public String id() { return "unstable"; }
+            @Override public List<TtsService.Voice> voices() {
+                return List.of(
+                    new TtsService.Voice("unstable/valid", "unstable", "Valid", "ko-KR"),
+                    new TtsService.Voice("unstable/valid", "unstable", "Duplicate", "ko-KR"),
+                    new TtsService.Voice("other/invalid", "unstable", "Wrong prefix", "ko-KR"),
+                    new TtsService.Voice("unstable/", "unstable", "Empty suffix", "ko-KR")
+                );
+            }
+            @Override public void invalidateVoiceCatalog() {
+                throw new IllegalStateException("optional provider refresh failed");
+            }
+            @Override public byte[] synthesize(
+                String voiceId, String text, int rate, int volume
+            ) { return new byte[44]; }
+        };
+        try (var catalogGuard = new TtsService(List.of(faulty, new MockEngine("healthy", "Voice")))) {
+            require(catalogGuard.voices().size() == 2,
+                "duplicate and malformed voice IDs must be filtered");
+            require(catalogGuard.refreshVoices().size() == 2,
+                "optional engine refresh failure must not hide healthy voices");
+        }
         require(new WindowsSapiEngine().id().equals("windows-sapi"),
             "native engine ID must be stable");
         System.out.println("Platform TTS multi-voice, async queue and cancellation probe passed.");
