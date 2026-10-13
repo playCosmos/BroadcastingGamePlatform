@@ -117,13 +117,12 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
         }
         try {
             if (!process.waitFor(timeoutSeconds, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(2, TimeUnit.SECONDS);
+                TtsProcessCleanup.terminate(process);
                 return false;
             }
             return process.exitValue() == 0;
         } finally {
-            if (process.isAlive()) process.destroyForcibly();
+            TtsProcessCleanup.terminate(process);
         }
     }
 }
