@@ -259,10 +259,7 @@ public final class TtsService implements AutoCloseable {
                 );
                 byte[] wav = engine.synthesize(entry.voiceId, entry.text,
                     entry.rate, entry.volume);
-                if (wav == null || wav.length < 44
-                    || wav.length > MAX_AUDIO_BYTES
-                    || wav[0] != 'R' || wav[1] != 'I'
-                    || wav[2] != 'F' || wav[3] != 'F') {
+                if (!validWav(wav)) {
                     throw new IllegalStateException("invalid or oversized WAV");
                 }
                 synchronized (guard) {
@@ -289,6 +286,46 @@ public final class TtsService implements AutoCloseable {
                 }
             }
         }
+    }
+
+    /**
+     * Validate RIFF/WAVE framing without imposing a particular PCM encoding.
+     * Bounds-check chunks before audio is exposed by the admin preview API.
+     */
+    private static boolean validWav(byte[] wav) {
+        if (wav == null || wav.length < 44 || wav.length > MAX_AUDIO_BYTES
+            || !tag(wav, 0, "RIFF") || !tag(wav, 8, "WAVE")) return false;
+        long declared = uint32(wav, 4) + 8L;
+        if (declared != wav.length) return false;
+        boolean format = false;
+        boolean data = false;
+        long cursor = 12;
+        while (cursor + 8 <= wav.length) {
+            int pos = (int) cursor;
+            long size = uint32(wav, pos + 4);
+            long end = cursor + 8L + size;
+            if (end > wav.length) return false;
+            if (tag(wav, pos, "fmt ")) {
+                if (size < 16) return false;
+                format = true;
+            }
+            if (tag(wav, pos, "data")) data = true;
+            cursor = end + (size & 1L);
+        }
+        return cursor == wav.length && format && data;
+    }
+
+    private static boolean tag(byte[] bytes, int offset, String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (bytes[offset + i] != (byte) value.charAt(i)) return false;
+        }
+        return true;
+    }
+
+    private static long uint32(byte[] bytes, int offset) {
+        return (bytes[offset] & 255L) | ((bytes[offset + 1] & 255L) << 8)
+            | ((bytes[offset + 2] & 255L) << 16)
+            | ((bytes[offset + 3] & 255L) << 24);
     }
 
     /** Preserve all active/queued entries; expire oldest terminal entries. */
