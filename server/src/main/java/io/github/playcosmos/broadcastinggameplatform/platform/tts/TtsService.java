@@ -50,7 +50,8 @@ public final class TtsService implements AutoCloseable {
     ) {}
     public record Status(
         boolean available, int queued, String activeJobId,
-        int retainedJobs, List<String> engineIds
+        int retainedJobs, List<String> engineIds,
+        int retainedAudioBytes, int maxRetainedAudioBytes
     ) {}
     public record Request(
         String text, String voiceId, int rate, int volume
@@ -62,6 +63,8 @@ public final class TtsService implements AutoCloseable {
     private static final int QUEUE_CAPACITY = 16;
     private static final int RETAINED_JOBS = 24;
     private static final int MAX_AUDIO_BYTES = 5 * 1024 * 1024;
+    // Limit cached previews independently of the number of retained job records.
+    private static final int MAX_RETAINED_AUDIO_BYTES = 16 * 1024 * 1024;
     private final List<TtsEngine> engines;
     private final TtsPreferencesStore preferences;
     private final ArrayBlockingQueue<Entry> pending =
@@ -71,6 +74,8 @@ public final class TtsService implements AutoCloseable {
     private final AtomicBoolean running = new AtomicBoolean(true);
     private final Thread worker;
     private volatile String activeJobId;
+    // Read and written only while holding guard.
+    private int retainedAudioBytes;
 
     private static final class Entry {
         final String id = UUID.randomUUID().toString();
@@ -216,7 +221,8 @@ public final class TtsService implements AutoCloseable {
     public Status status() {
         synchronized (guard) {
             return new Status(!engines.isEmpty(), pending.size(), activeJobId,
-                jobs.size(), engines.stream().map(TtsEngine::id).toList());
+                jobs.size(), engines.stream().map(TtsEngine::id).toList(),
+                retainedAudioBytes, MAX_RETAINED_AUDIO_BYTES);
         }
     }
 
@@ -265,7 +271,9 @@ public final class TtsService implements AutoCloseable {
                 synchronized (guard) {
                     if (running.get() && "SYNTHESIZING".equals(entry.state)) {
                         entry.audio = wav.clone();
+                        retainedAudioBytes += entry.audio.length;
                         entry.state = "READY";
+                        evictOldAudio(entry);
                     }
                 }
             } catch (Exception | LinkageError error) {
@@ -328,7 +336,22 @@ public final class TtsService implements AutoCloseable {
             | ((bytes[offset + 3] & 255L) << 24);
     }
 
-    /** Preserve all active/queued entries; expire oldest terminal entries. */
+    /** Evict oldest previews first while preserving their job metadata. */
+    private void evictOldAudio(Entry newest) {
+        if (retainedAudioBytes <= MAX_RETAINED_AUDIO_BYTES) return;
+        for (Entry previous : jobs.values()) {
+            if (previous == newest || previous.audio == null) continue;
+            retainedAudioBytes -= previous.audio.length;
+            previous.audio = null;
+            if ("READY".equals(previous.state)) {
+                previous.state = "EXPIRED";
+                previous.error = "audio expired from preview cache";
+            }
+            if (retainedAudioBytes <= MAX_RETAINED_AUDIO_BYTES) break;
+        }
+    }
+
+    /** Preserve active/queued jobs; remove the oldest terminal job records. */
     private void pruneCompleted() {
         if (jobs.size() < RETAINED_JOBS) return;
         var iterator = jobs.entrySet().iterator();
@@ -336,6 +359,10 @@ public final class TtsService implements AutoCloseable {
             Entry entry = iterator.next().getValue();
             if (!"QUEUED".equals(entry.state)
                 && !"SYNTHESIZING".equals(entry.state)) {
+                if (entry.audio != null) {
+                    retainedAudioBytes -= entry.audio.length;
+                    entry.audio = null;
+                }
                 iterator.remove();
             }
         }
@@ -356,6 +383,9 @@ public final class TtsService implements AutoCloseable {
         catch (InterruptedException error) {
             Thread.currentThread().interrupt();
         }
-        synchronized (guard) { jobs.clear(); }
+        synchronized (guard) {
+            jobs.clear();
+            retainedAudioBytes = 0;
+        }
     }
 }
