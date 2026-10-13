@@ -34,6 +34,25 @@ public final class TtsEngineExpansionProbe {
             "empty voice table should be accepted");
         require(EspeakNgEngine.parseVoices("x".repeat(100_000)).isEmpty(),
             "oversized output must be rejected");
+        // File-backed output must finalize RIFF lengths. Streaming --stdout
+        // writes placeholder lengths and fails the server's strict WAV check.
+        Path commandInput = Path.of("korean-input.txt");
+        Path commandOutput = Path.of("korean-output.wav");
+        List<String> speech = EspeakNgEngine.synthesisCommand(
+            "asia/ko", commandInput, commandOutput, 0, 80);
+        require(!speech.contains("--stdout"),
+            "eSpeak speech must not use unseekable streaming WAV output");
+        require(speech.contains("-w")
+                && commandOutput.toString().equals(
+                    speech.get(speech.indexOf("-w") + 1)),
+            "eSpeak must finish output through its file-backed WAV writer");
+        require(speech.contains("-b")
+                && "1".equals(speech.get(speech.indexOf("-b") + 1)),
+            "eSpeak file text must be read as UTF-8");
+        require(speech.contains("-f")
+                && commandInput.toString().equals(
+                    speech.get(speech.indexOf("-f") + 1)),
+            "eSpeak must read the controlled temporary input file");
         Path temporary = Files.createTempDirectory("tts-preference-probe-");
         Path settings = temporary.resolve("voice.json");
         try {
