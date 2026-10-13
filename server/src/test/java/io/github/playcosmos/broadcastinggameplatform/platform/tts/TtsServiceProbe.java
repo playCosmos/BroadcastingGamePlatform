@@ -124,6 +124,63 @@ public final class TtsServiceProbe {
             require(stats.retainedAudioBytes() >= observedBytes,
                 "cache accounting must not undercount retained previews");
         }
+        // A synthetic monotonic clock tests retention without sleeping for 15 minutes.
+        var clockNanos = new java.util.concurrent.atomic.AtomicLong(
+            TimeUnit.SECONDS.toNanos(1));
+        try (var timed = new TtsService(
+            List.of(new MockEngine("ttl", "Timed")), null, clockNanos::get)) {
+            String voiceId = timed.voices().getFirst().id();
+            var preview = timed.enqueue(new TtsService.Request(
+                "time-based retention", voiceId, 0, 80));
+            waitFor(timed, preview.id(), "READY");
+            int initialBytes = timed.status().retainedAudioBytes();
+            require(initialBytes == sampleWav().length,
+                "newly synthesized preview must be accounted for");
+            clockNanos.addAndGet(TimeUnit.MINUTES.toNanos(15)
+                - TimeUnit.SECONDS.toNanos(1));
+            require("READY".equals(timed.job(preview.id()).status())
+                && timed.audio(preview.id()) != null,
+                "preview must remain playable before its 15-minute deadline");
+            clockNanos.addAndGet(TimeUnit.SECONDS.toNanos(1));
+            var expired = timed.job(preview.id());
+            require("EXPIRED".equals(expired.status())
+                && !expired.audioAvailable()
+                && timed.audio(preview.id()) == null,
+                "expired preview must be unavailable at the time boundary");
+            require(timed.status().retainedAudioBytes() == 0,
+                "time expiration must refund the WAV cache byte total");
+            require(timed.status().retainedJobs() == 1,
+                "time expiration must preserve the job record");
+            require(expired.error() != null
+                && !expired.error().contains("time-based retention"),
+                "expiry must not expose original synthesis text");
+            var fresh = timed.enqueue(new TtsService.Request(
+                "fresh preview", voiceId, 0, 80));
+            waitFor(timed, fresh.id(), "READY");
+            require(timed.audio(fresh.id()) != null,
+                "expiry of previous audio must not affect fresh previews");
+        }
+        // Audio retention starts on completion, not when the job was enqueued.
+        var delayedClock = new java.util.concurrent.atomic.AtomicLong(1234);
+        var delayedEngine = new BlockingEngine();
+        try (var delayed = new TtsService(
+            List.of(delayedEngine), null, delayedClock::get)) {
+            String voiceId = delayed.voices().getFirst().id();
+            var queuedBeforeLongWait = delayed.enqueue(new TtsService.Request(
+                "waited for synthesis", voiceId, 0, 80));
+            require(delayedEngine.started.await(2, TimeUnit.SECONDS),
+                "delayed preview must enter synthesis");
+            delayedClock.addAndGet(TimeUnit.MINUTES.toNanos(60));
+            delayedEngine.release.countDown();
+            waitFor(delayed, queuedBeforeLongWait.id(), "READY");
+            require(delayed.audio(queuedBeforeLongWait.id()) != null,
+                "a long queue/synthesis delay must not expire new audio");
+            delayedClock.addAndGet(TimeUnit.MINUTES.toNanos(15));
+            require("EXPIRED".equals(delayed.job(queuedBeforeLongWait.id()).status()),
+                "preview expiration must use synthesis completion age");
+        } finally {
+            delayedEngine.release.countDown();
+        }
         // Shutdown must reject new requests and discard outstanding speech.
         var shutdownEngine = new BlockingEngine();
         var shutdown = new TtsService(List.of(shutdownEngine));
