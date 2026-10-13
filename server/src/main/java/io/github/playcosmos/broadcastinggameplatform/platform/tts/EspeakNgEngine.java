@@ -91,11 +91,10 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
         try {
             output = Files.createTempFile("bgp-espeak-audio-", ".wav");
             Files.writeString(input, text, StandardCharsets.UTF_8);
-            int wordsPerMinute = Math.max(80, Math.min(300, 175 + rate * 10));
-            boolean ok = execute(List.of("espeak-ng",
-                "-v", selected, "-s", String.valueOf(wordsPerMinute),
-                "-a", String.valueOf(volume), "--stdout",
-                "-f", input.toString()), output, 30);
+            // --stdout writes an unseekable WAV with placeholder RIFF lengths.
+            // -w writes a seekable file and finalizes both RIFF/data lengths.
+            boolean ok = execute(
+                synthesisCommand(selected, input, output, rate, volume), null, 30);
             if (!ok || Files.size(output) > WAV_LIMIT) {
                 throw new IllegalStateException("eSpeak NG synthesis failed");
             }
@@ -106,13 +105,28 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
         }
     }
 
+    /** Build a file-backed WAV command; kept inspectable without eSpeak installed. */
+    static List<String> synthesisCommand(
+        String voice, Path input, Path output, int rate, int volume
+    ) {
+        int wordsPerMinute = Math.max(80, Math.min(300, 175 + rate * 10));
+        return List.of("espeak-ng", "-v", voice,
+            "-s", String.valueOf(wordsPerMinute),
+            "-a", String.valueOf(volume),
+            "-b", "1", // UTF-8 input files, including Korean
+            "-w", output.toString(), "-f", input.toString());
+    }
+
     private static boolean execute(List<String> arguments, Path output,
         int timeoutSeconds) throws Exception {
         Process process;
         try {
             process = new ProcessBuilder(arguments)
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .redirectOutput(output.toFile()).start();
+                .redirectOutput(output == null
+                    ? ProcessBuilder.Redirect.DISCARD
+                    : ProcessBuilder.Redirect.to(output.toFile()))
+                .start();
         } catch (IOException missingExecutable) {
             return false;
         }
