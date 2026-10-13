@@ -17,6 +17,9 @@
   let saved = { voiceId: "", rate: 0, volume: 80 };
   let currentAudioUrl = null;
   let pollGeneration = 0;
+  let voiceLoadGeneration = 0;
+  // A 16-slot queue plus an active 30-second synthesis can take >8 minutes.
+  const JOB_WAIT_LIMIT_MS = 10 * 60 * 1000;
 
   async function json(url, options = {}) {
     const response = await fetch(url, {
@@ -122,12 +125,14 @@
   }
 
   async function loadVoices(refresh = false) {
+    const generation = ++voiceLoadGeneration;
     submit.disabled = true;
     voices.disabled = true;
     availability.textContent = "설치된 음성을 검색하는 중입니다…";
     const previouslySelected = voices.value;
     try {
       const payload = await json("/api/v1/tts/voices" + (refresh ? "?refresh=1" : ""));
+      if (generation !== voiceLoadGeneration) return;
       const list = Array.isArray(payload.voices) ? payload.voices : [];
       catalog = [...list].sort((left, right) =>
         String(left.language).localeCompare(String(right.language))
@@ -139,8 +144,9 @@
       renderVoiceOptions(previouslySelected || saved.voiceId);
       availability.textContent = catalog.length
         ? catalog.length + "개의 음성 검색됨 · 설치된 음성만 표시됩니다."
-        : "설치된 호환 음성이 없습니다. Windows 음성을 설치한 후 다시 검색하세요.";
+        : "설치된 호환 음성이 없습니다. Windows SAPI, eSpeak NG 또는 Piper 음성을 확인하세요.";
     } catch (error) {
+      if (generation !== voiceLoadGeneration) return;
       catalog = [];
       renderVoiceOptions("");
       availability.textContent = "음성 조회 실패: " + error.message;
@@ -158,9 +164,13 @@
   }
 
   async function waitForJob(jobId, generation) {
-    for (let i = 0; i < 70; i++) {
+    const deadline = Date.now() + JOB_WAIT_LIMIT_MS;
+    let polls = 0;
+    while (Date.now() < deadline) {
       if (generation !== pollGeneration) return;
-      await new Promise(resolve => setTimeout(resolve, 550));
+      const interval = polls++ < 10 ? 700 : 2600;
+      await new Promise(resolve => setTimeout(resolve, interval));
+      if (generation !== pollGeneration) return;
       const job = await json("/api/v1/tts/jobs/" + encodeURIComponent(jobId));
       if (generation !== pollGeneration) return;
       if (job.status === "READY") {
@@ -169,7 +179,9 @@
           { credentials: "same-origin", cache: "no-store" }
         );
         if (!response.ok) throw new Error("WAV 파일을 읽을 수 없습니다");
-        setPreview(await response.blob());
+        const blob = await response.blob();
+        if (generation !== pollGeneration) return;
+        setPreview(blob);
         status("음성 생성 완료 · 아래 재생 버튼으로 미리들으세요.");
         await updateQueue();
         return;
@@ -177,8 +189,12 @@
       if (job.status === "FAILED" || job.status === "CANCELLED") {
         throw new Error(job.error || job.status);
       }
-      status("음성 생성 중 (" + job.status + ")…");
+      status(job.status === "QUEUED"
+        ? "앞선 발화가 완료될 때까지 대기 중입니다…"
+        : "음성 생성 중 (" + job.status + ")…");
+      if (polls % 5 === 0) await updateQueue();
     }
+    if (generation !== pollGeneration) return;
     throw new Error("대기 시간이 초과됐습니다. 상태를 다시 확인하세요.");
   }
 
@@ -203,7 +219,7 @@
     } catch (error) {
       if (generation === pollGeneration) status("TTS 실패: " + error.message);
     } finally {
-      submit.disabled = !voices.value;
+      if (generation === pollGeneration) submit.disabled = !voices.value;
       await updateQueue();
     }
   });
