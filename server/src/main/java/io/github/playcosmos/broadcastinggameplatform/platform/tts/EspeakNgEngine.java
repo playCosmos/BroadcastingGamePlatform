@@ -87,8 +87,9 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
         }
         String selected = voiceId.substring(prefix.length());
         Path input = Files.createTempFile("bgp-espeak-text-", ".txt");
-        Path output = Files.createTempFile("bgp-espeak-audio-", ".wav");
+        Path output = null;
         try {
+            output = Files.createTempFile("bgp-espeak-audio-", ".wav");
             Files.writeString(input, text, StandardCharsets.UTF_8);
             int wordsPerMinute = Math.max(80, Math.min(300, 175 + rate * 10));
             boolean ok = execute(List.of("espeak-ng",
@@ -101,7 +102,7 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
             return Files.readAllBytes(output);
         } finally {
             Files.deleteIfExists(input);
-            Files.deleteIfExists(output);
+            if (output != null) Files.deleteIfExists(output);
         }
     }
 
