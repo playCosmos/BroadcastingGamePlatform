@@ -133,6 +133,39 @@ public final class TtsServiceProbe {
         } finally {
             TtsProcessCleanup.terminate(sleeping);
         }
+        // A child that never reads stdin must not block the TTS worker forever.
+        Process blockedInput = new ProcessBuilder(javaExe, "-cp",
+            System.getProperty("java.class.path"),
+            SleepProcess.class.getName()).start();
+        long inputStart = System.nanoTime();
+        try {
+            boolean timedOut = false;
+            try {
+                TtsProcessInput.write(blockedInput, new byte[8 * 1024 * 1024],
+                    System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(800));
+            } catch (IllegalStateException expected) {
+                timedOut = expected.getMessage().contains("timeout");
+            }
+            require(timedOut, "blocked subprocess stdin must time out");
+            require(!blockedInput.isAlive(), "stdin timeout must terminate child");
+            require(System.nanoTime() - inputStart < TimeUnit.SECONDS.toNanos(5),
+                "stdin timeout must finish within a bounded interval");
+        } finally {
+            TtsProcessCleanup.terminate(blockedInput);
+        }
+        Process readingInput = new ProcessBuilder(javaExe, "-cp",
+            System.getProperty("java.class.path"),
+            ReadProcess.class.getName()).start();
+        try {
+            TtsProcessInput.write(readingInput, "hello\\n".getBytes(
+                java.nio.charset.StandardCharsets.UTF_8),
+                System.nanoTime() + TimeUnit.SECONDS.toNanos(5));
+            require(readingInput.waitFor(5, TimeUnit.SECONDS)
+                && readingInput.exitValue() == 0,
+                "normal process input should complete");
+        } finally {
+            TtsProcessCleanup.terminate(readingInput);
+        }
         require(new WindowsSapiEngine().id().equals("windows-sapi"),
             "native engine ID must be stable");
         System.out.println("Platform TTS multi-voice, async queue and cancellation probe passed.");
@@ -222,6 +255,14 @@ public final class TtsServiceProbe {
                 default -> throw new IllegalStateException("unknown corruption case");
             }
             return wav;
+        }
+    }
+
+    public static final class ReadProcess {
+        public static void main(String[] args) throws Exception {
+            byte[] bytes = System.in.readAllBytes();
+            if (!"hello\\n".equals(new String(bytes,
+                java.nio.charset.StandardCharsets.UTF_8))) System.exit(1);
         }
     }
 
