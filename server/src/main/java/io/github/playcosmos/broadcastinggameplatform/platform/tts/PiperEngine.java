@@ -170,10 +170,11 @@ public final class PiperEngine implements TtsService.TtsEngine {
                 .redirectError(ProcessBuilder.Redirect.DISCARD)
                 .start();
             try {
-                try (var input = process.getOutputStream()) {
-                    input.write((text + "\n").getBytes(StandardCharsets.UTF_8));
-                }
-                if (!process.waitFor(30, TimeUnit.SECONDS)) {
+                long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
+                TtsProcessInput.write(process,
+                    (text + "\n").getBytes(StandardCharsets.UTF_8), deadline);
+                long remaining = TtsProcessInput.remainingNanos(deadline);
+                if (remaining == 0 || !process.waitFor(remaining, TimeUnit.NANOSECONDS)) {
                     TtsProcessCleanup.terminate(process);
                     throw new IllegalStateException("Piper synthesis timeout");
                 }
