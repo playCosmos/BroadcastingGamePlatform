@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
@@ -129,10 +130,14 @@ public final class TtsService implements AutoCloseable {
 
     public List<Voice> voices() {
         var result = new ArrayList<Voice>();
+        var seen = new HashSet<String>();
         for (var engine : engines) {
             try {
                 for (Voice voice : engine.voices()) {
-                    if (voice != null && engine.id().equals(voice.engineId())) {
+                    if (voice != null && engine.id().equals(voice.engineId())
+                        && voice.id().startsWith(engine.id() + "/")
+                        && voice.id().length() > engine.id().length() + 1
+                        && seen.add(voice.id())) {
                         result.add(voice);
                     }
                 }
@@ -146,7 +151,15 @@ public final class TtsService implements AutoCloseable {
 
     /** Explicit refresh after installing or removing voice packages. */
     public List<Voice> refreshVoices() {
-        for (var engine : engines) engine.invalidateVoiceCatalog();
+        for (var engine : engines) {
+            try {
+                engine.invalidateVoiceCatalog();
+            } catch (Exception error) {
+                // A broken optional voice adapter must not disable the admin API.
+                System.err.println("[tts] voice refresh failed for "
+                    + engine.id() + ": " + error.getClass().getSimpleName());
+            }
+        }
         return voices();
     }
 
