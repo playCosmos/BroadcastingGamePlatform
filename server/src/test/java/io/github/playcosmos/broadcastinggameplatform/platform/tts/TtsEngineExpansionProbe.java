@@ -3,6 +3,7 @@ package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.net.URLClassLoader;
 import java.util.List;
 
 /** No audio device or installed speech binary required. */
@@ -70,7 +71,56 @@ public final class TtsEngineExpansionProbe {
             Files.deleteIfExists(settings);
             Files.deleteIfExists(temporary);
         }
+        // ServiceLoader must recover after a broken native adapter and
+        // continue loading valid later providers in the same descriptor.
+        Path spiRoot = Files.createTempDirectory("tts-spi-probe-");
+        Path descriptor = spiRoot.resolve("META-INF/services/"
+            + TtsService.TtsEngine.class.getName());
+        ClassLoader previous = Thread.currentThread().getContextClassLoader();
+        try {
+            Files.createDirectories(descriptor.getParent());
+            Files.writeString(descriptor,
+                BrokenSpiEngine.class.getName() + "\n"
+                    + HealthySpiEngine.class.getName() + "\n",
+                StandardCharsets.UTF_8);
+            try (var loader = new URLClassLoader(
+                new java.net.URL[] { spiRoot.toUri().toURL() }, previous)) {
+                Thread.currentThread().setContextClassLoader(loader);
+                var discovered = TtsEngineRegistry.installed();
+                require(discovered.stream().anyMatch(
+                    engine -> "spi-healthy".equals(engine.id())),
+                    "valid SPI providers must load after native provider failure");
+            }
+        } finally {
+            Thread.currentThread().setContextClassLoader(previous);
+            Files.deleteIfExists(descriptor);
+            Files.deleteIfExists(descriptor.getParent());
+            Files.deleteIfExists(descriptor.getParent().getParent());
+            Files.deleteIfExists(spiRoot);
+        }
         System.out.println("TTS eSpeak NG catalog and persistent preferences probe passed.");
+    }
+
+    public static final class BrokenSpiEngine implements TtsService.TtsEngine {
+        public BrokenSpiEngine() {
+            throw new UnsatisfiedLinkError("simulated native adapter missing");
+        }
+        @Override public String id() { return "spi-broken"; }
+        @Override public List<TtsService.Voice> voices() { return List.of(); }
+        @Override public byte[] synthesize(
+            String voiceId, String text, int rate, int volume) {
+            return new byte[0];
+        }
+    }
+
+    public static final class HealthySpiEngine implements TtsService.TtsEngine {
+        public HealthySpiEngine() {}
+        @Override public String id() { return "spi-healthy"; }
+        @Override public List<TtsService.Voice> voices() { return List.of(); }
+        @Override public byte[] synthesize(
+            String voiceId, String text, int rate, int volume) {
+            return new byte[0];
+        }
     }
 
     private static void require(boolean ok, String message) {
