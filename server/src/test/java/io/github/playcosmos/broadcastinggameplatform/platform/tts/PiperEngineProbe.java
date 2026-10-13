@@ -3,6 +3,7 @@ package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.LinkedHashMap;
 
 /** No Piper executable or voice models are required for this contract test. */
 public final class PiperEngineProbe {
@@ -47,6 +48,32 @@ public final class PiperEngineProbe {
                 "Korean language tag must be retained");
             require(multiple.get(1).speaker() == 2,
                 "subsequent speaker ids selected correctly");
+
+            String duplicates = """
+                {"language":{"code":"ko_KR"},"speaker_id_map":{
+                    "Zulu":2,"Beta":0,"Alpha":0,"Gamma":1}}
+                """;
+            var unique = PiperEngine.parseModelConfig(
+                "ko_KR-duplicate", model, config, duplicates);
+            require(unique.size() == 3,
+                "duplicate speaker numbers must expose one selectable voice");
+            require(unique.getFirst().speaker() == 0
+                && unique.getFirst().voice().name().contains("Alpha"),
+                "equal speaker ids must select a deterministic label");
+            require(unique.get(1).speaker() == 1 && unique.get(2).speaker() == 2,
+                "speaker catalog must retain numeric order");
+            var ordered = new LinkedHashMap<String, PiperEngine.ModelVoice>();
+            ordered.put(unique.get(2).voice().id(), unique.get(2));
+            ordered.put(unique.get(0).voice().id(), unique.get(0));
+            ordered.put(unique.get(1).voice().id(), unique.get(1));
+            var cached = PiperEngine.immutableOrdered(ordered);
+            require(cached.keySet().equals(ordered.keySet())
+                && List.copyOf(cached.keySet()).equals(List.copyOf(ordered.keySet())),
+                "cached catalog must preserve discovery order");
+            boolean immutable = false;
+            try { cached.clear(); }
+            catch (UnsupportedOperationException expected) { immutable = true; }
+            require(immutable, "cached Piper catalog must be immutable");
 
             byte[] sample = pcmWav();
             byte[] muted = PiperEngine.scalePcm16Wav(sample, 0);
