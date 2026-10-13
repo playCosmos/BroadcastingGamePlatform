@@ -62,6 +62,17 @@ public final class TtsServiceProbe {
                 require(block.calls.get() == 1, "cancelled audio must not synthesize");
             }
         }
+        try (var wavService = new TtsService(List.of(new CorruptWavEngine()))) {
+            String voiceId = wavService.voices().getFirst().id();
+            for (String malformed : List.of(
+                "missing WAVE", "oversized chunk", "bad RIFF size", "missing fmt")) {
+                var rejected = wavService.enqueue(new TtsService.Request(
+                    malformed, voiceId, 0, 80));
+                waitFor(wavService, rejected.id(), "FAILED");
+                require(wavService.audio(rejected.id()) == null,
+                    "corrupted WAV must never become available");
+            }
+        }
         // Shutdown must reject new requests and discard outstanding speech.
         var shutdownEngine = new BlockingEngine();
         var shutdown = new TtsService(List.of(shutdownEngine));
@@ -147,10 +158,54 @@ public final class TtsServiceProbe {
             String voiceId, String text, int rate, int volume
         ) throws Exception {
             calls.incrementAndGet();
-            byte[] sample = new byte[44];
-            sample[0] = 'R'; sample[1] = 'I';
-            sample[2] = 'F'; sample[3] = 'F';
-            return sample;
+            return sampleWav();
+        }
+    }
+
+    private static byte[] sampleWav() {
+        byte[] wav = new byte[46];
+        ascii(wav, 0, "RIFF");
+        put32(wav, 4, wav.length - 8);
+        ascii(wav, 8, "WAVE");
+        ascii(wav, 12, "fmt ");
+        put32(wav, 16, 16);
+        put16(wav, 20, 1);
+        put16(wav, 22, 1);
+        put32(wav, 24, 22050);
+        put32(wav, 28, 44100);
+        put16(wav, 32, 2);
+        put16(wav, 34, 16);
+        ascii(wav, 36, "data");
+        put32(wav, 40, 2);
+        put16(wav, 44, 120);
+        return wav;
+    }
+
+    private static void ascii(byte[] wav, int at, String value) {
+        for (int i = 0; i < value.length(); i++)
+            wav[at + i] = (byte) value.charAt(i);
+    }
+    private static void put16(byte[] wav, int at, int n) {
+        wav[at] = (byte) n;
+        wav[at + 1] = (byte) (n >>> 8);
+    }
+    private static void put32(byte[] wav, int at, int n) {
+        put16(wav, at, n);
+        put16(wav, at + 2, n >>> 16);
+    }
+
+    private static final class CorruptWavEngine extends MockEngine {
+        CorruptWavEngine() { super("broken-wav", "Sample"); }
+        @Override public byte[] synthesize(String voiceId, String text, int rate, int volume) {
+            byte[] wav = sampleWav();
+            switch (text) {
+                case "missing WAVE" -> ascii(wav, 8, "NOPE");
+                case "oversized chunk" -> put32(wav, 40, 100_000);
+                case "bad RIFF size" -> put32(wav, 4, 0);
+                case "missing fmt" -> ascii(wav, 12, "JUNK");
+                default -> throw new IllegalStateException("unknown corruption case");
+            }
+            return wav;
         }
     }
 
