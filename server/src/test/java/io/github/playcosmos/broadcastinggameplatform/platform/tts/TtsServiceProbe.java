@@ -117,6 +117,52 @@ public final class TtsServiceProbe {
             require(catalogGuard.refreshVoices().size() == 2,
                 "optional engine refresh failure must not hide healthy voices");
         }
+        // A missing native library must not disable healthy voice engines.
+        TtsService.TtsEngine badCatalog = new TtsService.TtsEngine() {
+            @Override public String id() { return "native-catalog"; }
+            @Override public List<TtsService.Voice> voices() {
+                throw new UnsatisfiedLinkError("unavailable native catalog");
+            }
+            @Override public void invalidateVoiceCatalog() {
+                throw new ExceptionInInitializerError("unavailable native refresh");
+            }
+            @Override public byte[] synthesize(
+                String voiceId, String text, int rate, int volume) {
+                throw new AssertionError("catalog engine must not synthesize");
+            }
+        };
+        try (var robustCatalog = new TtsService(List.of(
+            badCatalog, new MockEngine("catalog-healthy", "OK")))) {
+            require(robustCatalog.voices().size() == 1,
+                "missing native catalog must not hide healthy voices");
+            require(robustCatalog.refreshVoices().size() == 1,
+                "native refresh failure must not hide healthy voices");
+        }
+        TtsService.TtsEngine nativeFailure = new TtsService.TtsEngine() {
+            @Override public String id() { return "native-failure"; }
+            @Override public List<TtsService.Voice> voices() {
+                return List.of(new TtsService.Voice(
+                    "native-failure/default", "native-failure", "Native", "ko-KR"));
+            }
+            @Override public byte[] synthesize(
+                String voiceId, String text, int rate, int volume) {
+                throw new UnsatisfiedLinkError("sensitive native failure details");
+            }
+        };
+        try (var recovery = new TtsService(List.of(
+            nativeFailure, new MockEngine("recovered", "OK")))) {
+            var failedJob = recovery.enqueue(new TtsService.Request(
+                "private sample", "native-failure/default", 0, 80));
+            var nextJob = recovery.enqueue(new TtsService.Request(
+                "next request", "recovered/OK", 0, 80));
+            waitFor(recovery, failedJob.id(), "FAILED");
+            waitFor(recovery, nextJob.id(), "READY");
+            require(recovery.audio(failedJob.id()) == null,
+                "native synthesis failure must not expose audio");
+            require(!recovery.job(failedJob.id()).error().contains("sensitive")
+                && !recovery.job(failedJob.id()).error().contains("private"),
+                "backend error details and speech text must not reach admin response");
+        }
         // Exercise cleanup with the current JDK, without installing any TTS engine.
         String javaExe = java.nio.file.Path.of(System.getProperty("java.home"),
             "bin", System.getProperty("os.name", "").toLowerCase().contains("win")
