@@ -132,6 +132,22 @@ replay previous speech. Speech content is not persisted or logged.
 5. Use Refresh after installing a new local voice. Voice pack
    installation/update/removal is deliberately **not** implemented here.
 
+## TTS release gate (October 13, 2026)
+
+The standalone TTS foundation remains **work in progress**. The three
+intermediate TTS test releases and their matching Git tags
+(`v0.1.1-alpha.5`, `v0.1.1-alpha.6`, `v0.1.1-alpha.7`) were intentionally
+removed. Board-specific releases/tags `alpha.1` through `alpha.4` remain
+unchanged. Removal of release artifacts does not remove TTS source commits.
+
+**Do not create any intermediate TTS Git tag, GitHub Release, or prerelease.**
+Continue development and CI validation without publishing TTS release assets.
+Publish exactly one consolidated TTS release only when the agreed TTS scope
+is complete and passes its CI, Windows package, cancellation/resource cleanup,
+and real-engine smoke checks. Game/provider/OBS integrations remain deferred
+until separately authorized and are not a prerequisite for the standalone
+foundation release.
+
 ## Next milestones (not implemented)
 
 1. Safe optional local voice pack management after publishing a trusted pack
