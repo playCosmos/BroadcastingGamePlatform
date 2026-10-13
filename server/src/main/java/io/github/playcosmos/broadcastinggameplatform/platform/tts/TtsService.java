@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongSupplier;
 
 /**
  * Independent, bounded TTS foundation. No game/provider event subscriptions.
@@ -65,8 +66,11 @@ public final class TtsService implements AutoCloseable {
     private static final int MAX_AUDIO_BYTES = 5 * 1024 * 1024;
     // Limit cached previews independently of the number of retained job records.
     private static final int MAX_RETAINED_AUDIO_BYTES = 16 * 1024 * 1024;
+    // Preview WAVs are transient. Expire 15 minutes after synthesis completes.
+    private static final long AUDIO_RETENTION_NANOS = TimeUnit.MINUTES.toNanos(15);
     private final List<TtsEngine> engines;
     private final TtsPreferencesStore preferences;
+    private final LongSupplier monotonicNanos;
     private final ArrayBlockingQueue<Entry> pending =
         new ArrayBlockingQueue<>(QUEUE_CAPACITY);
     private final LinkedHashMap<String, Entry> jobs = new LinkedHashMap<>();
@@ -87,6 +91,7 @@ public final class TtsService implements AutoCloseable {
         volatile String state = "QUEUED";
         volatile String error;
         volatile byte[] audio;
+        long audioReadyAtNanos; // guarded by TtsService.guard
 
         Entry(Request request) {
             voiceId = request.voiceId();
@@ -104,9 +109,16 @@ public final class TtsService implements AutoCloseable {
     }
 
     public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences) {
+        this(engines, preferences, System::nanoTime);
+    }
+
+    // Package-private clock seam keeps retention tests deterministic.
+    TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
+               LongSupplier monotonicNanos) {
         Objects.requireNonNull(engines, "engines");
         this.engines = List.copyOf(engines);
         this.preferences = preferences;
+        this.monotonicNanos = Objects.requireNonNull(monotonicNanos, "monotonicNanos");
         if (this.engines.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("null engine");
         }
@@ -194,6 +206,7 @@ public final class TtsService implements AutoCloseable {
         ));
         synchronized (guard) {
             if (!running.get()) throw new IllegalStateException("TTS closed");
+            expireStaleAudio();
             pruneCompleted();
             if (jobs.size() >= RETAINED_JOBS || !pending.offer(entry)) {
                 throw new CapacityException("TTS queue is full");
@@ -205,6 +218,7 @@ public final class TtsService implements AutoCloseable {
 
     public Job job(String id) {
         synchronized (guard) {
+            expireStaleAudio();
             Entry entry = jobs.get(id);
             return entry == null ? null : entry.snapshot();
         }
@@ -212,6 +226,7 @@ public final class TtsService implements AutoCloseable {
 
     public byte[] audio(String id) {
         synchronized (guard) {
+            expireStaleAudio();
             Entry entry = jobs.get(id);
             return entry == null || entry.audio == null
                 ? null : entry.audio.clone();
@@ -220,6 +235,7 @@ public final class TtsService implements AutoCloseable {
 
     public Status status() {
         synchronized (guard) {
+            expireStaleAudio();
             return new Status(!engines.isEmpty(), pending.size(), activeJobId,
                 jobs.size(), engines.stream().map(TtsEngine::id).toList(),
                 retainedAudioBytes, MAX_RETAINED_AUDIO_BYTES);
@@ -248,7 +264,11 @@ public final class TtsService implements AutoCloseable {
                 Thread.currentThread().interrupt();
                 break;
             }
-            if (entry == null) continue;
+            if (entry == null) {
+                // Reclaim previews even when no administrators poll the API.
+                synchronized (guard) { expireStaleAudio(); }
+                continue;
+            }
             synchronized (guard) {
                 if (!running.get() || "CANCELLED".equals(entry.state)) {
                     entry.state = "CANCELLED";
@@ -270,7 +290,9 @@ public final class TtsService implements AutoCloseable {
                 }
                 synchronized (guard) {
                     if (running.get() && "SYNTHESIZING".equals(entry.state)) {
+                        expireStaleAudio();
                         entry.audio = wav.clone();
+                        entry.audioReadyAtNanos = monotonicNanos.getAsLong();
                         retainedAudioBytes += entry.audio.length;
                         entry.state = "READY";
                         evictOldAudio(entry);
@@ -336,17 +358,31 @@ public final class TtsService implements AutoCloseable {
             | ((bytes[offset + 3] & 255L) << 24);
     }
 
+    /** Expire previews by synthesis completion time, using a monotonic clock. */
+    private void expireStaleAudio() {
+        long now = monotonicNanos.getAsLong();
+        for (Entry entry : jobs.values()) {
+            if (entry.audio != null && "READY".equals(entry.state)
+                && now - entry.audioReadyAtNanos >= AUDIO_RETENTION_NANOS) {
+                expireAudio(entry, "audio expired after retention window");
+            }
+        }
+    }
+
+    private void expireAudio(Entry entry, String reason) {
+        if (entry.audio == null) return;
+        retainedAudioBytes -= entry.audio.length;
+        entry.audio = null;
+        entry.state = "EXPIRED";
+        entry.error = reason;
+    }
+
     /** Evict oldest previews first while preserving their job metadata. */
     private void evictOldAudio(Entry newest) {
         if (retainedAudioBytes <= MAX_RETAINED_AUDIO_BYTES) return;
         for (Entry previous : jobs.values()) {
             if (previous == newest || previous.audio == null) continue;
-            retainedAudioBytes -= previous.audio.length;
-            previous.audio = null;
-            if ("READY".equals(previous.state)) {
-                previous.state = "EXPIRED";
-                previous.error = "audio expired from preview cache";
-            }
+            expireAudio(previous, "audio expired from preview cache");
             if (retainedAudioBytes <= MAX_RETAINED_AUDIO_BYTES) break;
         }
     }
