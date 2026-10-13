@@ -14,12 +14,18 @@ public final class TtsEngineRegistry {
     private TtsEngineRegistry() {}
 
     public static List<TtsService.TtsEngine> installed() {
+        return installed(null);
+    }
+
+    public static List<TtsService.TtsEngine> installed(java.nio.file.Path applicationRoot) {
         var engines = new ArrayList<TtsService.TtsEngine>();
         engines.add(new WindowsSapiEngine());
         engines.add(new EspeakNgEngine());
+        if (applicationRoot != null) {
+            engines.add(new PiperEngine(applicationRoot.resolve("tts/voices")));
+        }
         var ids = new HashSet<String>();
-        ids.add("windows-sapi");
-        ids.add("espeak-ng");
+        for (var engine : engines) ids.add(engine.id());
         try {
             for (TtsService.TtsEngine candidate :
                 ServiceLoader.load(TtsService.TtsEngine.class)) {
