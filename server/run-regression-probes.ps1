@@ -26,6 +26,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBusProbe",
     "io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsServiceProbe",
     "io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsEngineExpansionProbe",
+    "io.github.playcosmos.broadcastinggameplatform.platform.tts.PiperEngineProbe",
     "io.github.playcosmos.broadcastinggameplatform.operations.FileLogProbe",
     "io.github.playcosmos.broadcastinggameplatform.operations.BoundedVirtualThreadExecutorProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe",
