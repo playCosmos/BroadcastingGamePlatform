@@ -185,7 +185,7 @@
           { credentials: "same-origin", cache: "no-store" }
         );
         if (!response.ok) throw new Error(response.status === 409
-          ? "음성 보관 공간이 초과되었습니다. 다시 생성하세요."
+          ? "음성 미리듣기가 만료되었습니다. 다시 생성하세요."
           : "WAV 파일을 읽을 수 없습니다");
         const blob = await response.blob();
         if (generation !== pollGeneration) return;
@@ -195,7 +195,7 @@
         return;
       }
       if (job.status === "EXPIRED") {
-        throw new Error("미리듣기 보관 공간이 초과되었습니다. 다시 생성하세요.");
+        throw new Error("음성 미리듣기가 만료되었습니다. 다시 생성하세요.");
       }
       if (job.status === "FAILED" || job.status === "CANCELLED") {
         throw new Error(job.error || job.status);
