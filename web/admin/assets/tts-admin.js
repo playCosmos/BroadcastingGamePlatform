@@ -156,8 +156,14 @@
   async function updateQueue() {
     try {
       const state = await json("/api/v1/tts/status");
+      const retained = Number(state.retainedAudioBytes);
+      const limit = Number(state.maxRetainedAudioBytes);
+      const cache = Number.isFinite(retained) && Number.isFinite(limit) && limit > 0
+        ? " · 미리듣기 " + (retained / 1048576).toFixed(1)
+          + "/" + (limit / 1048576).toFixed(0) + " MiB"
+        : "";
       queueStatus.textContent = "대기 " + state.queued + "건"
-        + (state.activeJobId ? " · 합성 진행 중" : "");
+        + (state.activeJobId ? " · 합성 진행 중" : "") + cache;
     } catch (error) {
       queueStatus.textContent = "대기열 상태 확인 실패";
     }
@@ -178,13 +184,18 @@
           "/api/v1/tts/jobs/" + encodeURIComponent(jobId) + "/audio",
           { credentials: "same-origin", cache: "no-store" }
         );
-        if (!response.ok) throw new Error("WAV 파일을 읽을 수 없습니다");
+        if (!response.ok) throw new Error(response.status === 409
+          ? "음성 보관 공간이 초과되었습니다. 다시 생성하세요."
+          : "WAV 파일을 읽을 수 없습니다");
         const blob = await response.blob();
         if (generation !== pollGeneration) return;
         setPreview(blob);
         status("음성 생성 완료 · 아래 재생 버튼으로 미리들으세요.");
         await updateQueue();
         return;
+      }
+      if (job.status === "EXPIRED") {
+        throw new Error("미리듣기 보관 공간이 초과되었습니다. 다시 생성하세요.");
       }
       if (job.status === "FAILED" || job.status === "CANCELLED") {
         throw new Error(job.error || job.status);
