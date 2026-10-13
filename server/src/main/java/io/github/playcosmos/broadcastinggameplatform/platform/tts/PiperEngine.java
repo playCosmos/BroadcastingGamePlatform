@@ -174,8 +174,7 @@ public final class PiperEngine implements TtsService.TtsEngine {
                     input.write((text + "\n").getBytes(StandardCharsets.UTF_8));
                 }
                 if (!process.waitFor(30, TimeUnit.SECONDS)) {
-                    process.destroyForcibly();
-                    process.waitFor(2, TimeUnit.SECONDS);
+                    TtsProcessCleanup.terminate(process);
                     throw new IllegalStateException("Piper synthesis timeout");
                 }
                 if (process.exitValue() != 0
@@ -186,7 +185,7 @@ public final class PiperEngine implements TtsService.TtsEngine {
                 byte[] data = Files.readAllBytes(wav);
                 return scalePcm16Wav(data, volume);
             } finally {
-                if (process.isAlive()) process.destroyForcibly();
+                TtsProcessCleanup.terminate(process);
             }
         } finally {
             Files.deleteIfExists(wav);
@@ -262,8 +261,7 @@ public final class PiperEngine implements TtsService.TtsEngine {
         }
         try {
             if (!process.waitFor(3, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(1, TimeUnit.SECONDS);
+                TtsProcessCleanup.terminate(process);
                 return false;
             }
             return process.exitValue() == 0;
