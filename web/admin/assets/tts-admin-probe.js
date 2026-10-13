@@ -6,7 +6,7 @@ const path = require("node:path");
 const vm = require("node:vm");
 
 // Simulate a long, valid TTS queue without waiting for actual audio engines.
-async function main() {
+async function scenario(mode) {
   const nodes = new Map();
   let now = 0;
   let polls = 0;
@@ -67,16 +67,22 @@ async function main() {
         }] });
       }
       if (url === "/api/v1/tts/status") {
-        return respond({ queued: 16, activeJobId: "prior" });
+        return respond({ queued: 16, activeJobId: "prior",
+          retainedAudioBytes: 4 * 1048576, maxRetainedAudioBytes: 16 * 1048576 });
       }
       if (url === "/api/v1/tts/speak" && options.method === "POST") {
         return respond({ id: "mock-job" });
       }
       if (url === "/api/v1/tts/jobs/mock-job") {
         polls++;
-        return respond({ status: polls <= 85 ? "QUEUED" : "READY" });
+        return respond({ status: mode === "expired"
+          ? (polls < 3 ? "QUEUED" : "EXPIRED")
+          : mode === "raced" ? "READY"
+          : (polls <= 85 ? "QUEUED" : "READY") });
       }
-      if (url === "/api/v1/tts/jobs/mock-job/audio") return respond({});
+      if (url === "/api/v1/tts/jobs/mock-job/audio") {
+        return mode === "raced" ? { ok: false, status: 409 } : respond({});
+      }
       throw new Error("unexpected TTS API request: " + url);
     }
   };
@@ -86,16 +92,28 @@ async function main() {
   const submit = getElement("speechForm").events.submit;
   assert.equal(typeof submit, "function", "voice form submit must be bound");
   await submit({ preventDefault() {} });
-  assert.equal(polls, 86, "valid queued synthesis must outlive the old 70-poll cap");
-  assert.ok(now > 38_500 && now < 10 * 60 * 1000,
-    "polling should permit bounded long queue waits");
-  assert.equal(getElement("speechPreview").src, "blob:tts-probe");
-  assert.equal(loaded, 1);
-  assert.match(getElement("speechResult").textContent, /완료/);
+  assert.match(getElement("ttsQueueStatus").textContent, /4\\.0\\/16 MiB/,
+    "queue status must show bounded preview memory usage");
+  if (mode === "ready") {
+    assert.equal(polls, 86, "valid queued synthesis must outlive old 70-poll cap");
+    assert.ok(now > 38_500 && now < 10 * 60 * 1000,
+      "polling should permit bounded long queue waits");
+    assert.equal(getElement("speechPreview").src, "blob:tts-probe");
+    assert.equal(loaded, 1);
+    assert.match(getElement("speechResult").textContent, /완료/);
+  } else {
+    assert.equal(loaded, 0, "expired preview must never be played");
+    assert.match(getElement("speechResult").textContent, /다시 생성/,
+      "expired preview must prompt the administrator to retry");
+  }
   assert.equal(getElement("speakButton").disabled, false);
-  console.log("TTS administrator long-queue playback probe passed.");
 }
-main().catch(error => {
+(async () => {
+  await scenario("ready");
+  await scenario("expired");
+  await scenario("raced");
+  console.log("TTS administrator long-queue and cache-expiry probes passed.");
+})().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
