@@ -144,8 +144,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
                 .redirectOutput(captured.toFile())
                 .start();
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
-                process.destroyForcibly();
-                process.waitFor(2, TimeUnit.SECONDS);
+                TtsProcessCleanup.terminate(process);
                 throw new IllegalStateException("Windows speech timed out");
             }
             long length = Files.size(captured);
@@ -159,9 +158,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
             }
             return output;
         } finally {
-            if (process != null && process.isAlive()) {
-                process.destroyForcibly();
-            }
+            TtsProcessCleanup.terminate(process);
             Files.deleteIfExists(captured);
         }
     }
