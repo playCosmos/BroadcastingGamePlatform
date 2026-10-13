@@ -117,6 +117,22 @@ public final class TtsServiceProbe {
             require(catalogGuard.refreshVoices().size() == 2,
                 "optional engine refresh failure must not hide healthy voices");
         }
+        // Exercise cleanup with the current JDK, without installing any TTS engine.
+        String javaExe = java.nio.file.Path.of(System.getProperty("java.home"),
+            "bin", System.getProperty("os.name", "").toLowerCase().contains("win")
+                ? "java.exe" : "java").toString();
+        Process sleeping = new ProcessBuilder(javaExe, "-cp",
+            System.getProperty("java.class.path"),
+            SleepProcess.class.getName()).start();
+        try {
+            require(sleeping.isAlive(), "cleanup probe child should be alive");
+            TtsProcessCleanup.terminate(sleeping);
+            require(!sleeping.isAlive(), "cleanup must terminate a live child");
+            // Repeated termination must also be safe.
+            TtsProcessCleanup.terminate(sleeping);
+        } finally {
+            TtsProcessCleanup.terminate(sleeping);
+        }
         require(new WindowsSapiEngine().id().equals("windows-sapi"),
             "native engine ID must be stable");
         System.out.println("Platform TTS multi-voice, async queue and cancellation probe passed.");
@@ -206,6 +222,12 @@ public final class TtsServiceProbe {
                 default -> throw new IllegalStateException("unknown corruption case");
             }
             return wav;
+        }
+    }
+
+    public static final class SleepProcess {
+        public static void main(String[] args) throws Exception {
+            Thread.sleep(30_000);
         }
     }
 
