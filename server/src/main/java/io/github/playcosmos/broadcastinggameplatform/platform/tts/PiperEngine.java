@@ -10,6 +10,8 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -87,9 +89,14 @@ public final class PiperEngine implements TtsService.TtsEngine {
                 }
             }
         }
-        catalog = Map.copyOf(discovered);
+        catalog = immutableOrdered(discovered);
         cachedAt = now;
         return discovered.values().stream().map(ModelVoice::voice).toList();
+    }
+
+    /** Preserve explicit filename/speaker order across cached catalog reads. */
+    static Map<String, ModelVoice> immutableOrdered(Map<String, ModelVoice> discovered) {
+        return Collections.unmodifiableMap(new LinkedHashMap<>(discovered));
     }
 
     static List<ModelVoice> parseModelConfig(String stem, Path model,
@@ -107,10 +114,14 @@ public final class PiperEngine implements TtsService.TtsEngine {
         JsonObject speakers = root.getAsJsonObject("speaker_id_map");
         if (speakers != null && speakers.size() > 0) {
             var names = new ArrayList<>(speakers.entrySet());
-            names.sort(Comparator.comparingInt(entry -> speakerId(entry.getValue())));
+            names.sort(Comparator.comparingInt(
+                (Map.Entry<String, JsonElement> entry) -> speakerId(entry.getValue()))
+                .thenComparing(Map.Entry::getKey));
+            var seenSpeakers = new HashSet<Integer>();
             for (var entry : names) {
                 int number = speakerId(entry.getValue());
-                if (number < 0 || number > 255 || result.size() >= 128) continue;
+                if (number < 0 || number > 255 || result.size() >= 128
+                    || !seenSpeakers.add(number)) continue;
                 String name = entry.getKey();
                 if (name.isBlank() || name.length() > 80) continue;
                 String key = "piper/" + stem + "~" + number;
