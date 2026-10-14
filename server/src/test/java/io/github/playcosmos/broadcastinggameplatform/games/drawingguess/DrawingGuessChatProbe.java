@@ -76,6 +76,23 @@ public final class DrawingGuessChatProbe {
                 started
             );
 
+            var staleGuess = service.processChatMessage(
+                chat(
+                    "SOOP",
+                    "channel-a",
+                    "viewer-stale",
+                    "Stale Viewer",
+                    "사과",
+                    started.minusMillis(1)
+                )
+            );
+            require(
+                "ROUND_NOT_STARTED".equals(staleGuess.status())
+                    && repository.findRoom(streamerRoom.roomId())
+                        .participants().isEmpty(),
+                "chat predating round start must not create a participant or score"
+            );
+
             var wrong = service.processChatMessage(
                 chat(
                     "SOOP",

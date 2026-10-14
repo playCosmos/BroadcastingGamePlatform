@@ -34,6 +34,8 @@
   let closingForReplacement = false;
   let replayingHistory = false;
   let replayTargetSequence = 0;
+  let replaySequence = 0;
+  let pendingSnapshot = null;
 
   const clamp01 = (value) => Math.max(0, Math.min(1, value));
 
@@ -193,6 +195,82 @@
     }
   }
 
+  function failHistoryReplay() {
+    pendingSnapshot = null;
+    replayingHistory = true;
+    syncStatus.textContent = "RESYNC";
+    try { socket?.close(1011, "drawing history gap"); } catch {}
+  }
+
+  function receiveHistoryEvent(message) {
+    const type = message?.type;
+    const sequence = Number(message?.sequence);
+    if (type === "canvas.snapshot.begin") {
+      const chunks = Number(message.chunks);
+      if (!Number.isSafeInteger(sequence) || sequence < 1
+          || !Number.isSafeInteger(chunks) || chunks < 1 || chunks > 1024
+          || pendingSnapshot) {
+        failHistoryReplay();
+        return;
+      }
+      pendingSnapshot = { sequence, chunks, parts: [], nextIndex: 0 };
+      return;
+    }
+    if (type === "canvas.snapshot.chunk") {
+      if (!pendingSnapshot || sequence !== pendingSnapshot.sequence
+          || Number(message.index) !== pendingSnapshot.nextIndex
+          || typeof message.data !== "string"
+          || message.data.length > 16384) {
+        failHistoryReplay();
+        return;
+      }
+      pendingSnapshot.parts.push(message.data);
+      pendingSnapshot.nextIndex++;
+      return;
+    }
+    if (type === "canvas.snapshot.end") {
+      if (!pendingSnapshot || sequence !== pendingSnapshot.sequence
+          || pendingSnapshot.nextIndex !== pendingSnapshot.chunks) {
+        failHistoryReplay();
+        return;
+      }
+      try {
+        const restored = JSON.parse(pendingSnapshot.parts.join(""));
+        if (!Array.isArray(restored.strokes)
+            || !Array.isArray(restored.redoStack)) {
+          throw new Error("invalid snapshot");
+        }
+        strokes = restored.strokes;
+        redoStack = restored.redoStack;
+        activeStroke = null;
+        replaySequence = sequence;
+        pendingSnapshot = null;
+        renderAll();
+      } catch {
+        failHistoryReplay();
+      }
+      return;
+    }
+    if (type === "drawing.history.complete") {
+      if (pendingSnapshot || sequence !== replaySequence) {
+        failHistoryReplay();
+      } else {
+        replayingHistory = false;
+        syncStatus.textContent = "CONNECTED";
+      }
+      return;
+    }
+    if (typeof type !== "string" || !type.startsWith("canvas.")) return;
+    if (pendingSnapshot || !Number.isSafeInteger(sequence)
+        || sequence !== replaySequence + 1) {
+      if (!pendingSnapshot && sequence <= replaySequence) return;
+      failHistoryReplay();
+      return;
+    }
+    applySyncedEvent(message);
+    replaySequence = sequence;
+  }
+
   function sendSync(type, payload = {}) {
     if (!socket || socket.readyState !== WebSocket.OPEN) return false;
     socket.send(JSON.stringify({ type, payload }));
@@ -268,6 +346,8 @@
     url.searchParams.set("drawingCode", session.drawingCode);
     url.searchParams.set("drawerToken", session.drawerToken);
 
+    replaySequence = 0;
+    pendingSnapshot = null;
     if (recoverHistory) {
       resetLocalCanvas();
       replayTargetSequence = Number(session.lastSequence) || 0;
@@ -309,12 +389,7 @@
         }
 
         if (replayingHistory) {
-          applySyncedEvent(message);
-          const sequence = Number(message.sequence) || 0;
-          if (sequence >= replayTargetSequence) {
-            replayingHistory = false;
-            syncStatus.textContent = "CONNECTED";
-          }
+          receiveHistoryEvent(message);
         }
       } catch {
         // Ignore malformed/non-drawing messages.

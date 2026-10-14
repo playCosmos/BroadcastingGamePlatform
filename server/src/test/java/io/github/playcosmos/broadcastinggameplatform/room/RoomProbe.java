@@ -69,6 +69,22 @@ public final class RoomProbe {
                 "default active room limit must be one"
             );
 
+            var defaultBoard = rooms.validate(new CreateRoomRequest(
+                "Default Board",
+                List.of(new PlayerInput("default-soop", "Default", null, 100)),
+                null,
+                new MovementInput("dice", 2, true, true, true),
+                new RulesInput("destinationOnly", true, true),
+                List.of(),
+                null
+            )).config().board();
+            require(
+                defaultBoard.columns() == 12
+                    && defaultBoard.rows() == 8
+                    && defaultBoard.cellCount() == 36,
+                "new room defaults must be 12x8 with a 36-cell perimeter"
+            );
+
             var cycleValidator = new FixedInstructionCycleValidator();
             require(
                 cycleValidator.findCycle(fixedCycleBoard(false)).isPresent(),
@@ -548,6 +564,45 @@ public final class RoomProbe {
                 "LIVE".equals(loaded.config().players().get(0).live().status()),
                 "participant live status lost after database reload"
             );
+
+            // Race commit against reroll on the same RoomService. Both must
+            // linearize so the committed board always matches its preview.
+            policies.setActiveRoomLimit(32);
+            for (int attempt = 0; attempt < 12; attempt++) {
+                var racingRoom = rooms.create(request);
+                var gate = new java.util.concurrent.CountDownLatch(1);
+                var failure = new java.util.concurrent.atomic.AtomicReference<Throwable>();
+                Thread reroll = Thread.ofPlatform().start(() -> {
+                    try {
+                        gate.await();
+                        rooms.rerollPreview(racingRoom.roomId());
+                    } catch (IllegalStateException expected) {
+                        // Commit won the race and made reroll unavailable.
+                    } catch (Throwable error) {
+                        failure.compareAndSet(null, error);
+                    }
+                });
+                Thread commit = Thread.ofPlatform().start(() -> {
+                    try {
+                        gate.await();
+                        rooms.commitPreview(racingRoom.roomId());
+                    } catch (Throwable error) {
+                        failure.compareAndSet(null, error);
+                    }
+                });
+                gate.countDown();
+                reroll.join();
+                commit.join();
+                if (failure.get() != null) {
+                    throw new IllegalStateException("preview race failed", failure.get());
+                }
+                var finalRoom = rooms.find(racingRoom.roomId());
+                require(
+                    "READY".equals(finalRoom.status())
+                        && finalRoom.preview().equals(finalRoom.committedBoard()),
+                    "concurrent commit and reroll must preserve the confirmed preview"
+                );
+            }
 
             System.out.println("[room-probe] PASS room=" + created.roomId());
             return 0;

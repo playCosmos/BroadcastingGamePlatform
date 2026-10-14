@@ -32,6 +32,8 @@ public final class DrawingSyncService {
     private static final Duration SESSION_TTL = Duration.ofHours(6);
     private static final int MAX_HISTORY = 20_000;
     private static final long MAX_HISTORY_BYTES = 8L * 1024 * 1024;
+    private static final long MAX_SNAPSHOT_BYTES = 4L * 1024 * 1024;
+    private static final int SNAPSHOT_CHUNK_CHARS = 16 * 1024;
     private static final int MAX_MESSAGE_CHARS = 8 * 1024;
     private static final int MAX_POINTS_PER_EVENT = 128;
     private static final java.util.Set<String> ALLOWED_TYPES =
@@ -68,6 +70,10 @@ public final class DrawingSyncService {
         private final AtomicLong sequence = new AtomicLong();
         private final ArrayList<String> history = new ArrayList<>();
         private long historyBytes;
+        private long snapshotWireBytes;
+        private long snapshotSequence;
+        private String snapshotJson;
+        private DrawingCanvasDocument document = new DrawingCanvasDocument();
 
         private State(
             String roundId,
@@ -198,17 +204,6 @@ public final class DrawingSyncService {
 
     public String append(String code, String drawerToken, String rawJson) {
         State state = activeState(code);
-        if (
-            drawerToken == null
-            || !MessageDigest.isEqual(
-                state.drawerTokenHash.getBytes(StandardCharsets.UTF_8),
-                tokenHash(drawerToken).getBytes(StandardCharsets.UTF_8)
-            )
-        ) {
-            throw new SecurityException(
-                "drawing write authorization failed"
-            );
-        }
         if (rawJson == null || rawJson.isBlank()) {
             throw new IllegalArgumentException(
                 "drawing event is required"
@@ -245,6 +240,18 @@ public final class DrawingSyncService {
         validatePayload(type, payload);
 
         synchronized (state) {
+            // Check authorization under the same lock as token rotation and
+            // session closure, not before a potentially delayed DB write.
+            if (
+                states.get(state.code) != state
+                || drawerToken == null
+                || !MessageDigest.isEqual(
+                    state.drawerTokenHash.getBytes(StandardCharsets.UTF_8),
+                    tokenHash(drawerToken).getBytes(StandardCharsets.UTF_8)
+                )
+            ) {
+                throw new SecurityException("drawing write authorization failed");
+            }
             long sequence = state.sequence.get() + 1L;
             Instant createdAt = Instant.now();
 
@@ -256,22 +263,42 @@ public final class DrawingSyncService {
             event.add("payload", payload.deepCopy());
 
             String canonical = GSON.toJson(event);
-            long firstRetainedSequence =
-                firstRetainedSequenceAfterAppend(
-                    state,
-                    sequence,
-                    canonical
+            long bytes = historyBytes(canonical);
+            boolean compact = state.history.size() + 1 > MAX_HISTORY
+                || state.snapshotWireBytes + state.historyBytes + bytes
+                    > MAX_HISTORY_BYTES;
+            String nextSnapshot = null;
+            DrawingCanvasDocument nextDocument = null;
+            if (compact) {
+                // Build the next state before writing; never drop old history
+                // when the materialized snapshot is too large.
+                nextDocument = DrawingCanvasDocument.restore(
+                    state.document.snapshot()
                 );
-            persistEvent(
-                state,
-                sequence,
-                canonical,
-                createdAt,
-                firstRetainedSequence
-            );
-
+                nextDocument.apply(event);
+                nextSnapshot = GSON.toJson(nextDocument.snapshot());
+                if (historyBytes(nextSnapshot) > MAX_SNAPSHOT_BYTES
+                    || snapshotReplayBytes(nextSnapshot, sequence)
+                        > MAX_HISTORY_BYTES) {
+                    throw new IllegalStateException(
+                        "drawing canvas exceeds compact snapshot capacity"
+                    );
+                }
+            }
+            persistEvent(state, sequence, canonical, createdAt, nextSnapshot);
             state.sequence.set(sequence);
-            appendHistory(state, canonical);
+            if (compact) {
+                state.document = nextDocument;
+                state.snapshotJson = nextSnapshot;
+                state.snapshotSequence = sequence;
+                state.snapshotWireBytes = snapshotReplayBytes(nextSnapshot, sequence);
+                state.history.clear();
+                state.historyBytes = 0;
+            } else {
+                state.document.apply(event);
+                state.history.add(canonical);
+                state.historyBytes += bytes;
+            }
             return canonical;
         }
     }
@@ -405,67 +432,78 @@ public final class DrawingSyncService {
         return eventJson.getBytes(StandardCharsets.UTF_8).length;
     }
 
-    private static long firstRetainedSequenceAfterAppend(
-        State state,
-        long nextSequence,
-        String canonical
-    ) {
-        long bytes = state.historyBytes + historyBytes(canonical);
-        int retained = state.history.size() + 1;
-        int removeIndex = 0;
-
-        while (
-            retained > MAX_HISTORY
-                || bytes > MAX_HISTORY_BYTES
-        ) {
-            if (removeIndex >= state.history.size()) {
-                break;
-            }
-            bytes -= historyBytes(
-                state.history.get(removeIndex)
-            );
-            removeIndex += 1;
-            retained -= 1;
-        }
-
-        return nextSequence - retained + 1;
-    }
-
-    private static void appendHistory(
-        State state,
-        String canonical
-    ) {
-        state.history.add(canonical);
-        state.historyBytes += historyBytes(canonical);
-
-        while (
-            state.history.size() > MAX_HISTORY
-                || state.historyBytes > MAX_HISTORY_BYTES
-        ) {
-            String removed = state.history.remove(0);
-            state.historyBytes -= historyBytes(removed);
-        }
-    }
-
+    /** Reconnect starts from a complete snapshot, never orphaned points. */
     public List<String> history(String code) {
         State state = activeState(code);
         synchronized (state) {
-            return List.copyOf(state.history);
+            var replay = new ArrayList<String>();
+            if (state.snapshotJson != null) {
+                replay.addAll(snapshotMessages(
+                    state.snapshotJson, state.snapshotSequence
+                ));
+            }
+            replay.addAll(state.history);
+            return List.copyOf(replay);
         }
+    }
+
+    private static long snapshotReplayBytes(String json, long sequence) {
+        return snapshotMessages(json, sequence).stream()
+            .mapToLong(DrawingSyncService::historyBytes)
+            .sum();
+    }
+
+    private static List<String> snapshotMessages(String json, long sequence) {
+        int length = json.length();
+        var parts = new ArrayList<String>();
+        for (int offset = 0; offset < length;) {
+            int end = Math.min(length, offset + SNAPSHOT_CHUNK_CHARS);
+            if (end < length
+                && Character.isHighSurrogate(json.charAt(end - 1))
+                && Character.isLowSurrogate(json.charAt(end))) {
+                end -= 1;
+            }
+            parts.add(json.substring(offset, end));
+            offset = end;
+        }
+        var replay = new ArrayList<String>();
+        var begin = new JsonObject();
+        begin.addProperty("type", "canvas.snapshot.begin");
+        begin.addProperty("sequence", sequence);
+        begin.addProperty("chunks", parts.size());
+        replay.add(GSON.toJson(begin));
+        for (int index = 0; index < parts.size(); index++) {
+            var chunk = new JsonObject();
+            chunk.addProperty("type", "canvas.snapshot.chunk");
+            chunk.addProperty("sequence", sequence);
+            chunk.addProperty("index", index);
+            chunk.addProperty("data", parts.get(index));
+            replay.add(GSON.toJson(chunk));
+        }
+        var finish = new JsonObject();
+        finish.addProperty("type", "canvas.snapshot.end");
+        finish.addProperty("sequence", sequence);
+        replay.add(GSON.toJson(finish));
+        return replay;
     }
 
     public boolean closeSession(String code) {
         String normalized = normalizeCode(code);
         if (normalized.isBlank()) return false;
 
-        State state = states.remove(normalized);
+        State state = states.get(normalized);
         if (state == null) return false;
-
-        if (state.roundId != null) {
-            codeByRound.remove(state.roundId, state.code);
-            persistClosed(state);
+        synchronized (state) {
+            if (states.get(normalized) != state) return false;
+            // Persist first: if deletion fails, keep the session addressable
+            // so the operator can retry closure rather than losing its state.
+            if (state.roundId != null) persistClosed(state);
+            if (!states.remove(normalized, state)) return false;
+            if (state.roundId != null) {
+                codeByRound.remove(state.roundId, state.code);
+            }
+            return true;
         }
-        return true;
     }
 
     public boolean closeSessionForRound(String roundId) {
@@ -583,7 +621,8 @@ public final class DrawingSyncService {
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
                  SELECT round_id, drawing_code, created_at,
-                        expires_at, last_sequence
+                        expires_at, last_sequence,
+                        snapshot_sequence, snapshot_json
                  FROM drawing_guess_canvas_session
                  WHERE state = 'ACTIVE'
                  ORDER BY created_at
@@ -617,6 +656,23 @@ public final class DrawingSyncService {
                 state.sequence.set(
                     rows.getLong("last_sequence")
                 );
+                state.snapshotSequence = rows.getLong("snapshot_sequence");
+                state.snapshotJson = rows.getString("snapshot_json");
+                if (state.snapshotJson != null) {
+                    state.snapshotWireBytes = snapshotReplayBytes(
+                        state.snapshotJson, state.snapshotSequence
+                    );
+                    try {
+                        state.document = DrawingCanvasDocument.restore(
+                            JsonParser.parseString(state.snapshotJson)
+                                .getAsJsonObject()
+                        );
+                    } catch (RuntimeException error) {
+                        throw new SQLException(
+                            "corrupt persisted drawing canvas snapshot", error
+                        );
+                    }
+                }
                 restoreHistory(state);
                 persistTokenHash(state, state.drawerTokenHash);
                 restored.add(state);
@@ -667,13 +723,11 @@ public final class DrawingSyncService {
         Collections.reverse(newestFirst);
         state.history.addAll(newestFirst);
         state.historyBytes = retainedBytes;
-
-        long firstRetainedSequence =
-            state.sequence.get() - state.history.size() + 1;
-        prunePersistedHistory(
-            state.roundId,
-            Math.max(1, firstRetainedSequence)
-        );
+        for (String canonical : state.history) {
+            state.document.apply(
+                JsonParser.parseString(canonical).getAsJsonObject()
+            );
+        }
     }
 
     private boolean persistNewState(State state) {
@@ -712,50 +766,63 @@ public final class DrawingSyncService {
         long sequence,
         String eventJson,
         Instant createdAt,
-        long firstRetainedSequence
+        String snapshotJson
     ) {
         if (database == null || state.roundId == null) return;
-
         try (var connection = database.open()) {
             connection.setAutoCommit(false);
             try {
-                try (var statement = connection.prepareStatement("""
-                    INSERT INTO drawing_guess_canvas_event(
-                      round_id, sequence, event_json, created_at
-                    ) VALUES (?, ?, ?, ?)
-                    """)) {
-                    statement.setString(1, state.roundId);
-                    statement.setLong(2, sequence);
-                    statement.setString(3, eventJson);
-                    statement.setString(4, createdAt.toString());
-                    statement.executeUpdate();
+                // The compacted snapshot already contains this event.
+                if (snapshotJson == null) {
+                    try (var statement = connection.prepareStatement("""
+                        INSERT INTO drawing_guess_canvas_event(
+                          round_id, sequence, event_json, created_at
+                        ) VALUES (?, ?, ?, ?)
+                        """)) {
+                        statement.setString(1, state.roundId);
+                        statement.setLong(2, sequence);
+                        statement.setString(3, eventJson);
+                        statement.setString(4, createdAt.toString());
+                        statement.executeUpdate();
+                    }
                 }
 
-                try (var statement = connection.prepareStatement("""
-                    UPDATE drawing_guess_canvas_session
-                    SET last_sequence = ?
-                    WHERE round_id = ? AND state = 'ACTIVE'
-                    """)) {
+                String update = snapshotJson == null
+                    ? """
+                        UPDATE drawing_guess_canvas_session
+                        SET last_sequence = ?
+                        WHERE round_id = ? AND state = 'ACTIVE'
+                        """
+                    : """
+                        UPDATE drawing_guess_canvas_session
+                        SET last_sequence = ?, snapshot_sequence = ?,
+                            snapshot_json = ?
+                        WHERE round_id = ? AND state = 'ACTIVE'
+                        """;
+                try (var statement = connection.prepareStatement(update)) {
                     statement.setLong(1, sequence);
-                    statement.setString(2, state.roundId);
+                    if (snapshotJson == null) {
+                        statement.setString(2, state.roundId);
+                    } else {
+                        statement.setLong(2, sequence);
+                        statement.setString(3, snapshotJson);
+                        statement.setString(4, state.roundId);
+                    }
                     if (statement.executeUpdate() != 1) {
                         throw new IllegalStateException(
                             "drawing session is no longer active"
                         );
                     }
                 }
-
-                if (firstRetainedSequence > 1) {
+                if (snapshotJson != null) {
                     try (var statement = connection.prepareStatement("""
                         DELETE FROM drawing_guess_canvas_event
-                        WHERE round_id = ? AND sequence < ?
+                        WHERE round_id = ?
                         """)) {
                         statement.setString(1, state.roundId);
-                        statement.setLong(2, firstRetainedSequence);
                         statement.executeUpdate();
                     }
                 }
-
                 connection.commit();
             } catch (Exception error) {
                 connection.rollback();
@@ -765,25 +832,8 @@ public final class DrawingSyncService {
             }
         } catch (Exception error) {
             throw new IllegalStateException(
-                "failed to persist drawing event",
-                error
+                "failed to persist drawing event", error
             );
-        }
-    }
-
-    private void prunePersistedHistory(
-        String roundId,
-        long firstRetainedSequence
-    ) throws SQLException {
-        if (database == null || roundId == null) return;
-        try (var connection = database.open();
-             var statement = connection.prepareStatement("""
-                 DELETE FROM drawing_guess_canvas_event
-                 WHERE round_id = ? AND sequence < ?
-                 """)) {
-            statement.setString(1, roundId);
-            statement.setLong(2, firstRetainedSequence);
-            statement.executeUpdate();
         }
     }
 

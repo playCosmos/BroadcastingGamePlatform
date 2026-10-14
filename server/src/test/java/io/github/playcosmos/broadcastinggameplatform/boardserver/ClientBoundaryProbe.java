@@ -89,9 +89,14 @@ public final class ClientBoundaryProbe {
                         exchange.getRequestMethod()
                     )
                 ) {
-                    status = 200;
-                    body = "{\"proxied\":true}"
-                        .getBytes(StandardCharsets.UTF_8);
+                    boolean trustedProxyOrigin =
+                        ("http://127.0.0.1:" + adminPort).equals(
+                            exchange.getRequestHeaders().getFirst("Origin")
+                        );
+                    status = trustedProxyOrigin ? 200 : 403;
+                    body = trustedProxyOrigin
+                        ? "{\"proxied\":true}".getBytes(StandardCharsets.UTF_8)
+                        : "{\"error\":\"missing trusted proxy origin\"}".getBytes(StandardCharsets.UTF_8);
                 } else {
                     status = 404;
                     body = "{\"error\":\"not found\"}"

@@ -37,6 +37,8 @@
   let strokes = [];
   let redoStack = [];
   let strokeById = new Map();
+  let lastDrawingSequence = 0;
+  let pendingSnapshot = null;
 
   function resetDrawingState() {
     strokes = [];
@@ -210,6 +212,82 @@
     }
   }
 
+  function failDrawingReplay() {
+    pendingSnapshot = null;
+    overlayStatus.textContent = "RESYNC";
+    try { socket?.close(1011, "drawing history gap"); } catch {}
+  }
+
+  function receiveDrawingEvent(message) {
+    const type = message?.type;
+    const sequence = Number(message?.sequence);
+    if (type === "canvas.snapshot.begin") {
+      const chunks = Number(message.chunks);
+      if (!Number.isSafeInteger(sequence) || sequence <= 0
+          || !Number.isSafeInteger(chunks) || chunks < 1 || chunks > 1024
+          || pendingSnapshot) {
+        failDrawingReplay();
+        return;
+      }
+      pendingSnapshot = { sequence, chunks, parts: [], nextIndex: 0 };
+      return;
+    }
+    if (type === "canvas.snapshot.chunk") {
+      if (!pendingSnapshot || sequence !== pendingSnapshot.sequence
+          || Number(message.index) !== pendingSnapshot.nextIndex
+          || typeof message.data !== "string"
+          || message.data.length > 16384) {
+        failDrawingReplay();
+        return;
+      }
+      pendingSnapshot.parts.push(message.data);
+      pendingSnapshot.nextIndex += 1;
+      return;
+    }
+    if (type === "canvas.snapshot.end") {
+      if (!pendingSnapshot || sequence !== pendingSnapshot.sequence
+          || pendingSnapshot.nextIndex !== pendingSnapshot.chunks) {
+        failDrawingReplay();
+        return;
+      }
+      try {
+        const restored = JSON.parse(pendingSnapshot.parts.join(""));
+        if (!Array.isArray(restored.strokes)
+            || !Array.isArray(restored.redoStack)) {
+          throw new Error("invalid snapshot");
+        }
+        strokes = restored.strokes;
+        redoStack = restored.redoStack;
+        strokeById = new Map(
+          strokes.map((stroke) => [stroke.strokeId, stroke])
+        );
+        lastDrawingSequence = sequence;
+        pendingSnapshot = null;
+        scheduleRender();
+      } catch {
+        failDrawingReplay();
+      }
+      return;
+    }
+    if (type === "drawing.history.complete") {
+      if (pendingSnapshot || sequence !== lastDrawingSequence) {
+        failDrawingReplay();
+      } else {
+        overlayStatus.textContent = "LIVE";
+      }
+      return;
+    }
+    if (typeof type !== "string" || !type.startsWith("canvas.")) return;
+    if (pendingSnapshot || !Number.isSafeInteger(sequence)
+        || sequence !== lastDrawingSequence + 1) {
+      if (!pendingSnapshot && sequence <= lastDrawingSequence) return;
+      failDrawingReplay();
+      return;
+    }
+    applyDrawingEvent(message);
+    lastDrawingSequence = sequence;
+  }
+
   async function websocketUrl() {
     const response = await fetch(
       "/api/client/config",
@@ -253,6 +331,8 @@
     closeSocket();
     socketCode = normalized;
     resetDrawingState();
+    lastDrawingSequence = 0;
+    pendingSnapshot = null;
     overlayCode.textContent = normalized;
     overlayStatus.textContent = "CONNECTING";
 
@@ -270,7 +350,7 @@
 
       next.addEventListener("open", () => {
         if (socket !== next || socketCode !== normalized) return;
-        overlayStatus.textContent = "LIVE";
+        overlayStatus.textContent = "SYNCING";
       });
 
       next.addEventListener("message", (event) => {
@@ -283,7 +363,7 @@
         }
 
         try {
-          applyDrawingEvent(JSON.parse(event.data));
+          receiveDrawingEvent(JSON.parse(event.data));
         } catch {
           // Ignore non-drawing messages.
         }

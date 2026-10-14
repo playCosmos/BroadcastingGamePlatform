@@ -191,6 +191,22 @@ public final class DrawingSyncProbe {
             "drawing history byte budget must evict oldest events"
         );
 
+        require(
+            service.closeSession(session.drawingCode()),
+            "drawing session must close"
+        );
+        boolean rejectedAfterClose = false;
+        try {
+            service.append(
+                session.drawingCode(),
+                session.drawerToken(),
+                "{\"type\":\"canvas.clear\",\"payload\":{}}"
+            );
+        } catch (java.util.NoSuchElementException | SecurityException expected) {
+            rejectedAfterClose = true;
+        }
+        require(rejectedAfterClose, "a closed drawing session must reject all writes");
+
         System.out.println("Drawing sync probe passed.");
     }
 

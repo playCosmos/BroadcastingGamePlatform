@@ -19,25 +19,14 @@
   const instructionList = $("boardRoomInstructionList");
   const instructionEmptyState = $("boardRoomInstructionEmptyState");
   const randomPoolMode = $("boardRoomRandomPoolMode");
+  const randomOptions = $("boardRoomRandomOptions");
   const result = $("boardRoomResult");
-  const liveSummary = $("boardRoomLiveSummary");
   const previewPanel = $("boardRoomPreviewPanel");
   const previewFrame = $("boardRoomPreviewFrame");
   const previewMeta = $("boardRoomPreviewMeta");
-  const rerollButton = $("boardRoomRerollButton");
+  const previewPlaceholder = $("boardRoomPreviewPlaceholder");
   const commitButton = $("boardRoomCommitButton");
-  const pauseButton = $("boardRoomPauseButton");
-  const resumeButton = $("boardRoomResumeButton");
-  const terminateButton = $("boardRoomTerminateButton");
-  const extendControl = $("boardRoomExtendControl");
-  const extendMinutes = $("boardRoomExtendMinutes");
-  const extendButton = $("boardRoomExtendButton");
   const createButton = $("boardRoomCreateButton");
-  const overlayRow = $("boardRoomOverlayRow");
-  const overlayUrl = $("boardRoomOverlayUrl");
-  const copyOverlayButton = $("boardRoomCopyOverlayButton");
-  const openOverlayButton = $("boardRoomOpenOverlayButton");
-  const bridgeOverlayUrl = $("overlayUrlInput");
   const presetNameInput = $("boardRoomPresetName");
   const presetSelect = $("boardRoomPresetSelect");
   const presetSaveButton = $("boardRoomPresetSave");
@@ -52,9 +41,35 @@
   const DEFAULT_PLAYER_COUNT = 2;
 
   let currentRoom = null;
+  let settingsRevision = 0;
+  let layoutBusy = false;
   let instructionSequence = 0;
   let instructionEditorSequence = 0;
   let selectedInstructionRow = null;
+
+  function setButtonText(button, selector, label) {
+    const text = button?.querySelector?.(selector);
+    if (text) text.textContent = label;
+    else if (button) button.textContent = label;
+  }
+
+  // The preview is always an actual server-created room. Until a DRAFT
+  // exists, show an empty state rather than an unrelated demo board.
+  function showEmptyPreview() {
+    currentRoom = null;
+    if (previewPanel) previewPanel.hidden = false;
+    if (previewPlaceholder) previewPlaceholder.hidden = false;
+    if (previewFrame) {
+      previewFrame.hidden = true;
+      previewFrame.removeAttribute("src");
+    }
+    if (previewMeta) previewMeta.textContent = "배치 전";
+    if (createButton) {
+      setButtonText(createButton, "[data-placement-label]", "배치");
+      createButton.disabled = layoutBusy;
+    }
+    if (commitButton) commitButton.disabled = true;
+  }
 
   function showResult(text, tone = "") {
     result.textContent = text;
@@ -175,6 +190,27 @@
     syncSharedBalloonMode();
   }
 
+  function resetPlayerPresentation(row) {
+    const inline = row.querySelector("[data-live-status]");
+    if (inline) {
+      inline.textContent = "배치 시 확인";
+      inline.removeAttribute("data-status");
+      inline.removeAttribute("title");
+    }
+    const image = row.querySelector(".board-room-live-avatar");
+    if (image) {
+      image.hidden = true;
+      image.removeAttribute("src");
+    }
+    const fallback = row.querySelector(".board-room-live-avatar-fallback");
+    if (fallback) {
+      const displayName = row.querySelector('[data-field="displayName"]')?.value.trim();
+      const soopId = row.querySelector('[data-field="soopId"]')?.value.trim();
+      fallback.textContent = Array.from(displayName || soopId || "?")[0] || "?";
+      fallback.hidden = false;
+    }
+  }
+
   function addPlayerRow(initial = {}) {
     if (playerRows().length >= 6) return;
 
@@ -182,7 +218,13 @@
     row.className = "board-room-player-row";
     row.innerHTML = `
       <button type="button" class="board-room-player-remove" data-remove-player aria-label="참가자 삭제">삭제</button>
-      <span class="board-room-player-index"></span>
+      <span class="board-room-player-identity">
+        <span class="board-room-live-avatar-shell">
+          <img class="board-room-live-avatar" alt="" referrerpolicy="no-referrer" hidden />
+          <span class="board-room-live-avatar-fallback" aria-hidden="true">?</span>
+        </span>
+        <span class="board-room-player-index"></span>
+      </span>
       <label>SOOP ID
         <input data-field="soopId" autocomplete="off" maxlength="120" required value="${escapeAttribute(initial.soopId || "")}" />
       </label>
@@ -196,6 +238,7 @@
       <span class="board-room-inline-status" data-live-status>생성 시 확인</span>
     `;
     playersRoot.append(row);
+    resetPlayerPresentation(row);
     renumberPlayers();
   }
 
@@ -207,15 +250,10 @@
     const balloonTrigger = row.querySelector(
       '[data-field="balloonTrigger"]'
     );
-    const liveStatus = row.querySelector("[data-live-status]");
-
     if (soopId) soopId.value = "";
     if (displayName) displayName.value = "";
     if (balloonTrigger) balloonTrigger.value = "100";
-    if (liveStatus) {
-      liveStatus.textContent = "생성 시 확인";
-      liveStatus.removeAttribute("data-status");
-    }
+    resetPlayerPresentation(row);
 
     const checkbox = sharedBalloonCheckbox();
     if (checkbox) checkbox.checked = true;
@@ -424,9 +462,9 @@
       })),
       sharedBalloon: sharedBalloonCheckbox()?.checked ?? true,
       sizingMode: sizingMode.value,
-      columns: form.elements.namedItem("columns")?.value || "16",
-      rows: form.elements.namedItem("rows")?.value || "12",
-      cellCount: form.elements.namedItem("cellCount")?.value || "52",
+      columns: form.elements.namedItem("columns")?.value || "12",
+      rows: form.elements.namedItem("rows")?.value || "8",
+      cellCount: form.elements.namedItem("cellCount")?.value || "36",
       layoutStyle: form.elements.namedItem("layoutStyle")?.value || "rounded",
       diceEnabled: diceEnabled.checked,
       yutEnabled: yutEnabled.checked,
@@ -447,6 +485,7 @@
     if (item.actionType === "skipThrow") return "skip";
     if (item.actionType === "multiplyNextThrow") return "multiplier";
     if (item.actionType === "ignoreNextLanding") return "ignoreLanding";
+    if (item.actionType === "randomCell" || item.randomPlaceholder) return "random";
     return "custom";
   }
 
@@ -501,6 +540,10 @@
     if (!instructionRows.querySelector(".board-room-instruction-row")) {
       seedDefaultInstructions();
     } else {
+      // Older presets predate the random cell: append it unchecked on restore.
+      if (!instructionRows.querySelector('[data-random-placeholder="true"]')) {
+        addInstruction("random", { builtIn: true, deferList: true });
+      }
       rebuildInstructionList();
       selectInstruction(
         instructionRows.querySelector(".board-room-instruction-row")
@@ -525,9 +568,9 @@
     setValue("retentionMinutes", preset.retentionMinutes ?? "240");
     setValue("pauseDonationMode", preset.pauseDonationMode ?? "QUEUE");
     setValue("pauseGraceSeconds", preset.pauseGraceSeconds ?? "10");
-    setValue("columns", preset.columns ?? "16");
-    setValue("rows", preset.rows ?? "12");
-    setValue("cellCount", preset.cellCount ?? "52");
+    setValue("columns", preset.columns ?? "12");
+    setValue("rows", preset.rows ?? "8");
+    setValue("cellCount", preset.cellCount ?? "36");
     setValue("layoutStyle", preset.layoutStyle ?? "rounded");
     setValue("diceCount", preset.diceCount ?? "2");
 
@@ -556,17 +599,16 @@
     renumberPlayers(preset.sharedBalloon !== false);
 
     randomPoolMode.value =
-      preset.randomPoolMode === "custom"
-        ? "custom"
-        : "inheritRatioInstructions";
+      preset.randomPoolMode === "inheritRatioInstructions"
+        ? "inheritRatioInstructions"
+        : "custom";
     restoreInstructions(preset.instructions);
 
     syncBoardSizing();
     syncMovement();
     syncPauseDonationPolicy();
-    liveSummary.innerHTML = "";
-    previewPanel.hidden = true;
-    currentRoom = null;
+    settingsRevision += 1;
+    showEmptyPreview();
     if (!options.silent) {
       showResult("저장된 룸 설정을 불러왔습니다.", "success");
     }
@@ -683,11 +725,7 @@
 
   function instructionTitle(row) {
     const label = row.querySelector('[data-field="label"]')?.value?.trim();
-    const id = row.querySelector('[data-field="instructionId"]')?.value?.trim();
-    return {
-      label: label || id || "새 지시문",
-      id: id || "UNNAMED"
-    };
+    return { label: label || "새 지시문" };
   }
 
   function selectInstruction(row) {
@@ -717,19 +755,21 @@
     if (!item) return;
     const title = instructionTitle(row);
     const label = item.querySelector("[data-list-label]");
-    const id = item.querySelector("[data-list-id]");
     const enabled = row.dataset.enabled !== "false";
     item.classList.toggle("disabled", !enabled);
     const toggle = item.querySelector(".board-room-instruction-enabled");
     if (toggle) toggle.checked = enabled;
     if (label) label.textContent = title.label;
-    if (id) id.textContent = title.id;
+    const actionLabel = row.querySelector("[data-action-label]");
+    if (actionLabel) actionLabel.textContent = title.label;
   }
 
   function setInstructionEnabled(row, enabled) {
     row.dataset.enabled = enabled ? "true" : "false";
     row.classList.toggle("disabled", !enabled);
     updateInstructionListItem(row);
+    syncRandomVisibility();
+    updateAllocationSummaries();
   }
 
   function rebuildInstructionList() {
@@ -764,6 +804,8 @@
       enabled.title = "활성 / 비활성";
       enabled.addEventListener("change", () => {
         setInstructionEnabled(row, enabled.checked);
+        syncAllInstructionRows();
+        settingsChanged();
       });
 
       const select = document.createElement("button");
@@ -774,11 +816,7 @@
       label.dataset.listLabel = "";
       label.textContent = title.label;
 
-      const id = document.createElement("span");
-      id.dataset.listId = "";
-      id.textContent = title.id;
-
-      select.append(label, id);
+      select.append(label);
       select.addEventListener("click", () => selectInstruction(row));
       item.append(enabled, select);
       instructionList.append(item);
@@ -830,6 +868,14 @@
         allocationMode: "count",
         allocationValue: 1
       },
+      random: {
+        id: "RANDOM_CELL",
+        label: "랜덤",
+        action: "randomCell",
+        allocationMode: "count",
+        allocationValue: 1,
+        randomPlaceholder: true
+      },
       custom: {
         id: "CUSTOM",
         label: "사용자 지시문",
@@ -846,24 +892,21 @@
     row.className = "board-room-instruction-row";
     row.dataset.editorKey = "instruction-" + (++instructionEditorSequence);
     row.dataset.actionType = preset.action;
-    row.dataset.randomPlaceholder = "false";
+    row.dataset.randomPlaceholder = preset.randomPlaceholder ? "true" : "false";
     row.dataset.builtIn = builtIn ? "true" : "false";
-    row.dataset.enabled = "true";
+    row.dataset.enabled = kind === "random" ? "false" : "true";
     row.innerHTML = `
       <div class="board-room-instruction-head">
-        <div>
-          <strong>${escapeAttribute(preset.label)}</strong>
-          ${builtIn ? '<span class="board-room-built-in-badge">기본</span>' : ""}
-        </div>
+        <label class="board-room-instruction-title-field">
+          <span class="board-room-visually-hidden">표시 문구</span>
+          <input class="board-room-instruction-title-input" data-field="label" value="${escapeAttribute(preset.label)}" maxlength="120" required aria-label="표시 문구" />
+        </label>
+        ${builtIn ? '<span class="board-room-built-in-badge">기본</span>' : ""}
         <button type="button" class="board-room-small-button" data-action="remove" ${builtIn ? "hidden" : ""}>삭제</button>
       </div>
+      <input type="hidden" data-field="instructionId" value="${escapeAttribute(id)}" />
       <div class="board-room-instruction-grid">
-        <label>ID
-          <input data-field="instructionId" value="${escapeAttribute(id)}" maxlength="80" required ${builtIn ? "readonly" : ""} />
-        </label>
-        <label>표시 문구
-          <input data-field="label" value="${escapeAttribute(preset.label)}" maxlength="120" required />
-        </label>
+        
         <label>배치 방식
           <select data-field="allocationMode">
             <option value="ratio" ${preset.allocationMode === "ratio" ? "selected" : ""}>비율</option>
@@ -874,17 +917,21 @@
           <input data-field="allocationValue" type="number" min="0" max="100" step="1" value="${preset.allocationValue}" required />
         </label>
       </div>
-      <div class="board-room-instruction-options">
+      <p class="board-room-allocation-summary" data-allocation-summary aria-live="polite"></p>
+      <div class="board-room-instruction-options" data-random-candidate hidden>
         <label class="check-label"><input data-field="poolEnabled" type="checkbox" />랜덤 후보에 포함</label>
+      </div>
+      <div class="board-room-action-options"></div>
+      <div class="board-room-instruction-options board-room-pool-weight-section" data-random-weight hidden>
         <label class="pool-weight">랜덤 가중치
           <input data-field="poolWeight" type="number" min="0.0001" step="0.1" value="${preset.allocationValue}" />
         </label>
       </div>
-      <div class="board-room-action-options"></div>
     `;
 
     instructionRows.append(row);
     renderActionOptions(row, preset);
+    if (row.dataset.enabled === "false") row.classList.add("disabled");
     syncInstructionRow(row);
 
     if (!options.deferList) {
@@ -897,7 +944,7 @@
 
   function seedDefaultInstructions() {
     if (instructionRows.querySelector(".board-room-instruction-row")) return;
-    ["forward", "backward", "skip", "multiplier", "ignoreLanding"].forEach((kind) => {
+    ["forward", "backward", "skip", "multiplier", "ignoreLanding", "random"].forEach((kind) => {
       addInstruction(kind, { builtIn: true, deferList: true });
     });
     rebuildInstructionList();
@@ -910,14 +957,14 @@
     const root = row.querySelector(".board-room-action-options");
     if (preset.action === "move") {
       root.innerHTML = `
-        <span class="board-room-action-chip">${preset.direction === "backward" ? "{n}칸 뒤로" : "{n}칸 앞으로"}</span>
-        <label>{n} 설정
+        <span class="board-room-action-chip" data-action-label>${escapeAttribute(preset.label)}</span>
+        <label>이동 칸 수 방식 ({n})
           <select data-field="stepsMode">
             <option value="fixed">고정</option>
             <option value="range">범위 랜덤</option>
           </select>
         </label>
-        <label data-fixed-steps>{n}
+        <label data-fixed-steps>이동 칸 수 ({n})
           <input data-field="stepsValue" type="number" min="1" max="999" step="1" value="1" />
         </label>
         <label data-range-min hidden>최소
@@ -926,6 +973,7 @@
         <label data-range-max hidden>최대
           <input data-field="stepsMax" type="number" min="1" max="999" step="1" value="4" />
         </label>
+        <p class="board-room-action-help">{n}은 이 칸에 도착했을 때 움직이는 칸 수입니다. 고정은 항상 같은 수, 범위 랜덤은 설정 범위에서 결정됩니다.</p>
       `;
       row.dataset.direction = preset.direction;
     } else if (preset.action === "moveToStart") {
@@ -935,9 +983,10 @@
     } else if (preset.action === "multiplyNextThrow") {
       root.innerHTML = `
         <span class="board-room-action-chip">다음 던지기 이동값 배율</span>
-        <label>{m}
+        <label>이동 배수 ({m})
           <input data-field="multiplierValue" type="number" min="2" max="100" step="1" value="2" />
         </label>
+        <p class="board-room-action-help">{m}은 다음 던지기의 이동 칸 수에 곱할 배수입니다. 예: 2를 입력하면 2배 이동합니다.</p>
       `;
     } else if (preset.action === "ignoreNextLanding") {
       root.innerHTML = '<span class="board-room-action-chip">다음 칸 지시문을 1회 무효화</span>';
@@ -946,6 +995,15 @@
     } else {
       root.innerHTML = '<span class="board-room-action-chip">표시/사용자 지시문</span>';
     }
+  }
+
+  function randomCellEnabled() {
+    return Array.from(instructionRows.querySelectorAll(".board-room-instruction-row"))
+      .some((row) => row.dataset.randomPlaceholder === "true" && row.dataset.enabled !== "false");
+  }
+
+  function syncRandomVisibility() {
+    if (randomOptions) randomOptions.hidden = !randomCellEnabled();
   }
 
   function syncInstructionRow(row) {
@@ -967,21 +1025,24 @@
     const poolEnabled = row.querySelector('[data-field="poolEnabled"]');
     const poolWeight = row.querySelector('[data-field="poolWeight"]');
     const inherited = randomPoolMode.value === "inheritRatioInstructions";
-
+    const randomActive = randomCellEnabled();
+    const showCandidate = randomActive && !randomCell && !inherited;
+    const candidateSection = row.querySelector("[data-random-candidate]");
+    const weightSection = row.querySelector("[data-random-weight]");
+    if (candidateSection) candidateSection.hidden = !showCandidate;
     if (randomCell) {
       poolEnabled.checked = false;
       poolEnabled.disabled = true;
-      poolWeight.value = "0";
       poolWeight.disabled = true;
     } else if (inherited) {
-      poolEnabled.checked = mode === "ratio" && Number(value.value) > 0;
+      // Preserve manually selected candidates when switching back to custom.
       poolEnabled.disabled = true;
-      poolWeight.value = mode === "ratio" ? value.value : "0";
       poolWeight.disabled = true;
     } else {
-      poolEnabled.disabled = false;
-      poolWeight.disabled = !poolEnabled.checked;
+      poolEnabled.disabled = !randomActive || row.dataset.enabled === "false";
+      poolWeight.disabled = poolEnabled.disabled || !poolEnabled.checked;
     }
+    if (weightSection) weightSection.hidden = !showCandidate || !poolEnabled.checked;
 
     const stepsMode = row.querySelector('[data-field="stepsMode"]');
     if (stepsMode) {
@@ -992,16 +1053,107 @@
     }
 
     updateInstructionListItem(row);
+    syncRandomVisibility();
+    updateAllocationSummaries();
+  }
+
+  // Mirror RoomLayoutGenerator: fixed-count allocations first, then
+  // largest-remainder distribution of ratios across the remaining slots.
+  function calculateAllocationEstimate(definitions, cellCount) {
+    if (!Number.isInteger(cellCount) || cellCount < 24) {
+      return { error: "보드 칸 수를 확인하세요.", counts: [] };
+    }
+    const assignable = cellCount - 1; // START is never assigned an instruction.
+    const counts = Array(definitions.length).fill(0);
+    let fixedTotal = 0;
+    let ratioTotal = 0;
+    definitions.forEach((item, index) => {
+      if (!item.enabled) return;
+      if (!Number.isFinite(item.value) || item.value < 0) return;
+      if (item.mode === "count") {
+        counts[index] = Math.round(item.value);
+        fixedTotal += counts[index];
+      } else if (item.mode === "ratio") {
+        ratioTotal += item.value;
+      }
+    });
+    if (fixedTotal > assignable) {
+      return { error: "고정 수량이 배치 가능한 칸 수를 초과했습니다.", counts };
+    }
+    if (ratioTotal > 100.000001) {
+      return { error: "비율의 합계가 100%를 초과했습니다.", counts };
+    }
+    const ratioBase = assignable - fixedTotal;
+    const ratioTarget = Math.min(ratioBase, Math.round(ratioBase * ratioTotal / 100));
+    const fractions = [];
+    let assigned = 0;
+    definitions.forEach((item, index) => {
+      if (!item.enabled || item.mode !== "ratio") return;
+      const exact = ratioBase * Math.max(0, item.value) / 100;
+      const whole = Math.floor(exact);
+      counts[index] = whole;
+      assigned += whole;
+      fractions.push({ index, remainder: exact - whole });
+    });
+    fractions.sort((left, right) => right.remainder - left.remainder || left.index - right.index);
+    for (let extra = 0; extra < Math.max(0, ratioTarget - assigned) && extra < fractions.length; extra++) {
+      counts[fractions[extra].index] += 1;
+    }
+    return { counts, assignable, fixedTotal, ratioBase, cellCount };
+  }
+
+  function selectedBoardCellCount() {
+    if (sizingMode.value === "cellCount") {
+      const count = Number(form.elements.namedItem("cellCount").value);
+      return Number.isInteger(count) && count >= 24 && count <= 220 && count % 2 === 0
+        ? count : NaN;
+    }
+    const columns = Number(form.elements.namedItem("columns").value);
+    const rows = Number(form.elements.namedItem("rows").value);
+    return Number.isInteger(columns) && Number.isInteger(rows)
+      && columns >= 8 && columns <= 64 && rows >= 6 && rows <= 48
+      ? 2 * columns + 2 * (rows - 2) : NaN;
+  }
+
+  function updateAllocationSummaries() {
+    if (!instructionRows || !sizingMode || !form) return;
+    const rows = Array.from(instructionRows.querySelectorAll(".board-room-instruction-row"));
+    const definitions = rows.map((row) => ({
+      enabled: row.dataset.enabled !== "false",
+      mode: row.querySelector('[data-field="allocationMode"]')?.value,
+      value: Number(row.querySelector('[data-field="allocationValue"]')?.value)
+    }));
+    const estimate = calculateAllocationEstimate(definitions, selectedBoardCellCount());
+    rows.forEach((row, index) => {
+      const output = row.querySelector("[data-allocation-summary]");
+      if (!output) return;
+      const item = definitions[index];
+      output.dataset.invalid = estimate.error ? "true" : "false";
+      if (!item.enabled) {
+        output.textContent = "비활성 효과 · 배치되지 않음";
+      } else if (estimate.error) {
+        output.textContent = estimate.error;
+      } else if (item.mode === "ratio") {
+        output.textContent = "예상 " + estimate.counts[index] + "칸 · 비율 적용 대상 "
+          + estimate.ratioBase + "칸 (START와 고정 수량 제외, 소수점 배분 반영)";
+      } else {
+        output.textContent = "고정 " + estimate.counts[index] + "칸 · 전체 "
+          + estimate.assignable + "개 배치 가능 칸 (START 제외)";
+      }
+    });
   }
 
   function syncAllInstructionRows() {
     instructionRows.querySelectorAll(".board-room-instruction-row").forEach(syncInstructionRow);
+    syncRandomVisibility();
+    updateAllocationSummaries();
   }
 
   function syncBoardSizing() {
     const cellMode = sizingMode.value === "cellCount";
     dimensionsFields.hidden = cellMode;
     cellCountField.hidden = !cellMode;
+    updateAllocationSummaries();
   }
 
   function syncMovement() {
@@ -1100,9 +1252,9 @@
       .map(collectInstruction);
 
     const customPool = [];
-    if (randomPoolMode.value === "custom") {
+    if (randomCellEnabled() && randomPoolMode.value === "custom") {
       instructionRows.querySelectorAll(".board-room-instruction-row").forEach((row) => {
-        if (row.dataset.enabled === "false") return;
+        if (row.dataset.enabled === "false" || row.dataset.randomPlaceholder === "true") return;
         if (!row.querySelector('[data-field="poolEnabled"]').checked) return;
         customPool.push({
           instructionId: row.querySelector('[data-field="instructionId"]').value.trim(),
@@ -1149,7 +1301,7 @@
       instructions,
       randomPool: {
         mode: randomPoolMode.value,
-        entries: randomPoolMode.value === "custom" ? customPool : [],
+        entries: randomCellEnabled() && randomPoolMode.value === "custom" ? customPool : [],
         allowSameInstruction: null
       }
     };
@@ -1179,92 +1331,44 @@
   }
 
   function renderLiveStatuses(snapshot) {
-    liveSummary.innerHTML = "";
+    // Participant rows own both the status and profile; no duplicate cards.
     const players = snapshot?.config?.players || [];
-    players.forEach((player, index) => {
+    playerRows().forEach((row, index) => {
+      const player = players[index];
+      resetPlayerPresentation(row);
+      if (!player) return;
       const [label, tone] = liveText(player.live?.status);
-      const card = document.createElement("article");
-      card.className = "board-room-live-card " + tone;
+      const inline = row.querySelector("[data-live-status]");
       const detail = player.live?.status === "LIVE"
         ? (player.live?.title || "방송 중")
         : (player.live?.error || "현재 방송을 찾지 못했습니다.");
-      const profileImageUrl = normalizeProfileImageUrl(player.profileImageUrl);
-      const avatarFallback = escapeAttribute(
-        String(player.displayName || player.soopId || "?").slice(0, 1)
-      );
-      const avatarMarkup = profileImageUrl
-        ? `<span class="board-room-live-avatar-shell"><img class="board-room-live-avatar" src="${escapeAttribute(profileImageUrl)}" alt="" referrerpolicy="no-referrer" /><span class="board-room-live-avatar-fallback">${avatarFallback}</span></span>`
-        : `<span class="board-room-live-avatar-fallback">${avatarFallback}</span>`;
-      card.innerHTML = `
-        <div class="board-room-live-identity">
-          ${avatarMarkup}
-          <div>
-            <strong>P${index + 1} ${escapeAttribute(player.displayName || player.soopId)}</strong>
-            <span>${escapeAttribute(player.soopId)}</span>
-          </div>
-        </div>
-        <div class="board-room-live-state">
-          <b>${label}</b>
-          <span>${escapeAttribute(detail)}</span>
-        </div>
-      `;
-      const profileImage = card.querySelector(".board-room-live-avatar");
-      const profileFallback = card.querySelector(".board-room-live-avatar-shell .board-room-live-avatar-fallback");
-      if (profileImage && profileFallback) {
-        profileImage.addEventListener("load", () => {
-          profileFallback.hidden = true;
-        }, { once: true });
-        profileImage.addEventListener("error", () => {
-          profileImage.hidden = true;
-          profileFallback.hidden = false;
-        }, { once: true });
-      }
-
-      liveSummary.append(card);
-
-      const row = playersRoot.querySelectorAll(".board-room-player-row")[index];
-      const inline = row?.querySelector("[data-live-status]");
       if (inline) {
         inline.textContent = label;
         inline.dataset.status = tone;
+        inline.title = detail;
+      }
+      const profileUrl = normalizeProfileImageUrl(player.profileImageUrl);
+      const fallback = row.querySelector(".board-room-live-avatar-fallback");
+      const image = row.querySelector(".board-room-live-avatar");
+      if (fallback) {
+        fallback.textContent = Array.from(
+          String(player.displayName || player.soopId || "?")
+        )[0] || "?";
+      }
+      if (image && profileUrl) {
+        image.onload = () => {
+          if (image.getAttribute("src") === profileUrl) {
+            image.hidden = false;
+            if (fallback) fallback.hidden = true;
+          }
+        };
+        image.onerror = () => {
+          image.hidden = true;
+          if (fallback) fallback.hidden = false;
+        };
+        image.src = profileUrl;
       }
     });
-  }
-
-  function clientBaseUrl() {
-    const raw = bridgeOverlayUrl?.value?.trim();
-    if (raw) {
-      try {
-        const parsed = new URL(raw, window.location.href);
-        return parsed.origin;
-      } catch (_) {
-      }
-    }
-    return window.location.origin;
-  }
-
-  function currentWebSocketUrl() {
-    const raw = bridgeOverlayUrl?.value?.trim();
-    if (raw) {
-      try {
-        const parsed = new URL(raw, window.location.href);
-        const configured = parsed.searchParams.get("ws");
-        if (configured) return configured;
-      } catch (_) {
-      }
-    }
-    const scheme = window.location.protocol === "https:" ? "wss" : "ws";
-    return scheme + "://" + window.location.hostname + ":17831";
-  }
-
-  function roomOverlayUrl(snapshot) {
-    const style = snapshot?.config?.board?.layoutStyle || "rounded";
-    const page = style === "rect"
-      ? "/games/board/rect.html"
-      : "/games/board/index.html";
-    const url = new URL(page, clientBaseUrl());
-    url.searchParams.set("roomCode", snapshot.roomId);
-    return url.toString();
   }
 
   function previewUrl(snapshot) {
@@ -1277,38 +1381,12 @@
     return url.toString();
   }
 
-  function syncExtensionAvailability() {
-    if (!extendButton || !extendControl || !extendMinutes) return;
-
-    const lifecycle = currentRoom?.lifecycle || {};
-    const terminated = lifecycle.state === "TERMINATED";
-    const expiresAt = lifecycle.expiresAt ? new Date(lifecycle.expiresAt) : null;
-    const remainingMs = expiresAt && !Number.isNaN(expiresAt.getTime())
-      ? expiresAt.getTime() - Date.now()
-      : Number.POSITIVE_INFINITY;
-
-    const withinFinalHour = remainingMs > 0 && remainingMs <= 60 * 60 * 1000;
-    extendControl.hidden = terminated;
-    extendButton.hidden = terminated;
-    extendButton.disabled = terminated || !withinFinalHour;
-
-    const requested = Number(extendMinutes.value);
-    if (!Number.isFinite(requested) || requested < 1) extendMinutes.value = "1";
-    if (requested > 120) extendMinutes.value = "120";
-
-    if (terminated) {
-      extendButton.title = "종료된 룸은 연장할 수 없습니다.";
-    } else if (!withinFinalHour) {
-      extendButton.title = "룸 종료까지 60분 이하로 남았을 때 연장할 수 있습니다.";
-    } else {
-      extendButton.title = "1회 최대 120분까지 연장할 수 있습니다.";
-    }
-  }
-
   function renderRoom(snapshot) {
     currentRoom = snapshot;
     renderLiveStatuses(snapshot);
     previewPanel.hidden = false;
+    if (previewPlaceholder) previewPlaceholder.hidden = true;
+    if (previewFrame) previewFrame.hidden = false;
     previewFrame.src = previewUrl(snapshot);
 
     const board = snapshot.config?.board;
@@ -1329,13 +1407,10 @@
       ", 유지 " + (lifecycle.retentionMinutes || 240) + "분" +
       (lifecycle.queuedDonations ? ", 대기 후원 " + lifecycle.queuedDonations + "건" : "");
 
-    rerollButton.disabled = ready || terminated;
-    commitButton.disabled = ready || terminated;
-    commitButton.textContent = ready ? "배치 확정됨" : (terminated ? "종료된 룸" : "이 배치로 확정");
-
-    pauseButton.hidden = lifecycleState !== "ACTIVE";
-    resumeButton.hidden = lifecycleState !== "PAUSED";
-    terminateButton.hidden = terminated;
+    setButtonText(createButton, "[data-placement-label]", ready ? "배치 확정됨" : "다시 배치");
+    createButton.disabled = layoutBusy || ready || terminated;
+    commitButton.disabled = layoutBusy || ready || terminated;
+    setButtonText(commitButton, "[data-commit-label]", ready ? "배치 확정됨" : "이 배치로 확정");
 
     const pauseModeField = form.elements.namedItem("pauseDonationMode");
     if (pauseModeField && lifecycle.pauseDonationMode) {
@@ -1353,72 +1428,66 @@
       }
     }
 
-    if (overlayRow && overlayUrl) {
-      const overlayAvailable = ready && !terminated;
-      overlayRow.hidden = !overlayAvailable;
-      overlayUrl.value = overlayAvailable ? roomOverlayUrl(snapshot) : "";
-    }
-
-    syncExtensionAvailability();
+  
   }
 
-  async function createRoom(event) {
+  // One button starts the first real DRAFT and rerolls the existing DRAFT.
+  // A settings change invalidates the DRAFT and makes the next click create anew.
+  async function placeBoard(event) {
     event.preventDefault();
+    if (layoutBusy || currentRoom?.status === "READY") return;
+    const revision = settingsRevision;
+    const existing = currentRoom;
+    layoutBusy = true;
     createButton.disabled = true;
-    showResult("룸 설정 검증 및 참가자 방송 상태 확인 중…", "working");
+    commitButton.disabled = true;
+    showResult(
+      existing ? "보드 지시문을 다시 배치하는 중…" : "룸 설정 및 참가자 확인 후 배치하는 중…",
+      "working"
+    );
     try {
-      const snapshot = await fetchJson("/api/board/rooms", {
-        method: "POST",
-        body: JSON.stringify(collectRequest())
-      });
+      const snapshot = existing
+        ? await fetchJson(
+          "/api/board/rooms/" + encodeURIComponent(existing.roomId) + "/preview/reroll",
+          { method: "POST" }
+        )
+        : await fetchJson("/api/board/rooms", {
+          method: "POST",
+          body: JSON.stringify(collectRequest())
+        });
+      if (revision !== settingsRevision) {
+        showEmptyPreview();
+        showResult("배치 중 설정이 변경됐습니다. 배치를 다시 실행하세요.", "working");
+        return;
+      }
       renderRoom(snapshot);
-      try {
-        saveLastCreatedRoomCookie();
-        showResult(
-          "룸을 생성했습니다. 입력한 참가자/보드/지시문 설정을 쿠키에 기억했습니다.",
-          "success"
-        );
-      } catch (cookieError) {
-        console.warn(
-          "[board-room-admin] last room cookie save failed",
-          cookieError
-        );
-        showResult(
-          "룸을 생성했습니다. 다만 마지막 룸 설정을 쿠키에 저장하지 못했습니다: "
-            + cookieError.message,
-          "working"
-        );
+      if (!existing) {
+        try {
+          saveLastCreatedRoomCookie();
+          showResult("실제 룸 보드를 배치했습니다. 확인 후 확정하세요.", "success");
+        } catch (cookieError) {
+          console.warn("[board-room-admin] last room cookie save failed", cookieError);
+          showResult("배치했습니다. 설정 쿠키 저장 실패: " + cookieError.message, "working");
+        }
+      } else {
+        showResult("새 배치를 생성했습니다. 확인 후 확정하세요.", "success");
       }
     } catch (error) {
-      showResult("룸 생성 실패: " + error.message, "error-text");
+      if (revision === settingsRevision) {
+        showResult((existing ? "재배치 실패: " : "배치 실패: ") + error.message, "error-text");
+      }
     } finally {
-      createButton.disabled = false;
-    }
-  }
-
-  async function rerollPreview() {
-    if (!currentRoom) return;
-    rerollButton.disabled = true;
-    showResult("보드 지시문을 다시 배치하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/preview/reroll",
-        { method: "POST" }
-      );
-      renderRoom(snapshot);
-      showResult("새 배치를 생성했습니다. START는 일반 칸으로 고정되어 있습니다.", "success");
-    } catch (error) {
-      showResult("재배치 실패: " + error.message, "error-text");
-    } finally {
-      if (currentRoom?.status !== "READY") rerollButton.disabled = false;
+      layoutBusy = false;
+      createButton.disabled = currentRoom?.status === "READY";
+      commitButton.disabled = !currentRoom || currentRoom.status !== "DRAFT";
     }
   }
 
   async function commitPreview() {
     if (!currentRoom) return;
-    rerollButton.disabled = true;
+    createButton.disabled = true;
     commitButton.disabled = true;
-    showResult("현재 프리뷰를 룸 보드로 확정하는 중…", "working");
+    showResult("현재 배치를 룸 보드로 확정하는 중…", "working");
     try {
       const snapshot = await fetchJson(
         "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/preview/commit",
@@ -1431,104 +1500,8 @@
       window.location.assign(operationUrl.toString());
     } catch (error) {
       showResult("배치 확정 실패: " + error.message, "error-text");
-      rerollButton.disabled = false;
-      commitButton.disabled = false;
-    }
-  }
-
-  async function pauseRoom() {
-    if (!currentRoom) return;
-    pauseButton.disabled = true;
-    showResult("룸을 일시정지하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/pause",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            donationMode: form.elements.namedItem("pauseDonationMode").value || "QUEUE",
-            graceSeconds: Number(form.elements.namedItem("pauseGraceSeconds").value) || 0
-          })
-        }
-      );
-      renderRoom(snapshot);
-      const graceSeconds = Number(snapshot.lifecycle?.pauseGraceSeconds) || 0;
-      showResult(
-        snapshot.lifecycle?.pauseDonationMode === "IGNORE"
-          ? "일시정지했습니다. 이후 후원은 즉시 무시됩니다."
-          : "일시정지했습니다. " + graceSeconds + "초 동안 들어온 후원만 큐에 저장하고 이후 후원은 무시합니다.",
-        "success"
-      );
-    } catch (error) {
-      showResult("일시정지 실패: " + error.message, "error-text");
-    } finally {
-      pauseButton.disabled = false;
-    }
-  }
-
-  async function resumeRoom() {
-    if (!currentRoom) return;
-    resumeButton.disabled = true;
-    showResult("대기 후원을 순서대로 처리하며 재개하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/resume",
-        { method: "POST" }
-      );
-      renderRoom(snapshot);
-      showResult("룸을 재개했습니다. 대기 후원은 수신 순서대로 처리됩니다.", "success");
-    } catch (error) {
-      showResult("재개 실패: " + error.message, "error-text");
-    } finally {
-      resumeButton.disabled = false;
-    }
-  }
-
-  async function extendRoomLifetime() {
-    if (!currentRoom || !extendButton || !extendMinutes) return;
-
-    const minutes = Number(extendMinutes.value);
-    if (!Number.isInteger(minutes) || minutes < 1 || minutes > 120) {
-      showResult("연장 시간은 1~120분으로 입력하세요.", "error-text");
-      return;
-    }
-
-    extendButton.disabled = true;
-    showResult("룸 종료 시간을 연장하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/extend",
-        {
-          method: "POST",
-          body: JSON.stringify({ minutes })
-        }
-      );
-      renderRoom(snapshot);
-      showResult(
-        "룸 종료 시간을 " + minutes + "분 연장했습니다. 누적 유지시간에는 8시간 상한을 적용하지 않습니다.",
-        "success"
-      );
-    } catch (error) {
-      showResult("시간 연장 실패: " + error.message, "error-text");
-      syncExtensionAvailability();
-    }
-  }
-
-  async function terminateRoom() {
-    if (!currentRoom) return;
-    terminateButton.disabled = true;
-    showResult("룸을 종료하는 중…", "working");
-    try {
-      const snapshot = await fetchJson(
-        "/api/board/rooms/" + encodeURIComponent(currentRoom.roomId) + "/terminate",
-        { method: "POST" }
-      );
-      renderRoom(snapshot);
-      showResult("룸을 TERMINATED 처리했습니다.", "success");
-    } catch (error) {
-      showResult("룸 종료 실패: " + error.message, "error-text");
-    } finally {
-      terminateButton.disabled = false;
+      createButton.disabled = currentRoom?.status === "READY";
+      commitButton.disabled = currentRoom?.status !== "DRAFT";
     }
   }
 
@@ -1544,13 +1517,17 @@
   addPlayerButton?.addEventListener("click", () => {
     const p1Value = p1BalloonInput()?.value || "100";
     addPlayerRow({ balloonTrigger: p1Value });
+    settingsChanged();
   });
 
   playersRoot.addEventListener("click", (event) => {
     const button = event.target.closest("[data-remove-player]");
     if (!button) return;
     const row = button.closest(".board-room-player-row");
-    if (row) removePlayerRow(row);
+    if (row) {
+      removePlayerRow(row);
+      settingsChanged();
+    }
   });
 
   playersRoot.addEventListener("change", (event) => {
@@ -1570,6 +1547,26 @@
       syncSharedBalloonMode();
     }
   });
+  function settingsChanged() {
+    settingsRevision += 1;
+    if (!currentRoom || currentRoom.status === "READY") return;
+    playerRows().forEach(resetPlayerPresentation);
+    showEmptyPreview();
+    showResult("설정이 변경됐습니다. 배치를 다시 실행하세요.", "working");
+  }
+  function invalidateDraftOnEdit(event) {
+    if (!event.target.matches("input, select, textarea")) return;
+    // Preset name/selection does not affect the board or request.
+    if (["boardRoomPresetName", "boardRoomPresetSelect"].includes(event.target.id)) return;
+    if (["soopId", "displayName"].includes(event.target.dataset.field)) {
+      resetPlayerPresentation(event.target.closest(".board-room-player-row"));
+    }
+    settingsChanged();
+  }
+  form.addEventListener("input", invalidateDraftOnEdit);
+  form.addEventListener("change", invalidateDraftOnEdit);
+  form.addEventListener("input", updateAllocationSummaries);
+  form.addEventListener("change", updateAllocationSummaries);
   sizingMode.addEventListener("change", syncBoardSizing);
   diceEnabled.addEventListener("change", syncMovement);
   yutEnabled.addEventListener("change", syncMovement);
@@ -1578,7 +1575,10 @@
 
   instructionRows.addEventListener("change", (event) => {
     const row = event.target.closest(".board-room-instruction-row");
-    if (row) syncInstructionRow(row);
+    if (row) {
+      syncInstructionRow(row);
+      syncAllInstructionRows();
+    }
   });
   instructionRows.addEventListener("input", (event) => {
     const row = event.target.closest(".board-room-instruction-row");
@@ -1591,6 +1591,7 @@
       return;
     }
     syncInstructionRow(row);
+    if (event.target.dataset.field === "poolEnabled") syncAllInstructionRows();
   });
   instructionRows.addEventListener("click", (event) => {
     const button = event.target.closest('[data-action="remove"]');
@@ -1599,45 +1600,25 @@
     if (!row) return;
     const next = row.nextElementSibling || row.previousElementSibling;
     row.remove();
+    settingsChanged();
     selectedInstructionRow = null;
     rebuildInstructionList();
     if (next?.classList?.contains("board-room-instruction-row") && next.isConnected) {
       selectInstruction(next);
     }
+    updateAllocationSummaries();
   });
 
   document.querySelectorAll("[data-add-board-instruction]").forEach((button) => {
     button.addEventListener("click", () => {
       if (button.dataset.addBoardInstruction !== "custom") return;
       addInstruction("custom");
+      settingsChanged();
     });
   });
 
-  form.addEventListener("submit", createRoom);
-  rerollButton.addEventListener("click", rerollPreview);
+  form.addEventListener("submit", placeBoard);
   commitButton.addEventListener("click", commitPreview);
-  extendButton?.addEventListener("click", extendRoomLifetime);
-  extendMinutes?.addEventListener("input", syncExtensionAvailability);
-  pauseButton?.addEventListener("click", pauseRoom);
-  resumeButton?.addEventListener("click", resumeRoom);
-  terminateButton?.addEventListener("click", terminateRoom);
-
-  copyOverlayButton?.addEventListener("click", async () => {
-    if (!overlayUrl?.value) return;
-    try {
-      await navigator.clipboard.writeText(overlayUrl.value);
-      showResult("보드게임 OBS 주소를 복사했습니다.", "success");
-    } catch (_) {
-      overlayUrl.select();
-      document.execCommand("copy");
-      showResult("보드게임 OBS 주소를 복사했습니다.", "success");
-    }
-  });
-
-  openOverlayButton?.addEventListener("click", () => {
-    if (!overlayUrl?.value) return;
-    window.open(overlayUrl.value, "_blank", "noopener,noreferrer");
-  });
 
   refreshPresetSelect();
   renderPlayers();
@@ -1648,6 +1629,6 @@
   syncAllInstructionRows();
   rebuildInstructionList();
   restoreLastCreatedRoomCookie();
-  syncExtensionAvailability();
-  window.setInterval(syncExtensionAvailability, 1000);
+  showEmptyPreview();
+  updateAllocationSummaries();
 })();

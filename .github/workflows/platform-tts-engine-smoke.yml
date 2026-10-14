@@ -1,0 +1,85 @@
+name: Platform TTS Real Engine Smoke (no release)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/src/main/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
+      - "server/src/test/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
+      - "server/pom.xml"
+      - ".github/workflows/platform-tts-engine-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-tts-engine-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  local-native-engines:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Installs a real voice engine in the ephemeral CI runner only.
+      # The platform never installs engines/models for end users.
+      - name: Install local eSpeak NG test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends espeak-ng
+          command -v espeak-ng
+          espeak-ng --version
+
+      - name: Build server and probe classes
+        working-directory: server
+        run: mvn --batch-mode --no-transfer-progress -DskipTests package
+
+      - name: Synthesize and validate real eSpeak NG WAV
+        working-directory: server
+        run: |
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsRealEngineSmoke espeak-ng
+
+      - name: Install Piper test engine (runner only)
+        run: |
+          python3 -m venv /tmp/bgp-tts-piper-env
+          /tmp/bgp-tts-piper-env/bin/python -m pip install --disable-pip-version-check 'piper-tts==1.8.0'
+          /tmp/bgp-tts-piper-env/bin/piper --help >/dev/null
+
+      - name: Download checksum-verified MIT voice test fixture (runner only)
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/bgp-tts-piper-voices
+          root="https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/lessac/low"
+          curl -fL --retry 3 --connect-timeout 30 \
+            "$root/en_US-lessac-low.onnx" -o /tmp/bgp-tts-piper-voices/en_US-lessac-low.onnx
+          printf '%s  %s\n' \
+            f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375 \
+            /tmp/bgp-tts-piper-voices/en_US-lessac-low.onnx | sha256sum -c -
+          curl -fL --retry 3 --connect-timeout 30 \
+            "$root/en_US-lessac-low.onnx.json" \
+            -o /tmp/bgp-tts-piper-voices/en_US-lessac-low.onnx.json
+
+      - name: Synthesize and validate real Piper neural WAV
+        working-directory: server
+        run: |
+          export PATH="/tmp/bgp-tts-piper-env/bin:$PATH"
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsRealEngineSmoke \
+            piper /tmp/bgp-tts-piper-voices
+
+      - name: Remove native fixture files
+        if: always()
+        run: rm -rf /tmp/bgp-tts-piper-voices /tmp/bgp-tts-piper-env

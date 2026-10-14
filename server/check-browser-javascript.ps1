@@ -7,6 +7,7 @@ Push-Location $RepoRoot
 try {
     $JavaScriptFiles = @(
         "web/admin/assets/platform-admin.js",
+        "web/admin/assets/tts-admin.js",
         "web/admin/assets/viewer-draw-number.js",
         "web/admin/assets/viewer-draw.js",
         "web/admin/assets/viewer-draw-map-engine.js",
@@ -41,9 +42,14 @@ try {
     }
 
     $NodeProbes = @(
+        "web/admin/assets/tts-admin-probe.js",
         "web/admin/assets/viewer-draw-map-engine-probe.js",
         "web/tools/viewer-draw/marble/browser-physics-adapter-probe.js",
-        "web/games/board/js/board-client-probe.js"
+        "web/admin/assets/board-room-placement-probe.js",
+        "web/admin/assets/board-room-allocation-probe.js",
+        "web/admin/assets/board-room-player-probe.js",
+        "web/games/board/js/board-client-probe.js",
+        "web/games/board/js/board-runtime-sync-probe.js"
     )
     foreach ($Probe in $NodeProbes) {
         node $Probe
