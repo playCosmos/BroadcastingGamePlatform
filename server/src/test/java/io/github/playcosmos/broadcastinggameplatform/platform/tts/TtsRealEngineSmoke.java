@@ -1,6 +1,7 @@
 package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 
 import java.util.List;
+import java.nio.file.Path;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -12,13 +13,19 @@ public final class TtsRealEngineSmoke {
     private TtsRealEngineSmoke() {}
 
     public static void main(String[] args) throws Exception {
-        if (args.length != 1) throw new IllegalArgumentException(
-            "expected espeak-ng or windows-sapi-optional");
+        if (args.length < 1) throw new IllegalArgumentException(
+            "expected espeak-ng, piper <model-dir>, or windows-sapi-optional");
         final TtsService.TtsEngine engine;
         final boolean required;
         switch (args[0]) {
             case "espeak-ng" -> {
                 engine = new EspeakNgEngine();
+                required = true;
+            }
+            case "piper" -> {
+                if (args.length != 2) throw new IllegalArgumentException(
+                    "piper requires trusted test model directory");
+                engine = new PiperEngine(Path.of(args[1]));
                 required = true;
             }
             case "windows-sapi-optional" -> {
