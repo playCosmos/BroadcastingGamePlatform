@@ -12,6 +12,8 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.S
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomModels;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -75,6 +77,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final ViewerDrawService viewerDraw;
     private final DrawingSyncService drawingSync;
     private final DrawingGuessGameService drawingGame;
+    private final TtsService tts;
     private final AtomicReference<String> adminBootstrapToken;
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
@@ -224,6 +227,23 @@ public final class GameClientHttpServer implements AutoCloseable {
         DrawingSyncService drawingSync,
         DrawingGuessGameService drawingGame
     ) throws IOException {
+        this(config, workingDirectory, rooms, runtime, adminAuthStore,
+            platformEvents, providers, viewerDraw, drawingSync, drawingGame, null);
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config,
+        Path workingDirectory,
+        RoomService rooms,
+        BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore,
+        PlatformEventBus platformEvents,
+        ProviderRegistry providers,
+        ViewerDrawService viewerDraw,
+        DrawingSyncService drawingSync,
+        DrawingGuessGameService drawingGame,
+        TtsService tts
+    ) throws IOException {
         var normalized = config.normalized();
         this.config = normalized;
         this.webRoot = resolveWebRoot(
@@ -238,6 +258,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.viewerDraw = viewerDraw;
         this.drawingSync = drawingSync;
         this.drawingGame = drawingGame;
+        this.tts = tts;
         this.adminBootstrapToken = new AtomicReference<>(
             randomToken(24)
         );
@@ -264,6 +285,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         server.createContext("/api/v1/platform", this::platformInfo);
         server.createContext("/api/v1/providers", this::platformProviders);
         server.createContext("/api/v1/events/recent", this::recentPlatformEvents);
+        server.createContext("/api/v1/tts", this::ttsApi);
         server.createContext("/api/v1/tools/viewer-draw", this::viewerDrawApi);
         server.createContext(
             "/api/v1/games/drawing-guess/prototype",
@@ -1542,6 +1564,137 @@ public final class GameClientHttpServer implements AutoCloseable {
         ));
     }
 
+    /**
+     * Authenticated speech preview API, not yet connected to any game,
+     * provider event, or OBS client.
+     */
+    private void ttsApi(HttpExchange exchange) throws IOException {
+        if (!isAdminSession(exchange)) {
+            sendJson(exchange, 401, Map.of(
+                "error", "administrator authentication required"
+            ));
+            return;
+        }
+        String method = exchange.getRequestMethod();
+        // Unlike generic administrator routes, speech mutators must reject
+        // origin-less requests as well as explicitly cross-origin requests.
+        // A cookie alone must not authorize synthesis or default changes.
+        if (!"GET".equalsIgnoreCase(method)
+            && !"HEAD".equalsIgnoreCase(method)
+            && !"OPTIONS".equalsIgnoreCase(method)) {
+            String origin = exchange.getRequestHeaders().getFirst("Origin");
+            if (origin == null || origin.isBlank()) {
+                sendJson(exchange, 403, Map.of(
+                    "error", "TTS mutation requires a trusted origin"
+                ));
+                return;
+            }
+        }
+        if (!requireTrustedAdminMutationOrigin(exchange)) return;
+        if (tts == null) {
+            sendJson(exchange, 503, Map.of("error", "TTS unavailable"));
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        try {
+            if ("/api/v1/tts/voices".equals(path) && "GET".equals(method)) {
+                sendJson(exchange, 200, Map.of("voices",
+                    "1".equals(queryParameter(
+                        exchange.getRequestURI().getRawQuery(), "refresh"
+                    )) ? tts.refreshVoices() : tts.voices()));
+                return;
+            }
+            if ("/api/v1/tts/settings".equals(path) && "GET".equals(method)) {
+                sendJson(exchange, 200, tts.settings());
+                return;
+            }
+            if ("/api/v1/tts/settings".equals(path) && "PUT".equals(method)) {
+                byte[] json = exchange.getRequestBody().readNBytes(4097);
+                if (json.length > 4096) {
+                    sendJson(exchange, 413, Map.of("error", "request too large"));
+                    return;
+                }
+                var requested = GSON.fromJson(
+                    new String(json, StandardCharsets.UTF_8),
+                    TtsPreferencesStore.Preferences.class
+                );
+                if (requested == null) {
+                    sendJson(exchange, 400, Map.of("error", "settings required"));
+                    return;
+                }
+                sendJson(exchange, 200, tts.saveSettings(requested));
+                return;
+            }
+            if ("/api/v1/tts/status".equals(path) && "GET".equals(method)) {
+                sendJson(exchange, 200, tts.status());
+                return;
+            }
+            if ("/api/v1/tts/queue".equals(path) && "DELETE".equals(method)) {
+                sendJson(exchange, 200, Map.of("cancelled", tts.clearQueued()));
+                return;
+            }
+            if ("/api/v1/tts/speak".equals(path) && "POST".equals(method)) {
+                byte[] json = exchange.getRequestBody().readNBytes(8193);
+                if (json.length > 8192) {
+                    sendJson(exchange, 413, Map.of("error", "request too large"));
+                    return;
+                }
+                var request = GSON.fromJson(
+                    new String(json, StandardCharsets.UTF_8),
+                    TtsService.Request.class
+                );
+                if (request == null) {
+                    sendJson(exchange, 400, Map.of("error", "request required"));
+                    return;
+                }
+                sendJson(exchange, 202, tts.enqueue(request));
+                return;
+            }
+            String prefix = "/api/v1/tts/jobs/";
+            if (path != null && path.startsWith(prefix) && "GET".equals(method)) {
+                String id = path.substring(prefix.length());
+                boolean audio = id.endsWith("/audio");
+                if (audio) id = id.substring(0, id.length() - 6);
+                if (!id.matches("[0-9a-f-]{36}")) {
+                    sendJson(exchange, 404, Map.of("error", "job not found"));
+                    return;
+                }
+                TtsService.Job job = tts.job(id);
+                if (job == null) {
+                    sendJson(exchange, 404, Map.of("error", "job not found"));
+                    return;
+                }
+                if (!audio) {
+                    sendJson(exchange, 200, job);
+                    return;
+                }
+                byte[] wav = tts.audio(id);
+                if (wav == null) {
+                    sendJson(exchange, 409, Map.of("error", "audio not ready"));
+                    return;
+                }
+                applySecurityHeaders(exchange);
+                exchange.getResponseHeaders().set("Content-Type", "audio/wav");
+                exchange.getResponseHeaders().set("Cache-Control", "no-store");
+                exchange.sendResponseHeaders(200, wav.length);
+                try (var out = exchange.getResponseBody()) {
+                    out.write(wav);
+                }
+                return;
+            }
+            sendJson(exchange, 404, Map.of("error", "TTS route not found"));
+        } catch (TtsService.CapacityException error) {
+            sendJson(exchange, 429, Map.of("error", error.getMessage()));
+        } catch (IllegalArgumentException error) {
+            sendJson(exchange, 400, Map.of(
+                "error", "invalid TTS request: " + error.getMessage()
+            ));
+        } catch (Exception error) {
+            System.err.println("[tts-api] " + error.getClass().getSimpleName());
+            sendJson(exchange, 500, Map.of("error", "TTS request failed"));
+        }
+    }
+
     private void proxyAdminState(HttpExchange exchange) throws IOException {
         if ("OPTIONS".equalsIgnoreCase(exchange.getRequestMethod())) {
             exchange.sendResponseHeaders(204, -1);
@@ -2445,7 +2598,8 @@ public final class GameClientHttpServer implements AutoCloseable {
             || relative.startsWith("assets/")
             || relative.startsWith("games/board/")
             || relative.startsWith("games/drawing-guess/")
-            || relative.startsWith("tools/viewer-draw/");
+            || relative.startsWith("tools/viewer-draw/")
+            || relative.startsWith("tts/");
     }
 
     private boolean requireTrustedAdminMutationOrigin(
