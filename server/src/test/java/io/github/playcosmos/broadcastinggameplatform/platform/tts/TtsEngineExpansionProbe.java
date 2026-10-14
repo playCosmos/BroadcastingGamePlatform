@@ -53,6 +53,33 @@ public final class TtsEngineExpansionProbe {
                 && commandInput.toString().equals(
                     speech.get(speech.indexOf("-f") + 1)),
             "eSpeak must read the controlled temporary input file");
+        // Windows runners and Server Core can have no enabled desktop
+        // SAPI voices. Zero voices must not raise a JSON syntax failure.
+        require(WindowsSapiEngine.parseVoiceCatalog(new byte[0]).isEmpty(),
+            "missing Windows voice data should be an empty catalog");
+        require(WindowsSapiEngine.parseVoiceCatalog(
+            "[]".getBytes(StandardCharsets.UTF_8)).isEmpty(),
+            "explicitly empty SAPI JSON catalog should be valid");
+        String sapiJson = """
+            [{"name":"Microsoft Heami Desktop","language":"ko-KR","gender":"Female"},
+             {"name":"Microsoft David Desktop","language":"en-US","gender":"Male"}]
+            """;
+        var sapiVoices = WindowsSapiEngine.parseVoiceCatalog(
+            sapiJson.getBytes(StandardCharsets.UTF_8));
+        require(sapiVoices.size() == 2
+            && sapiVoices.getFirst().id().equals(
+                "windows-sapi/Microsoft Heami Desktop")
+            && "female".equals(sapiVoices.getFirst().gender())
+            && "ko-KR".equals(sapiVoices.getFirst().language()),
+            "SAPI catalog should preserve native voice IDs and language metadata");
+        boolean badCatalog = false;
+        try {
+            WindowsSapiEngine.parseVoiceCatalog(
+                "not a JSON catalog".getBytes(StandardCharsets.UTF_8));
+        } catch (RuntimeException expected) {
+            badCatalog = true;
+        }
+        require(badCatalog, "malformed SAPI stdout must not become a voice list");
         Path temporary = Files.createTempDirectory("tts-preference-probe-");
         Path settings = temporary.resolve("voice.json");
         try {
