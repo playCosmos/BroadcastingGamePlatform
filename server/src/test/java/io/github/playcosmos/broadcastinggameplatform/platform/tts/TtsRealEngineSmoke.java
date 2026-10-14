@@ -35,15 +35,9 @@ public final class TtsRealEngineSmoke {
             default -> throw new IllegalArgumentException("unknown engine smoke mode");
         }
 
-        List<TtsService.Voice> catalog;
-        try {
-            catalog = engine.voices();
-        } catch (Exception | LinkageError unavailable) {
-            if (required) throw unavailable;
-            System.out.println("TTS_ENGINE_SMOKE_SKIPPED " + engine.id()
-                + " (" + unavailable.getClass().getSimpleName() + ")");
-            return;
-        }
+        // A broken JSON parser or PowerShell failure is a real regression,
+        // not an acceptable "no voices installed" skip.
+        List<TtsService.Voice> catalog = engine.voices();
         if (catalog.isEmpty()) {
             if (required) throw new IllegalStateException(
                 "expected installed " + engine.id() + " voices");
