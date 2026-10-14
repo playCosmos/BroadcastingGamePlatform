@@ -336,10 +336,18 @@ public final class TtsService implements AutoCloseable {
             long end = cursor + 8L + size;
             if (end > wav.length) return false;
             if (tag(wav, pos, "fmt ")) {
-                if (size < 16) return false;
+                // A RIFF frame with a zero-channel/zero-rate format is not
+                // playable even if all chunk boundaries are technically valid.
+                if (size < 16
+                    || (wav[pos + 10] & 255 | (wav[pos + 11] & 255) << 8) == 0
+                    || uint32(wav, pos + 12) == 0
+                    || uint32(wav, pos + 16) == 0) return false;
                 format = true;
             }
-            if (tag(wav, pos, "data")) data = true;
+            if (tag(wav, pos, "data")) {
+                if (size == 0) return false;
+                data = true;
+            }
             cursor = end + (size & 1L);
         }
         return cursor == wav.length && format && data;
