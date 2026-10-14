@@ -124,6 +124,32 @@ public final class TtsHttpApiProbe {
             require(noOrigin.statusCode() == 403,
                 "originless synthesis must not pass browser CSRF policy");
 
+            var noOriginDefaults = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/settings"))
+                .header("Cookie", cookie)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                    "{\"voiceId\":\"http-tts/Voice\",\"rate\":0,\"volume\":80}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+            require(noOriginDefaults.statusCode() == 403,
+                "originless TTS defaults mutation must be blocked");
+            var noOriginCancel = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/queue"))
+                .header("Cookie", cookie)
+                .DELETE().build(), HttpResponse.BodyHandlers.ofString());
+            require(noOriginCancel.statusCode() == 403,
+                "originless TTS queue deletion must be blocked");
+            var saved = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/settings"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                    "{\"voiceId\":\"http-tts/Voice\",\"rate\":1,\"volume\":70}"))
+                .build(), HttpResponse.BodyHandlers.ofString());
+            require(saved.statusCode() == 200
+                && saved.body().contains("http-tts/Voice"),
+                "trusted TTS defaults mutation should persist");
             var accepted = client.send(HttpRequest.newBuilder(
                 base.resolve("/api/v1/tts/speak"))
                 .header("Cookie", cookie)
