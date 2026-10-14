@@ -85,7 +85,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
                 continue;
             }
             discovered.add(new TtsService.Voice(
-                id() + "/" + name, id(), name, language,
+                "windows-sapi/" + name, "windows-sapi", name, language,
                 gender, List.of(), "windows-installed"
             ));
         }
