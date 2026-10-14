@@ -161,8 +161,9 @@ copies, process memory, or the total server heap.
   and RIFF/WAV output. The model and engine are removed after the test; they
   are not shipped with the application or downloaded by the server.
 - Windows packaging CI checks native SAPI synthesis **when enabled Windows
-  desktop voices are present**. If the hosted runner has no voices or lacks
-  `System.Speech`, the smoke test explicitly reports `TTS_ENGINE_SMOKE_SKIPPED`.
+  desktop voices are present**. An empty catalog is reported as
+  `TTS_ENGINE_SMOKE_SKIPPED`; PowerShell, JSON parser or native backend
+  failures fail the smoke test rather than silently passing.
   Such a skip is **not** proof of Windows voice compatibility.
 - Final Windows SAPI acceptance requires a machine with at least one actual
   installed desktop voice: open `/admin/tts/`, verify authenticated access,
