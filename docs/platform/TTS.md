@@ -47,8 +47,9 @@ without altering Board or Drawing Guess logic.
   A missing voice stays selected in the saved profile for later restoration.
   Invalid or unreadable optional settings recover to safe defaults without
   blocking the game server; the original file is preserved for inspection.
-- Admin-only `/api/v1/tts` API with same-Origin mutation policy and
-  existing admin session validation.
+- Admin-only `/api/v1/tts` API with existing admin session validation.
+  POST/PUT/DELETE speech mutations reject both cross-origin and origin-less
+  requests and require an explicit trusted `Origin` header.
 - Dedicated `/admin/tts/` page to inspect available voices, select a voice,
   rate and volume, synthesize sample sentences, download WAV into browser
   memory and replay with an ordinary HTML audio control.
