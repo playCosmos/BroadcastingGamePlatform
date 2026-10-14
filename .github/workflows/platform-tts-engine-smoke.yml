@@ -1,0 +1,52 @@
+name: Platform TTS Real Engine Smoke (no release)
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/src/main/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
+      - "server/src/test/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
+      - "server/pom.xml"
+      - ".github/workflows/platform-tts-engine-smoke.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: platform-tts-engine-smoke-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  espeak-ng-native:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up JDK 25
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # Installs a real voice engine in the ephemeral CI runner only.
+      # The platform never installs engines/models for end users.
+      - name: Install local eSpeak NG test runtime
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y --no-install-recommends espeak-ng
+          command -v espeak-ng
+          espeak-ng --version
+
+      - name: Build server and probe classes
+        working-directory: server
+        run: mvn --batch-mode --no-transfer-progress -DskipTests package
+
+      - name: Synthesize and validate real eSpeak NG WAV
+        working-directory: server
+        run: |
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsRealEngineSmoke espeak-ng
