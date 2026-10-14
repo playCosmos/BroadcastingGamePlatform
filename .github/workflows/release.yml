@@ -1,6 +1,10 @@
 name: Release
 
 on:
+  # Consolidated TTS release from the isolated, CI-validated branch.
+  push:
+    branches: [release/tts-foundation-v0.1.1]
+    paths: [".github/workflows/release.yml"]
   workflow_dispatch:
     inputs:
       version:
@@ -25,7 +29,11 @@ jobs:
       - name: Validate release version
         shell: pwsh
         run: |
-          $version = "${{ inputs.version }}".Trim()
+          $version = "${{ inputs.version || '0.1.1' }}".Trim()
+          if ("${{ github.event_name }}" -eq "push" -and
+              "${{ github.ref }}" -ne "refs/heads/release/tts-foundation-v0.1.1") {
+            throw "unexpected branch for consolidated TTS release"
+          }
           if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
             throw "invalid release version: $version"
           }
@@ -76,6 +84,15 @@ jobs:
         shell: pwsh
         run: ./run-regression-probes.ps1
 
+      - name: Smoke installed Windows SAPI with real audio
+        working-directory: server
+        shell: pwsh
+        run: |
+          $cp = "target/test-classes" + [IO.Path]::PathSeparator +
+            "target/classes" + [IO.Path]::PathSeparator + "target/probe-dependencies/*"
+          java -cp $cp io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsRealEngineSmoke windows-sapi-optional
+          if ($LASTEXITCODE -ne 0) { throw "Windows SAPI smoke failed" }
+
       - name: Build Windows x64 app
         working-directory: server
         shell: pwsh
@@ -93,6 +110,15 @@ jobs:
           if (-not (Test-Path (Join-Path $root "config.example.json"))) { throw "config.example.json missing" }
           if (-not (Test-Path (Join-Path $root "runtime/bin/server/jvm.dll"))) { throw "bundled runtime missing" }
           if (-not (Test-Path (Join-Path $root "THIRD_PARTY_NOTICES.md"))) { throw "third-party notices missing" }
+          @(
+            "web/admin/tts/index.html",
+            "web/admin/assets/tts-admin.js",
+            "web/admin/assets/tts-admin.css"
+          ) | ForEach-Object {
+            if (-not (Test-Path (Join-Path $root $_))) {
+              throw "TTS release file missing: $_"
+            }
+          }
 
           $probe = Start-Process -FilePath $exe -ArgumentList "--board-server-probe" -Wait -PassThru
           if ($probe.ExitCode -ne 0) {
@@ -122,7 +148,7 @@ jobs:
             gh release edit $tag `
               --repo $repo `
               --target "${{ github.sha }}" `
-              --title "Broadcasting Game Platform $tag" `
+              --title "Broadcasting Game Platform $tag - TTS Foundation" `
               --notes-file $env:RELEASE_NOTES
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
@@ -134,7 +160,7 @@ jobs:
             gh release create $tag $zip $checksum `
               --repo $repo `
               --target "${{ github.sha }}" `
-              --title "Broadcasting Game Platform $tag" `
+              --title "Broadcasting Game Platform $tag - TTS Foundation" `
               --notes-file $env:RELEASE_NOTES
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
