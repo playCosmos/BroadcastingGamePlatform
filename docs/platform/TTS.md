@@ -65,7 +65,7 @@ is detected only when its `espeak-ng` executable is already available on
 `PATH`. Piper is discovered only when the independently installed `piper`
 command is available and matching ONNX/JSON models are in `tts/voices`.
 No external executable or voice pack is installed by the platform.
-`TtsEngineRegistry.installed()` registers both built-ins, then accepts trusted
+`TtsEngineRegistry.installed()` registers the local built-ins, then accepts trusted
 classpath `ServiceLoader<TtsService.TtsEngine>` adapters with unique engine IDs.
 
 The voice catalog provides namespaced voice IDs, localized language tags,
@@ -147,6 +147,34 @@ copies, process memory, or the total server heap.
    administrator should be notified rather than silently deleting its ID.
 5. Use Refresh after installing a new local voice. Voice pack
    installation/update/removal is deliberately **not** implemented here.
+
+## End-to-end validation and final acceptance
+
+- The regular Windows package CI compiles the server, runs TTS queue/WAV/
+  cache/timeout and authenticated HTTP/CSRF probes, verifies the shipped
+  `/admin/tts/` assets, and checks the packaged Windows launcher.
+- `.github/workflows/platform-tts-engine-smoke.yml` runs on a temporary Linux
+  runner and **requires real eSpeak NG** speech synthesis through `TtsService`.
+  It also uses a separately installed Piper engine and a SHA-256-verified,
+  MIT-licensed example ONNX voice model to validate actual neural synthesis
+  and RIFF/WAV output. The model and engine are removed after the test; they
+  are not shipped with the application or downloaded by the server.
+- Windows packaging CI checks native SAPI synthesis **when enabled Windows
+  desktop voices are present**. If the hosted runner has no voices or lacks
+  `System.Speech`, the smoke test explicitly reports `TTS_ENGINE_SMOKE_SKIPPED`.
+  Such a skip is **not** proof of Windows voice compatibility.
+- Final Windows SAPI acceptance requires a machine with at least one actual
+  installed desktop voice: open `/admin/tts/`, verify authenticated access,
+  select a voice, synthesize Korean text if available, and listen to the
+  result. Test failure must not prevent game or room operations.
+- Validate optional Piper models from trusted sources, confirm per-model
+  voice licenses, and check that source speech and generated WAVs are not
+  persisted by the server. An untested voice model is not certified by a
+  passing engine fixture smoke test.
+
+The foundation's release gate remains closed until final Windows runtime
+verification and the agreed scope are complete. Neither successful mocked
+probes nor build-only checks authorize a release by themselves.
 
 ## TTS release gate (October 13, 2026)
 
