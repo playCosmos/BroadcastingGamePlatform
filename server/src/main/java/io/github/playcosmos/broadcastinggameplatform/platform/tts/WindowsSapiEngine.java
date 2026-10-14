@@ -52,11 +52,24 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
                     gender = $_.VoiceInfo.Gender.ToString()
                   }
                 })
-              [Console]::Out.Write((ConvertTo-Json -InputObject $installed -Compress -Depth 3))
+              if ($installed.Count -eq 0) {
+                [Console]::Out.Write('[]')
+              } else {
+                [Console]::Out.Write((ConvertTo-Json -InputObject $installed -Compress -Depth 3))
+              }
             } finally { $speech.Dispose() }
             """;
         byte[] output = runPowerShell(script);
-        var parsed = JsonParser.parseString(new String(output, StandardCharsets.UTF_8));
+        cachedVoices = parseVoiceCatalog(output);
+        cachedAt = now;
+        return cachedVoices;
+    }
+
+    /** Accept an empty result from systems without SAPI desktop voice packs. */
+    static List<TtsService.Voice> parseVoiceCatalog(byte[] output) {
+        String json = new String(output, StandardCharsets.UTF_8).strip();
+        if (json.isEmpty()) return List.of();
+        var parsed = JsonParser.parseString(json);
         var discovered = new ArrayList<TtsService.Voice>();
         if (!parsed.isJsonArray()) throw new IllegalStateException("invalid voice catalog");
         for (var item : parsed.getAsJsonArray()) {
@@ -76,9 +89,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
                 gender, List.of(), "windows-installed"
             ));
         }
-        cachedVoices = List.copyOf(discovered);
-        cachedAt = now;
-        return cachedVoices;
+        return List.copyOf(discovered);
     }
 
     @Override
@@ -140,7 +151,7 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
             process = new ProcessBuilder(
                 "powershell.exe", "-NoLogo", "-NoProfile", "-NonInteractive",
                 "-EncodedCommand", encoded
-            ).redirectErrorStream(true)
+            ).redirectError(ProcessBuilder.Redirect.DISCARD)
                 .redirectOutput(captured.toFile())
                 .start();
             if (!process.waitFor(PROCESS_TIMEOUT_SECONDS, TimeUnit.SECONDS)) {
