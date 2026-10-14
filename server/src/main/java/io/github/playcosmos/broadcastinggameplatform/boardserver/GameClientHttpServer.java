@@ -1575,13 +1575,27 @@ public final class GameClientHttpServer implements AutoCloseable {
             ));
             return;
         }
+        String method = exchange.getRequestMethod();
+        // Unlike generic administrator routes, speech mutators must reject
+        // origin-less requests as well as explicitly cross-origin requests.
+        // A cookie alone must not authorize synthesis or default changes.
+        if (!"GET".equalsIgnoreCase(method)
+            && !"HEAD".equalsIgnoreCase(method)
+            && !"OPTIONS".equalsIgnoreCase(method)) {
+            String origin = exchange.getRequestHeaders().getFirst("Origin");
+            if (origin == null || origin.isBlank()) {
+                sendJson(exchange, 403, Map.of(
+                    "error", "TTS mutation requires a trusted origin"
+                ));
+                return;
+            }
+        }
         if (!requireTrustedAdminMutationOrigin(exchange)) return;
         if (tts == null) {
             sendJson(exchange, 503, Map.of("error", "TTS unavailable"));
             return;
         }
         String path = exchange.getRequestURI().getPath();
-        String method = exchange.getRequestMethod();
         try {
             if ("/api/v1/tts/voices".equals(path) && "GET".equals(method)) {
                 sendJson(exchange, 200, Map.of("voices",
