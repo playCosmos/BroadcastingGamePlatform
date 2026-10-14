@@ -65,7 +65,9 @@ public final class TtsServiceProbe {
         try (var wavService = new TtsService(List.of(new CorruptWavEngine()))) {
             String voiceId = wavService.voices().getFirst().id();
             for (String malformed : List.of(
-                "missing WAVE", "oversized chunk", "bad RIFF size", "missing fmt")) {
+                "missing WAVE", "oversized chunk", "bad RIFF size",
+                "missing fmt", "empty audio", "no channels", "no sample rate",
+                "no byte rate")) {
                 var rejected = wavService.enqueue(new TtsService.Request(
                     malformed, voiceId, 0, 80));
                 waitFor(wavService, rejected.id(), "FAILED");
@@ -443,6 +445,14 @@ public final class TtsServiceProbe {
                 case "oversized chunk" -> put32(wav, 40, 100_000);
                 case "bad RIFF size" -> put32(wav, 4, 0);
                 case "missing fmt" -> ascii(wav, 12, "JUNK");
+                case "empty audio" -> {
+                    wav = java.util.Arrays.copyOf(wav, 44);
+                    put32(wav, 4, wav.length - 8);
+                    put32(wav, 40, 0);
+                }
+                case "no channels" -> put16(wav, 22, 0);
+                case "no sample rate" -> put32(wav, 24, 0);
+                case "no byte rate" -> put32(wav, 28, 0);
                 default -> throw new IllegalStateException("unknown corruption case");
             }
             return wav;
