@@ -53,6 +53,19 @@ bash setup.sh
 .venv/bin/python doctor.py --require-ready
 ```
 
+현재 터미널이 Conda `(base)` 환경이거나 시스템 기본 Python이 3.13 이상일 수 있다. 이 경우 `setup.sh`는 **3.11/3.12가 설치됐는지 자동 검색**하고, 없다면 외부 환경을 변경하지 않고 중단한다. Conda에서 별도 Python 3.12 환경을 만들려면:
+
+```bash
+conda create -n gamecenter-tts-py312 python=3.12 -y
+conda activate gamecenter-tts-py312
+cd ~/GameCenter/tools/tts-training
+bash setup.sh --check-python
+bash setup.sh
+.venv/bin/python doctor.py --require-ready
+```
+
+Conda base에 Python 버전을 강제로 바꾸지 않는다. `setup.sh`는 활성화된 Conda Python 또는 다른 Python 3.12/3.11을 찾아 선택하며, 선택한 인터프리터를 이용해 독립적인 `.venv`를 만든다. 특정 설치본을 지정하려면 `GC_TTS_PYTHON=/path/to/python3.12 bash setup.sh`를 사용한다. 이전 실패로 생성된 `.venv`가 잘못됐거나 불완전한 경우 **자동으로 삭제하지 않으므로**, 파일을 검사한 뒤 별도 이름으로 옮기고 다시 실행한다.
+
 `setup.sh`는 Python 가상환경만 수정하고, CUDA용 PyTorch와 공식 upstream 소스(고정 SHA)를 설치한다. **모델 파일은 자동 다운로드하지 않고 학습도 시작하지 않는다.** FlashAttention 빌드용 CUDA Toolkit(`nvcc`)은 별도 준비가 필요하다. `nvcc`가 없으면 경고를 남기고 설치 준비까지만 끝난다. 실제 WSL2 GPU 드라이버·VRAM 확인은 `doctor.py`로 한다.
 
 ## 2. 개인 원본 음성 및 대본
