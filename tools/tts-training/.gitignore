@@ -1,0 +1,20 @@
+# Private training material and generated model weights never enter Git.
+.venv/
+upstream/
+cache/
+models/
+data/
+runs/
+outputs/
+logs/
+*.pth
+*.index
+*.safetensors
+*.wav
+*.flac
+*.mp3
+*.m4a
+*.ogg
+.env
+__pycache__/
+*.pyc
