@@ -68,6 +68,40 @@ Conda base에 Python 버전을 강제로 바꾸지 않는다. `setup.sh`는 활�
 
 `setup.sh`는 Python 가상환경만 수정하고, CUDA용 PyTorch와 공식 upstream 소스(고정 SHA)를 설치한다. **모델 파일은 자동 다운로드하지 않고 학습도 시작하지 않는다.** FlashAttention 빌드용 CUDA Toolkit(`nvcc`)은 별도 준비가 필요하다. `nvcc`가 없으면 경고를 남기고 설치 준비까지만 끝난다. 실제 WSL2 GPU 드라이버·VRAM 확인은 `doctor.py`로 한다.
 
+## 2. 원본 녹음 인벤토리 (CUDA 설치 전에도 가능)
+
+10분 이상의 원본 녹음이 있어도, 긴 녹음 하나를 그대로 학습시키지 않는다.
+**먼저 목록·길이·채널·샘플링 주파수를 확인**하고, 각 발화를 1~20초 단위로 정리한다.
+원본 내용과 대본은 **로컬에서만 처리**하며 도구는 원본 파일을 변경하지 않는다.
+
+```bash
+cd ~/GameCenter/tools/tts-training
+mkdir -p data/raw
+# 허가된 원본 녹음 WAV/FLAC/MP3/M4A/OGG 파일을 data/raw/에 복사
+# 아래 작업에는 GPU, 학습 모델, .venv가 필요 없음.
+python inventory_audio.py --source data/raw --json
+```
+
+`READY`: 길이 1~20초 (내용/음질은 여전히 청취 확인 필요).
+`LONG`: 20초 초과 — 의미 있는 발화 경계로 분할해야 함.
+`SHORT`: 1초 미만 — 보통 합성 학습에서 제외하거나 다른 발화와 올바르게 병합.
+`INVALID`: 오디오 파싱 실패/파일 손상 — 수동 확인.
+출력된 `ready_audio_minutes`는 길이 기준의 후보량이지 깨끗한 학습 데이터 분량 보장은 아니다.
+`all_audio_minutes`는 긴 녹음도 포함하며 학습 가능 시간과 다르다.
+
+대본 파일이 없다면 다음 명령으로 **빈 대본 CSV 초안**을 만든다. 기존 CSV는 덮어쓰지 않는다.
+
+```bash
+python inventory_audio.py --source data/raw --write-template data/raw/transcripts.csv
+```
+
+`data/raw/transcripts.csv`에서 각 `file,text` 행에 실제 들리는 문장을 정확히 입력한다.
+길이가 너무 길거나 목소리가 겹친 파일은 먼저 분할하거나 CSV에서 행을 제거한다.
+한 발화에 여러 사람의 음성이 있으면 해당 파일을 제외한다. 동일한 원본의 인접 분할 구간을 학습·검증으로 무작위 혼합하지 않는 것이 평가 신뢰도에 유리하다.
+
+학습 설치나 드라이버 설정이 미완료된 PC에서도 **이 인벤토리 단계부터 진행 가능**하다.
+원본이 WSL의 `data/raw`에 있으면 불필요한 사본 생성 없이 메타데이터만 읽는다.
+
 ## 2. 개인 원본 음성 및 대본
 
 `tools/tts-training/data/raw/` 안에 WAV/FLAC/MP3/M4A/OGG 원본을 놓고 `transcripts.csv`(UTF-8)를 작성한다.
