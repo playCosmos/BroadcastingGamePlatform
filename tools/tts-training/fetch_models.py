@@ -18,13 +18,13 @@ def main(argv=None):
     parser.add_argument("--size", choices=tuple(MODEL_NAMES), default="0.6B")
     parser.add_argument("--tokenizer-only", action="store_true")
     args = parser.parse_args(argv)
+    from os import environ
+    environ.setdefault("HF_HOME", str(ROOT / "cache/huggingface"))
     try:
         from huggingface_hub import HfApi, snapshot_download
     except ImportError:
         print("Install training environment with setup.sh first", file=sys.stderr)
         return 2
-    from os import environ
-    environ.setdefault("HF_HOME", str(ROOT / "cache/huggingface"))
     targets = [TOKENIZER]
     if not args.tokenizer_only:
         targets.append(MODEL_NAMES[args.size])
