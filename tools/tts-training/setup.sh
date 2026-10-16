@@ -66,6 +66,10 @@ PY="$ROOT/.venv/bin/python"
 "$PY" -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
 "$PY" -m pip install -e "$UPSTREAM" "tensorboard>=2.16,<3" "huggingface-hub>=0.34,<1.0"
 
+if ! command -v nvcc >/dev/null 2>&1 && [[ -x /usr/local/cuda-12.8/bin/nvcc ]]; then
+  export CUDA_HOME=/usr/local/cuda-12.8
+  export PATH="$CUDA_HOME/bin:$PATH"
+fi
 if command -v nvcc >/dev/null 2>&1; then
   echo "[setup] CUDA toolkit detected; installing FlashAttention (build may take time)."
   "$PY" -m pip install ninja packaging psutil
