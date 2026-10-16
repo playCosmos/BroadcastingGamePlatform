@@ -30,6 +30,20 @@ sudo apt install -y git ffmpeg python3 python3-venv python3-dev build-essential 
 nvidia-smi
 ```
 
+FlashAttention 2를 컴파일할 **CUDA Toolkit 12.8**은 별도로 필요하다. NVIDIA의 WSL 전용 APT 저장소를 추가한다(Windows GPU 드라이버가 먼저 설치되어 있어야 함).
+
+```bash
+wget https://developer.download.nvidia.com/compute/cuda/repos/wsl-ubuntu/x86_64/cuda-keyring_1.1-1_all.deb
+sudo dpkg -i cuda-keyring_1.1-1_all.deb
+sudo apt update
+sudo apt install -y cuda-toolkit-12-8
+export CUDA_HOME=/usr/local/cuda-12.8
+export PATH="$CUDA_HOME/bin:$PATH"
+nvcc --version
+```
+
+PATH 설정은 `~/.bashrc`에 추가하면 재접속 후에도 유지된다. 설치 과정에서 `cuda` 또는 `cuda-drivers` 메타 패키지는 사용하지 않는다. [NVIDIA CUDA 12.8 WSL 설치 문서](https://docs.nvidia.com/cuda/archive/12.8.0/cuda-installation-guide-linux/#wsl)를 따른다.
+
 저장소를 WSL의 `~/` 아래에 가져오는 것이 좋다. Windows `/mnt/c`의 파일을 직접 학습 폴더로 쓰면 I/O가 느려질 수 있다.
 
 ```bash
