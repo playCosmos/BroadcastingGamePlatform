@@ -29,6 +29,14 @@ jobs:
           python -m compileall -q tools/tts-training
           bash -n tools/tts-training/setup.sh
           bash -n tools/tts-training/train.sh
+      - name: Check Conda/system Python selection without installing packages
+        run: |
+          GC_TTS_PYTHON="$(command -v python)" bash tools/tts-training/setup.sh --check-python
+          if GC_TTS_PYTHON=/bin/false bash tools/tts-training/setup.sh --check-python; then
+            echo "ERROR: unsupported interpreter was accepted" >&2
+            exit 1
+          fi
+          test ! -e tools/tts-training/.venv
       - name: Run offline data and safety tests
         run: python -m unittest discover -s tools/tts-training/tests -p 'test_*.py' -v
       - name: Check empty environment diagnosis
