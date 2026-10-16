@@ -68,7 +68,7 @@ PY="$ROOT/.venv/bin/python"
 
 if command -v nvcc >/dev/null 2>&1; then
   echo "[setup] CUDA toolkit detected; installing FlashAttention (build may take time)."
-  "$PY" -m pip install ninja packaging
+  "$PY" -m pip install ninja packaging psutil
   "$PY" -m pip install flash-attn --no-build-isolation
 else
   echo "WARNING: nvcc not found. Preparation can work, but official SFT requires flash-attn."
