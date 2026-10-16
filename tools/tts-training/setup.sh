@@ -17,21 +17,62 @@ fi
 if [[ "$ROOT" == /mnt/* ]]; then
   echo "WARNING: GPU training is slower on /mnt/c or /mnt/d. Prefer ~/GameCenter." >&2
 fi
-if ! command -v python3 >/dev/null; then
-  echo "ERROR: python3 missing. Install Ubuntu python3 and python3-venv." >&2
+# Explicit override is useful for Conda/Miniforge or an isolated Python install.
+# Check a supported interpreter before touching upstream, models or virtualenvs.
+CHECK_PYTHON_ONLY=0
+case "${1:-}" in
+  --check-python) CHECK_PYTHON_ONLY=1; shift ;;
+  "") ;;
+  *) echo "Usage: bash setup.sh [--check-python]" >&2; exit 2 ;;
+esac
+if [[ $# -ne 0 ]]; then
+  echo "Usage: bash setup.sh [--check-python]" >&2
   exit 2
+fi
+
+select_python() {
+  local candidate
+  local -a candidates=()
+  if [[ -n "${GC_TTS_PYTHON:-}" ]]; then
+    candidates=("$GC_TTS_PYTHON")
+  else
+    # Prefer an activated Conda interpreter; otherwise find another installed
+    # supported Python, without changing the system Python or Conda base.
+    candidates=(python python3.12 python3.11 python3)
+  fi
+  for candidate in "${candidates[@]}"; do
+    if command -v "$candidate" >/dev/null 2>&1 &&
+       "$candidate" -c 'import sys; sys.exit(0 if sys.version_info[:2] in {(3, 11), (3, 12)} else 1)' >/dev/null 2>&1; then
+      PYTHON_BIN="$(command -v "$candidate")"
+      echo "[setup] selected Python: $PYTHON_BIN ($("$PYTHON_BIN" --version 2>&1))"
+      return 0
+    fi
+  done
+  echo "ERROR: no supported Python 3.11 or 3.12 interpreter found." >&2
+  echo "       Currently selected: $(python3 --version 2>&1 || true)" >&2
+  echo "       Install/activate a separate Python without changing Conda base." >&2
+  if command -v conda >/dev/null 2>&1; then
+    echo "       conda create -n gamecenter-tts-py312 python=3.12 -y" >&2
+    echo "       conda activate gamecenter-tts-py312" >&2
+  else
+    echo "       Ubuntu 24.04: sudo apt install -y python3.12 python3.12-venv" >&2
+  fi
+  echo "       Then: bash setup.sh" >&2
+  echo "       Optional: GC_TTS_PYTHON=/path/to/python3.12 bash setup.sh" >&2
+  return 2
+}
+select_python
+
+if [[ "$CHECK_PYTHON_ONLY" == 1 ]]; then
+  echo "[setup] Python interpreter check passed (no dependencies installed)"
+  exit 0
 fi
 if ! command -v git >/dev/null || ! command -v ffmpeg >/dev/null || ! command -v ffprobe >/dev/null; then
   echo "ERROR: prerequisites: sudo apt update && sudo apt install -y git ffmpeg python3-venv python3-dev build-essential ninja-build libsndfile1" >&2
   exit 2
 fi
-python3 - <<'PY'
-import sys
-if sys.version_info[:2] not in {(3, 11), (3, 12)}:
-    raise SystemExit("Use Python 3.11 or 3.12 for this pinned environment")
-PY
-if ! python3 -m venv --help >/dev/null 2>&1; then
-  echo "ERROR: python venv support missing; install python3-venv." >&2
+if ! "$PYTHON_BIN" -m venv --help >/dev/null 2>&1; then
+  echo "ERROR: selected Python lacks venv support; install matching python3.12-venv or use Conda Python 3.12." >&2
   exit 2
 fi
 
@@ -57,10 +98,19 @@ if [[ "$(git -C "$UPSTREAM" rev-parse HEAD)" != "$PIN" ]]; then
   exit 2
 fi
 
+if [[ -e "$ROOT/.venv" && ! -f "$ROOT/.venv/bin/python" ]]; then
+  echo "ERROR: incomplete .venv exists. Inspect/rename it manually; refusing to overwrite." >&2
+  exit 2
+fi
 if [[ ! -f "$ROOT/.venv/bin/python" ]]; then
-  python3 -m venv "$ROOT/.venv"
+  "$PYTHON_BIN" -m venv "$ROOT/.venv"
 fi
 PY="$ROOT/.venv/bin/python"
+if ! "$PY" -c 'import sys; assert sys.version_info[:2] in {(3, 11), (3, 12)} and sys.prefix != sys.base_prefix' >/dev/null 2>&1; then
+  echo "ERROR: existing .venv is not a Python 3.11/3.12 virtualenv." >&2
+  echo "       Rename .venv to preserve it, then rerun bash setup.sh." >&2
+  exit 2
+fi
 "$PY" -m pip install --upgrade "pip<26" wheel setuptools
 # PyTorch CUDA wheels bundle the required userspace CUDA libraries.
 "$PY" -m pip install torch==2.8.0 torchaudio==2.8.0 --index-url https://download.pytorch.org/whl/cu128
