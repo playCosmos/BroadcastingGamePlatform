@@ -14,6 +14,7 @@
   const savedStatus = $("defaultsStatus");
   const saveDefaults = $("saveDefaults");
   let catalog = [];
+  let profiles = [];
   let saved = { voiceId: "", rate: 0, volume: 80 };
   let currentAudioUrl = null;
   let pollGeneration = 0;
@@ -75,6 +76,7 @@
       : "선택 가능한 목소리가 없습니다.";
     submit.disabled = !voice;
     saveDefaults.disabled = !voice;
+    $("saveProfile").disabled = !voice;
   }
 
   function renderVoiceOptions(preferred = voices.value) {
@@ -151,6 +153,62 @@
       renderVoiceOptions("");
       availability.textContent = "음성 조회 실패: " + error.message;
     }
+  }
+
+  function renderProfileOptions(preferred = $("profileChoice").value) {
+    const choice = $("profileChoice");
+    choice.replaceChildren();
+    for (const profile of profiles) {
+      const option = document.createElement("option");
+      option.value = profile.name;
+      option.textContent = profile.name + " · " + profile.voiceId;
+      choice.append(option);
+    }
+    const selected = profiles.find(profile => profile.name === preferred)
+      || profiles[0];
+    if (!selected) {
+      const empty = document.createElement("option");
+      empty.value = "";
+      empty.textContent = "저장된 프로필 없음";
+      choice.append(empty);
+    }
+    choice.value = selected?.name || "";
+    choice.disabled = !selected;
+    $("applyProfile").disabled = !selected;
+    $("deleteProfile").disabled = !selected;
+  }
+
+  async function loadProfiles() {
+    try {
+      const payload = await json("/api/v1/tts/profiles");
+      profiles = Array.isArray(payload.profiles) ? payload.profiles : [];
+      renderProfileOptions();
+      $("profilesStatus").textContent = profiles.length
+        ? profiles.length + "개 프로필 사용 가능 · 최대 24개까지 저장할 수 있습니다."
+        : "저장된 프로필이 없습니다. 이름을 입력하고 현재 설정을 저장하세요.";
+    } catch (error) {
+      profiles = [];
+      renderProfileOptions();
+      $("profilesStatus").textContent = "프로필 불러오기 실패: " + error.message;
+    }
+  }
+
+  function applyProfile(profile) {
+    if (!profile) return;
+    $("rateChoice").value = profile.rate;
+    $("volumeChoice").value = profile.volume;
+    $("rateValue").value = profile.rate;
+    $("volumeValue").value = profile.volume + "%";
+    $("profileName").value = profile.name;
+    if (!catalog.some(voice => voice.id === profile.voiceId)) {
+      $("profilesStatus").textContent = "프로필의 음성이 현재 설치되어 있지 않습니다: "
+        + profile.voiceId + " · 기존 음성 선택을 유지합니다.";
+      return;
+    }
+    languageFilter.value = "all";
+    engineFilter.value = "all";
+    renderVoiceOptions(profile.voiceId);
+    $("profilesStatus").textContent = "프로필을 적용했습니다. 서버 기본값은 변경되지 않았습니다.";
   }
 
   async function updateQueue() {
@@ -274,6 +332,59 @@
       savedStatus.textContent = "서버에 저장된 설정을 화면에 불러왔습니다.";
     }
   });
+  $("profileChoice").addEventListener("change", () => {
+    const found = profiles.find(profile => profile.name === $("profileChoice").value);
+    if (found) $("profileName").value = found.name;
+  });
+  $("applyProfile").addEventListener("click", () => {
+    applyProfile(profiles.find(profile => profile.name === $("profileChoice").value));
+  });
+  $("saveProfile").addEventListener("click", async () => {
+    const name = $("profileName").value.trim();
+    if (!name || !voices.value) {
+      $("profilesStatus").textContent = "프로필 이름과 설치된 음성을 선택하세요.";
+      return;
+    }
+    $("saveProfile").disabled = true;
+    try {
+      const payload = await json("/api/v1/tts/profiles", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name, voiceId: voices.value,
+          rate: Number($("rateChoice").value),
+          volume: Number($("volumeChoice").value)
+        })
+      });
+      profiles = payload.profiles;
+      renderProfileOptions(name);
+      $("profilesStatus").textContent = "프로필 '" + name + "'을(를) 저장했습니다.";
+    } catch (error) {
+      $("profilesStatus").textContent = "프로필 저장 실패: " + error.message;
+    } finally {
+      $("saveProfile").disabled = !voices.value;
+    }
+  });
+  $("deleteProfile").addEventListener("click", async () => {
+    const name = $("profileChoice").value;
+    if (!name) return;
+    $("deleteProfile").disabled = true;
+    try {
+      const payload = await json("/api/v1/tts/profiles", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name })
+      });
+      profiles = payload.profiles;
+      renderProfileOptions();
+      $("profileName").value = "";
+      $("profilesStatus").textContent = "프로필 '" + name + "'을(를) 삭제했습니다.";
+    } catch (error) {
+      $("profilesStatus").textContent = "프로필 삭제 실패: " + error.message;
+      $("deleteProfile").disabled = !$("profileChoice").value;
+    }
+  });
+
   $("clearQueue").addEventListener("click", async () => {
     try {
       const payload = await json("/api/v1/tts/queue", { method: "DELETE" });
@@ -298,6 +409,7 @@
   (async () => {
     await loadPreferences();
     await loadVoices();
+    await loadProfiles();
     await updateQueue();
   })();
 })();
