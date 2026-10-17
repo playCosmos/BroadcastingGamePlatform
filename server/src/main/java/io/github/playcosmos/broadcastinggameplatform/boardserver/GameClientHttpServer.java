@@ -1640,11 +1640,18 @@ public final class GameClientHttpServer implements AutoCloseable {
                 }
                 String body = new String(json, StandardCharsets.UTF_8);
                 if ("PUT".equals(method)) {
-                    var profile = GSON.fromJson(body, TtsVoiceProfileStore.Profile.class);
-                    if (profile == null) {
+                    // Parse first, validate through the Profile constructor
+                    // outside Gson so invalid inputs reliably become HTTP 400.
+                    record ProfilePayload(String name, String voiceId,
+                                          int rate, int volume) {}
+                    ProfilePayload request = GSON.fromJson(body, ProfilePayload.class);
+                    if (request == null) {
                         sendJson(exchange, 400, Map.of("error", "profile required"));
                         return;
                     }
+                    var profile = new TtsVoiceProfileStore.Profile(
+                        request.name(), request.voiceId(), request.rate(),
+                        request.volume());
                     sendJson(exchange, 200, Map.of("profiles", tts.saveProfile(profile)));
                 } else {
                     JsonObject deletion = GSON.fromJson(body, JsonObject.class);
