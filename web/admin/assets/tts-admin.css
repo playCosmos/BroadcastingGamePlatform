@@ -12,7 +12,7 @@ body{background:#090d12;color:#eaf0f7;font-family:system-ui,-apple-system,"Segoe
 .tts-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
 .tts-card label{display:flex;flex-direction:column;gap:9px;font-size:13px;font-weight:750}
 .tts-fields{display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px;margin:20px 0}
-.tts-card select,.tts-card textarea{width:100%;box-sizing:border-box;background:#0c1118;color:#f4f8fd;border:1px solid #465365;border-radius:9px;padding:11px 13px;font:inherit}
+.tts-card select,.tts-card textarea,.tts-card input[type="text"]{width:100%;box-sizing:border-box;background:#0c1118;color:#f4f8fd;border:1px solid #465365;border-radius:9px;padding:11px 13px;font:inherit}
 .tts-card textarea{resize:vertical;min-height:90px;line-height:1.6}
 .tts-card input[type="range"]{width:100%;accent-color:#80bfff}
 .tts-card button{background:#293341;color:#edf4fb;border:1px solid #49596b;border-radius:9px;padding:11px 17px;font:inherit;font-weight:750;cursor:pointer}
@@ -28,3 +28,8 @@ body{background:#090d12;color:#eaf0f7;font-family:system-ui,-apple-system,"Segoe
 .tts-voice-details{display:block;color:#9db2c7;font-size:12px;font-weight:500;line-height:1.5;min-height:18px}
 .tts-default-status{border-top:1px solid #303e4c;padding-top:12px;margin:18px 0 0;font-size:13px}
 @media(max-width:520px){.tts-catalog-filters{grid-template-columns:1fr}}
+
+.tts-profiles{margin-top:24px;padding-top:22px;border-top:1px solid #334051}
+.tts-profiles h3{margin:0 0 8px;font-size:17px}
+.tts-profile-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
+@media(max-width:720px){.tts-profile-fields{grid-template-columns:1fr}}
