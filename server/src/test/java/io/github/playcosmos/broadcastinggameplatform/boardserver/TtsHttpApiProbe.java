@@ -7,6 +7,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persiste
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoiceProfileStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -32,7 +33,8 @@ public final class TtsHttpApiProbe {
         GameClientHttpServer server = null;
         try (var tts = new TtsService(
             List.of(new FakeEngine()),
-            new TtsPreferencesStore(root.resolve("tts-settings.json")))) {
+            new TtsPreferencesStore(root.resolve("tts-settings.json")),
+            new TtsVoiceProfileStore(root.resolve("tts-profiles.json")))) {
             Path web = root.resolve("web");
             Files.createDirectories(web.resolve("admin"));
             Files.writeString(web.resolve("index.html"), "Platform probe");
@@ -64,6 +66,7 @@ public final class TtsHttpApiProbe {
 
             for (String path : List.of("/api/v1/tts/voices",
                     "/api/v1/tts/status", "/api/v1/tts/settings",
+                    "/api/v1/tts/profiles",
                     "/api/v1/tts/jobs/00000000-0000-0000-0000-000000000000/audio")) {
                 var response = client.send(HttpRequest.newBuilder(
                     base.resolve(path)).GET().build(),
@@ -150,6 +153,74 @@ public final class TtsHttpApiProbe {
             require(saved.statusCode() == 200
                 && saved.body().contains("http-tts/Voice"),
                 "trusted TTS defaults mutation should persist");
+            String profileJson = """
+                {"name":"Korean default","voiceId":"http-tts/Voice","rate":-2,"volume":75}
+                """;
+            var unauthorizedProfileWrite = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(profileJson)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(unauthorizedProfileWrite.statusCode() == 403,
+                "originless TTS profile mutations must be rejected");
+            var crossOriginProfileWrite = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .header("Origin", "https://attacker.example")
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(profileJson)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(crossOriginProfileWrite.statusCode() == 403,
+                "cross-origin TTS profile mutations must be rejected");
+            var profileSave = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(profileJson)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(profileSave.statusCode() == 200
+                && profileSave.body().contains("Korean default")
+                && Files.exists(root.resolve("tts-profiles.json")),
+                "trusted profile writes must persist independently of defaults");
+            var profileList = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .GET().build(), HttpResponse.BodyHandlers.ofString());
+            require(profileList.statusCode() == 200
+                && profileList.body().contains("http-tts/Voice"),
+                "authenticated profile reads should expose persisted voice ID");
+            var invalidProfile = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                    "{\"name\":\" \",\"voiceId\":\"http-tts/Voice\",\"rate\":0,\"volume\":80}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(invalidProfile.statusCode() == 400,
+                "invalid profile names must be rejected");
+            var noOriginDelete = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .header("Content-Type", "application/json")
+                .method("DELETE", HttpRequest.BodyPublishers.ofString(
+                    "{\"name\":\"Korean default\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(noOriginDelete.statusCode() == 403,
+                "originless profile deletion must be rejected");
+            var profileDelete = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/profiles"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .method("DELETE", HttpRequest.BodyPublishers.ofString(
+                    "{\"name\":\"Korean default\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(profileDelete.statusCode() == 200
+                && !profileDelete.body().contains("Korean default"),
+                "profile deletion must remove the selected name");
             var accepted = client.send(HttpRequest.newBuilder(
                 base.resolve("/api/v1/tts/speak"))
                 .header("Cookie", cookie)

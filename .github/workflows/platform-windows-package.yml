@@ -2,6 +2,13 @@ name: Broadcasting Game Platform Windows Package
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches: [release/tts-foundation-v0.1.1]
+    paths:
+      - "server/**"
+      - "web/**"
+      - "docs/**"
+      - ".github/workflows/platform-windows-package.yml"
   push:
     branches: [main, release/tts-foundation-v0.1.1]
     paths:
