@@ -2,6 +2,7 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import io.github.playcosmos.broadcastinggameplatform.operations.BoundedVirtualThreadExecutor;
 import com.google.gson.Gson;
+import com.google.gson.JsonObject;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
@@ -14,6 +15,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEve
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoiceProfileStore;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomModels;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -1625,6 +1627,41 @@ public final class GameClientHttpServer implements AutoCloseable {
                 sendJson(exchange, 200, tts.saveSettings(requested));
                 return;
             }
+            if ("/api/v1/tts/profiles".equals(path) && "GET".equals(method)) {
+                sendJson(exchange, 200, Map.of("profiles", tts.profiles()));
+                return;
+            }
+            if ("/api/v1/tts/profiles".equals(path)
+                && ("PUT".equals(method) || "DELETE".equals(method))) {
+                byte[] json = exchange.getRequestBody().readNBytes(4097);
+                if (json.length > 4096) {
+                    sendJson(exchange, 413, Map.of("error", "request too large"));
+                    return;
+                }
+                String body = new String(json, StandardCharsets.UTF_8);
+                if ("PUT".equals(method)) {
+                    var profile = GSON.fromJson(body, TtsVoiceProfileStore.Profile.class);
+                    if (profile == null) {
+                        sendJson(exchange, 400, Map.of("error", "profile required"));
+                        return;
+                    }
+                    sendJson(exchange, 200, Map.of("profiles", tts.saveProfile(profile)));
+                } else {
+                    JsonObject deletion = GSON.fromJson(body, JsonObject.class);
+                    if (deletion == null || !deletion.has("name")
+                        || !deletion.get("name").isJsonPrimitive()
+                        || !deletion.get("name").getAsJsonPrimitive().isString()) {
+                        sendJson(exchange, 400, Map.of("error", "profile name required"));
+                        return;
+                    }
+                    if (!tts.deleteProfile(deletion.get("name").getAsString())) {
+                        sendJson(exchange, 404, Map.of("error", "profile not found"));
+                        return;
+                    }
+                    sendJson(exchange, 200, Map.of("profiles", tts.profiles()));
+                }
+                return;
+            }
             if ("/api/v1/tts/status".equals(path) && "GET".equals(method)) {
                 sendJson(exchange, 200, tts.status());
                 return;
@@ -1685,6 +1722,8 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange, 404, Map.of("error", "TTS route not found"));
         } catch (TtsService.CapacityException error) {
             sendJson(exchange, 429, Map.of("error", error.getMessage()));
+        } catch (com.google.gson.JsonParseException error) {
+            sendJson(exchange, 400, Map.of("error", "invalid TTS JSON"));
         } catch (IllegalArgumentException error) {
             sendJson(exchange, 400, Map.of(
                 "error", "invalid TTS request: " + error.getMessage()
