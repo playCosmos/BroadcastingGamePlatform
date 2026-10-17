@@ -44,6 +44,11 @@ without altering Board or Drawing Guess logic.
   labels and source. These are metadata, not guarantees about audio quality.
 - `TtsPreferencesStore`: administrator defaults (voice ID, speed and volume)
   saved atomically to `tts-settings.json` in the application root.
+- `TtsVoiceProfileStore`: up to 24 administrator-named voice/rate/volume
+  presets, stored separately in `tts-profiles.json` with atomic replacement.
+  Profiles can be added, overwritten by name, applied or deleted without
+  changing global defaults. Missing voice IDs remain intact for later reuse;
+  corrupt optional profile files are preserved and loaded as an empty list.
   A missing voice stays selected in the saved profile for later restoration.
   Invalid or unreadable optional settings recover to safe defaults without
   blocking the game server; the original file is preserved for inspection.
@@ -101,6 +106,9 @@ All routes require a valid admin session.
 | GET/PUT | `/api/v1/tts/settings` | Persisted default voice, rate and volume |
 | GET | `/api/v1/tts/settings` | Retrieve saved default voice, rate and volume |
 | PUT | `/api/v1/tts/settings` | Persist new defaults (admin-only, same-origin) |
+| GET | `/api/v1/tts/profiles` | List administrator-named voice profiles |
+| PUT | `/api/v1/tts/profiles` | Create/replace a profile by name, body: `{"name":"Korean","voiceId":"engine/voice","rate":0,"volume":80}` |
+| DELETE | `/api/v1/tts/profiles` | Delete by name, JSON body: `{"name":"Korean"}` |
 | GET | `/api/v1/tts/status` | Queued / active synthesis, engine status, retained audio bytes and cache limit |
 | POST | `/api/v1/tts/speak` | Submit a manually entered text/voice/rate/volume |
 | GET | `/api/v1/tts/jobs/{uuid}` | Observe QUEUED/SYNTHESIZING/READY/FAILED/CANCELLED/EXPIRED |
@@ -146,6 +154,12 @@ copies, process memory, or the total server heap.
 4. Save the chosen voice/rate/volume as administrator defaults. Reload to
    verify persistence. If a previously selected voice is uninstalled, the
    administrator should be notified rather than silently deleting its ID.
+   Optionally save the current selection under a named voice profile, then
+   apply that profile later without changing the global defaults. Profiles
+   whose original voice is unavailable show an explicit warning and do not
+   silently substitute a different voice. The server permits up to 24 profiles
+   and validates names (1–40 Unicode code points, no surrounding whitespace
+   or control characters).
 5. Use Refresh after installing a new local voice. Voice pack
    installation/update/removal is deliberately **not** implemented here.
 
@@ -192,6 +206,8 @@ unchanged. Removal of release artifacts does not remove TTS source commits.
 The completed standalone foundation is delivered as one v0.1.1 package.
 Game/provider/OBS integrations remain deferred until separately authorized.
 Voice adapters and new voice-pack management are future independent work.
+Named voice profiles are implemented in the subsequent profile feature branch;
+they are not part of the frozen v0.1.1 foundation package.
 
 ## Next milestones (not implemented)
 
@@ -212,6 +228,10 @@ Voice adapters and new voice-pack management are future independent work.
 - Keep synthesis off synchronous `PlatformEventBus` listeners.
 - Set per-request size limits, process timeout, bounded queue and WAV size.
 - Never include speech text in logs, player payloads or public errors.
+- Voice-profile read/write/delete routes require administrator authentication;
+  mutations also require a trusted Origin. Each profile request is limited
+  to 4 KiB and persisted profile documents to 16 KiB. The profile store
+  contains metadata only and never synthesizes or persists speech samples.
 - Native voice availability varies by Windows user/installation; SAPI may not
   expose modern OneCore voices. eSpeak NG and Piper must be separately installed
   and are never bundled or downloaded by the platform. Piper ONNX model
