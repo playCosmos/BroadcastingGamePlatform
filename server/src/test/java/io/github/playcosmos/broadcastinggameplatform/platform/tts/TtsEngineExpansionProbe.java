@@ -117,6 +117,61 @@ public final class TtsEngineExpansionProbe {
             Files.deleteIfExists(settings);
             Files.deleteIfExists(temporary);
         }
+        // Named voice profiles are independent of defaults and survive restart.
+        Path profileRoot = Files.createTempDirectory("tts-profile-probe-");
+        Path profileFile = profileRoot.resolve("tts-profiles.json");
+        try {
+            var store = new TtsVoiceProfileStore(profileFile);
+            require(store.list().isEmpty(), "fresh profile store must be empty");
+            var korean = new TtsVoiceProfileStore.Profile(
+                "한국어 안내", "windows-sapi/Microsoft Heami Desktop", -2, 75);
+            store.save(korean);
+            store.save(new TtsVoiceProfileStore.Profile(
+                "Second", "piper/sample", 1, 90));
+            store.save(new TtsVoiceProfileStore.Profile(
+                "한국어 안내", "espeak-ng/asia/ko", 0, 70));
+            require(store.list().size() == 2,
+                "upserting a profile must not duplicate its name");
+            var reloaded = new TtsVoiceProfileStore(profileFile);
+            require(reloaded.list().size() == 2
+                && "espeak-ng/asia/ko".equals(reloaded.list().getFirst().voiceId()),
+                "named voice configurations must survive restart");
+            try (var service = new TtsService(List.of(), null, reloaded)) {
+                require(service.profiles().size() == 2,
+                    "TTS service exposes persisted named profiles");
+                require(service.deleteProfile("Second")
+                    && service.profiles().size() == 1,
+                    "profile deletion must be persisted");
+            }
+            require(new TtsVoiceProfileStore(profileFile).list().size() == 1,
+                "profile deletion must survive restart");
+            boolean invalid = false;
+            try {
+                reloaded.save(new TtsVoiceProfileStore.Profile(
+                    " ", "espeak-ng/asia/ko", 0, 80));
+            } catch (IllegalArgumentException expected) { invalid = true; }
+            require(invalid, "blank profile names must be rejected");
+            for (int i = 0; i < 23; i++) {
+                reloaded.save(new TtsVoiceProfileStore.Profile(
+                    "test-" + i, "espeak-ng/asia/ko", 0, 80));
+            }
+            require(reloaded.list().size() == 24,
+                "named voice profile count must be bounded");
+            invalid = false;
+            try {
+                reloaded.save(new TtsVoiceProfileStore.Profile(
+                    "overflow", "espeak-ng/asia/ko", 0, 80));
+            } catch (IllegalArgumentException expected) { invalid = true; }
+            require(invalid, "profile store must reject the 25th profile");
+            Files.writeString(profileFile, "{invalid", StandardCharsets.UTF_8);
+            require(new TtsVoiceProfileStore(profileFile).list().isEmpty(),
+                "corrupt optional profile storage must fail open to empty");
+            require("{invalid".equals(Files.readString(profileFile)),
+                "corrupt profile file must remain available for recovery");
+        } finally {
+            Files.deleteIfExists(profileFile);
+            Files.deleteIfExists(profileRoot);
+        }
         // ServiceLoader must recover after a broken native adapter and
         // continue loading valid later providers in the same descriptor.
         Path spiRoot = Files.createTempDirectory("tts-spi-probe-");
