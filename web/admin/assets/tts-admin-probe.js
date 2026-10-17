@@ -11,6 +11,11 @@ async function scenario(mode) {
   let now = 0;
   let polls = 0;
   let loaded = 0;
+  let profileWrites = 0;
+  let profileDeletes = 0;
+  let serverProfiles = [{
+    name: "Unavailable", voiceId: "missing/Old", rate: -3, volume: 40
+  }];
   const makeElement = () => ({
     value: "",
     disabled: false,
@@ -57,6 +62,19 @@ async function scenario(mode) {
       return 1;
     },
     fetch: async (url, options = {}) => {
+      if (url === "/api/v1/tts/profiles") {
+        if (options.method === "PUT") {
+          const updated = JSON.parse(options.body);
+          serverProfiles = serverProfiles.filter(p => p.name !== updated.name);
+          serverProfiles.push(updated);
+          profileWrites++;
+        } else if (options.method === "DELETE") {
+          const deleted = JSON.parse(options.body).name;
+          serverProfiles = serverProfiles.filter(p => p.name !== deleted);
+          profileDeletes++;
+        }
+        return respond({ profiles: serverProfiles });
+      }
       if (url === "/api/v1/tts/settings") {
         return respond({ voiceId: "mock/Voice", rate: 0, volume: 80 });
       }
@@ -88,7 +106,31 @@ async function scenario(mode) {
   };
   const source = fs.readFileSync(path.join(__dirname, "tts-admin.js"), "utf8");
   vm.runInNewContext(source, sandbox, { filename: "tts-admin.js" });
-  for (let i = 0; i < 16; i++) await Promise.resolve();
+  for (let i = 0; i < 24; i++) await Promise.resolve();
+  assert.equal(getElement("profileChoice").value, "Unavailable",
+    "missing-engine voice profiles must remain visible");
+  await getElement("applyProfile").events.click();
+  assert.match(getElement("profilesStatus").textContent, /설치되어 있지/);
+  assert.equal(getElement("voiceChoice").value, "mock/Voice",
+    "applying an unavailable profile must not silently pick another voice");
+  getElement("rateChoice").value = "1";
+  getElement("volumeChoice").value = "90";
+  getElement("profileName").value = "Korean game";
+  await getElement("saveProfile").events.click();
+  assert.equal(profileWrites, 1, "profile save must use the authenticated API");
+  assert.equal(getElement("profileChoice").value, "Korean game");
+  getElement("rateChoice").value = "0";
+  getElement("volumeChoice").value = "30";
+  await getElement("applyProfile").events.click();
+  assert.equal(getElement("volumeChoice").value, 90,
+    "applying a saved profile must restore its volume");
+  assert.equal(getElement("rateChoice").value, 1,
+    "applying a saved profile must restore its rate");
+  assert.equal(getElement("voiceChoice").value, "mock/Voice");
+  await getElement("deleteProfile").events.click();
+  assert.equal(profileDeletes, 1);
+  assert.equal(getElement("profileChoice").value, "Unavailable",
+    "deleting a profile must update the select list");
   const submit = getElement("speechForm").events.submit;
   assert.equal(typeof submit, "function", "voice form submit must be bound");
   await submit({ preventDefault() {} });
