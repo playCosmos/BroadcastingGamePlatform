@@ -37,6 +37,13 @@ without altering Board or Drawing Guess logic.
   supports rate through Piper `--length_scale` and volume through checked
   16-bit PCM WAV scaling. The output remains bounded by the same WAV limit.
   The voice pack directory is not exposed through the public web root.
+- `TtsVoicePackStore`: local Piper ONNX/JSON inventory and opt-in managed
+  allowlist stored in `tts/voice-packs.json`. An operator registers an
+  existing model by filename stem with externally verified model SHA-256,
+  pack version, license identifier and explicit license acknowledgement.
+  The corresponding JSON digest is recorded automatically. Management
+  actions cannot upload, download or delete the model files. Disabled,
+  unregistered, tampered or missing managed packs do not synthesize speech.
 - `TtsEngineRegistry`: built-in engine registration plus trusted on-classpath
   Java SPI engine discovery. Avoid loading untrusted plugins from arbitrary
   folders; duplicates and broken optional providers are ignored.
@@ -109,6 +116,11 @@ All routes require a valid admin session.
 | GET | `/api/v1/tts/profiles` | List administrator-named voice profiles |
 | PUT | `/api/v1/tts/profiles` | Create/replace a profile by name, body: `{"name":"Korean","voiceId":"engine/voice","rate":0,"volume":80}` |
 | DELETE | `/api/v1/tts/profiles` | Delete by name, JSON body: `{"name":"Korean"}` |
+| GET | `/api/v1/tts/packs` | Local Piper inventory and LEGACY/MANAGED/INVALID registry mode |
+| PUT | `/api/v1/tts/packs` | Register/replace a local model using `model`, `version`, `license`, `sha256`, `licenseAcknowledged:true` |
+| POST | `/api/v1/tts/packs/verify` | Recompute local model/config SHA-256 for the chosen `model` |
+| POST | `/api/v1/tts/packs/status` | Enable/disable a registered model using `model` and boolean `enabled` |
+| DELETE | `/api/v1/tts/packs` | Unregister a model by `model`, leaving local ONNX/JSON files intact |
 | GET | `/api/v1/tts/status` | Queued / active synthesis, engine status, retained audio bytes and cache limit |
 | POST | `/api/v1/tts/speak` | Submit a manually entered text/voice/rate/volume |
 | GET | `/api/v1/tts/jobs/{uuid}` | Observe QUEUED/SYNTHESIZING/READY/FAILED/CANCELLED/EXPIRED |
@@ -160,8 +172,45 @@ copies, process memory, or the total server heap.
    silently substitute a different voice. The server permits up to 24 profiles
    and validates names (1–40 Unicode code points, no surrounding whitespace
    or control characters).
-5. Use Refresh after installing a new local voice. Voice pack
-   installation/update/removal is deliberately **not** implemented here.
+5. Use Refresh after manually placing a Piper model. In the **local voice
+   pack management** section, select a detected model, confirm its real license
+   and external SHA-256, supply a version and license identifier, acknowledge
+   the terms and register it. Recheck its digest, disable/enable, or unregister
+   as needed; these controls never remove the actual ONNX/JSON files.
+
+## Local voice pack management: migration and trust boundary
+
+- The application never downloads a model, installs Piper, accepts uploaded
+  model bytes, executes binaries from `tts/voices`, or removes model files.
+  The operator places `<model>.onnx` and `<model>.onnx.json` as a pair in
+  `<application-root>/tts/voices`, and must install Piper separately on PATH.
+- Before the first successful registry save (no manifest), **LEGACY mode**
+  retains the pre-existing manual file discovery behavior. The first
+  successful model registration creates `tts/voice-packs.json` and enters
+  **MANAGED mode**: only enabled, registered models whose *ONNX and JSON*
+  checksums still match will be listed or synthesized. Existing unregistered
+  models will disappear from the voice selector until registered. Back up
+  your manifest and register all required models before relying on them.
+  The manifest remains even after the last registration is removed so
+  unregistered models never unexpectedly become active again.
+- If the saved manifest is malformed, too large, duplicated, or unsafe,
+  **INVALID mode** fails closed, disables all Piper packs and preserves
+  the file for manual repair. Never delete a damaged manifest as an
+  automatic recovery measure: deleting it restores LEGACY discovery.
+- An expected SHA-256 for the ONNX file is required from a separately
+  trusted publisher/source; calculating a digest locally verifies file
+  identity but does **not** by itself prove its provenance. The companion
+  JSON checksum is recorded at registration. License identifier and version
+  are *operator declarations*, not independently verified certifications.
+  Model files may be up to 1 GiB, JSON configs to 256 KiB, and the registry
+  supports up to 64 entries. Hash checks during discovery and synthesis
+  intentionally add I/O overhead in managed mode.
+- CLI examples: `Get-FileHash -Algorithm SHA256 .\\tts\\voices\\sample.onnx`
+  (PowerShell) and `sha256sum tts/voices/sample.onnx` (Linux). Compare
+  the digest against the trusted publisher's expected SHA-256.
+- Removing a registration does not delete files, touch saved global voice
+  preferences, or erase named profiles. Previously selected unavailable
+  voices remain visible as missing in profile/default settings.
 
 ## End-to-end validation and final acceptance
 
@@ -205,14 +254,18 @@ unchanged. Removal of release artifacts does not remove TTS source commits.
 **Do not recreate the deleted TTS intermediate releases or tags.**
 The completed standalone foundation is delivered as one v0.1.1 package.
 Game/provider/OBS integrations remain deferred until separately authorized.
-Voice adapters and new voice-pack management are future independent work.
+Voice adapter expansion and any voice-pack distribution service remain future independent work.
+The local registration interface is a subsequent feature branch and is not
+included in the frozen v0.1.1 foundation release.
 Named voice profiles are implemented in the subsequent profile feature branch;
 they are not part of the frozen v0.1.1 foundation package.
 
 ## Next milestones (not implemented)
 
-1. Safe optional local voice pack management after publishing a trusted pack
-   manifest, licenses, version checks, checksums and rollback behavior.
+1. Local voice pack registration/inventory/disable/unregister now supports
+   operator-provided ONNX pairs and a fail-closed digest-checked manifest.
+   Distribution, trusted publisher catalogs and automated model installation
+   remain deferred; backup/rollback is operator-controlled.
 2. Additional trusted local/cloud adapters through `TtsService.TtsEngine`,
    and real-device Piper compatibility/quality verification.
 3. Further audio-generation efficiency work and runtime memory profiling.
