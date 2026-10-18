@@ -355,6 +355,38 @@ memory, quality and shutdown behavior. An explicit OS-level RSS quota is
 not yet implemented; the one-model limit and idle eviction are the initial
 bounds.
 
+## Resident Piper long-soak and resource acceptance gate
+
+The optional `TtsPiperSoakProbe` runs only in the ephemeral Linux real-engine
+workflow with a checksum-verified ONNX model. It is deliberately separate
+from fast unit probes and executes **1,000 real syntheses** through the
+resident model with varied short utterances. Every 100 requests it samples
+the child process' `/proc/<pid>/status` RSS and the JVM RSS without saving
+speech text, generated audio or native profiling archives. The probe checks
+that the *same PID* services all 1,000 requests, that no sample's native RSS
+exceeds its 100-request baseline by 128 MiB for this pinned small fixture,
+and that all WAV outputs are complete and nonempty. This tolerance is only a
+**coarse runaway-memory regression guard**, not evidence of zero leaks or a
+portable hard memory cap for arbitrary models.
+
+It then copies the same trusted test model to a second, differently named
+model file in a disposable test root to exercise two physical process
+replacements (model A → B → A) and checks that old PIDs have exited.
+Subsequent checks force an unexpected child termination and restart,
+stop inference **while audio is being synthesized**, and inject a very short
+request deadline to test cleanup of a stalled startup. These last two cases
+protect against orphaned Python/model processes after platform shutdown and
+timeout. The runtime rejects truncated and out-of-range binary WAV frames,
+and shutdown never retries a cold Piper CLI if the worker was closed.
+
+**Acceptance interpretation:** a successful 1,000-request run plus stable
+sampled RSS supports a targeted short-run reliability claim, not indefinite
+leak-free operation. JIT, file system cache and model size affect timings and
+memory; Linux `/proc` is not available natively on Windows. Real operator
+Windows memory measurement, actual-model listening, duration-based soak tests
+and OS-enforced RSS hard caps are still unverified. Thus resident inference
+remains disabled by default and must not be presented as production-approved.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/
