@@ -234,6 +234,8 @@
         : "";
       queueStatus.textContent = "대기 " + state.queued + "건"
         + (state.activeJobId ? " · 합성 진행 중" : "") + cache + metrics;
+      // Keep runtime metrics fresh during long administrator speech previews.
+      await loadPiperRuntime();
     } catch (error) {
       queueStatus.textContent = "대기열 상태 확인 실패";
     }
@@ -407,6 +409,77 @@
     await updateQueue();
   });
 
+  function renderPiperRuntime(info) {
+    $("piperWorkerState").textContent = {
+      READY: "준비됨", SYNTHESIZING: "합성 중", IDLE: "대기 (미실행)",
+      CLOSED: "종료됨", DISABLED: "비활성", UNAVAILABLE: "엔진 없음"
+    }[info.state] || "알 수 없음";
+    $("piperWorkerModel").textContent = info.model || "—";
+    $("piperWorkerMemory").textContent = info.rssKiB == null
+      ? "측정 불가" : (Number(info.rssKiB) / 1024).toFixed(1) + " MiB";
+    $("piperWorkerLatency").textContent = Number(info.completed) > 0
+      ? info.averageSynthMs + "ms (최근 " + info.lastSynthMs + "ms)" : "—";
+    $("piperWorkerCounts").textContent = info.completed + " / " + info.failed;
+    $("piperWorkerRecovery").textContent = info.launched + " / "
+      + info.timedOut + " / " + info.fallbacks;
+    $("piperRuntimeEnabled").checked = Boolean(info.enabled);
+    $("piperIdleSeconds").value = info.idleSeconds;
+    const editable = info.available && !info.invalidSettings;
+    $("piperRuntimeEnabled").disabled = !editable;
+    $("piperIdleSeconds").disabled = !editable;
+    $("savePiperRuntime").disabled = !editable;
+    $("releasePiperRuntime").disabled = !info.enabled;
+    $("piperRuntimeStatus").textContent = info.invalidSettings
+      ? "관리 파일 손상: 상주 워커가 차단되었습니다. 서버에서 수동 복구해야 합니다."
+      : info.available
+        ? "운영 상태 확인됨 · 설정은 tts/piper-runtime.json에 저장됩니다."
+        : "상주 실행 환경이 없습니다. 서버에서 BGP_TTS_PIPER_WARM_PYTHON을 지정한 뒤 재시작하세요.";
+  }
+
+  async function loadPiperRuntime() {
+    try {
+      renderPiperRuntime(await json("/api/v1/tts/piper/runtime"));
+    } catch (error) {
+      $("piperRuntimeStatus").textContent = "워커 조회 실패: " + error.message;
+    }
+  }
+
+  $("reloadPiperRuntime").addEventListener("click", loadPiperRuntime);
+  $("savePiperRuntime").addEventListener("click", async () => {
+    const enabled = $("piperRuntimeEnabled").checked;
+    const idleSeconds = Number($("piperIdleSeconds").value);
+    if (!Number.isInteger(idleSeconds) || idleSeconds < 10 || idleSeconds > 600) {
+      $("piperRuntimeStatus").textContent = "유휴 종료시간은 10–600초 정수여야 합니다.";
+      return;
+    }
+    $("savePiperRuntime").disabled = true;
+    try {
+      renderPiperRuntime(await json("/api/v1/tts/piper/runtime", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled, idleSeconds })
+      }));
+      $("piperRuntimeStatus").textContent =
+        "워커 운영 설정을 저장했습니다. 실행 중이던 모델은 해제됩니다.";
+    } catch (error) {
+      $("piperRuntimeStatus").textContent = "워커 설정 실패: " + error.message;
+      await loadPiperRuntime();
+    }
+  });
+  $("releasePiperRuntime").addEventListener("click", async () => {
+    $("releasePiperRuntime").disabled = true;
+    try {
+      renderPiperRuntime(await json("/api/v1/tts/piper/runtime/release", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" }
+      }));
+      $("piperRuntimeStatus").textContent = "상주 모델을 메모리에서 해제했습니다.";
+    } catch (error) {
+      $("piperRuntimeStatus").textContent = "모델 해제 실패: " + error.message;
+      await loadPiperRuntime();
+    }
+  });
+
   function selectedPack() {
     return packCandidates.find(pack => pack.model === $("packModel").value);
   }
@@ -553,6 +626,7 @@
     await loadVoices();
     await loadProfiles();
     await loadPacks();
+    await loadPiperRuntime();
     await updateQueue();
   })();
 })();
