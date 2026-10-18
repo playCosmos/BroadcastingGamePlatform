@@ -1728,6 +1728,41 @@ public final class GameClientHttpServer implements AutoCloseable {
                 sendJson(exchange, 405, Map.of("error", "unsupported voice pack action"));
                 return;
             }
+            if ("/api/v1/tts/piper/runtime".equals(path)
+                && "GET".equals(method)) {
+                sendJson(exchange, 200, tts.piperRuntime());
+                return;
+            }
+            if ("/api/v1/tts/piper/runtime".equals(path)
+                && "PUT".equals(method)) {
+                byte[] bytes = exchange.getRequestBody().readNBytes(1025);
+                if (bytes.length > 1024) {
+                    sendJson(exchange, 413, Map.of("error", "request too large"));
+                    return;
+                }
+                JsonObject body = GSON.fromJson(new String(
+                    bytes, StandardCharsets.UTF_8), JsonObject.class);
+                if (body == null || !body.has("enabled")
+                    || !body.get("enabled").isJsonPrimitive()
+                    || !body.get("enabled").getAsJsonPrimitive().isBoolean()
+                    || !body.has("idleSeconds")
+                    || !body.get("idleSeconds").isJsonPrimitive()
+                    || !body.get("idleSeconds").getAsJsonPrimitive().isNumber()
+                    || !body.get("idleSeconds").getAsString().matches("[0-9]{1,3}")) {
+                    sendJson(exchange, 400, Map.of(
+                        "error", "enabled boolean and idleSeconds integer required"));
+                    return;
+                }
+                sendJson(exchange, 200, tts.configurePiperRuntime(
+                    body.get("enabled").getAsBoolean(),
+                    body.get("idleSeconds").getAsInt()));
+                return;
+            }
+            if ("/api/v1/tts/piper/runtime/release".equals(path)
+                && "POST".equals(method)) {
+                sendJson(exchange, 200, tts.releasePiperRuntime());
+                return;
+            }
             if ("/api/v1/tts/status".equals(path) && "GET".equals(method)) {
                 sendJson(exchange, 200, tts.status());
                 return;
