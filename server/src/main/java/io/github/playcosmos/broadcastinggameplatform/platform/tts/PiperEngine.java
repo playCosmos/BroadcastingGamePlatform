@@ -270,10 +270,10 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
                 }
                 // A crash may fall back only if the model remains authorized.
                 current.invalidate();
-                fallbackCount.incrementAndGet();
                 if (packStore != null && !packStore.allowed(stem)) {
                     throw new IllegalArgumentException("Piper voice pack unavailable");
                 }
+                fallbackCount.incrementAndGet();
                 System.err.println("[tts] Piper warm worker failed; using cold fallback: "
                     + failure.getClass().getSimpleName());
             }
