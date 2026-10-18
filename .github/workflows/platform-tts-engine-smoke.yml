@@ -96,9 +96,9 @@ jobs:
           {
             echo '### Real Piper inference benchmark (ephemeral Ubuntu CI runner)'
             echo
-            echo '\`\`\`text'
+            echo '```text'
             grep '^PIPER_PERF_' /tmp/bgp-tts-piper-perf.log
-            echo '\`\`\`'
+            echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove native fixture files
