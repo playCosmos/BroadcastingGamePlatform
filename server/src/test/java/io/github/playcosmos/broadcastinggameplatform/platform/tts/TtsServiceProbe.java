@@ -98,6 +98,29 @@ public final class TtsServiceProbe {
                 <= cached.status().maxRetainedAudioBytes(),
                 "opted-in caching must respect the existing 16 MiB preview cap");
         }
+        var cacheClock = new java.util.concurrent.atomic.AtomicLong(
+            TimeUnit.SECONDS.toNanos(1));
+        var ttlEngine = new MockEngine("preview-ttl", "Test") {
+            @Override public boolean reusablePreview() { return true; }
+        };
+        try (var ttlCache = new TtsService(
+            List.of(ttlEngine), null, cacheClock::get)) {
+            String voice = ttlCache.voices().getFirst().id();
+            var firstPreview = ttlCache.enqueue(new TtsService.Request(
+                "expire cache", voice, 0, 80));
+            waitFor(ttlCache, firstPreview.id(), "READY");
+            cacheClock.addAndGet(TimeUnit.MINUTES.toNanos(15));
+            require("EXPIRED".equals(ttlCache.job(firstPreview.id()).status()),
+                "an expired preview must no longer be reusable");
+            var secondPreview = ttlCache.enqueue(new TtsService.Request(
+                "expire cache", voice, 0, 80));
+            waitFor(ttlCache, secondPreview.id(), "READY");
+            require(ttlEngine.calls.get() == 2 && ttlCache.status().previewReuses() == 0,
+                "expired audio must trigger new synthesis rather than stale reuse");
+            require(ttlCache.status().retainedAudioBytes() == sampleWav().length,
+                "expired audio bytes must be reclaimed before re-synthesis");
+        }
+
         var notCacheable = new MockEngine("hash-sensitive", "Test");
         try (var uncached = new TtsService(List.of(notCacheable))) {
             String voice = uncached.voices().getFirst().id();
