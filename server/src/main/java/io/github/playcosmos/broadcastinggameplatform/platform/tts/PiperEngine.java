@@ -182,6 +182,7 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
         String filename = selected.model().getFileName().toString();
         String stem = filename.substring(0, filename.length() - 5);
         if (packStore != null && !packStore.allowed(stem)) {
+            if (warmWorker != null) warmWorker.invalidate();
             throw new IllegalArgumentException("Piper voice pack unavailable");
         }
         // Re-check the trust boundary after discovery, before execution.
