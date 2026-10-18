@@ -88,10 +88,10 @@ jobs:
         run: |
           set -euo pipefail
           export PATH="/tmp/bgp-tts-piper-env/bin:$PATH"
-          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \\
-            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPiperPerformanceProbe \\
-            /tmp/bgp-tts-piper-root \\
-            f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375 \\
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPiperPerformanceProbe \
+            /tmp/bgp-tts-piper-root \
+            f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375 \
             | tee /tmp/bgp-tts-piper-perf.log
           {
             echo '### Real Piper inference benchmark (ephemeral Ubuntu CI runner)'
