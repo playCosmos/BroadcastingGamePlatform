@@ -5,7 +5,7 @@ on:
   push:
     branches: [release/tts-foundation-v0.1.1]
   pull_request:
-    branches: [main, feature/tts-runtime-optimization, feature/tts-piper-benchmark, feature/tts-piper-persistent-worker]
+    branches: [main, feature/tts-runtime-optimization, feature/tts-piper-benchmark, feature/tts-piper-persistent-worker, feature/tts-piper-soak-stability]
     paths:
       - "server/src/main/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
       - "server/src/test/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"

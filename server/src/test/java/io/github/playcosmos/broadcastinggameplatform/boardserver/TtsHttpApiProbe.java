@@ -12,6 +12,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoicePackSt
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.PiperEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
 import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawService;
@@ -35,7 +36,7 @@ public final class TtsHttpApiProbe {
         Path root = Files.createTempDirectory("tts-http-api-probe-");
         GameClientHttpServer server = null;
         try (var tts = new TtsService(
-            List.of(new FakeEngine()),
+            List.of(new FakeEngine(), new PiperEngine(root.resolve("tts/voices"))),
             new TtsPreferencesStore(root.resolve("tts-settings.json")),
             new TtsVoiceProfileStore(root.resolve("tts-profiles.json")),
             new TtsVoicePackStore(root))) {
@@ -71,6 +72,7 @@ public final class TtsHttpApiProbe {
             for (String path : List.of("/api/v1/tts/voices",
                     "/api/v1/tts/status", "/api/v1/tts/settings",
                     "/api/v1/tts/profiles", "/api/v1/tts/packs",
+                    "/api/v1/tts/piper/runtime",
                     "/api/v1/tts/jobs/00000000-0000-0000-0000-000000000000/audio")) {
                 var response = client.send(HttpRequest.newBuilder(
                     base.resolve(path)).GET().build(),
@@ -111,6 +113,72 @@ public final class TtsHttpApiProbe {
                 && status.body().contains("maxRetainedAudioBytes"),
                 "administrator status must expose bounded preview cache budget");
 
+            var runtimeBefore = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime"))
+                .header("Cookie", cookie).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(runtimeBefore.statusCode() == 200
+                && runtimeBefore.body().contains("\"idleSeconds\":60")
+                && !runtimeBefore.body().contains("python.exe")
+                && !runtimeBefore.body().contains("\"pid\""),
+                "runtime status must not disclose paths, process IDs or private input");
+            String policy = "{\"enabled\":false,\"idleSeconds\":120}";
+            var originlessRuntime = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime"))
+                .header("Cookie", cookie)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(policy)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(originlessRuntime.statusCode() == 403,
+                "originless Piper runtime mutations must be rejected");
+            var foreignRuntime = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime"))
+                .header("Cookie", cookie)
+                .header("Origin", "https://attacker.example")
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(policy)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(foreignRuntime.statusCode() == 403,
+                "cross-origin Piper settings must be rejected");
+            var badRuntime = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                    "{\"enabled\":false,\"idleSeconds\":4.5}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(badRuntime.statusCode() == 400,
+                "runtime idle timeout must be a bounded integer");
+            var unavailableRuntime = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                    "{\"enabled\":true,\"idleSeconds\":60}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(unavailableRuntime.statusCode() == 400,
+                "runtime cannot be enabled without operator-provided interpreter");
+            var savedRuntime = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(policy)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(savedRuntime.statusCode() == 200
+                && savedRuntime.body().contains("\"idleSeconds\":120")
+                && Files.exists(root.resolve("tts/piper-runtime.json")),
+                "Piper runtime settings must persist via admin API");
+            var releasedRuntime = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/piper/runtime/release"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .POST(HttpRequest.BodyPublishers.noBody()).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(releasedRuntime.statusCode() == 200,
+                "admin release must not require raw native process identifiers");
             for (String rejectedOrigin : List.of("https://attacker.example")) {
                 var forbidden = client.send(HttpRequest.newBuilder(
                     base.resolve("/api/v1/tts/speak"))

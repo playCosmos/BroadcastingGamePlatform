@@ -399,6 +399,48 @@ Windows memory measurement, actual-model listening, duration-based soak tests
 and OS-enforced RSS hard caps are still unverified. Thus resident inference
 remains disabled by default and must not be presented as production-approved.
 
+## Administrator Piper runtime operations (opt-in)
+
+The existing authenticated `/admin/tts/` laboratory includes a **Piper resident
+worker** panel. It exposes actual state (`DISABLED`, `IDLE`, `READY`,
+`SYNTHESIZING`, `CLOSED`), model filename stem, optional resident process
+RSS (KiB), total completed/failed/timeout syntheses, model loads, CLI
+fallback attempts and most recent/average synthesis time. Counters are
+**since the last worker policy reconfiguration**, not historical or
+persistent. They never include text, wave bytes, raw PID, a model's
+absolute path or the private Python executable path.
+
+- `GET /api/v1/tts/piper/runtime`: admin-only status and settings.
+- `PUT /api/v1/tts/piper/runtime`: admin-only, strict trusted Origin,
+  JSON `{"enabled":true|false,"idleSeconds":10..600}` (default 60).
+  Full policy is atomically stored in `tts/piper-runtime.json` and
+  applied to the running worker by terminating the current model, if any.
+- `POST /api/v1/tts/piper/runtime/release`: administrator-triggered
+  process/model eviction without changing the persisted policy. The
+  next speech request initializes the model again.
+
+The warm Python environment is **not** chosen in the admin UI, API or
+policy file. The host operator must separately install Piper, set
+`BGP_TTS_PIPER_WARM_PYTHON` to an absolute trusted Python executable
+and restart the server before resident mode can be enabled. Without that
+environment, enabling is rejected. For backward compatibility, setting
+the environment alone initially opts in, unless a saved policy explicitly
+disables resident mode. An invalid/corrupt settings document is preserved
+and fails closed to disabled mode; the operator must repair/remove that
+document locally rather than having the API silently overwrite it.
+Settings and model registry permissions remain distinct.
+
+Native child RSS uses Linux `/proc/<pid>/status` when available; on
+platforms without a supported direct measurement (including Windows),
+the UI explicitly displays **measurement unavailable**, not a guessed
+value or JVM RSS. The Java worker only tracks counts and durations
+locally and does not install system services or polling daemons. The
+one-model maximum, timeout, idle reaper and model SHA-256 checks from
+the previous milestone remain enforced. This feature is operational
+control and monitoring, **not** automatic production approval: real
+Windows operator listening, native memory observation and multi-model
+stress testing are still outstanding.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/
