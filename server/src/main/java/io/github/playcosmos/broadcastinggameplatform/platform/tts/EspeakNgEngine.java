@@ -23,6 +23,8 @@ public final class EspeakNgEngine implements TtsService.TtsEngine {
 
     @Override public String id() { return "espeak-ng"; }
 
+    @Override public boolean reusablePreview() { return true; }
+
     @Override public synchronized void invalidateVoiceCatalog() {
         lastLookupNanos = 0;
     }

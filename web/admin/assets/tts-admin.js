@@ -222,8 +222,18 @@
         ? " · 미리듣기 " + (retained / 1048576).toFixed(1)
           + "/" + (limit / 1048576).toFixed(0) + " MiB"
         : "";
+      const syntheses = Number(state.engineSyntheses);
+      const reuses = Number(state.previewReuses);
+      const failed = Number(state.synthesisFailures);
+      const runtime = Number(state.lastSynthesisMillis);
+      const metrics = Number.isFinite(syntheses) && Number.isFinite(reuses)
+        && Number.isFinite(failed) && Number.isFinite(runtime)
+        ? " · 실제 합성 " + syntheses + "건 · 미리듣기 재사용 "
+          + reuses + "건 · 실패 " + failed + "건"
+          + " · 마지막 합성 " + runtime + "ms"
+        : "";
       queueStatus.textContent = "대기 " + state.queued + "건"
-        + (state.activeJobId ? " · 합성 진행 중" : "") + cache;
+        + (state.activeJobId ? " · 합성 진행 중" : "") + cache + metrics;
     } catch (error) {
       queueStatus.textContent = "대기열 상태 확인 실패";
     }
