@@ -1,6 +1,5 @@
 package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 
-import java.io.ByteArrayInputStream;
 import java.io.DataInputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -204,6 +203,11 @@ final class PiperWarmWorker implements AutoCloseable {
 
     synchronized boolean running() {
         return process != null && process.isAlive();
+    }
+
+    /** CI package-private fault injection; does not clean stored process state. */
+    synchronized void crashForProbe() {
+        if (process != null) TtsProcessCleanup.terminate(process);
     }
 
     private void reapIdle() {
