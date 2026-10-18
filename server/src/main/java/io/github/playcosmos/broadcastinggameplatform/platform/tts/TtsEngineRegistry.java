@@ -19,11 +19,17 @@ public final class TtsEngineRegistry {
     }
 
     public static List<TtsService.TtsEngine> installed(java.nio.file.Path applicationRoot) {
+        return installed(applicationRoot, applicationRoot == null ? null
+            : new TtsVoicePackStore(applicationRoot));
+    }
+
+    public static List<TtsService.TtsEngine> installed(java.nio.file.Path applicationRoot,
+                                                       TtsVoicePackStore packStore) {
         var engines = new ArrayList<TtsService.TtsEngine>();
         engines.add(new WindowsSapiEngine());
         engines.add(new EspeakNgEngine());
         if (applicationRoot != null) {
-            engines.add(new PiperEngine(applicationRoot.resolve("tts/voices")));
+            engines.add(new PiperEngine(applicationRoot.resolve("tts/voices"), packStore));
         }
         var ids = new HashSet<String>();
         for (var engine : engines) ids.add(engine.id());
