@@ -212,6 +212,34 @@ copies, process memory, or the total server heap.
   preferences, or erase named profiles. Previously selected unavailable
   voices remain visible as missing in profile/default settings.
 
+## Runtime reuse, memory bounds and diagnostics
+
+- Within the existing in-memory 15-minute preview retention and aggregate
+  16 MiB limit, an identical voice ID, text, rate and volume may reuse a
+  previously completed WAV instead of launching another native synthesis.
+  Cached audio is copied into a **separate job**, with independent job ID,
+  expiry and retention accounting. No disk-backed or cross-restart cache is
+  created, and no speech text is added to logs or public status fields.
+- Reuse is an explicit `TtsEngine.reusablePreview()` opt-in. Windows SAPI and
+  eSpeak NG opt in for repeated administrator previews; other and third-party
+  engines continue synthesizing for every request unless they deliberately
+  opt in. **Piper explicitly remains uncached** to preserve ONNX/config
+  integrity verification on every synthesis. The first synthesis for a
+  unique request still executes the selected native engine.
+- An explicit `/api/v1/tts/voices?refresh=1` or a voice-pack registry mutation
+  invalidates reuse across catalog generations. Changing speech rate, volume,
+  voice or text also prevents reuse. Expired, evicted, failed and canceled jobs
+  are never reuse candidates.
+- The administrator status response now includes cumulative
+  `engineSyntheses`, `previewReuses`, `synthesisFailures` and
+  `lastSynthesisMillis`. These counters reset on process restart, measure
+  only the in-process lifetime, and do not include speech text or WAV data.
+  Last synthesis latency measures the engine's call, not queue wait time or
+  client playback. They are diagnostics, not hardware-independent benchmarks.
+- Recoverable native provider linkage failures and assertion errors mark
+  the affected job FAILED without killing the worker; following jobs
+  continue. Irrecoverable process-level failures are not masked.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/
@@ -281,6 +309,8 @@ they are not part of the frozen v0.1.1 foundation package.
 - Keep synthesis off synchronous `PlatformEventBus` listeners.
 - Set per-request size limits, process timeout, bounded queue and WAV size.
 - Never include speech text in logs, player payloads or public errors.
+- Cached administrator previews stay in the existing memory-only bounded
+  retention. No speech text, WAV bytes, job ID or cache key is written to disk.
 - Voice-profile read/write/delete routes require administrator authentication;
   mutations also require a trusted Origin. Each profile request is limited
   to 4 KiB and persisted profile documents to 16 KiB. The profile store
