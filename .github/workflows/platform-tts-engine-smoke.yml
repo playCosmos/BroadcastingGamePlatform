@@ -5,7 +5,7 @@ on:
   push:
     branches: [release/tts-foundation-v0.1.1]
   pull_request:
-    branches: [main, feature/tts-runtime-optimization]
+    branches: [main, feature/tts-runtime-optimization, feature/tts-piper-benchmark]
     paths:
       - "server/src/main/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
       - "server/src/test/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
@@ -101,6 +101,29 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Verify persistent Piper worker framing and recovery
+        working-directory: server
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/bgp-tts-piper-env/bin:$PATH"
+          mkdir -p /tmp/bgp-tts-worker-root/tts/voices
+          cp /tmp/bgp-tts-piper-root/tts/voices/en_US-lessac-low.onnx* \
+             /tmp/bgp-tts-worker-root/tts/voices/
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPiperWarmProbe \
+            /tmp/bgp-tts-worker-root \
+            /tmp/bgp-tts-piper-env/bin/python \
+            f7d01dde371555732c4c314111ac79672b1a5ce2fc19266ab42178fd8df7f375 \
+            | tee /tmp/bgp-tts-piper-worker.log
+          {
+            echo '### Real Piper persistent worker — CI-only opt-in'
+            echo
+            echo '```text'
+            grep '^PIPER_WARM_' /tmp/bgp-tts-piper-worker.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compare preloaded Piper model inference (CI-only Python API)
         working-directory: server
         shell: bash
@@ -108,15 +131,15 @@ jobs:
           set -euo pipefail
           /tmp/bgp-tts-piper-env/bin/python tools/tts_benchmark_warm_piper.py \
             /tmp/bgp-tts-piper-root/tts/voices/en_US-lessac-low.onnx \
-            | tee /tmp/bgp-tts-piper-warm.log
+            | tee /tmp/bgp-tts-piper-warm.log /tmp/bgp-tts-piper-worker.log
           {
             echo '### Preloaded model inference — no JVM, same CI host'
             echo
             echo '```text'
-            grep '^PIPER_WARM_MODEL_PERF' /tmp/bgp-tts-piper-warm.log
+            grep '^PIPER_WARM_MODEL_PERF' /tmp/bgp-tts-piper-warm.log /tmp/bgp-tts-piper-worker.log
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Remove native fixture files
         if: always()
-        run: rm -rf /tmp/bgp-tts-piper-root /tmp/bgp-tts-piper-env /tmp/bgp-tts-piper-perf.log /tmp/bgp-tts-piper-warm.log
+        run: rm -rf /tmp/bgp-tts-piper-root /tmp/bgp-tts-worker-root /tmp/bgp-tts-piper-env /tmp/bgp-tts-piper-perf.log /tmp/bgp-tts-piper-warm.log /tmp/bgp-tts-piper-worker.log

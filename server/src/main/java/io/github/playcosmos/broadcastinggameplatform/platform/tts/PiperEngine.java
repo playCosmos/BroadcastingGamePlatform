@@ -24,12 +24,13 @@ import java.util.stream.Stream;
  * application-owned tts/voices directory. Nothing is downloaded/executed
  * from that directory, and model files are never served to HTTP clients.
  */
-public final class PiperEngine implements TtsService.TtsEngine {
+public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
     private static final int MAX_MODELS = 64;
     private static final int MAX_CONFIG_BYTES = 256 * 1024;
     private static final int MAX_WAV_BYTES = 5 * 1024 * 1024;
     private final Path voicesDirectory;
     private final TtsVoicePackStore packStore;
+    private final PiperWarmWorker warmWorker;
     private volatile Map<String, ModelVoice> catalog = Map.of();
     private volatile long cachedAt;
 
@@ -41,14 +42,29 @@ public final class PiperEngine implements TtsService.TtsEngine {
     }
 
     public PiperEngine(Path voicesDirectory, TtsVoicePackStore packStore) {
+        this(voicesDirectory, packStore, PiperWarmWorker.configuredPython());
+    }
+
+    // Explicit dependency seam for opt-in real engine integration probes.
+    PiperEngine(Path voicesDirectory, TtsVoicePackStore packStore, Path warmPython) {
         this.voicesDirectory = voicesDirectory.toAbsolutePath().normalize();
         this.packStore = packStore;
+        this.warmWorker = warmPython == null ? null : new PiperWarmWorker(warmPython);
     }
 
     @Override public String id() { return "piper"; }
 
     @Override public synchronized void invalidateVoiceCatalog() {
         cachedAt = 0;
+        if (warmWorker != null) warmWorker.invalidate();
+    }
+
+    @Override public void close() {
+        if (warmWorker != null) warmWorker.close();
+    }
+
+    boolean warmWorkerRunning() {
+        return warmWorker != null && warmWorker.running();
     }
 
     @Override
@@ -166,6 +182,7 @@ public final class PiperEngine implements TtsService.TtsEngine {
         String filename = selected.model().getFileName().toString();
         String stem = filename.substring(0, filename.length() - 5);
         if (packStore != null && !packStore.allowed(stem)) {
+            if (warmWorker != null) warmWorker.invalidate();
             throw new IllegalArgumentException("Piper voice pack unavailable");
         }
         // Re-check the trust boundary after discovery, before execution.
@@ -177,6 +194,29 @@ public final class PiperEngine implements TtsService.TtsEngine {
             || !Files.isRegularFile(selected.config())) {
             throw new IllegalStateException("Piper model unavailable");
         }
+        double lengthScale = Math.max(.65, Math.min(1.8,
+            1.0 - rate * .045));
+        if (warmWorker != null) {
+            try {
+                return scalePcm16Wav(warmWorker.synthesize(
+                    selected.model(), selected.config(), text,
+                    selected.speaker(), lengthScale), volume);
+            } catch (Exception | LinkageError failure) {
+                // Recover by returning to the proven per-request CLI. Never
+                // retry using a pack revoked while a worker was running.
+                warmWorker.invalidate();
+                if (packStore != null && !packStore.allowed(stem)) {
+                    throw new IllegalArgumentException("Piper voice pack unavailable");
+                }
+                System.err.println("[tts] Piper warm worker failed; using cold fallback: "
+                    + failure.getClass().getSimpleName());
+            }
+        }
+        return synthesizeCold(selected, text, rate, volume);
+    }
+
+    private byte[] synthesizeCold(ModelVoice selected, String text, int rate,
+                                  int volume) throws Exception {
         Path wav = Files.createTempFile("bgp-piper-output-", ".wav");
         try {
             // Piper length_scale: >1 slower, <1 faster.
