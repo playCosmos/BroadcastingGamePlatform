@@ -96,6 +96,40 @@ public final class PiperEngineProbe {
             expectInvalid(() -> PiperEngine.scalePcm16Wav(truncated, 50),
                 "truncated WAV chunk");
 
+            // Stdio framing must reject truncation even when a short frame
+            // still has a superficially valid WAV header length (>=44).
+            var framed = new java.io.ByteArrayOutputStream();
+            try (var data = new java.io.DataOutputStream(framed)) {
+                data.writeInt(sample.length);
+                data.write(sample);
+            }
+            require(java.util.Arrays.equals(PiperWarmWorker.readWavFrame(
+                new java.io.ByteArrayInputStream(framed.toByteArray())), sample),
+                "complete length-prefixed WAV must round trip");
+            var truncatedFrame = new java.io.ByteArrayOutputStream();
+            try (var data = new java.io.DataOutputStream(truncatedFrame)) {
+                data.writeInt(sample.length + 1);
+                data.write(sample);
+            }
+            boolean truncatedRejected = false;
+            try {
+                PiperWarmWorker.readWavFrame(new java.io.ByteArrayInputStream(
+                    truncatedFrame.toByteArray()));
+            } catch (java.io.IOException expected) { truncatedRejected = true; }
+            require(truncatedRejected, "short WAV frame must not be accepted");
+            for (int invalidLength : List.of(43, 5 * 1024 * 1024 + 1, -1)) {
+                var bogus = new java.io.ByteArrayOutputStream();
+                try (var data = new java.io.DataOutputStream(bogus)) {
+                    data.writeInt(invalidLength);
+                }
+                boolean rejected = false;
+                try {
+                    PiperWarmWorker.readWavFrame(new java.io.ByteArrayInputStream(
+                        bogus.toByteArray()));
+                } catch (java.io.IOException expected) { rejected = true; }
+                require(rejected, "invalid WAV frame length must fail closed");
+            }
+
             System.out.println("Piper local voice manifest/PCM/regression probe passed.");
         } finally {
             Files.deleteIfExists(root);
