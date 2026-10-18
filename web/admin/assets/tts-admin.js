@@ -15,6 +15,8 @@
   const saveDefaults = $("saveDefaults");
   let catalog = [];
   let profiles = [];
+  let packCandidates = [];
+  let packMode = "LEGACY";
   let saved = { voiceId: "", rate: 0, volume: 80 };
   let currentAudioUrl = null;
   let pollGeneration = 0;
@@ -395,6 +397,139 @@
     await updateQueue();
   });
 
+  function selectedPack() {
+    return packCandidates.find(pack => pack.model === $("packModel").value);
+  }
+
+  function updatePackControls() {
+    const pack = selectedPack();
+    const exists = Boolean(pack);
+    $("packRegister").disabled = !exists || !pack.configPresent
+      || packMode === "INVALID";
+    $("packVerify").disabled = !exists || !pack.configPresent;
+    $("packEnable").disabled = !exists || packMode !== "MANAGED"
+      || !["DISABLED", "REGISTERED"].includes(pack.state);
+    $("packDisable").disabled = !exists || packMode !== "MANAGED"
+      || pack.state !== "REGISTERED";
+    $("packUnregister").disabled = !exists || packMode !== "MANAGED"
+      || !["DISABLED", "REGISTERED", "MISSING", "INCOMPLETE"].includes(pack.state);
+  }
+
+  function renderPacks(preferred = $("packModel").value) {
+    const choices = $("packModel");
+    choices.replaceChildren();
+    for (const pack of packCandidates) {
+      const option = document.createElement("option");
+      option.value = pack.model;
+      option.textContent = pack.model + " · " + pack.state;
+      choices.append(option);
+    }
+    const selected = packCandidates.find(p => p.model === preferred)
+      || packCandidates[0];
+    if (!selected) {
+      const option = document.createElement("option");
+      option.value = "";
+      option.textContent = "발견된 ONNX 모델 없음";
+      choices.append(option);
+    }
+    choices.value = selected?.model || "";
+    choices.disabled = !selected;
+    selectPackMetadata();
+  }
+
+  function selectPackMetadata() {
+    const pack = selectedPack();
+    $("packVersion").value = pack?.version || "";
+    $("packLicense").value = pack?.license || "";
+    $("packSha").value = pack?.sha256 || "";
+    $("packAck").checked = false;
+    updatePackControls();
+  }
+
+  function acceptPackInventory(payload, preferred = $("packModel").value) {
+    packCandidates = Array.isArray(payload.packs) ? payload.packs : [];
+    packMode = payload.mode || "INVALID";
+    renderPacks(preferred);
+    const modeLabel = packMode === "LEGACY" ? "기존 자동 탐색 모드"
+      : packMode === "MANAGED" ? "등록 음성만 허용하는 관리 모드"
+      : "관리 파일 손상: 모든 관리 Piper 음성 차단, 수동 복구 필요";
+    $("packStatus").textContent = modeLabel + " · " + packCandidates.length
+      + "개 로컬 모델 발견 · 등록/활성화 전 라이선스와 SHA-256을 확인하세요.";
+  }
+
+  async function loadPacks() {
+    try {
+      acceptPackInventory(await json("/api/v1/tts/packs"));
+    } catch (error) {
+      $("packStatus").textContent = "음성팩 목록 조회 실패: " + error.message;
+    }
+  }
+
+  async function packMutation(url, method, data, successMessage) {
+    try {
+      const payload = await json(url, {
+        method,
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(data)
+      });
+      acceptPackInventory(payload, data.model);
+      await loadVoices(true);
+      $("packStatus").textContent = successMessage
+        + " · " + (packMode === "MANAGED"
+          ? "관리 모드: 등록된 모델만 사용 가능합니다."
+          : "기존 자동 탐색 모드");
+    } catch (error) {
+      $("packStatus").textContent = "음성팩 처리 실패: " + error.message;
+    }
+  }
+
+  $("reloadPacks").addEventListener("click", async () => {
+    await loadPacks();
+    await loadVoices(true);
+  });
+  $("packModel").addEventListener("change", selectPackMetadata);
+  $("packRegister").addEventListener("click", async () => {
+    const model = $("packModel").value;
+    if (!$("packAck").checked) {
+      $("packStatus").textContent = "라이선스 확인 후 체크해야 등록할 수 있습니다.";
+      return;
+    }
+    await packMutation("/api/v1/tts/packs", "PUT", {
+      model,
+      version: $("packVersion").value.trim(),
+      license: $("packLicense").value.trim(),
+      sha256: $("packSha").value.trim(),
+      licenseAcknowledged: true
+    }, "모델 등록 완료");
+  });
+  $("packVerify").addEventListener("click", async () => {
+    try {
+      const payload = await json("/api/v1/tts/packs/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ model: $("packModel").value })
+      });
+      $("packStatus").textContent = payload.match
+        ? "등록된 ONNX/JSON 파일의 SHA-256이 모두 일치합니다."
+        : "등록 해시가 없거나 파일이 변경되었습니다. 모델 SHA-256: "
+          + payload.modelSha256 + " · JSON SHA-256: " + payload.configSha256;
+    } catch (error) {
+      $("packStatus").textContent = "무결성 검사 실패: " + error.message;
+    }
+  });
+  $("packEnable").addEventListener("click", () => {
+    packMutation("/api/v1/tts/packs/status", "POST",
+      { model: $("packModel").value, enabled: true }, "음성팩 사용 상태로 변경");
+  });
+  $("packDisable").addEventListener("click", () => {
+    packMutation("/api/v1/tts/packs/status", "POST",
+      { model: $("packModel").value, enabled: false }, "음성팩 사용 중지");
+  });
+  $("packUnregister").addEventListener("click", () => {
+    packMutation("/api/v1/tts/packs", "DELETE",
+      { model: $("packModel").value }, "관리 등록 해제 완료 (모델 파일 유지)");
+  });
+
   $("rateChoice").addEventListener("input", () => {
     $("rateValue").value = $("rateChoice").value;
   });
@@ -410,6 +545,7 @@
     await loadPreferences();
     await loadVoices();
     await loadProfiles();
+    await loadPacks();
     await updateQueue();
   })();
 })();
