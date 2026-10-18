@@ -240,6 +240,55 @@ copies, process memory, or the total server heap.
   the affected job FAILED without killing the worker; following jobs
   continue. Irrecoverable process-level failures are not masked.
 
+## Real Piper inference profiling (Linux CI)
+
+The optional, ephemeral Linux native-engine workflow now benchmarks a pinned,
+SHA-256-verified Piper ONNX example voice (`en_US-lessac-low`,
+`piper-tts==1.8.0`). It invokes the **real** Piper process through the
+platform's Java `TtsService` (not mock audio), five times in each mode:
+
+- `LEGACY`: manually discovered trusted model/config pairs.
+- `MANAGED`: the same pair registered with the externally supplied ONNX
+  SHA-256, with model/config integrity checks still enforced per synthesis.
+- A separate preloaded-model Python probe measures warm model inference
+  without repeating the process startup or ONNX load. This is **diagnostic
+  only**, not a production Python dependency.
+
+The first benchmark run, [CI #20](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/39130958017),
+reported these **observed measurements**, not universal performance claims:
+
+| Metric | LEGACY (5 requests) | MANAGED (5 requests) |
+|---|---:|---:|
+| Mean end-to-end request latency | 1,805 ms | 1,802 ms |
+| Median latency | 1,786 ms | 1,798 ms |
+| Maximum observed latency | 1,940 ms | 1,825 ms |
+| Maximum sampled Piper subprocess RSS | 191,692 KiB | 190,936 KiB |
+| Maximum sampled JVM RSS | 94,508 KiB | 130,752 KiB |
+| Maximum observed used JVM heap | 24,866 KiB | 61,780 KiB |
+
+Initial Piper catalog discovery took 177 ms; a repeat cached discovery
+was below the millisecond reporting resolution. The two modes ran
+sequentially on a shared CI host, so the higher JVM RSS in the second phase
+cannot be attributed to managed mode. The two latency means differ by only
+3 ms and show **no demonstrated managed-hash throughput bottleneck** in this
+five-sample fixture. Approximate process RSS peaks come from periodic Linux
+`/proc` sampling and may underestimate very short peaks. JVM heap samples
+are not GC-normalized and are not a heap-leak measurement.
+
+The measured end-to-end latency includes native process start, ONNX model
+load, phonemization, inference, WAV file I/O and the Java queue. It does not
+individually time those stages. The optional preloaded-model comparison
+tests whether avoiding per-request process/model startup warrants a
+separate, hardened persistent-worker implementation. Do not ship such an
+implementation merely because a single runner looks faster: requirements
+include model/config integrity before each use, process lifecycle/timeout
+and crash recovery, bounded per-voice RSS and worker idle eviction, safe
+file ownership and strict isolation from public traffic.
+
+None of these measurements are operator-Windows benchmarks or human
+listening/voice-quality acceptance. Do not include temporary native models,
+WAVs or Python benchmark dependencies in the shipped platform.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/
