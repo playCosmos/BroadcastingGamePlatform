@@ -29,6 +29,7 @@ public final class PiperEngine implements TtsService.TtsEngine {
     private static final int MAX_CONFIG_BYTES = 256 * 1024;
     private static final int MAX_WAV_BYTES = 5 * 1024 * 1024;
     private final Path voicesDirectory;
+    private final TtsVoicePackStore packStore;
     private volatile Map<String, ModelVoice> catalog = Map.of();
     private volatile long cachedAt;
 
@@ -36,7 +37,12 @@ public final class PiperEngine implements TtsService.TtsEngine {
         Integer speaker) {}
 
     public PiperEngine(Path voicesDirectory) {
+        this(voicesDirectory, null);
+    }
+
+    public PiperEngine(Path voicesDirectory, TtsVoicePackStore packStore) {
         this.voicesDirectory = voicesDirectory.toAbsolutePath().normalize();
+        this.packStore = packStore;
     }
 
     @Override public String id() { return "piper"; }
@@ -74,6 +80,9 @@ public final class PiperEngine implements TtsService.TtsEngine {
                 String filename = model.getFileName().toString();
                 String stem = filename.substring(0, filename.length() - 5);
                 if (!stem.matches("[A-Za-z0-9][A-Za-z0-9_.+-]{0,95}")) continue;
+                // Managed mode is an explicit allowlist. Legacy mode preserves
+                // existing manually installed Piper models until first registration.
+                if (packStore != null && !packStore.allowed(stem)) continue;
                 Path config = voicesDirectory.resolve(filename + ".json");
                 if (Files.isSymbolicLink(config)
                     || !Files.isRegularFile(config)
@@ -151,6 +160,13 @@ public final class PiperEngine implements TtsService.TtsEngine {
         if (selected == null || voices().stream().noneMatch(
             v -> v.id().equals(voiceId))) {
             throw new IllegalArgumentException("Piper voice unavailable");
+        }
+        // Re-check enabled state and model/config digests at synthesis time.
+        // Disabling/removing a pack cannot be bypassed by the 2-minute catalog cache.
+        String filename = selected.model().getFileName().toString();
+        String stem = filename.substring(0, filename.length() - 5);
+        if (packStore != null && !packStore.allowed(stem)) {
+            throw new IllegalArgumentException("Piper voice pack unavailable");
         }
         // Re-check the trust boundary after discovery, before execution.
         if (!selected.model().getParent().equals(voicesDirectory)
