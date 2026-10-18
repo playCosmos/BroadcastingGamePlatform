@@ -26,6 +26,8 @@ public final class WindowsSapiEngine implements TtsService.TtsEngine {
 
     @Override public String id() { return "windows-sapi"; }
 
+    @Override public boolean reusablePreview() { return true; }
+
     @Override public synchronized void invalidateVoiceCatalog() {
         cachedAt = 0;
     }
