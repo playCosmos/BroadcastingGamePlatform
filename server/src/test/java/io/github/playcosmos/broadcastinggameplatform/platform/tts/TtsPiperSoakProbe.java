@@ -32,7 +32,7 @@ public final class TtsPiperSoakProbe {
         Files.copy(first, second, StandardCopyOption.REPLACE_EXISTING);
         Files.copy(firstConfig, secondConfig, StandardCopyOption.REPLACE_EXISTING);
         var rssSamples = new ArrayList<Long>();
-        var pids = new ArrayList<Long>();
+        var retainedHeapSamples = new ArrayList<Long>();
         long firstPid = -1;
         long baselineRss = -1;
         long totalStart = System.nanoTime();
@@ -53,15 +53,25 @@ public final class TtsPiperSoakProbe {
                         long rss = residentKiB(pid);
                         require(rss > 0, "Linux /proc resident-size check unavailable");
                         rssSamples.add(rss);
-                        pids.add(pid);
+                        // The JVM may commit and retain clean heap pages even
+                        // when no objects are leaking. Distinguish RSS from
+                        // live retained objects with test-only forced GC.
+                        System.gc();
+                        long heapAfterGc = Runtime.getRuntime().totalMemory()
+                            - Runtime.getRuntime().freeMemory();
+                        retainedHeapSamples.add(heapAfterGc / 1024);
                         if (i == 99) baselineRss = rss;
                         // This is a coarse runaway-growth guard for the pinned
-                        // ~190MiB fixture, not a universal model memory ceiling.
-                        require(rss <= baselineRss + 128L * 1024,
-                            "native Piper RSS grew >128MiB above warm baseline");
+                        // ~220MiB fixture, not a universal model memory ceiling.
+                        require(rss <= baselineRss + 64L * 1024,
+                            "native Piper RSS grew >64MiB above warm baseline");
+                        require(retainedHeapSamples.getLast()
+                            <= retainedHeapSamples.getFirst() + 32L * 1024,
+                            "post-GC JVM live heap grew >32MiB since warm baseline");
                         System.out.println("PIPER_SOAK_SAMPLE requests=" + (i + 1)
                             + " child_rss_kib=" + rss
-                            + " jvm_rss_kib=" + residentKiB(ProcessHandle.current().pid()));
+                            + " jvm_rss_kib=" + residentKiB(ProcessHandle.current().pid())
+                            + " jvm_post_gc_used_heap_kib=" + heapAfterGc / 1024);
                     }
                 }
                 elapsed = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - elapsed);
@@ -95,6 +105,10 @@ public final class TtsPiperSoakProbe {
                     + " child_last_rss_kib=" + rssSamples.getLast()
                     + " child_peak_observed_rss_kib="
                     + rssSamples.stream().mapToLong(Long::longValue).max().orElse(0)
+                    + " jvm_first_post_gc_used_heap_kib="
+                    + retainedHeapSamples.getFirst()
+                    + " jvm_last_post_gc_used_heap_kib="
+                    + retainedHeapSamples.getLast()
                     + " model_switches=2 crash_recovery=true");
                 worker.close();
                 require(!alive(lastPid), "close must reap last model subprocess");
