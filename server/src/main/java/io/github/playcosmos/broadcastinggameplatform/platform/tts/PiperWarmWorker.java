@@ -74,12 +74,12 @@ final class PiperWarmWorker implements AutoCloseable {
     private final Path python;
     private final long idleNanos;
     private final Thread reaper;
-    private Process process;
+    private volatile Process process;
     private Path model;
     private Path config;
     private String fingerprint;
     private long lastUsedNanos;
-    private boolean closed;
+    private volatile boolean closed;
 
     PiperWarmWorker(Path python) {
         this(python, IDLE_NANOS);
@@ -254,10 +254,14 @@ final class PiperWarmWorker implements AutoCloseable {
         return HexFormat.of().formatHex(digest.digest());
     }
 
-    @Override public synchronized void close() {
+    @Override public void close() {
         if (closed) return;
         closed = true;
         reaper.interrupt();
-        terminate();
+        // Interrupt a long-running native inference before waiting for its
+        // synchronized response reader. Shutdown must not wait 30 seconds.
+        Process running = process;
+        if (running != null && running.isAlive()) running.destroyForcibly();
+        synchronized (this) { terminate(); }
     }
 }
