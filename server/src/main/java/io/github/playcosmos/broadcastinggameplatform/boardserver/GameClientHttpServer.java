@@ -16,6 +16,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderR
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoiceProfileStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoicePackStore;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomModels;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -1667,6 +1668,64 @@ public final class GameClientHttpServer implements AutoCloseable {
                     }
                     sendJson(exchange, 200, Map.of("profiles", tts.profiles()));
                 }
+                return;
+            }
+            if ("/api/v1/tts/packs".equals(path) && "GET".equals(method)) {
+                sendJson(exchange, 200, tts.packInventory());
+                return;
+            }
+            if (path != null && ("/api/v1/tts/packs".equals(path)
+                || "/api/v1/tts/packs/status".equals(path)
+                || "/api/v1/tts/packs/verify".equals(path))
+                && ("PUT".equals(method) || "POST".equals(method)
+                    || "DELETE".equals(method))) {
+                byte[] json = exchange.getRequestBody().readNBytes(4097);
+                if (json.length > 4096) {
+                    sendJson(exchange, 413, Map.of("error", "request too large"));
+                    return;
+                }
+                String body = new String(json, StandardCharsets.UTF_8);
+                if ("/api/v1/tts/packs".equals(path) && "PUT".equals(method)) {
+                    var requested = GSON.fromJson(
+                        body, TtsVoicePackStore.Registration.class);
+                    if (requested == null) {
+                        sendJson(exchange, 400, Map.of("error", "voice pack required"));
+                        return;
+                    }
+                    sendJson(exchange, 200, tts.registerPack(requested));
+                    return;
+                }
+                JsonObject request = GSON.fromJson(body, JsonObject.class);
+                if (request == null || !request.has("model")
+                    || !request.get("model").isJsonPrimitive()
+                    || !request.get("model").getAsJsonPrimitive().isString()) {
+                    sendJson(exchange, 400, Map.of("error", "model name required"));
+                    return;
+                }
+                String model = request.get("model").getAsString();
+                if ("/api/v1/tts/packs".equals(path)
+                    && "DELETE".equals(method)) {
+                    sendJson(exchange, 200, tts.unregisterPack(model));
+                    return;
+                }
+                if ("/api/v1/tts/packs/verify".equals(path)
+                    && "POST".equals(method)) {
+                    sendJson(exchange, 200, tts.verifyPack(model));
+                    return;
+                }
+                if ("/api/v1/tts/packs/status".equals(path)
+                    && "POST".equals(method)) {
+                    if (!request.has("enabled")
+                        || !request.get("enabled").isJsonPrimitive()
+                        || !request.get("enabled").getAsJsonPrimitive().isBoolean()) {
+                        sendJson(exchange, 400, Map.of("error", "enabled boolean required"));
+                        return;
+                    }
+                    sendJson(exchange, 200, tts.setPackEnabled(model,
+                        request.get("enabled").getAsBoolean()));
+                    return;
+                }
+                sendJson(exchange, 405, Map.of("error", "unsupported voice pack action"));
                 return;
             }
             if ("/api/v1/tts/status".equals(path) && "GET".equals(method)) {
