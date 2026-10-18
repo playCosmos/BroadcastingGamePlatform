@@ -230,8 +230,9 @@ final class PiperWarmWorker implements AutoCloseable {
 
     // Package-private observability for native soak/crash/cleanup tests only;
     // do not expose process IDs or native memory to the HTTP API.
-    synchronized long processIdForProbe() {
-        return process == null || !process.isAlive() ? -1 : process.pid();
+    long processIdForProbe() {
+        Process current = process;
+        return current == null || !current.isAlive() ? -1 : current.pid();
     }
 
     /** CI package-private fault injection; does not clean stored process state. */
