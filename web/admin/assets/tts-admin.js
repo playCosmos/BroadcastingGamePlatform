@@ -517,18 +517,15 @@
       $("packStatus").textContent = "무결성 검사 실패: " + error.message;
     }
   });
-  $("packEnable").addEventListener("click", () => {
+  $("packEnable").addEventListener("click", () =>
     packMutation("/api/v1/tts/packs/status", "POST",
-      { model: $("packModel").value, enabled: true }, "음성팩 사용 상태로 변경");
-  });
-  $("packDisable").addEventListener("click", () => {
+      { model: $("packModel").value, enabled: true }, "음성팩 사용 상태로 변경"));
+  $("packDisable").addEventListener("click", () =>
     packMutation("/api/v1/tts/packs/status", "POST",
-      { model: $("packModel").value, enabled: false }, "음성팩 사용 중지");
-  });
-  $("packUnregister").addEventListener("click", () => {
+      { model: $("packModel").value, enabled: false }, "음성팩 사용 중지"));
+  $("packUnregister").addEventListener("click", () =>
     packMutation("/api/v1/tts/packs", "DELETE",
-      { model: $("packModel").value }, "관리 등록 해제 완료 (모델 파일 유지)");
-  });
+      { model: $("packModel").value }, "관리 등록 해제 완료 (모델 파일 유지)"));
 
   $("rateChoice").addEventListener("input", () => {
     $("rateValue").value = $("rateChoice").value;
