@@ -355,6 +355,50 @@ memory, quality and shutdown behavior. An explicit OS-level RSS quota is
 not yet implemented; the one-model limit and idle eviction are the initial
 bounds.
 
+## Resident Piper long-soak and resource acceptance gate
+
+The optional `TtsPiperSoakProbe` runs only in the ephemeral Linux real-engine
+workflow with a checksum-verified ONNX model. It is deliberately separate
+from fast unit probes and executes **1,000 real syntheses** through the
+resident model with varied short utterances. Every 100 requests it samples
+the child process' `/proc/<pid>/status` RSS and the JVM RSS without saving
+speech text, generated audio or native profiling archives. The probe checks
+that the *same PID* services all 1,000 requests, that no sample's native RSS
+exceeds its 100-request baseline by 64 MiB for this pinned small fixture,
+and that all WAV outputs are complete and nonempty. At every 100th sample,
+it performs a diagnostic, test-only full JVM GC and measures **retained
+live heap**. Post-GC used heap must not grow by more than 32 MiB over the
+first checkpoint. These are **coarse regression guards**, not evidence of
+zero leaks or portable hard memory caps for arbitrary models. The forced
+GC is never performed in normal application synthesis.
+
+It then copies the same trusted test model to a second, differently named
+model file in a disposable test root to exercise two physical process
+replacements (model A → B → A) and checks that old PIDs have exited.
+Subsequent checks force an unexpected child termination and restart,
+stop inference **while audio is being synthesized**, and inject a very short
+request deadline to test cleanup of a stalled startup. These last two cases
+protect against orphaned Python/model processes after platform shutdown and
+timeout. The runtime rejects truncated and out-of-range binary WAV frames,
+and shutdown never retries a cold Piper CLI if the worker was closed.
+
+The initial successful [Linux 1,000-request soak](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/39141337782)
+took 145.2 seconds, with native Piper RSS 225,968 KiB at request 100 and
+228,884 KiB at request 1,000 (growth 2,916 KiB, around 2.85 MiB).
+The JVM RSS increased from 89,720 KiB to 217,176 KiB over the same interval;
+this **does not by itself demonstrate a Java object leak** because the VM
+may retain committed heap pages even after allocating objects temporarily.
+The follow-up retained-heap-after-GC check distinguishes heap residency from
+reachable Java objects.
+
+**Acceptance interpretation:** a successful 1,000-request run plus stable
+sampled RSS supports a targeted short-run reliability claim, not indefinite
+leak-free operation. JIT, file system cache and model size affect timings and
+memory; Linux `/proc` is not available natively on Windows. Real operator
+Windows memory measurement, actual-model listening, duration-based soak tests
+and OS-enforced RSS hard caps are still unverified. Thus resident inference
+remains disabled by default and must not be presented as production-approved.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/

@@ -202,6 +202,11 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
                     selected.model(), selected.config(), text,
                     selected.speaker(), lengthScale), volume);
             } catch (Exception | LinkageError failure) {
+                // Shutdown must not start a new cold subprocess after the
+                // resident one has deliberately been terminated.
+                if (warmWorker.isClosed()) {
+                    throw new IllegalStateException("Piper engine closed");
+                }
                 // Recover by returning to the proven per-request CLI. Never
                 // retry using a pack revoked while a worker was running.
                 warmWorker.invalidate();

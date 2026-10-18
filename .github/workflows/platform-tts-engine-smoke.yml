@@ -5,7 +5,7 @@ on:
   push:
     branches: [release/tts-foundation-v0.1.1]
   pull_request:
-    branches: [main, feature/tts-runtime-optimization, feature/tts-piper-benchmark]
+    branches: [main, feature/tts-runtime-optimization, feature/tts-piper-benchmark, feature/tts-piper-persistent-worker]
     paths:
       - "server/src/main/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
       - "server/src/test/java/io/github/playcosmos/broadcastinggameplatform/platform/tts/**"
@@ -124,6 +124,27 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Soak-test resident Piper 1000 ONNX requests and native RSS
+        working-directory: server
+        shell: bash
+        run: |
+          set -euo pipefail
+          export PATH="/tmp/bgp-tts-piper-env/bin:$PATH"
+          mkdir -p /tmp/bgp-tts-soak-root/tts/voices
+          cp /tmp/bgp-tts-piper-root/tts/voices/en_US-lessac-low.onnx* \
+            /tmp/bgp-tts-soak-root/tts/voices/
+          timeout 15m java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPiperSoakProbe \
+            /tmp/bgp-tts-soak-root /tmp/bgp-tts-piper-env/bin/python \
+            | tee /tmp/bgp-tts-piper-soak.log
+          {
+            echo '### Real resident Piper ONNX 1000-request soak'
+            echo
+            echo '```text'
+            grep '^PIPER_SOAK_' /tmp/bgp-tts-piper-soak.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Compare preloaded Piper model inference (CI-only Python API)
         working-directory: server
         shell: bash
@@ -142,4 +163,4 @@ jobs:
 
       - name: Remove native fixture files
         if: always()
-        run: rm -rf /tmp/bgp-tts-piper-root /tmp/bgp-tts-worker-root /tmp/bgp-tts-piper-env /tmp/bgp-tts-piper-perf.log /tmp/bgp-tts-piper-warm.log /tmp/bgp-tts-piper-worker.log
+        run: rm -rf /tmp/bgp-tts-piper-root /tmp/bgp-tts-worker-root /tmp/bgp-tts-soak-root /tmp/bgp-tts-piper-env /tmp/bgp-tts-piper-perf.log /tmp/bgp-tts-piper-warm.log /tmp/bgp-tts-piper-worker.log

@@ -1,6 +1,7 @@
 package io.github.playcosmos.broadcastinggameplatform.platform.tts;
 
 import java.io.DataInputStream;
+import java.io.InputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -72,6 +73,7 @@ final class PiperWarmWorker implements AutoCloseable {
 
     private final Path python;
     private final long idleNanos;
+    private final long requestNanos;
     private final Thread reaper;
     private volatile Process process;
     private Path model;
@@ -86,13 +88,19 @@ final class PiperWarmWorker implements AutoCloseable {
 
     // Inject a short timeout in lifecycle tests, without shortening production.
     PiperWarmWorker(Path python, long idleNanos) {
+        this(python, idleNanos, REQUEST_NANOS);
+    }
+
+    // A short absolute deadline is useful only in native fault-injection tests.
+    PiperWarmWorker(Path python, long idleNanos, long requestNanos) {
         Objects.requireNonNull(python, "python");
         if (!python.isAbsolute() || !Files.isRegularFile(python)
-            || idleNanos <= 0) {
+            || idleNanos <= 0 || requestNanos <= 0) {
             throw new IllegalArgumentException("trusted absolute Piper Python required");
         }
         this.python = python.toAbsolutePath().normalize();
         this.idleNanos = idleNanos;
+        this.requestNanos = requestNanos;
         this.reaper = Thread.ofVirtual().name("tts-piper-idle-reaper")
             .start(this::reapIdle);
     }
@@ -122,7 +130,7 @@ final class PiperWarmWorker implements AutoCloseable {
             || !nextFingerprint.equals(fingerprint))) {
             terminate();
         }
-        long deadline = System.nanoTime() + REQUEST_NANOS;
+        long deadline = System.nanoTime() + requestNanos;
         if (process == null) {
             process = new ProcessBuilder(
                 python.toString(), "-I", "-u", "-c", SCRIPT,
@@ -131,6 +139,13 @@ final class PiperWarmWorker implements AutoCloseable {
             model = requestedModel;
             config = requestedConfig;
             fingerprint = nextFingerprint;
+            // close() may run concurrently with a blocked native startup.
+            // A process created after its initial shutdown snapshot must not
+            // survive by escaping the shutdown path.
+            if (closed) {
+                terminate();
+                throw new IllegalStateException("Piper worker closed");
+            }
             try {
                 int ready = boundedIO(() -> process.getInputStream().read(), deadline);
                 if (ready != 'R') throw new IOException("Piper worker startup failed");
@@ -154,22 +169,28 @@ final class PiperWarmWorker implements AutoCloseable {
                 process.getOutputStream().flush();
                 return null;
             }, deadline);
-            byte[] response = boundedIO(() -> {
-                var input = new DataInputStream(process.getInputStream());
-                int length = input.readInt();
-                if (length < 44 || length > MAX_WAV_BYTES)
-                    throw new IOException("Piper frame exceeds WAV limit");
-                return input.readNBytes(length);
-            }, deadline);
-            if (response.length < 44 || response.length > MAX_WAV_BYTES) {
-                throw new IOException("Piper WAV truncated");
-            }
+            byte[] response = boundedIO(() -> readWavFrame(
+                process.getInputStream()), deadline);
+            if (closed) throw new IOException("Piper worker stopped during synthesis");
             lastUsedNanos = System.nanoTime();
             return response;
         } catch (Exception failed) {
             terminate();
             throw failed;
         }
+    }
+
+    // Strictly consume one frame. A short payload (including >44 bytes)
+    // must not be accepted or leak into the next request's framing.
+    static byte[] readWavFrame(InputStream source) throws IOException {
+        var input = new DataInputStream(source);
+        int length = input.readInt();
+        if (length < 44 || length > MAX_WAV_BYTES) {
+            throw new IOException("Piper frame exceeds WAV limit");
+        }
+        byte[] frame = input.readNBytes(length);
+        if (frame.length != length) throw new IOException("Piper WAV truncated");
+        return frame;
     }
 
     private <T> T boundedIO(Callable<T> operation, long deadline) throws Exception {
@@ -203,6 +224,15 @@ final class PiperWarmWorker implements AutoCloseable {
 
     synchronized boolean running() {
         return process != null && process.isAlive();
+    }
+
+    boolean isClosed() { return closed; }
+
+    // Package-private observability for native soak/crash/cleanup tests only;
+    // do not expose process IDs or native memory to the HTTP API.
+    long processIdForProbe() {
+        Process current = process;
+        return current == null || !current.isAlive() ? -1 : current.pid();
     }
 
     /** CI package-private fault injection; does not clean stored process state. */
