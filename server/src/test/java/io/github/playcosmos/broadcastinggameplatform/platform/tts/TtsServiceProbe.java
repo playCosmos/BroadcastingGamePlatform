@@ -62,6 +62,82 @@ public final class TtsServiceProbe {
                 require(block.calls.get() == 1, "cancelled audio must not synthesize");
             }
         }
+        // Repeated previews should avoid expensive SAPI/eSpeak invocations,
+        // but only for engines that explicitly opt into deterministic reuse.
+        var cacheable = new MockEngine("cacheable", "Test") {
+            @Override public boolean reusablePreview() { return true; }
+        };
+        try (var cached = new TtsService(List.of(cacheable))) {
+            String voice = cached.voices().getFirst().id();
+            var original = cached.enqueue(new TtsService.Request(
+                "repeated text", voice, 0, 80));
+            waitFor(cached, original.id(), "READY");
+            var repeated = cached.enqueue(new TtsService.Request(
+                "repeated text", voice, 0, 80));
+            waitFor(cached, repeated.id(), "READY");
+            require(cacheable.calls.get() == 1,
+                "opted-in engines should synthesize identical previews once");
+            require(cached.status().engineSyntheses() == 1
+                && cached.status().previewReuses() == 1
+                && cached.status().synthesisFailures() == 0,
+                "status should count engine calls and in-memory preview reuse");
+            require(cached.audio(repeated.id()) != cached.audio(original.id()),
+                "reused WAVs must not expose shared mutable buffers");
+            var otherRate = cached.enqueue(new TtsService.Request(
+                "repeated text", voice, 1, 80));
+            waitFor(cached, otherRate.id(), "READY");
+            require(cacheable.calls.get() == 2,
+                "rate differences must prevent preview reuse");
+            cached.refreshVoices();
+            var afterRefresh = cached.enqueue(new TtsService.Request(
+                "repeated text", voice, 0, 80));
+            waitFor(cached, afterRefresh.id(), "READY");
+            require(cacheable.calls.get() == 3,
+                "voice refresh must invalidate all previously cached previews");
+            require(cached.status().retainedAudioBytes()
+                <= cached.status().maxRetainedAudioBytes(),
+                "opted-in caching must respect the existing 16 MiB preview cap");
+        }
+        var notCacheable = new MockEngine("hash-sensitive", "Test");
+        try (var uncached = new TtsService(List.of(notCacheable))) {
+            String voice = uncached.voices().getFirst().id();
+            for (int i = 0; i < 2; i++) {
+                var request = uncached.enqueue(new TtsService.Request(
+                    "same neural text", voice, 0, 80));
+                waitFor(uncached, request.id(), "READY");
+            }
+            require(notCacheable.calls.get() == 2
+                && uncached.status().previewReuses() == 0,
+                "non-opted engines must continue synthesizing every request");
+        }
+        TtsService.TtsEngine assertion = new TtsService.TtsEngine() {
+            @Override public String id() { return "assertion"; }
+            @Override public List<TtsService.Voice> voices() {
+                return List.of(new TtsService.Voice(
+                    "assertion/Fail", "assertion", "Fail", "ko-KR"));
+            }
+            @Override public byte[] synthesize(
+                String voiceId, String text, int rate, int volume) {
+                throw new AssertionError("sensitive backend diagnostic");
+            }
+        };
+        try (var recovering = new TtsService(List.of(
+            assertion, new MockEngine("after-assertion", "Works")))) {
+            var broken = recovering.enqueue(new TtsService.Request(
+                "private text", "assertion/Fail", 0, 80));
+            var healthy = recovering.enqueue(new TtsService.Request(
+                "next text", "after-assertion/Works", 0, 80));
+            waitFor(recovering, broken.id(), "FAILED");
+            waitFor(recovering, healthy.id(), "READY");
+            require(recovering.status().synthesisFailures() == 1
+                && recovering.status().engineSyntheses() == 2,
+                "unexpected engine assertion must not kill the queue worker");
+            require(!recovering.job(broken.id()).error().contains("sensitive"),
+                "engine error detail must not escape through the admin API");
+        }
+        require(!new PiperEngine(java.nio.file.Path.of("voices")).reusablePreview(),
+            "Piper must always revalidate local model hashes per synthesis");
+
         try (var wavService = new TtsService(List.of(new CorruptWavEngine()))) {
             String voiceId = wavService.voices().getFirst().id();
             for (String malformed : List.of(
