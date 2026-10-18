@@ -167,7 +167,9 @@ async function scenario(mode) {
   };
   const source = fs.readFileSync(path.join(__dirname, "tts-admin.js"), "utf8");
   vm.runInNewContext(source, sandbox, { filename: "tts-admin.js" });
-  for (let i = 0; i < 32; i++) await Promise.resolve();
+  // Startup performs several authenticated reads in sequence, including
+  // the optional native runtime panel. Drain those async hops deterministically.
+  for (let i = 0; i < 128; i++) await Promise.resolve();
   assert.match(getElement("piperWorkerMemory").textContent, /235.0 MiB/,
     "live Piper child RSS must appear in worker monitor");
   assert.match(getElement("piperWorkerLatency").textContent, /115ms/,
