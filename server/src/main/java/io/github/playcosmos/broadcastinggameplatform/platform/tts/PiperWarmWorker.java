@@ -76,10 +76,10 @@ final class PiperWarmWorker implements AutoCloseable {
     private final long requestNanos;
     private final Thread reaper;
     private volatile Process process;
-    private Path model;
+    private volatile Path model;
     private Path config;
     private String fingerprint;
-    private long lastUsedNanos;
+    private volatile long lastUsedNanos;
     private volatile boolean closed;
     private volatile boolean active;
     private volatile long launched;
