@@ -101,6 +101,22 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Compare preloaded Piper model inference (CI-only Python API)
+        working-directory: server
+        shell: bash
+        run: |
+          set -euo pipefail
+          /tmp/bgp-tts-piper-env/bin/python tools/tts_benchmark_warm_piper.py \
+            /tmp/bgp-tts-piper-root/tts/voices/en_US-lessac-low.onnx \
+            | tee /tmp/bgp-tts-piper-warm.log
+          {
+            echo '### Preloaded model inference — no JVM, same CI host'
+            echo
+            echo '```text'
+            grep '^PIPER_WARM_MODEL_PERF' /tmp/bgp-tts-piper-warm.log
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Remove native fixture files
         if: always()
-        run: rm -rf /tmp/bgp-tts-piper-root /tmp/bgp-tts-piper-env /tmp/bgp-tts-piper-perf.log
+        run: rm -rf /tmp/bgp-tts-piper-root /tmp/bgp-tts-piper-env /tmp/bgp-tts-piper-perf.log /tmp/bgp-tts-piper-warm.log
