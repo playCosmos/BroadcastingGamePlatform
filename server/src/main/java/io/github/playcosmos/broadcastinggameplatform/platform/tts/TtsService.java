@@ -22,6 +22,9 @@ public final class TtsService implements AutoCloseable {
         String id();
         List<Voice> voices() throws Exception;
         default void invalidateVoiceCatalog() {}
+        // Opt in only for deterministic, locally managed voice backends.
+        // Piper deliberately opts out: every synthesis must check ONNX hashes.
+        default boolean reusablePreview() { return false; }
         byte[] synthesize(String voiceId, String text, int rate, int volume)
             throws Exception;
     }
@@ -52,7 +55,9 @@ public final class TtsService implements AutoCloseable {
     public record Status(
         boolean available, int queued, String activeJobId,
         int retainedJobs, List<String> engineIds,
-        int retainedAudioBytes, int maxRetainedAudioBytes
+        int retainedAudioBytes, int maxRetainedAudioBytes,
+        long engineSyntheses, long previewReuses, long synthesisFailures,
+        long lastSynthesisMillis
     ) {}
     public record Request(
         String text, String voiceId, int rate, int volume
@@ -82,11 +87,19 @@ public final class TtsService implements AutoCloseable {
     private volatile String activeJobId;
     // Read and written only while holding guard.
     private int retainedAudioBytes;
+    private long catalogGeneration;
+    private long engineSyntheses;
+    private long previewReuses;
+    private long synthesisFailures;
+    private long lastSynthesisMillis;
 
     private static final class Entry {
         final String id = UUID.randomUUID().toString();
         final String voiceId;
-        final String text;
+        // Text is needed only while queued/synthesizing, or while the
+        // optional short-lived preview reuse remains READY.
+        String text;
+        long catalogGeneration; // assigned when accepted, under guard
         final int rate;
         final int volume;
         final long createdAt = Instant.now().toEpochMilli();
@@ -237,6 +250,9 @@ public final class TtsService implements AutoCloseable {
 
     /** Explicit refresh after installing or removing voice packages. */
     public List<Voice> refreshVoices() {
+        // A new catalog invalidates all preview-reuse candidates even when
+        // voice IDs happen to remain identical after an engine/model change.
+        synchronized (guard) { catalogGeneration++; }
         for (var engine : engines) {
             try {
                 engine.invalidateVoiceCatalog();
@@ -280,6 +296,7 @@ public final class TtsService implements AutoCloseable {
             if (jobs.size() >= RETAINED_JOBS || !pending.offer(entry)) {
                 throw new CapacityException("TTS queue is full");
             }
+            entry.catalogGeneration = catalogGeneration;
             jobs.put(entry.id, entry);
         }
         return entry.snapshot();
@@ -307,7 +324,9 @@ public final class TtsService implements AutoCloseable {
             expireStaleAudio();
             return new Status(!engines.isEmpty(), pending.size(), activeJobId,
                 jobs.size(), engines.stream().map(TtsEngine::id).toList(),
-                retainedAudioBytes, MAX_RETAINED_AUDIO_BYTES);
+                retainedAudioBytes, MAX_RETAINED_AUDIO_BYTES,
+                engineSyntheses, previewReuses, synthesisFailures,
+                lastSynthesisMillis);
         }
     }
 
@@ -318,6 +337,7 @@ public final class TtsService implements AutoCloseable {
             Entry item;
             while ((item = pending.poll()) != null) {
                 item.state = "CANCELLED";
+                item.text = null;
                 removed++;
             }
             return removed;
@@ -346,14 +366,33 @@ public final class TtsService implements AutoCloseable {
                 entry.state = "SYNTHESIZING";
                 activeJobId = entry.id;
             }
+            boolean reusable = false;
             try {
                 TtsEngine engine = engines.stream().filter(candidate ->
                     entry.voiceId.startsWith(candidate.id() + "/")
                 ).findFirst().orElseThrow(() ->
                     new IllegalArgumentException("engine unavailable")
                 );
-                byte[] wav = engine.synthesize(entry.voiceId, entry.text,
-                    entry.rate, entry.volume);
+                reusable = engine.reusablePreview();
+                byte[] wav;
+                synchronized (guard) {
+                    expireStaleAudio();
+                    wav = reusable ? findReusableAudio(entry) : null;
+                    if (wav != null) previewReuses++;
+                }
+                if (wav == null) {
+                    long started = System.nanoTime();
+                    try {
+                        wav = engine.synthesize(entry.voiceId, entry.text,
+                            entry.rate, entry.volume);
+                    } finally {
+                        synchronized (guard) {
+                            engineSyntheses++;
+                            lastSynthesisMillis = Math.max(0L,
+                                TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                        }
+                    }
+                }
                 if (!validWav(wav)) {
                     throw new IllegalStateException("invalid or oversized WAV");
                 }
@@ -364,15 +403,19 @@ public final class TtsService implements AutoCloseable {
                         entry.audioReadyAtNanos = monotonicNanos.getAsLong();
                         retainedAudioBytes += entry.audio.length;
                         entry.state = "READY";
+                        // Plaintext is retained only while this cacheable
+                        // preview exists, and never in persisted storage/logs.
+                        if (!reusable) entry.text = null;
                         evictOldAudio(entry);
                     }
                 }
-            } catch (Exception | LinkageError error) {
+            } catch (Exception | LinkageError | AssertionError error) {
                 synchronized (guard) {
                     if (running.get() && "SYNTHESIZING".equals(entry.state)) {
                         entry.error = "speech synthesis failed: "
                             + error.getClass().getSimpleName();
                         entry.state = "FAILED";
+                        synthesisFailures++;
                     }
                 }
                 System.err.println("[tts] job failed id=" + entry.id
@@ -380,11 +423,27 @@ public final class TtsService implements AutoCloseable {
                     + " reason=" + error.getClass().getSimpleName());
             } finally {
                 synchronized (guard) {
+                    if (!"READY".equals(entry.state)) entry.text = null;
                     if (entry.id.equals(activeJobId)) activeJobId = null;
                     pruneCompleted();
                 }
             }
         }
+    }
+
+    /** Reuse only READY, unexpired audio from the same catalog generation. */
+    private byte[] findReusableAudio(Entry incoming) {
+        for (Entry previous : jobs.values()) {
+            if (previous == incoming || previous.audio == null
+                || !"READY".equals(previous.state)
+                || previous.catalogGeneration != incoming.catalogGeneration
+                || incoming.catalogGeneration != catalogGeneration
+                || previous.rate != incoming.rate || previous.volume != incoming.volume
+                || !previous.voiceId.equals(incoming.voiceId)
+                || !Objects.equals(previous.text, incoming.text)) continue;
+            return previous.audio.clone();
+        }
+        return null;
     }
 
     /**
@@ -450,6 +509,7 @@ public final class TtsService implements AutoCloseable {
         if (entry.audio == null) return;
         retainedAudioBytes -= entry.audio.length;
         entry.audio = null;
+        entry.text = null;
         entry.state = "EXPIRED";
         entry.error = reason;
     }
@@ -476,6 +536,7 @@ public final class TtsService implements AutoCloseable {
                     retainedAudioBytes -= entry.audio.length;
                     entry.audio = null;
                 }
+                entry.text = null;
                 iterator.remove();
             }
         }
