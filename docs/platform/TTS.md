@@ -275,7 +275,27 @@ five-sample fixture. Approximate process RSS peaks come from periodic Linux
 `/proc` sampling and may underestimate very short peaks. JVM heap samples
 are not GC-normalized and are not a heap-leak measurement.
 
-The measured end-to-end latency includes native process start, ONNX model
+A second successful run, [CI #23](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/39131231454),
+added a same-host `PiperVoice.load()` warm inference comparison:
+
+| Metric (second CI run) | Legacy subprocess | Managed subprocess | Preloaded Python |
+|---|---:|---:|---:|
+| Mean synthesis time | 1,551 ms | 1,586 ms | 79 ms |
+| Median synthesis time | 1,528 ms | 1,574 ms | 78 ms |
+| Highest per-request observation | 1,665 ms | 1,692 ms | 86 ms |
+| Peak native/Python process RSS | 191,680 KiB | 190,760 KiB | 193,196 KiB |
+
+The preloaded model required **1,276 ms** to load before synthesis.
+The subprocess path averaged about 20x the warm inference time on this runner,
+but these timings include different host-language and I/O overheads; they
+are **not** a proven 20x end-to-end platform speedup. Memory remains
+around 190 MiB for a model-loaded Piper process, even when requests are
+rare, so a permanently resident process trades lower repeated-request
+latency for greater idle RSS. The first CI had 1,805/1,802 ms mean legacy/
+managed values: cross-run variability is material and rules out declaring
+a meaningful digest-check overhead from these small, sequential samples.
+
+The measured Java end-to-end latency includes native process start, ONNX model
 load, phonemization, inference, WAV file I/O and the Java queue. It does not
 individually time those stages. The optional preloaded-model comparison
 tests whether avoiding per-request process/model startup warrants a
