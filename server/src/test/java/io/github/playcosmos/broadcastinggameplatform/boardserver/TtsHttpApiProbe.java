@@ -8,6 +8,9 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEve
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoiceProfileStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoicePackStore;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
@@ -34,7 +37,8 @@ public final class TtsHttpApiProbe {
         try (var tts = new TtsService(
             List.of(new FakeEngine()),
             new TtsPreferencesStore(root.resolve("tts-settings.json")),
-            new TtsVoiceProfileStore(root.resolve("tts-profiles.json")))) {
+            new TtsVoiceProfileStore(root.resolve("tts-profiles.json")),
+            new TtsVoicePackStore(root))) {
             Path web = root.resolve("web");
             Files.createDirectories(web.resolve("admin"));
             Files.writeString(web.resolve("index.html"), "Platform probe");
@@ -66,7 +70,7 @@ public final class TtsHttpApiProbe {
 
             for (String path : List.of("/api/v1/tts/voices",
                     "/api/v1/tts/status", "/api/v1/tts/settings",
-                    "/api/v1/tts/profiles",
+                    "/api/v1/tts/profiles", "/api/v1/tts/packs",
                     "/api/v1/tts/jobs/00000000-0000-0000-0000-000000000000/audio")) {
                 var response = client.send(HttpRequest.newBuilder(
                     base.resolve(path)).GET().build(),
@@ -221,6 +225,81 @@ public final class TtsHttpApiProbe {
             require(profileDelete.statusCode() == 200
                 && !profileDelete.body().contains("Korean default"),
                 "profile deletion must remove the selected name");
+            // The pack API never accepts uploads, arbitrary paths or deletion
+            // of the physical ONNX/JSON pair.
+            Path voicesRoot = root.resolve("tts/voices");
+            Files.createDirectories(voicesRoot);
+            byte[] fakeModel = "sample-onnx".getBytes(StandardCharsets.UTF_8);
+            Files.write(voicesRoot.resolve("voice-test.onnx"), fakeModel);
+            Files.writeString(voicesRoot.resolve("voice-test.onnx.json"),
+                "{\"language\":{\"code\":\"ko_KR\"}}");
+            String expectedHash = HexFormat.of().formatHex(
+                MessageDigest.getInstance("SHA-256").digest(fakeModel));
+            String registration = "{\"model\":\"voice-test\","
+                + "\"version\":\"1.0\",\"license\":\"MIT\","
+                + "\"sha256\":\"" + expectedHash + "\","
+                + "\"licenseAcknowledged\":true}";
+            var unauthPack = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/packs"))
+                .header("Cookie", cookie)
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(registration)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(unauthPack.statusCode() == 403,
+                "pack registry requires a same-origin mutation");
+            var badChecksum = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/packs"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(
+                    registration.replace(expectedHash, "0".repeat(64)))).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(badChecksum.statusCode() == 400,
+                "expected SHA must match before enabling managed mode");
+            var registered = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/packs"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .PUT(HttpRequest.BodyPublishers.ofString(registration)).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(registered.statusCode() == 200
+                && registered.body().contains("MANAGED"),
+                "trusted registration should create managed voice allowlist");
+            var checked = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/packs/verify"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"model\":\"voice-test\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(checked.statusCode() == 200
+                && checked.body().contains("\"match\":true"),
+                "pack verification must match trusted model and JSON digests");
+            var disabled = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/packs/status"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"model\":\"voice-test\",\"enabled\":false}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(disabled.statusCode() == 200
+                && disabled.body().contains("DISABLED"),
+                "pack disabling must update the managed inventory");
+            var deleted = client.send(HttpRequest.newBuilder(
+                base.resolve("/api/v1/tts/packs"))
+                .header("Cookie", cookie)
+                .header("Origin", base.toString())
+                .header("Content-Type", "application/json")
+                .method("DELETE", HttpRequest.BodyPublishers.ofString(
+                    "{\"model\":\"voice-test\"}")).build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(deleted.statusCode() == 200
+                && Files.exists(voicesRoot.resolve("voice-test.onnx")),
+                "unregister must never physically remove model files");
             var accepted = client.send(HttpRequest.newBuilder(
                 base.resolve("/api/v1/tts/speak"))
                 .header("Cookie", cookie)
