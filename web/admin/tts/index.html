@@ -76,6 +76,41 @@
         <p class="tts-muted" id="profilesStatus" role="status" aria-live="polite">음성 프로필을 불러오는 중입니다.</p>
       </section>
     </section>
+    <section class="tts-card" aria-labelledby="pack-heading">
+      <div class="tts-section-heading">
+        <h2 id="pack-heading">로컬 Piper 음성팩 관리</h2>
+        <button type="button" id="reloadPacks">목록 다시 검색</button>
+      </div>
+      <p class="tts-muted">서버의 <code>tts/voices</code>에 ONNX와 ONNX.JSON 파일을 직접 배치한 뒤 등록하세요. 자동 다운로드·파일 업로드·모델 삭제는 지원하지 않습니다.</p>
+      <p class="tts-muted">최초 등록 시 관리 모드가 활성화되어 <strong>등록되지 않은 기존 Piper 음성은 사용되지 않습니다.</strong> 각 음성을 순서대로 등록하세요.</p>
+      <div class="tts-pack-fields">
+        <label for="packModel">로컬 모델
+          <select id="packModel" disabled><option value="">모델 없음</option></select>
+        </label>
+        <label for="packVersion">모델 버전
+          <input id="packVersion" type="text" maxlength="48" placeholder="예: 1.0.0">
+        </label>
+        <label for="packLicense">라이선스 식별자
+          <input id="packLicense" type="text" maxlength="64" placeholder="예: MIT 또는 CC-BY-4.0">
+        </label>
+        <label for="packSha">신뢰 가능한 출처에서 확인한 ONNX SHA-256
+          <input id="packSha" type="text" maxlength="64" autocomplete="off" spellcheck="false" placeholder="64자리 SHA-256">
+        </label>
+      </div>
+      <label class="tts-ack" for="packAck">
+        <input id="packAck" type="checkbox">
+        모델 제공자의 라이선스와 배포 조건을 직접 확인했습니다.
+      </label>
+      <div class="tts-actions">
+        <button type="button" id="packRegister" disabled>모델 등록/갱신</button>
+        <button type="button" id="packVerify" disabled>무결성 검사</button>
+        <button type="button" id="packEnable" disabled>사용</button>
+        <button type="button" id="packDisable" disabled>사용 중지</button>
+        <button type="button" id="packUnregister" disabled>등록 해제</button>
+      </div>
+      <p class="tts-muted" id="packStatus" role="status" aria-live="polite">로컬 모델 목록을 불러오는 중입니다.</p>
+      <p class="tts-note">등록 해제는 관리 목록에서만 제거하며, ONNX/JSON 파일은 삭제하지 않습니다. SHA-256은 Windows에서 <code>Get-FileHash -Algorithm SHA256 &lt;파일&gt;</code>, Linux에서 <code>sha256sum &lt;파일&gt;</code>로 확인할 수 있지만 반드시 신뢰할 수 있는 배포처의 값과 대조해야 합니다.</p>
+    </section>
     <section class="tts-card" aria-labelledby="preview-heading">
       <h2 id="preview-heading">음성 미리듣기</h2>
       <p id="speechResult" class="tts-muted" role="status" aria-live="polite">문장을 생성하면 아래에서 직접 재생할 수 있습니다.</p>
