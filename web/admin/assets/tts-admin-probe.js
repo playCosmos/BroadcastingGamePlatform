@@ -12,12 +12,18 @@ async function scenario(mode) {
   let polls = 0;
   let loaded = 0;
   let profileWrites = 0;
+  let packWrites = 0;
+  let packDeletes = 0;
+  let packVerified = 0;
+  let packMode = "LEGACY";
+  let packState = "UNMANAGED";
   let profileDeletes = 0;
   let serverProfiles = [{
     name: "Unavailable", voiceId: "missing/Old", rate: -3, volume: 40
   }];
   const makeElement = () => ({
     value: "",
+    checked: false,
     disabled: false,
     hidden: false,
     textContent: "",
@@ -62,6 +68,32 @@ async function scenario(mode) {
       return 1;
     },
     fetch: async (url, options = {}) => {
+      if (url === "/api/v1/tts/packs/verify") {
+        packVerified++;
+        return respond({ model: "test-voice", match: true });
+      }
+      if (url === "/api/v1/tts/packs/status") {
+        packState = JSON.parse(options.body).enabled ? "REGISTERED" : "DISABLED";
+      }
+      if (url === "/api/v1/tts/packs") {
+        if (options.method === "PUT") {
+          assert.equal(JSON.parse(options.body).licenseAcknowledged, true);
+          packMode = "MANAGED";
+          packState = "REGISTERED";
+          packWrites++;
+        }
+        if (options.method === "DELETE") {
+          packState = "UNREGISTERED";
+          packDeletes++;
+        }
+        return respond({ mode: packMode, packs: [{
+          model: "test-voice", modelBytes: 500, configPresent: true,
+          state: packState, version: packMode === "MANAGED" ? "1.0" : "",
+          license: packMode === "MANAGED" ? "MIT" : "",
+          sha256: packMode === "MANAGED" ? "a".repeat(64) : "",
+          enabled: packState === "REGISTERED"
+        }] });
+      }
       if (url === "/api/v1/tts/profiles") {
         if (options.method === "PUT") {
           const updated = JSON.parse(options.body);
@@ -106,7 +138,29 @@ async function scenario(mode) {
   };
   const source = fs.readFileSync(path.join(__dirname, "tts-admin.js"), "utf8");
   vm.runInNewContext(source, sandbox, { filename: "tts-admin.js" });
-  for (let i = 0; i < 24; i++) await Promise.resolve();
+  for (let i = 0; i < 32; i++) await Promise.resolve();
+  assert.equal(getElement("packModel").value, "test-voice",
+    "local Piper inventory should appear in admin catalog");
+  assert.equal(getElement("packRegister").disabled, false);
+  await getElement("packRegister").events.click();
+  assert.equal(packWrites, 0, "license acknowledgement must be required");
+  getElement("packVersion").value = "1.0";
+  getElement("packLicense").value = "MIT";
+  getElement("packSha").value = "a".repeat(64);
+  getElement("packAck").checked = true;
+  await getElement("packRegister").events.click();
+  assert.equal(packWrites, 1);
+  assert.match(getElement("packStatus").textContent, /관리 모드/);
+  await getElement("packVerify").events.click();
+  assert.equal(packVerified, 1, "verify must request fresh server-side hash check");
+  await getElement("packDisable").events.click();
+  assert.equal(getElement("packEnable").disabled, false,
+    "disabled pack can be explicitly re-enabled");
+  await getElement("packEnable").events.click();
+  assert.equal(getElement("packDisable").disabled, false);
+  await getElement("packUnregister").events.click();
+  assert.equal(packDeletes, 1);
+  assert.equal(getElement("packModel").value, "test-voice");
   assert.equal(getElement("profileChoice").value, "Unavailable",
     "missing-engine voice profiles must remain visible");
   await getElement("applyProfile").events.click();
