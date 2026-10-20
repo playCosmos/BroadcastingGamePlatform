@@ -37,10 +37,11 @@ public final class YachtPersistenceProbe {
             require(match.phase() == YachtMatchState.Phase.READY && match.version() == 0,
                 "new match READY");
             require(repo.find(match.id()).equals(match), "initial snapshot recovery");
-            rejected(() -> match.roll(() -> 2), "cannot roll before match starts");
-            rejected(() -> match.setHeld(List.of(true,true,true,true,true)),
+            var ready = match;
+            rejected(() -> ready.roll(() -> 2), "cannot roll before match starts");
+            rejected(() -> ready.setHeld(List.of(true,true,true,true,true)),
                 "cannot hold before match starts");
-            rejected(() -> match.commitScore(Category.CHANCE),
+            rejected(() -> ready.commitScore(Category.CHANCE),
                 "cannot score before match starts");
 
             match = repo.apply(match.id(), YachtMatchState::start);
