@@ -10,6 +10,13 @@ on:
       - "docs/**"
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "server/**"
+      - "web/**"
+      - "docs/**"
+      - ".github/workflows/platform-windows-package.yml"
 
 permissions:
   contents: read
@@ -98,6 +105,7 @@ jobs:
             "web/tools/viewer-draw/marble/browser-physics-adapter.js",
             "web/tools/viewer-draw/marble/viewer-draw-marble.js",
             "web/tools/viewer-draw/marble/viewer-draw-marble.css",
+            "web/admin/games/yacht/index.html",
             "web/admin/games/drawing-guess/index.html",
             "web/admin/games/drawing-guess/room.html",
             "web/admin/assets/drawing-guess.css",
@@ -133,6 +141,13 @@ jobs:
 
           $landing = Get-Content (Join-Path $root "web/index.html") -Raw
           if ($landing -notmatch "보드게임") { throw "board game missing from platform landing" }
+          if ($landing -notmatch "GAME 02" -or $landing -notmatch "Yacht") {
+            throw "Yacht GAME 02 development card missing from landing"
+          }
+          # Restrict status assertion to Yacht's own article; GAME 03 is available.
+          if ($landing -notmatch '(?s)<article class="game-card planned">(?:(?!</article>).)*GAME 02') {
+            throw "Yacht GAME 02 must be marked in development (not available)"
+          }
           if ($landing -match "먀로또|로또") { throw "lotto must not appear on platform landing" }
 
           $probe = Start-Process -FilePath $exe -ArgumentList "--board-server-probe" -Wait -PassThru
