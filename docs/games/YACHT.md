@@ -1,6 +1,6 @@
 # Yacht 게임 모듈 계획
 
-상태: **Y0 RULES / SCORING 개발 시작** (Y1~Y6 미구현, 현재 플레이 불가)
+상태: **Y0 완료 · Y1 Domain/Persistence 구현 중** (Y2~Y6 미구현, 플레이 불가)
 
 게임 ID: `yacht`
 
@@ -782,7 +782,16 @@ Yacht에서 실제 중복이 발생하는 항목만 추출한다.
 
 - UI/DB 없이 순수 Java 테스트로 모든 점수 규칙 검증
 
-### Y1 — Domain / Persistence
+### Y1 — Domain / Persistence (구현 중)
+
+- 서버 권위형 불변 `YachtMatchState`: READY→ACTIVE↔PAUSED→FINISHED 전이, 참가자 2~6명, 각 13회 점수 확정, 주사위 5개, 턴당 최대 3 Roll, Hold/Release, 플레이어 순환
+- `SecureDiceRandomSource`: 운영 시 SecureRandom; 테스트 시 결정적 `DiceRandomSource` 주입. 임의 주사위 결과를 클라이언트로부터 받지 않음
+- `V29__yacht_match_state.sql`: 기존 플랫폼 DB 마이그레이션 경로를 통한 독립 Yacht 테이블. 기존 Board/Drawing Guess 테이블 수정 없음
+- `YachtRepository`: immutable validated JSON snapshot, match version 조건부 SQL 업데이트(CAS)로 stale/concurrent mutation 거부. 버전/상태가 DB와 일치하지 않거나 JSON이 손상되면 fail-closed
+- `YachtPersistenceProbe`: 실제 SQLite DB 재개방으로 pause 중 roll/hold/sheet 복구 및 버전 동등성, 2인 × 13턴 전체 종료, 중복 Roll 병행 경쟁, 잘못된 순서의 명령, 손상된 상태 거부를 검증
+- Y1은 도메인·저장소 **내부 기능까지만** 다룸. HTTP/룸 코드/공개 API/관리자 조작 화면 및 서버 런타임 연결은 Y2, Y3에서 제공. GAME 02 카드는 플레이 가능한 게임으로 표시하지 않음
+
+
 
 - Yacht room/match/turn 모델
 - DB migration
