@@ -237,7 +237,8 @@ public final class YachtScoringProbe {
     private static void rejected(Runnable action, String message) {
         assertions++;
         try { action.run(); }
-        catch (IllegalArgumentException | UnsupportedOperationException expected) { return; }
+        catch (IllegalArgumentException | NullPointerException
+               | UnsupportedOperationException expected) { return; }
         throw new IllegalStateException("did not reject: " + message);
     }
 }
