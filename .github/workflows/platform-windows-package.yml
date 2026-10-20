@@ -11,7 +11,7 @@ on:
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
   pull_request:
-    branches: [main, feature/yacht-y0-scoring]
+    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence]
     paths:
       - "server/**"
       - "web/**"

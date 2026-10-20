@@ -131,7 +131,7 @@ public final class YachtRepository {
         return update(next, previous.version());
     }
 
-    private static String serialize(YachtMatchState match) {
+    static String serialize(YachtMatchState match) {
         var participants = new ArrayList<ParticipantPayload>();
         for (var player : match.players()) {
             var categories = new LinkedHashMap<String, Integer>();
@@ -152,7 +152,7 @@ public final class YachtRepository {
         return json;
     }
 
-    private static YachtMatchState deserialize(String json) {
+    static YachtMatchState deserialize(String json) {
         if (json == null || json.length() > MAX_JSON_CHARS) {
             throw new IllegalStateException("Yacht snapshot missing or oversized");
         }
