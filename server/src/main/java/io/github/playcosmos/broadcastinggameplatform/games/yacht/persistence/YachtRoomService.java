@@ -227,7 +227,17 @@ public final class YachtRoomService {
                             throw new ConcurrentModificationException("Yacht command conflict");
                         }
                     }
-                    Event event = event("yacht." + action + ".committed", normalized, next);
+                    String eventType = switch (action) {
+                        case "activate" -> "yacht.match.started";
+                        case "roll" -> "yacht.dice.rolled";
+                        case "hold" -> "yacht.dice.held";
+                        case "score" -> "yacht.score.committed";
+                        case "pause" -> "yacht.match.paused";
+                        case "resume" -> "yacht.match.resumed";
+                        case "close" -> "yacht.room.closed";
+                        default -> throw new IllegalStateException("unknown event action");
+                    };
+                    Event event = event(eventType, normalized, next);
                     insertEvent(connection, event);
                     try (var insert = connection.prepareStatement("""
                         INSERT INTO yacht_command(
