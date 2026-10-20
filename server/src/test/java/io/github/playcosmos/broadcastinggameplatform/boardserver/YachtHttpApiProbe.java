@@ -161,9 +161,75 @@ public final class YachtHttpApiProbe {
             require(yacht.state(code).match().phase()
                 == YachtMatchState.Phase.CLOSED,
                 "HTTP command changed authoritative DB state");
+            // End-to-end release criterion for Y2: the HTTP API itself
+            // (not Java service calls) must finish two full scorecards.
+            var httpFull = send(http, base.resolve(route), cookie,
+                base.toString(), "POST", """
+                    {"requestId":"http-complete-room-003","name":"26-Turn HTTP",
+                     "players":[{"id":"qa","displayName":"QA"},
+                                {"id":"qb","displayName":"QB"}]}
+                    """);
+            require(httpFull.statusCode() == 201, "second real HTTP game created");
+            String fullCode = JsonParser.parseString(httpFull.body()).getAsJsonObject()
+                .get("roomCode").getAsString();
+            String fullMutation = "/api/v1/games/yacht/rooms/" + fullCode + "/";
+            var httpStarted = send(http, base.resolve(fullMutation + "activate"), cookie,
+                base.toString(), "POST",
+                "{\"commandId\":\"full-start-000\",\"expectedVersion\":0}");
+            require(httpStarted.statusCode() == 200, "full-game HTTP activate");
+            var current = JsonParser.parseString(httpStarted.body()).getAsJsonObject();
+            int committedTurns = 0;
+            while (!"FINISHED".equals(current.getAsJsonObject("match")
+                    .get("phase").getAsString())) {
+                long version = current.getAsJsonObject("match")
+                    .get("version").getAsLong();
+                var roll = send(http, base.resolve(fullMutation + "roll"), cookie,
+                    base.toString(), "POST",
+                    "{\"commandId\":\"full-roll-" + committedTurns
+                    + "\",\"expectedVersion\":" + version + "}");
+                require(roll.statusCode() == 200,
+                    "full-game HTTP roll " + committedTurns + ": " + roll.statusCode());
+                current = JsonParser.parseString(roll.body()).getAsJsonObject();
+                var options = current.getAsJsonObject("availableScores")
+                    .getAsJsonObject("points");
+                require(!options.keySet().isEmpty(), "at least one score choice");
+                String category = options.keySet().iterator().next()
+                    .toLowerCase(java.util.Locale.ROOT);
+                long scoredVersion = current.getAsJsonObject("match")
+                    .get("version").getAsLong();
+                var committed = send(http, base.resolve(fullMutation + "score"), cookie,
+                    base.toString(), "POST",
+                    "{\"commandId\":\"full-score-" + committedTurns
+                    + "\",\"expectedVersion\":" + scoredVersion
+                    + ",\"category\":\"" + category + "\"}");
+                require(committed.statusCode() == 200,
+                    "full-game HTTP score " + committedTurns
+                        + ": " + committed.statusCode());
+                current = JsonParser.parseString(committed.body()).getAsJsonObject();
+                committedTurns++;
+                require(committedTurns <= 26, "full-game API must terminate in 26 turns");
+            }
+            require(committedTurns == 26
+                && current.getAsJsonObject("match").get("completedTurns").getAsInt() == 26
+                && current.getAsJsonObject("match").get("version").getAsLong() == 53,
+                "HTTP-only game completes exactly 26 committed scores");
+            var publicFinal = send(http, base.resolve(
+                "/api/v1/games/yacht/public/" + fullCode),
+                null, null, "GET", null);
+            require(publicFinal.statusCode() == 200
+                && publicFinal.body().contains("\"phase\":\"FINISHED\""),
+                "public overlay can read final scorecard");
+            var finalReplay = send(http, base.resolve(
+                "/api/v1/games/yacht/public/" + fullCode + "/events?since=48"),
+                null, null, "GET", null);
+            require(finalReplay.statusCode() == 200
+                && finalReplay.body().contains("\"sequence\":53"),
+                "public client can replay missed final scoring events");
+
             System.out.println("YACHT_HTTP_Y2_PASSED checks=" + checks
                 + " auth=true origin=true public_read=true"
-                + " idempotency=true replay=true dice_injection=blocked");
+                + " idempotency=true replay=true dice_injection=blocked"
+                + " full_http_turns=26");
         } finally {
             if (server != null) server.close();
             try (var walk = Files.walk(root)) {
