@@ -3,7 +3,7 @@ name: Broadcasting Game Platform Windows Package
 on:
   workflow_dispatch:
   push:
-    branches: [main, feature/yacht-y0-scoring]
+    branches: [main]
     paths:
       - "server/**"
       - "web/**"
@@ -11,7 +11,7 @@ on:
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
   pull_request:
-    branches: [main]
+    branches: [main, feature/yacht-y0-scoring]
     paths:
       - "server/**"
       - "web/**"
