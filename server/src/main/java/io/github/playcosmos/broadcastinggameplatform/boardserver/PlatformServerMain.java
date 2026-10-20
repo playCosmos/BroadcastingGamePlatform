@@ -4,6 +4,7 @@ import com.google.gson.Gson;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingGuessGameService;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
+import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
@@ -84,6 +85,12 @@ public final class PlatformServerMain {
             );
         }
 
+        var yachtSocket = new AtomicReference<BoardGameWebSocketServer>();
+        var yachtGame = new YachtRoomService(database, (code, json) -> {
+            BoardGameWebSocketServer socket = yachtSocket.get();
+            if (socket != null) socket.broadcastYacht(code, json);
+        });
+
         var websocket = new BoardGameWebSocketServer(
             config.server().clientHost(),
             config.server().websocketPort(),
@@ -100,8 +107,10 @@ public final class PlatformServerMain {
                     return false;
                 }
             },
-            drawingSync
+            drawingSync,
+            yachtGame::exists
         );
+        yachtSocket.set(websocket);
         websocket.start();
 
         var runtime = new BoardGameRuntimeEngine(
@@ -266,7 +275,8 @@ public final class PlatformServerMain {
             providers,
             viewerDraw,
             drawingSync,
-            drawingGame
+            drawingGame,
+            yachtGame
         );
         var http = new BoardGameHttpServer(
             config,
