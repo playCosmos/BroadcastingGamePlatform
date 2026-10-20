@@ -2,6 +2,7 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import com.google.gson.JsonParser;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
+import io.github.playcosmos.broadcastinggameplatform.games.yacht.domain.YachtMatchState;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
@@ -158,8 +159,7 @@ public final class YachtHttpApiProbe {
                 && close.body().contains("\"phase\":\"CLOSED\""),
                 "operator can close and persist Yacht room");
             require(yacht.state(code).match().phase()
-                == io.github.playcosmos.broadcastinggameplatform.games.yacht.domain
-                    .YachtMatchState.Phase.CLOSED,
+                == YachtMatchState.Phase.CLOSED,
                 "HTTP command changed authoritative DB state");
             System.out.println("YACHT_HTTP_Y2_PASSED checks=" + checks
                 + " auth=true origin=true public_read=true"
