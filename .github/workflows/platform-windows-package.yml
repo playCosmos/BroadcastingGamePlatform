@@ -144,12 +144,9 @@ jobs:
           if ($landing -notmatch "GAME 02" -or $landing -notmatch "Yacht") {
             throw "Yacht GAME 02 development card missing from landing"
           }
-          if ($landing -match '(?s)GAME 02.*?AVAILABLE') {
-            # GAME 03 is AVAILABLE, so only reject an incorrectly available Yacht card.
-            $yachtCard = ($landing -split 'GAME 02', 2)[1] -split 'GAME 03', 2
-            if ($yachtCard[0] -match 'class="game-card available"|<span class="badge">AVAILABLE</span>') {
-              throw "Yacht Y0 must not be labeled playable"
-            }
+          # Restrict status assertion to Yacht's own article; GAME 03 is available.
+          if ($landing -notmatch '(?s)<article class="game-card planned">(?:(?!</article>).)*GAME 02') {
+            throw "Yacht GAME 02 must be marked in development (not available)"
           }
           if ($landing -match "먀로또|로또") { throw "lotto must not appear on platform landing" }
 
