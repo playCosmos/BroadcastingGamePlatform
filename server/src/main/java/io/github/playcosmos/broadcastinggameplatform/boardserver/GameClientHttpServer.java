@@ -567,6 +567,141 @@ public final class GameClientHttpServer implements AutoCloseable {
         List<DrawingParticipantRequest> participants
     ) {}
 
+    private record YachtCreateRequest(
+        String requestId, String name, List<YachtRoomService.Participant> players
+    ) {}
+
+    /**
+     * Read-only public room-code view and admin-authorized Y2 commands.
+     * The room-specific route is separate from Board/Drawing Guess endpoints
+     * and does not accept raw dice values, providers or unauthenticated writes.
+     */
+    private void yachtGameApi(HttpExchange exchange) throws IOException {
+        if (yachtGame == null) {
+            sendJson(exchange, 503, Map.of("error", "Yacht service unavailable"));
+            return;
+        }
+        String path = exchange.getRequestURI().getPath();
+        String base = "/api/v1/games/yacht";
+        String publicPrefix = base + "/public/";
+        String method = exchange.getRequestMethod().toUpperCase(Locale.ROOT);
+        boolean publicRead = path.startsWith(publicPrefix);
+
+        if (publicRead) {
+            corsPublic(exchange);
+            if ("OPTIONS".equals(method)) {
+                exchange.sendResponseHeaders(204, -1);
+                exchange.close();
+                return;
+            }
+            if (!requireGetOrHead(exchange)) return;
+            if (!requirePublicLookupCapacity(exchange)) return;
+        } else {
+            if (!isAdminSession(exchange)) {
+                sendJson(exchange, 401, Map.of(
+                    "error", "administrator authentication required"));
+                return;
+            }
+            if (!requireTrustedAdminMutationOrigin(exchange)) return;
+        }
+
+        try {
+            if ((base + "/rooms").equals(path)) {
+                if (!"POST".equals(method)) {
+                    exchange.sendResponseHeaders(405, -1);
+                    exchange.close();
+                    return;
+                }
+                JsonObject body = readYachtBody(exchange,
+                    Set.of("requestId", "name", "players"));
+                var command = GSON.fromJson(body, YachtCreateRequest.class);
+                sendJson(exchange, 201, yachtGame.create(
+                    command.requestId(), command.name(), command.players()));
+                return;
+            }
+            String prefix = publicRead ? publicPrefix : base + "/rooms/";
+            if (!path.startsWith(prefix)) {
+                sendJson(exchange, 404, Map.of("error", "Yacht route not found"));
+                return;
+            }
+            String route = path.substring(prefix.length());
+            String[] parts = route.split("/", -1);
+            if (parts.length < 1 || parts.length > 2
+                || !parts[0].matches("[A-HJ-NP-Z2-9]{6}")) {
+                sendJson(exchange, 404, Map.of("error", "Yacht room not found"));
+                return;
+            }
+            String code = parts[0];
+            String action = parts.length == 1 ? "state" : parts[1];
+
+            if ("GET".equals(method) || "HEAD".equals(method)) {
+                if ("state".equals(action)) {
+                    sendJson(exchange, 200, yachtGame.state(code));
+                    return;
+                }
+                if ("events".equals(action)) {
+                    long since = -1;
+                    String query = exchange.getRequestURI().getRawQuery();
+                    if (query != null && !query.isBlank()) {
+                        if (!query.matches("since=(?:-1|[0-9]{1,15})")) {
+                            throw new IllegalArgumentException("invalid event cursor");
+                        }
+                        since = Long.parseLong(query.substring(6));
+                    }
+                    sendJson(exchange, 200, yachtGame.events(code, since));
+                    return;
+                }
+                sendJson(exchange, 404, Map.of("error", "Yacht route not found"));
+                return;
+            }
+            if (publicRead || !"POST".equals(method) || parts.length != 2) {
+                exchange.sendResponseHeaders(405, -1);
+                exchange.close();
+                return;
+            }
+            JsonObject body = readYachtBody(exchange,
+                Set.of("commandId", "expectedVersion", "held", "category"));
+            if (!body.has("commandId") || !body.has("expectedVersion")
+                || !body.get("expectedVersion").isJsonPrimitive()
+                || !body.get("expectedVersion").getAsString()
+                    .matches("(?:0|[1-9][0-9]{0,14})")) {
+                throw new IllegalArgumentException(
+                    "commandId and integer expectedVersion are required");
+            }
+            var command = GSON.fromJson(body, YachtRoomService.Command.class);
+            sendJson(exchange, 200,
+                yachtGame.command(code, action, command));
+        } catch (NoSuchElementException missing) {
+            sendJson(exchange, 404, Map.of("error", "Yacht room not found"));
+        } catch (ConcurrentModificationException conflict) {
+            sendJson(exchange, 409, Map.of("error", "Yacht command conflict"));
+        } catch (IllegalStateException invalidState) {
+            sendJson(exchange, 409, Map.of("error", "Yacht action not allowed"));
+        } catch (IllegalArgumentException invalid) {
+            sendJson(exchange, 400, Map.of("error", "invalid Yacht request"));
+        } catch (java.sql.SQLException databaseError) {
+            sendJson(exchange, 500, Map.of("error", "Yacht database operation failed"));
+        }
+    }
+
+    private static JsonObject readYachtBody(HttpExchange exchange,
+                                            Set<String> keys) throws IOException {
+        // Independent small bound, do not use the much larger proxy limit.
+        byte[] raw = exchange.getRequestBody().readNBytes(8193);
+        if (raw.length > 8192) {
+            throw new IllegalArgumentException("Yacht body exceeds 8KiB");
+        }
+        var body = GSON.fromJson(new String(raw, StandardCharsets.UTF_8),
+            JsonObject.class);
+        if (body == null) throw new IllegalArgumentException("JSON object required");
+        for (String key : body.keySet()) {
+            if (!keys.contains(key)) {
+                throw new IllegalArgumentException("unexpected Yacht field");
+            }
+        }
+        return body;
+    }
+
     private record DrawingMatchStartRequest(
         Integer totalRounds
     ) {}
