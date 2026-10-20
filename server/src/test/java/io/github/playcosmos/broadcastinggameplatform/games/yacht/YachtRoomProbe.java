@@ -172,8 +172,9 @@ public final class YachtRoomProbe {
                 "Y2 command API completes 26 turns for two players");
             require(recovered.state(code).equals(state),
                 "completed game persists after final commit");
+            long finishedVersion = state.match().version();
             rejected(() -> recovered.command(code, "roll",
-                cmd("actionpostgame", state.match().version())),
+                cmd("actionpostgame", finishedVersion)),
                 "finished match cannot roll");
 
             var closed = recovered.command(secondRoom.roomCode(), "close",
