@@ -12,6 +12,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.S
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParseException;
 import java.util.ConcurrentModificationException;
 import java.util.NoSuchElementException;
 import java.util.Set;
@@ -614,6 +615,13 @@ public final class GameClientHttpServer implements AutoCloseable {
                 }
                 JsonObject body = readYachtBody(exchange,
                     Set.of("requestId", "name", "players"));
+                if (!body.has("requestId") || !body.get("requestId").isJsonPrimitive()
+                    || !body.get("requestId").getAsJsonPrimitive().isString()
+                    || !body.has("name") || !body.get("name").isJsonPrimitive()
+                    || !body.get("name").getAsJsonPrimitive().isString()
+                    || !body.has("players") || !body.get("players").isJsonArray()) {
+                    throw new IllegalArgumentException("invalid Yacht room creation");
+                }
                 var command = GSON.fromJson(body, YachtCreateRequest.class);
                 sendJson(exchange, 201, yachtGame.create(
                     command.requestId(), command.name(), command.players()));
@@ -661,12 +669,31 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             JsonObject body = readYachtBody(exchange,
                 Set.of("commandId", "expectedVersion", "held", "category"));
-            if (!body.has("commandId") || !body.has("expectedVersion")
+            if (!body.has("commandId") || !body.get("commandId").isJsonPrimitive()
+                || !body.get("commandId").getAsJsonPrimitive().isString()
+                || !body.has("expectedVersion")
                 || !body.get("expectedVersion").isJsonPrimitive()
+                || !body.get("expectedVersion").getAsJsonPrimitive().isNumber()
                 || !body.get("expectedVersion").getAsString()
                     .matches("(?:0|[1-9][0-9]{0,14})")) {
                 throw new IllegalArgumentException(
                     "commandId and integer expectedVersion are required");
+            }
+            if (body.has("category") && (!body.get("category").isJsonPrimitive()
+                || !body.get("category").getAsJsonPrimitive().isString())) {
+                throw new IllegalArgumentException("invalid Yacht category");
+            }
+            if (body.has("held")) {
+                if (!body.get("held").isJsonArray()
+                    || body.getAsJsonArray("held").size() != 5) {
+                    throw new IllegalArgumentException("invalid Yacht hold mask");
+                }
+                for (var element : body.getAsJsonArray("held")) {
+                    if (!element.isJsonPrimitive()
+                        || !element.getAsJsonPrimitive().isBoolean()) {
+                        throw new IllegalArgumentException("invalid Yacht hold flag");
+                    }
+                }
             }
             var command = GSON.fromJson(body, YachtRoomService.Command.class);
             sendJson(exchange, 200,
@@ -677,7 +704,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange, 409, Map.of("error", "Yacht command conflict"));
         } catch (IllegalStateException invalidState) {
             sendJson(exchange, 409, Map.of("error", "Yacht action not allowed"));
-        } catch (IllegalArgumentException invalid) {
+        } catch (IllegalArgumentException | JsonParseException invalid) {
             sendJson(exchange, 400, Map.of("error", "invalid Yacht request"));
         } catch (java.sql.SQLException databaseError) {
             sendJson(exchange, 500, Map.of("error", "Yacht database operation failed"));
