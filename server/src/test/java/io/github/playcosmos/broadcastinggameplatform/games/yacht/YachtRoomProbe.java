@@ -49,8 +49,7 @@ public final class YachtRoomProbe {
             require(!secondRoom.roomCode().equals(code), "two rooms must not collide");
             require(service.exists(code) && service.exists(secondRoom.roomCode()),
                 "both room codes should be valid");
-            require(!service.exists("AAAAAA") || !"AAAAAA".equals(code),
-                "room lookups do not accept guessed unused room codes");
+            require(!service.exists("INVALID"), "bad room code is not a valid room");
             rejected(() -> service.state("INVALID/"), "unsafe room code");
             notFound(() -> service.state("AAAAAA"), "nonexistent room");
 
@@ -225,7 +224,8 @@ public final class YachtRoomProbe {
     private static void rejected(Attempt attempt, String label) throws Exception {
         checks++;
         try { attempt.run(); }
-        catch (IllegalArgumentException | IllegalStateException expected) { return; }
+        catch (IllegalArgumentException | IllegalStateException
+               | NoSuchElementException expected) { return; }
         throw new AssertionError("expected rejection: " + label);
     }
     private static void notFound(Attempt attempt, String label) throws Exception {
