@@ -161,8 +161,15 @@ public record YachtMatchState(
         if (rolls == 0 || rolls == 3) {
             throw new IllegalStateException("cannot change holds before first/after final roll");
         }
-        if (mask == null || mask.size() != 5 || mask.contains(null)) {
+        if (mask == null || mask.size() != 5) {
             throw new IllegalArgumentException("five hold flags required");
+        }
+        // Java's immutable List.of() throws NPE on contains(null). Do not
+        // use contains(null) as a validation predicate for caller lists.
+        for (Boolean heldFlag : mask) {
+            if (heldFlag == null) {
+                throw new IllegalArgumentException("null hold flag");
+            }
         }
         return transitioned(players, Phase.ACTIVE, currentPlayer,
             completedTurns, rolls, dice, mask);
