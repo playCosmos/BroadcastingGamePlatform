@@ -62,7 +62,23 @@ public final class GameRoomService {
         validateActor(actorId, displayName);
         Objects.requireNonNull(hostSeat, "hostSeat");
         validateCapacity(maxPlayers, maxRoomMembers);
-        return write(connection -> {
+        return write(connection -> createInTransaction(connection,
+            gameId, roomName, actorId, displayName, hostSeat,
+            maxPlayers, maxRoomMembers));
+    }
+
+    /** R2 uses the same transaction for owner credential + room creation. */
+    Room createInTransaction(
+        Connection connection, String gameId, String roomName, String actorId,
+        String displayName, SeatRole hostSeat, int maxPlayers, int maxRoomMembers
+    ) throws SQLException {
+        validateGameId(gameId);
+        if (roomName == null || roomName.isBlank() || roomName.length() > 100) {
+            throw new IllegalArgumentException("invalid room name");
+        }
+        validateActor(actorId, displayName);
+        Objects.requireNonNull(hostSeat, "hostSeat");
+        validateCapacity(maxPlayers, maxRoomMembers);
             String roomId = UUID.randomUUID().toString();
             String ownerId = UUID.randomUUID().toString();
             String roomCode = allocateCode(connection, gameId);
@@ -88,7 +104,8 @@ public final class GameRoomService {
             insertMember(connection, ownerId, roomId, actorId, displayName,
                 hostSeat, now);
             return read(connection, roomId);
-        });
+
+    
     }
 
     public Room find(String roomId) throws SQLException {
