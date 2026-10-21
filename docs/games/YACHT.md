@@ -2,6 +2,8 @@
 
 상태: **PLANNED**
 
+> **공통 룸 및 독립 플레이 화면 방향:** [`docs/COMMON_GAME_ROOM_PLAN.md`](../COMMON_GAME_ROOM_PLAN.md)에서 실 플레이어 수/전체 회원 정원을 분리하고 관전·채팅·회원 권한을 공통화하도록 계획한다. 독립 게임 클라이언트 `/games/yacht/` 를 실제 플레이 화면으로 사용하며 기존 `/admin/` 은 운영·설정 진입점으로 제한한다. Y0~Y2는 [Draft #33](https://github.com/playCosmos/BroadcastingGamePlatform/pull/33) → [#34](https://github.com/playCosmos/BroadcastingGamePlatform/pull/34) → [#35](https://github.com/playCosmos/BroadcastingGamePlatform/pull/35) 에서 검증된 별도 작업이며 이 문서가 위치한 `main` 에는 미병합이다. 아래 기존 Y3의 ‘Admin UI’ 항목은 새 공통 룸 계획에 맞춰 **독립 플레이 UI**로 수정될 예정이다.
+
 게임 ID: `yacht`
 
 외부 표시명: **Yacht**
@@ -800,18 +802,22 @@ Yacht에서 실제 중복이 발생하는 항목만 추출한다.
 
 - API만으로 전체 한 게임 완료 가능
 
-### Y3 — Admin UI
+### Y3 — 독립 Game Client / Room UI (공통 룸 적용)
 
-- 플랫폼 랜딩에 Yacht 활성 카드
-- Yacht 룸 생성
-- Yacht 룸 운영
-- Score Sheet
-- 예상 점수 표시
-- 수동 운영
+- 플레이/관전 화면은 독립적인 `/games/yacht/` 클라이언트로 구성하며 `/admin/` 하위 게임 조작 화면에 종속시키지 않는다.
+- 플랫폼·관리자 랜딩에서는 Yacht 게임 실행 및 관리 진입점을 제공한다. 실제 플레이 가능 여부가 확인되기 전에는 `AVAILABLE` 로 표시하지 않는다.
+- 공통 GameRoom에서 최대 실제 플레이어 수(현행 Yacht 2~6명) 및 방장·플레이어·관전자 전체 정원을 각각 설정한다.
+- 대기실에 입장한 회원의 역할·준비·자리 변동, 관전자 시청·룸 채팅을 표시한다.
+- 실제 플레이어의 Roll/Hold/Score 권한을 현재 턴의 서버 판정에 연결한다. 방장 여부와 현재 턴 플레이어를 혼동하지 않는다.
+- Score Sheet·예상 점수·Yacht 보너스, 전체 턴, 경기 종료·재대결 화면을 실제 서버 응답으로 표시한다.
+- 관리자 전용 수동 운영·종료·방장 위임은 별도 권한 있는 운영 기능으로 유지한다.
 
 완료 조건:
 
-- 방송 이벤트 없이 운영자 UI만으로 정상 게임 가능
+- 일반 플레이어·방장·관전자가 각각 독립 브라우저로 입장해 채팅/관전 및 권한 있는 2인 26턴 경기를 완료한다.
+- 클라이언트만으로 주사위를 조작하거나 다른 플레이어의 턴을 진행할 수 없다.
+- 재접속과 6자리 코드 복구, 정원·중복 입장, 완결된 점수표에 대한 Windows 브라우저 E2E 테스트를 통과한다.
+- [공통 게임룸 계획](../COMMON_GAME_ROOM_PLAN.md)의 R1~R4 수용 기준을 충족한다.
 
 ### Y4 — Overlay
 
