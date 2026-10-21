@@ -110,7 +110,10 @@
     const host = Boolean(me?.isHost), joined = me?.status === "JOINED";
     const pregame = room.state === "OPEN_LOBBY";
     const interruptedStart = room.state === "PLAYING" && !state.yacht;
-    visible("lobby", pregame || interruptedStart || room.state === "POST_GAME");
+    // Keep the host invite panel available for late spectators while the
+    // match is running. Player invitation remains forbidden after kickoff.
+    visible("lobby", pregame || interruptedStart
+      || room.state === "POST_GAME" || host);
     visible("inviteControls", host);
     $("inviteRole").querySelector('option[value="PLAYER"]').disabled = !pregame;
     if (!pregame) $("inviteRole").value = "SPECTATOR";
