@@ -35,6 +35,7 @@ public final class GameRoomRealtimeService {
     public record Event(String type, String roomId, long sequence,
                         String memberId, String messageId, String displayName,
                         String text, String createdAt) {}
+    private record WriteResult(Event event,boolean created) {}
     public record Page(long cursor, long firstAvailable, List<Event> events) {}
     public record ChatMessage(long sequence, String messageId, String memberId,
                               String displayName, String text, String createdAt,
@@ -85,7 +86,7 @@ public final class GameRoomRealtimeService {
         if (memberRates.computeIfAbsent(rateKey, key -> new Rate()).allow() == false) {
             throw new GameRoomService.RoomConflict("chat rate exceeded");
         }
-        Event event = rooms.write(connection -> {
+        WriteResult write = rooms.write(connection -> {
             var self = access.requireSession(connection, token);
             if (!self.roomId().equals(principal.roomId())) {
                 throw new Forbidden("room changed");
@@ -108,9 +109,11 @@ public final class GameRoomRealtimeService {
                             throw new GameRoomService.RoomConflict(
                                 "message ID already used for another message");
                         }
-                        return new Event("room.chat.message",self.roomId(),
-                            previous.getLong(1),self.memberId(),messageId,
-                            previous.getString(5),trimmed,previous.getString(4));
+                        return new WriteResult(
+                            new Event("room.chat.message",self.roomId(),
+                                previous.getLong(1),self.memberId(),messageId,
+                                previous.getString(5),trimmed,previous.getString(4)),
+                            false);
                     }
                 }
             }
@@ -134,12 +137,12 @@ public final class GameRoomRealtimeService {
                 self.memberId(),messageId,displayName,trimmed,now);
             persistEvent(connection,committed);
             pruneHistory(connection,self.roomId(),sequence);
-            return committed;
+            return new WriteResult(committed,true);
         });
-        // If an earlier idempotent response exists, subscribers will discard
-        // the repeated sequence. No extra durable event/sequence is generated.
-        publish(event);
-        return event;
+        // Only first commit produces a live broadcast; identical retries
+        // return the original event without disturbing subscribers.
+        if (write.created()) publish(write.event());
+        return write.event();
     }
 
     public Event delete(String token, String messageId) throws SQLException {
