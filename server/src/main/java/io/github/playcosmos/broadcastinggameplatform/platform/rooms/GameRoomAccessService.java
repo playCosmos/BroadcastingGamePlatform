@@ -448,6 +448,11 @@ public final class GameRoomAccessService {
         throws SQLException {
         Principal principal = requireSession(connection, token);
         if (!principal.isHost()) throw new Forbidden("host permission required");
+        Member host = member(GameRoomService.read(connection, principal.roomId()),
+            principal.memberId());
+        if (host.status() != MemberStatus.JOINED) {
+            throw new Forbidden("disconnected host cannot moderate");
+        }
         return principal;
     }
 
@@ -500,13 +505,13 @@ public final class GameRoomAccessService {
         return new Credential(token, roomId, memberId);
     }
 
-    private static void revokeMember(Connection connection, String memberId)
+    private void revokeMember(Connection connection, String memberId)
         throws SQLException {
         try (var stmt = connection.prepareStatement("""
             UPDATE game_room_session SET revoked_at=?
             WHERE member_id=? AND revoked_at IS NULL
             """)) {
-            stmt.setString(1, Instant.now().toString());
+            stmt.setString(1, now());
             stmt.setString(2, memberId);
             stmt.executeUpdate();
         }
