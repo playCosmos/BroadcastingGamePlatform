@@ -18,6 +18,15 @@
   let memberSocket = null, gameSocket = null, websocketUrl = "";
   let lastMemberSequence = -1, configuredRoom = "", configuredYacht = "";
   let busy = false, running = false, refreshRequested = false;
+  // Command IDs are idempotency keys, NOT authentication secrets.
+  // randomUUID is unavailable on non-secure remote LAN HTTP origins.
+  function newCommandId(prefix) {
+    const suffix = globalThis.crypto?.randomUUID?.()
+      || (Date.now().toString(36) + "-"
+        + Math.random().toString(36).slice(2)
+        + Math.random().toString(36).slice(2));
+    return prefix + suffix;
+  }
   const text = (id, value) => { $(id).textContent = String(value ?? ""); };
   const visible = (id, show) => { $(id).hidden = !show; };
   const notice = (message, error = false) => {
@@ -271,7 +280,7 @@
     await operation(async () => {
       if (!state?.yacht) throw new Error("게임이 시작되지 않았습니다.");
       const expectedVersion = state.yacht.match.version;
-      const commandId = "y4-" + crypto.randomUUID();
+      const commandId = newCommandId("y4-");
       state = await request("/yacht/" + action, "POST",
         { commandId, expectedVersion, ...args });
       if (state.yacht?.match?.held) held = state.yacht.match.held.slice();
@@ -394,7 +403,7 @@
       const input=event.currentTarget.elements.text;
       const content=input.value.trim();
       if (!content) return;
-      await request("/chat","POST",{messageId:"chat-"+crypto.randomUUID(),text:content});
+      await request("/chat","POST",{messageId:newCommandId("chat-"),text:content});
       input.value="";
       await refreshChat();
     });
