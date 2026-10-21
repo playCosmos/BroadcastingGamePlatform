@@ -2,6 +2,8 @@
 
 상태: **PLANNED**
 
+> **공통 룸 및 독립 플레이 화면 방향:** [`docs/COMMON_GAME_ROOM_PLAN.md`](../COMMON_GAME_ROOM_PLAN.md)에서 실 플레이어 수/전체 회원 정원을 분리하고 관전·채팅·회원 권한을 공통화하도록 계획한다. 독립 게임 클라이언트 `/games/yacht/` 를 실제 플레이 화면으로 사용하며 기존 `/admin/` 은 운영·설정 진입점으로 제한한다. Y0~Y2는 [Draft #33](https://github.com/playCosmos/BroadcastingGamePlatform/pull/33) → [#34](https://github.com/playCosmos/BroadcastingGamePlatform/pull/34) → [#35](https://github.com/playCosmos/BroadcastingGamePlatform/pull/35) 에서 검증된 별도 작업이며 이 문서가 위치한 `main` 에는 미병합이다. 아래 기존 Y3의 ‘Admin UI’ 항목은 새 공통 룸 계획에 맞춰 **독립 플레이 UI**로 수정될 예정이다.
+
 게임 ID: `yacht`
 
 외부 표시명: **Yacht**
