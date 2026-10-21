@@ -68,11 +68,14 @@ public final class GameRoomAccessService {
                                       String displayName, SeatRole hostSeat,
                                       int maxPlayers, int maxMembers)
         throws SQLException {
-        var room = rooms.create(gameId, roomName, "guest-" + UUID.randomUUID(),
-            displayName, hostSeat, maxPlayers, maxMembers);
-        Credential secret = rooms.write(connection ->
-            issueSession(connection, room.roomId(), room.ownerMemberId()));
-        return new HostedRoom(room, secret);
+        return rooms.write(connection -> {
+            var room = rooms.createInTransaction(connection,
+                gameId, roomName, "guest-" + UUID.randomUUID(),
+                displayName, hostSeat, maxPlayers, maxMembers);
+            Credential secret = issueSession(connection,
+                room.roomId(), room.ownerMemberId());
+            return new HostedRoom(room, secret);
+        });
     }
 
     public Principal authenticate(String token) throws SQLException {
