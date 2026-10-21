@@ -47,8 +47,8 @@ public final class GameRoomR3Probe {
                 "same messageId/content does not commit another sequence");
             conflict(() -> service.chat(viewer,"r3message001","replay changed"),
                 "messageId reuse with changed contents rejected");
-            forbidden(() -> service.delete(outsider,"r3message001"),
-                "other room cannot delete foreign message");
+            missing(() -> service.delete(outsider,"r3message001"),
+                "other room cannot access foreign message");
             var m2=service.chat(host,"r3message002","Second");
             check(m2.sequence()==2, "room-wide monotonic chat sequence");
             forbidden(() -> service.delete(viewer,"r3message002"),
@@ -159,6 +159,11 @@ public final class GameRoomR3Probe {
         checks++;
         try {a.run();}catch(GameRoomAccessService.Forbidden expected){return;}
         throw new AssertionError("expected denied: "+title);
+    }
+    private static void missing(Attempt a,String title)throws Exception {
+        checks++;
+        try {a.run();}catch(java.util.NoSuchElementException expected){return;}
+        throw new AssertionError("expected missing: "+title);
     }
     private static void conflict(Attempt a,String title)throws Exception {
         checks++;
