@@ -5,6 +5,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingS
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.application.DrawingGuessGameService;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
@@ -265,6 +266,7 @@ public final class PlatformServerMain {
         );
 
         var adminAuthStore = new AdminAuthStore(database);
+        var commonRoomAccess = new GameRoomAccessService(database);
         var clientHttp = new GameClientHttpServer(
             config,
             root,
@@ -276,7 +278,8 @@ public final class PlatformServerMain {
             viewerDraw,
             drawingSync,
             drawingGame,
-            yachtGame
+            yachtGame,
+            commonRoomAccess
         );
         var http = new BoardGameHttpServer(
             config,
