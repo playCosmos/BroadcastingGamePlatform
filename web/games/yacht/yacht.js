@@ -109,6 +109,7 @@
     const me = room.members.find(m => m.memberId === state.memberId);
     const host = Boolean(me?.isHost), joined = me?.status === "JOINED";
     const pregame = room.state === "OPEN_LOBBY";
+    const interruptedStart = room.state === "PLAYING" && !state.yacht;
     visible("lobby", pregame || room.state === "POST_GAME");
     visible("inviteControls", host);
     $("inviteRole").querySelector('option[value="PLAYER"]').disabled = !pregame;
