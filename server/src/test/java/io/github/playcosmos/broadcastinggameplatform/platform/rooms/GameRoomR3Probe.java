@@ -141,6 +141,24 @@ public final class GameRoomR3Probe {
             check(restarted.events(host,4).events().size()==1,
                 "authorized remaining host can continue replay");
 
+            // A duplicated POST after the rate limit must be idempotent;
+            // it cannot consume another quota or turn into a 409.
+            var flood=access.createHostedRoom("yacht","Flood R3","Host",
+                SeatRole.SPECTATOR,2,4);
+            String floodToken=flood.hostCredential().token();
+            GameRoomRealtimeService.Event initial=null;
+            for(int i=1;i<=5;i++){
+                var result=service.chat(floodToken,"flood0000"+i,"Line "+i);
+                if(i==1)initial=result;
+            }
+            var original=initial;
+            check(service.chat(floodToken,"flood00001","Line 1").equals(original),
+                "idempotent retry succeeds even at chat rate limit");
+            conflict(() -> service.chat(floodToken,"flood00006","Sixth"),
+                "sixth distinct message within one second rejected");
+            check(service.lastSequence(floodToken)==5,
+                "rejected chat and identical retry do not advance event cursor");
+
             System.out.println("GAME_ROOM_R3_PASSED checks="+checks
                 +" events=durable chat=moderated tombstone=redacted"
                 +" privacy=isolated pagination=true"
