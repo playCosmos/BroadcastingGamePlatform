@@ -709,7 +709,12 @@ public final class GameClientHttpServer implements AutoCloseable {
                     var invite = memberRooms.invite(token,
                         roomApiSeat(body, "seatRole"), roomApiInt(body, "maxUses"),
                         Duration.ofSeconds(roomApiInt(body, "expiresInSeconds")));
-                    sendJson(exchange, 201, invite);
+                    sendJson(exchange, 201, Map.of(
+                        "token", invite.token(),
+                        "roomId", invite.roomId(),
+                        "seatRole", invite.role().name(),
+                        "maxUses", invite.uses(),
+                        "expiresAt", invite.expiresAt().toString()));
                 }
                 case "/host/revoke-invite" -> {
                     JsonObject body = readYachtBody(exchange, Set.of("invitation"));
