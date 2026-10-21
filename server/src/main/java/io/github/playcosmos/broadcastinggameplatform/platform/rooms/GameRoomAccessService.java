@@ -99,7 +99,14 @@ public final class GameRoomAccessService {
         return rooms.write(connection -> {
             Principal host = requireHost(connection, hostToken);
             Room room = GameRoomService.read(connection, host.roomId());
-            GameRoomService.requireOpen(room);
+            if (room.state() == GameRoomModels.RoomState.PLAYING
+                && role != SeatRole.SPECTATOR) {
+                throw new GameRoomService.RoomConflict(
+                    "cannot invite new players during an active match");
+            }
+            if (room.state() != GameRoomModels.RoomState.PLAYING) {
+                GameRoomService.requireOpen(room);
+            }
             String secret = secret(), timestamp = now();
             Instant expires = clock.instant().plus(lifetime);
             try (var statement = connection.prepareStatement("""
@@ -146,7 +153,14 @@ public final class GameRoomAccessService {
                 }
             }
             Room room = GameRoomService.read(connection, roomId);
-            GameRoomService.requireOpen(room);
+            if (room.state() == GameRoomModels.RoomState.PLAYING
+                && role != SeatRole.SPECTATOR) {
+                throw new GameRoomService.RoomConflict(
+                    "cannot join as player during an active match");
+            }
+            if (room.state() != GameRoomModels.RoomState.PLAYING) {
+                GameRoomService.requireOpen(room);
+            }
             if (room.memberCount() >= room.maxRoomMembers()) {
                 throw new GameRoomService.RoomConflict("room capacity reached");
             }
