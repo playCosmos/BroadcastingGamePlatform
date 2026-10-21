@@ -228,7 +228,8 @@
     running = true;
     try {
       state = await request("/yacht");
-      if (state.yacht?.match?.held && !state.currentPlayer)
+      if (state.yacht?.match?.held
+          && (!state.currentPlayer || state.yacht.match.rolls === 0))
         held = state.yacht.match.held.slice();
       render();
       await connectSockets();
