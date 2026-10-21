@@ -89,10 +89,10 @@ public final class GameRoomR1Probe {
             var recovered = new GameRoomService(dbRestarted,initialClock);
             check(recovered.find(id).equals(disconnected),
                 "all members, owner and reservations recover after SQLite reopen");
+            String viewerTwoId=disconnected.memberForActor("viewer2").memberId();
             var back = recovered.reconnect(id,"viewer2");
             check(back.memberCount()==20
-                && back.memberForActor("viewer2").memberId()
-                     .equals(firstViewer.memberId())==false
+                && back.memberForActor("viewer2").memberId().equals(viewerTwoId)
                 && back.memberForActor("viewer2").status()==MemberStatus.JOINED,
                 "reconnect reclaims same member without duplicate person");
             var timedOut = recovered.disconnect(id,"viewer2",Duration.ofSeconds(10));
