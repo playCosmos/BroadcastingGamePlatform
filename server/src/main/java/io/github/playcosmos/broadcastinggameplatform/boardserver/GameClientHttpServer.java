@@ -13,6 +13,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persiste
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomModels;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.util.ConcurrentModificationException;
@@ -806,13 +807,18 @@ public final class GameClientHttpServer implements AutoCloseable {
             "ready", member.ready(),
             "isHost", member.memberId().equals(room.ownerMemberId())
         )).toList();
-        return Map.of(
-            "roomId", room.roomId(), "gameId", room.gameId(),
-            "roomCode", room.roomCode(), "roomName", room.roomName(),
-            "state", room.state().name(), "version", room.version(),
-            "maxPlayers", room.maxPlayers(), "playerCount", room.playerCount(),
-            "maxRoomMembers", room.maxRoomMembers(), "memberCount", room.memberCount(),
-            "members", visible);
+        return Map.ofEntries(
+            Map.entry("roomId", room.roomId()),
+            Map.entry("gameId", room.gameId()),
+            Map.entry("roomCode", room.roomCode()),
+            Map.entry("roomName", room.roomName()),
+            Map.entry("state", room.state().name()),
+            Map.entry("version", room.version()),
+            Map.entry("maxPlayers", room.maxPlayers()),
+            Map.entry("playerCount", room.playerCount()),
+            Map.entry("maxRoomMembers", room.maxRoomMembers()),
+            Map.entry("memberCount", room.memberCount()),
+            Map.entry("members", visible));
     }
 
     private record YachtCreateRequest(
