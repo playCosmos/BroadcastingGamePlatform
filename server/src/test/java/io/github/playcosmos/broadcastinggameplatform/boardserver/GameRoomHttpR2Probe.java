@@ -84,7 +84,9 @@ public final class GameRoomHttpR2Probe {
                 "invite requires member token");
             var invite=send(http,base.resolve(endpoint+"/host/invite"),"POST",
                 inviteBody,base.toString(),null,host);
-            check(invite.statusCode()==201,"host can issue player invite");
+            check(invite.statusCode()==201,
+                "host can issue player invite: status="+invite.statusCode()
+                +" response="+invite.body());
             String grant=JsonParser.parseString(invite.body()).getAsJsonObject()
                 .get("token").getAsString();
             check(send(http,base.resolve(endpoint+"/join"),"POST",
