@@ -155,8 +155,9 @@ public final class GameRoomRealtimeService {
             String author;
             String displayName;
             String deletedAt;
+            long originalSequence;
             try (var lookup = connection.prepareStatement("""
-                SELECT c.member_id,m.display_name,c.deleted_at
+                SELECT c.member_id,m.display_name,c.deleted_at,c.sequence
                 FROM game_room_chat c JOIN game_room_member m
                 ON m.member_id=c.member_id
                 WHERE c.room_id=? AND c.message_id=?
@@ -168,6 +169,7 @@ public final class GameRoomRealtimeService {
                     author=result.getString(1);
                     displayName=result.getString(2);
                     deletedAt=result.getString(3);
+                    originalSequence=result.getLong(4);
                 }
             }
             if (!principal.isHost() && !principal.memberId().equals(author)) {
@@ -185,6 +187,19 @@ public final class GameRoomRealtimeService {
                 update.setString(2,principal.roomId());
                 update.setString(3,messageId);
                 if(update.executeUpdate()!=1)throw new GameRoomService.RoomConflict("delete raced");
+            }
+            // Do not expose a deleted message through a historical event replay.
+            // Preserve the old sequence, but redact its original payload.
+            Event redacted=new Event("room.chat.message",principal.roomId(),
+                originalSequence,author,messageId,displayName,null,now);
+            try(var update=connection.prepareStatement("""
+                UPDATE game_room_event SET payload=? WHERE room_id=? AND sequence=?
+                """)) {
+                update.setString(1,JSON.toJson(redacted));
+                update.setString(2,principal.roomId());
+                update.setLong(3,originalSequence);
+                if(update.executeUpdate()!=1)
+                    throw new IllegalStateException("original chat event unavailable");
             }
             long seq=nextSequence(connection,principal.roomId());
             Event committed=new Event("room.chat.deleted",principal.roomId(),
