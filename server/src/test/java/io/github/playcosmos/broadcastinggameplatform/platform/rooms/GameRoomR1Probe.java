@@ -181,7 +181,8 @@ public final class GameRoomR1Probe {
     private static void contest(Path path,String roomId,SeatRole seat,int writers)
         throws Exception {
         var ready=new CountDownLatch(1);
-        var success=new AtomicInteger(), denied=new AtomicInteger();
+        var success=new AtomicInteger();
+        var denied=new AtomicInteger();
         var error=new AtomicReference<Throwable>();
         var threads=new ArrayList<Thread>();
         for(int i=0;i<writers;i++){
