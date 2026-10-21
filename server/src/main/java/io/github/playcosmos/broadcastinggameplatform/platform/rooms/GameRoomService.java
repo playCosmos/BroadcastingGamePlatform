@@ -49,6 +49,8 @@ public final class GameRoomService {
         this.database = Objects.requireNonNull(database, "database");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
+    
+    DatabaseAccess databaseForAccess() { return database; }
 
     public Room create(String gameId, String roomName, String actorId,
                        String displayName, SeatRole hostSeat,
