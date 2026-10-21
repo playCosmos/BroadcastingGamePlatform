@@ -11,7 +11,7 @@ on:
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
   pull_request:
-    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence, feature/yacht-y2-room-api, feature/common-game-room-r1-domain, feature/common-game-room-r2-auth]
+    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence, feature/yacht-y2-room-api, feature/common-game-room-r1-domain, feature/common-game-room-r2-auth, feature/common-game-room-r3-realtime]
     paths:
       - "server/**"
       - "web/**"
@@ -106,6 +106,9 @@ jobs:
             "web/tools/viewer-draw/marble/viewer-draw-marble.js",
             "web/tools/viewer-draw/marble/viewer-draw-marble.css",
             "web/admin/games/yacht/index.html",
+            "web/games/yacht/index.html",
+            "web/games/yacht/yacht.css",
+            "web/games/yacht/yacht.js",
             "web/admin/games/drawing-guess/index.html",
             "web/admin/games/drawing-guess/room.html",
             "web/admin/assets/drawing-guess.css",
@@ -144,9 +147,10 @@ jobs:
           if ($landing -notmatch "GAME 02" -or $landing -notmatch "Yacht") {
             throw "Yacht GAME 02 development card missing from landing"
           }
-          # Restrict status assertion to Yacht's own article; GAME 03 is available.
-          if ($landing -notmatch '(?s)<article class="game-card planned">(?:(?!</article>).)*GAME 02') {
-            throw "Yacht GAME 02 must be marked in development (not available)"
+          # R4 exposes a playable BETA Yacht client; verify its OWN card,
+          # not an obsolete Y2-only status (GAME 03 remains independent).
+          if ($landing -notmatch '(?s)<article class="game-card available">(?:(?!</article>).)*R4 · MULTIPLAYER BETA(?:(?!</article>).)*GAME 02(?:(?!</article>).)*href="/games/yacht/"') {
+            throw "Yacht GAME 02 R4 beta card must link to independent game client"
           }
           if ($landing -match "먀로또|로또") { throw "lotto must not appear on platform landing" }
 

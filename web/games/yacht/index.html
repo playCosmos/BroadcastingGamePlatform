@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Yacht · GameCenter</title>
+  <link rel="stylesheet" href="./yacht.css">
+  <script src="./yacht.js" defer></script>
+</head>
+<body>
+  <div class="shell">
+    <header class="top">
+      <div><p class="eyebrow">GAMECENTER / GAME 02</p><h1>Yacht</h1>
+        <p class="subtitle">독립 멀티플레이 게임 · 최대 3회 주사위 · 13개 점수 항목</p></div>
+      <a class="home-link" href="/">게임 선택으로 돌아가기 ↗</a>
+    </header>
+    <div id="notice" class="notice" role="status" aria-live="polite">룸을 만들거나 초대 링크로 입장하세요.</div>
+    <section id="admission" class="entry grid-two">
+      <form id="createRoom" class="panel">
+        <p class="eyebrow">HOST / ADMIN SESSION</p><h2>새 룸 생성</h2>
+        <p class="muted">게임룸 생성은 플랫폼 관리자 로그인이 필요합니다. 실제 플레이는 별도 회원 권한으로 진행됩니다.</p>
+        <label>방 이름<input name="name" maxlength="100" required value="Yacht Room"></label>
+        <label>표시 이름<input name="displayName" maxlength="80" required placeholder="방장 닉네임"></label>
+        <div class="grid-two tight">
+          <label>최대 플레이어 수<select name="maxPlayers"><option>2</option><option>3</option><option>4</option><option>5</option><option selected>6</option></select></label>
+          <label>방 최대 정원<input type="number" name="maxRoomMembers" min="2" max="256" value="20" required></label>
+        </div>
+        <label class="checkline"><input type="checkbox" name="hostPlays" checked> 방장도 직접 플레이</label>
+        <button type="submit" class="primary">룸 생성</button>
+      </form>
+      <form id="joinRoom" class="panel">
+        <p class="eyebrow">INVITED PLAYER / SPECTATOR</p><h2>초대받아 입장</h2>
+        <p class="muted">방장에게서 받은 초대 토큰 또는 초대 링크가 필요합니다. 룸 코드만으로는 입장할 수 없습니다.</p>
+        <label>초대 토큰<input name="invitation" autocomplete="off" spellcheck="false" required placeholder="초대 링크의 토큰"></label>
+        <label>표시 이름<input name="displayName" maxlength="80" required placeholder="참가 닉네임"></label>
+        <button type="submit" class="primary">입장하기</button>
+      </form>
+    </section>
+    <div id="game" hidden>
+      <section class="roomhead panel">
+        <div><p class="eyebrow" id="roomGame">YACHT / ROOM</p><h2 id="roomTitle">Yacht</h2>
+          <p class="muted">룸 코드 <strong id="roomCode">------</strong> · <span id="roomState">OPEN_LOBBY</span></p></div>
+        <div class="statusgroup"><span id="roomPopulation">0 / 0명</span><span id="playerPopulation">플레이어 0 / 0</span><button id="leaveRoom" type="button" class="secondary">룸 퇴장</button></div>
+      </section>
+      <div class="game-layout">
+        <main class="primary-column">
+          <section id="lobby" class="panel">
+            <div class="section-title"><h2>대기실</h2><p id="lobbyHint" class="muted">모든 플레이어가 준비되면 방장이 경기를 시작할 수 있습니다.</p></div>
+            <ul id="roster" class="roster"></ul>
+            <div class="toolbar"><button type="button" id="ready" class="primary">준비하기</button>
+              <button type="button" id="changeSeat" class="secondary">플레이어/관전자 전환</button>
+              <button type="button" id="start" class="primary">게임 시작</button></div>
+            <section id="inviteControls" class="invite">
+              <h3>초대권 발급 (방장)</h3>
+              <div class="toolbar"><label>역할<select id="inviteRole"><option value="PLAYER">플레이어</option><option value="SPECTATOR">관전자</option></select></label>
+                <label>사용 횟수<input id="inviteUses" type="number" min="1" max="256" value="1"></label>
+                <button type="button" id="newInvite" class="secondary">초대 링크 생성</button></div>
+              <output id="inviteLink" class="invite-link" aria-live="polite"></output>
+              <button id="copyInvite" type="button" class="secondary" hidden>초대 링크 복사</button>
+            </section>
+          </section>
+          <section id="playfield" class="panel" hidden>
+            <div class="section-title"><h2 id="turnHeadline">Yacht</h2><p id="turnDetail" class="muted">게임 상태를 읽는 중입니다.</p></div>
+            <div id="dice" class="dice" aria-label="주사위 5개"></div>
+            <p class="muted">굴린 뒤 주사위를 선택하면 고정/해제됩니다. 최대 3번 굴릴 수 있습니다.</p>
+            <div class="toolbar"><button type="button" id="roll" class="primary">주사위 굴리기</button>
+              <button type="button" id="applyHolds" class="secondary">선택한 주사위 고정</button></div>
+            <h3>점수표</h3><div id="scoreGrid" class="score-grid"></div>
+          </section>
+        </main>
+        <aside class="side-column">
+          <section class="panel"><h2>플레이어 현황</h2><div id="standings"></div></section>
+          <section class="panel chatbox"><h2>룸 채팅</h2><p class="muted">일반 대화용이며 Drawing Guess 정답 제출과는 별개입니다.</p>
+            <ul id="chatMessages" class="chatMessages" aria-live="polite"></ul>
+            <form id="chatForm" class="chatForm"><input name="text" maxlength="500" placeholder="메시지 입력…" autocomplete="off" required><button type="submit" class="secondary">전송</button></form>
+          </section>
+        </aside>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

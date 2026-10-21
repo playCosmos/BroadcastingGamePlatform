@@ -18,6 +18,7 @@ try {
         "web/admin/assets/drawing-guess-create.js",
         "web/admin/assets/drawing-guess-room.js",
         "web/games/drawing-guess/drawing-guess-overlay.js",
+        "web/games/yacht/yacht.js",
         "web/tools/viewer-draw/viewer-draw-overlay.js",
         "web/admin/assets/board-room-admin.js",
         "web/admin/assets/board-room-operation.js",
@@ -43,7 +44,8 @@ try {
     $NodeProbes = @(
         "web/admin/assets/viewer-draw-map-engine-probe.js",
         "web/tools/viewer-draw/marble/browser-physics-adapter-probe.js",
-        "web/games/board/js/board-client-probe.js"
+        "web/games/board/js/board-client-probe.js",
+        "web/games/yacht/yacht-client-probe.js"
     )
     foreach ($Probe in $NodeProbes) {
         node $Probe

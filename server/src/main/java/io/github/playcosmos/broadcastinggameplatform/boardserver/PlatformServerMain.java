@@ -7,6 +7,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persiste
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomYachtService;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
@@ -99,6 +100,7 @@ public final class PlatformServerMain {
             BoardGameWebSocketServer socket = yachtSocket.get();
             if (socket != null) socket.broadcastYacht(code, json);
         });
+        var sharedYacht = new GameRoomYachtService(database,commonRoomAccess,yachtGame);
 
         var websocket = new BoardGameWebSocketServer(
             config.server().clientHost(),
@@ -290,7 +292,8 @@ public final class PlatformServerMain {
             drawingGame,
             yachtGame,
             commonRoomAccess,
-            roomRealtime
+            roomRealtime,
+            sharedYacht
         );
         var http = new BoardGameHttpServer(
             config,
