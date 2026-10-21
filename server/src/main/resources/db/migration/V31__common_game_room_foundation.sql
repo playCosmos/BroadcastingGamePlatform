@@ -3,6 +3,7 @@
 CREATE TABLE game_room (
     room_id TEXT PRIMARY KEY NOT NULL,
     game_id TEXT NOT NULL,
+    room_name TEXT NOT NULL CHECK(length(room_name) BETWEEN 1 AND 100),
     room_code TEXT NOT NULL,
     owner_member_id TEXT NOT NULL,
     state TEXT NOT NULL CHECK(state IN ('OPEN_LOBBY','PLAYING','POST_GAME','CLOSED')),
