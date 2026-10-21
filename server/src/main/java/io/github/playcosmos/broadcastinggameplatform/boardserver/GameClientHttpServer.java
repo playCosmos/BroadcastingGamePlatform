@@ -703,7 +703,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                     }
                     JsonObject body=readYachtBody(exchange,Set.of("messageId","text"));
                     sendJson(exchange,201,roomRealtime.chat(token,
-                        roomApiText(body,"messageId"),roomApiText(body,"text")));
+                        roomApiText(body,"messageId"),roomApiChatText(body))));
                 }
                 case "/chat/delete" -> {
                     if (roomRealtime == null) {
@@ -840,6 +840,18 @@ public final class GameClientHttpServer implements AutoCloseable {
             throw new IllegalArgumentException("invalid text: " + field);
         }
         return value;
+    }
+
+    private static String roomApiChatText(JsonObject json) {
+        if (!json.has("text") || !json.get("text").isJsonPrimitive()
+            || !json.get("text").getAsJsonPrimitive().isString()) {
+            throw new IllegalArgumentException("chat text required");
+        }
+        String content = json.get("text").getAsString();
+        if (content.isBlank() || content.length() > 500) {
+            throw new IllegalArgumentException("invalid chat length");
+        }
+        return content;
     }
 
     private static int roomApiInt(JsonObject json, String field) {
