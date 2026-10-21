@@ -121,8 +121,7 @@ public final class PlatformServerMain {
             drawingSync,
             yachtGame::exists,
             commonRoomAccess,
-            roomRealtime,
-            sharedYacht
+            roomRealtime
         );
         roomSocket.set(websocket);
         yachtSocket.set(websocket);
@@ -293,7 +292,8 @@ public final class PlatformServerMain {
             drawingGame,
             yachtGame,
             commonRoomAccess,
-            roomRealtime
+            roomRealtime,
+            sharedYacht
         );
         var http = new BoardGameHttpServer(
             config,
