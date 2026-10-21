@@ -164,7 +164,7 @@ public final class GameRoomAccessService {
                     throw new GameRoomService.RoomConflict("invite already consumed");
                 }
             }
-            GameRoomService.bump(connection, room);
+            rooms.bump(connection, room);
             return issueSession(connection, roomId, memberId);
         });
     }
@@ -299,7 +299,7 @@ public final class GameRoomAccessService {
                 stmt.setString(3, room.roomId());
                 stmt.executeUpdate();
             }
-            GameRoomService.bump(connection, room);
+            rooms.bump(connection, room);
             return GameRoomService.read(connection, room.roomId());
         });
     }
@@ -322,7 +322,7 @@ public final class GameRoomAccessService {
                 statement.setString(2, room.roomId());
                 statement.executeUpdate();
             }
-            GameRoomService.bump(connection, room);
+            rooms.bump(connection, room);
             return GameRoomService.read(connection, room.roomId());
         });
     }
@@ -369,7 +369,7 @@ public final class GameRoomAccessService {
                 stmt.setString(3, targetMemberId);
                 stmt.executeUpdate();
             }
-            GameRoomService.bump(connection, room);
+            rooms.bump(connection, room);
             return GameRoomService.read(connection, room.roomId());
         });
     }
@@ -438,7 +438,7 @@ public final class GameRoomAccessService {
             }
             Member current = member(room, principal.memberId());
             if (action.apply(connection, principal, room, current)) {
-                GameRoomService.bump(connection, room);
+                rooms.bump(connection, room);
             }
             return GameRoomService.read(connection, principal.roomId());
         });
