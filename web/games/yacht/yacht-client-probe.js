@@ -25,7 +25,8 @@ for (const endpoint of ["/hosted","/join","/host/invite","/me/ready",
   "/me/seat","/yacht/start","/yacht/roll","/yacht/score",
   "/chat","/chat?after=-1"]) {
   check(js.includes(endpoint) || (endpoint === "/yacht/roll"
-    && js.includes('command("roll"')), "client missing " + endpoint);
+    && js.includes('command("roll"')) || (endpoint === "/yacht/score"
+    && js.includes('command("score"')), "client missing " + endpoint);
 }
 check(js.includes('Authorization = "Bearer " + secret'),
   "all member API commands must send bearer scope");
