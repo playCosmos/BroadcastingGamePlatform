@@ -41,7 +41,8 @@ public final class GameRoomR1Probe {
             check(room.roomCode().matches("[A-HJ-NP-Z2-9]{6}"), "generated room code");
             check(service.findByCode("yacht", room.roomCode()).equals(room),
                 "game-scoped code lookup");
-            missing(() -> service.findByCode("drawing_guess",room.roomCode()),
+            String primaryCode = room.roomCode();
+            missing(() -> service.findByCode("drawing_guess",primaryCode),
                 "same code must not authorize another game");
 
             for(int i=1;i<=4;i++) service.join(id,"player"+i,"Player"+i,SeatRole.PLAYER);
