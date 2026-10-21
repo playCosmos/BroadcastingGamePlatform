@@ -703,7 +703,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                     }
                     JsonObject body=readYachtBody(exchange,Set.of("messageId","text"));
                     sendJson(exchange,201,roomRealtime.chat(token,
-                        roomApiText(body,"messageId"),roomApiChatText(body))));
+                        roomApiText(body,"messageId"),roomApiChatText(body)));
                 }
                 case "/chat/delete" -> {
                     if (roomRealtime == null) {
