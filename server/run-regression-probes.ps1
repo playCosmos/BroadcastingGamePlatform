@@ -30,6 +30,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe",
     "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomR1Probe",
     "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomR2Probe",
+    "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomR3Probe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomHttpR2Probe",
     "io.github.playcosmos.broadcastinggameplatform.games.yacht.YachtScoringProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.yacht.YachtPersistenceProbe",
