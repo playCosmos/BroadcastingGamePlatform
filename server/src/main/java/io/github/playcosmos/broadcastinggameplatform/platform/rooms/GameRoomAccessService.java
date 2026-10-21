@@ -459,7 +459,7 @@ public final class GameRoomAccessService {
         return principal;
     }
 
-    private Principal requireSession(Connection connection, String token)
+    Principal requireSession(Connection connection, String token)
         throws SQLException {
         String hash = hashToken(token);
         try (var stmt = connection.prepareStatement("""

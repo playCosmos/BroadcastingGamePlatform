@@ -6,6 +6,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.applicat
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
@@ -86,6 +87,13 @@ public final class PlatformServerMain {
             );
         }
 
+        var commonRoomAccess = new GameRoomAccessService(database);
+        var roomSocket = new AtomicReference<BoardGameWebSocketServer>();
+        var roomRealtime = new GameRoomRealtimeService(database, commonRoomAccess,
+            (roomId, event) -> {
+                var live = roomSocket.get();
+                if (live != null) live.broadcastRoomEvent(roomId,event);
+            });
         var yachtSocket = new AtomicReference<BoardGameWebSocketServer>();
         var yachtGame = new YachtRoomService(database, (code, json) -> {
             BoardGameWebSocketServer socket = yachtSocket.get();
@@ -109,8 +117,11 @@ public final class PlatformServerMain {
                 }
             },
             drawingSync,
-            yachtGame::exists
+            yachtGame::exists,
+            commonRoomAccess,
+            roomRealtime
         );
+        roomSocket.set(websocket);
         yachtSocket.set(websocket);
         websocket.start();
 
@@ -266,7 +277,6 @@ public final class PlatformServerMain {
         );
 
         var adminAuthStore = new AdminAuthStore(database);
-        var commonRoomAccess = new GameRoomAccessService(database);
         var clientHttp = new GameClientHttpServer(
             config,
             root,
@@ -279,7 +289,8 @@ public final class PlatformServerMain {
             drawingSync,
             drawingGame,
             yachtGame,
-            commonRoomAccess
+            commonRoomAccess,
+            roomRealtime
         );
         var http = new BoardGameHttpServer(
             config,
