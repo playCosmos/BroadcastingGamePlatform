@@ -11,6 +11,8 @@ import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.D
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.domain.ScoreProfile;
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.persistence.DrawingGuessRepository;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomModels;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.util.ConcurrentModificationException;
@@ -82,6 +84,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final DrawingSyncService drawingSync;
     private final DrawingGuessGameService drawingGame;
     private final YachtRoomService yachtGame;
+    private final GameRoomAccessService memberRooms;
     private final AtomicReference<String> adminBootstrapToken;
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
@@ -249,6 +252,19 @@ public final class GameClientHttpServer implements AutoCloseable {
         DrawingGuessGameService drawingGame,
         YachtRoomService yachtGame
     ) throws IOException {
+        this(config, workingDirectory, rooms, runtime, adminAuthStore,
+            platformEvents, providers, viewerDraw, drawingGameSync, drawingGame,
+            yachtGame, null);
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config, Path workingDirectory,
+        RoomService rooms, BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore, PlatformEventBus platformEvents,
+        ProviderRegistry providers, ViewerDrawService viewerDraw,
+        DrawingSyncService drawingGameSync, DrawingGuessGameService drawingGame,
+        YachtRoomService yachtGame, GameRoomAccessService memberRooms
+    ) throws IOException {
         var drawingSync = drawingGameSync;
         var normalized = config.normalized();
         this.config = normalized;
@@ -265,6 +281,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.drawingSync = drawingSync;
         this.drawingGame = drawingGame;
         this.yachtGame = yachtGame;
+        this.memberRooms = memberRooms;
         this.adminBootstrapToken = new AtomicReference<>(
             randomToken(24)
         );
@@ -301,6 +318,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             this::drawingGuessGameApi
         );
         server.createContext("/api/v1/games/yacht", this::yachtGameApi);
+        server.createContext("/api/v1/room-membership", this::commonRoomApi);
         server.createContext("/api/client/config", this::clientConfig);
         server.createContext("/api/state", this::proxyAdminState);
         server.createContext("/api/board/rooms", this::boardRooms);
