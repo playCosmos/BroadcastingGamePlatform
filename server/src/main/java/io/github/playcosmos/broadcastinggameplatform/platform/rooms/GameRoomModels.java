@@ -32,13 +32,14 @@ public final class GameRoomModels {
     }
 
     public record Room(
-        String roomId, String gameId, String roomCode,
+        String roomId, String gameId, String roomName, String roomCode,
         String ownerMemberId, RoomState state, int maxPlayers,
         int maxRoomMembers, long version, List<Member> members
     ) {
         public Room {
             Objects.requireNonNull(roomId, "roomId");
             Objects.requireNonNull(gameId, "gameId");
+            Objects.requireNonNull(roomName, "roomName");
             Objects.requireNonNull(roomCode, "roomCode");
             Objects.requireNonNull(ownerMemberId, "ownerMemberId");
             Objects.requireNonNull(state, "state");
