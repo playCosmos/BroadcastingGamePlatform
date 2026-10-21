@@ -893,8 +893,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 sharedYacht.command(token,action,command)));
         } catch (GameRoomAccessService.Forbidden denied) {
             sendJson(exchange,403,Map.of("error","Yacht player permission denied"));
-        } catch (GameRoomService.RoomConflict
-                 | ConcurrentModificationException | IllegalStateException conflict) {
+        } catch (ConcurrentModificationException | IllegalStateException conflict) {
             sendJson(exchange,409,Map.of("error","Yacht turn or room conflict"));
         } catch (NoSuchElementException missing) {
             sendJson(exchange,404,Map.of("error","Yacht room unavailable"));
