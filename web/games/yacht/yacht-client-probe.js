@@ -40,8 +40,10 @@ check(js.includes('"room.subscribe"') || js.includes('"room.subscribe"'.replaceA
   "member WebSocket must use explicit authenticated subscribe");
 check(js.includes("roomId") && js.includes("memberRoomId"),
   "private membership channel scoped to room ID");
-check(js.includes("crypto.randomUUID()"),
-  "state-changing game commands require unique idempotency IDs");
+check(js.includes("function newCommandId(")
+  && js.includes('newCommandId("y4-")')
+  && js.includes('newCommandId("chat-")'),
+  "score/roll and chat writes need unique idempotency IDs on HTTP and HTTPS");
 check(!js.includes("innerHTML =") && !js.includes(".innerHTML="),
   "do not put untrusted display name, scores or chat text into innerHTML");
 check(js.includes("setInterval") && js.includes("refresh"),
