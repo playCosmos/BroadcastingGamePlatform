@@ -14,6 +14,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.Yac
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomModels;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.util.ConcurrentModificationException;
@@ -86,6 +87,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final DrawingGuessGameService drawingGame;
     private final YachtRoomService yachtGame;
     private final GameRoomAccessService memberRooms;
+    private final GameRoomRealtimeService roomRealtime;
     private final AtomicReference<String> adminBootstrapToken;
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
@@ -266,6 +268,20 @@ public final class GameClientHttpServer implements AutoCloseable {
         DrawingSyncService drawingGameSync, DrawingGuessGameService drawingGame,
         YachtRoomService yachtGame, GameRoomAccessService memberRooms
     ) throws IOException {
+        this(config,workingDirectory,rooms,runtime,adminAuthStore,
+            platformEvents,providers,viewerDraw,drawingGameSync,drawingGame,
+            yachtGame,memberRooms,null);
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config, Path workingDirectory,
+        RoomService rooms, BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore, PlatformEventBus platformEvents,
+        ProviderRegistry providers, ViewerDrawService viewerDraw,
+        DrawingSyncService drawingGameSync, DrawingGuessGameService drawingGame,
+        YachtRoomService yachtGame, GameRoomAccessService memberRooms,
+        GameRoomRealtimeService roomRealtime
+    ) throws IOException {
         var drawingSync = drawingGameSync;
         var normalized = config.normalized();
         this.config = normalized;
@@ -283,6 +299,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.drawingGame = drawingGame;
         this.yachtGame = yachtGame;
         this.memberRooms = memberRooms;
+        this.roomRealtime = roomRealtime;
         this.adminBootstrapToken = new AtomicReference<>(
             randomToken(24)
         );
@@ -648,6 +665,23 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             String token = roomApiBearer(exchange);
+            if (("/events".equals(suffix) || "/chat".equals(suffix))
+                && "GET".equals(method)) {
+                if (roomRealtime == null) {
+                    sendJson(exchange,503,Map.of("error","room realtime unavailable"));
+                    return;
+                }
+                String query = exchange.getRequestURI().getRawQuery();
+                String param = "/events".equals(suffix) ? "since" : "after";
+                if (query == null || !query.matches(param + "=(?:-1|[0-9]{1,15})")) {
+                    throw new IllegalArgumentException("invalid room cursor");
+                }
+                long cursor = Long.parseLong(query.substring(param.length()+1));
+                sendJson(exchange,200,"/events".equals(suffix)
+                    ? roomRealtime.events(token,cursor)
+                    : roomRealtime.recentChat(token,cursor));
+                return;
+            }
             if ("/me".equals(suffix) && "GET".equals(method)) {
                 var principal = memberRooms.authenticate(token);
                 sendJson(exchange, 200, Map.of(
@@ -662,6 +696,24 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             switch (suffix) {
+                case "/chat" -> {
+                    if (roomRealtime == null) {
+                        sendJson(exchange,503,Map.of("error","room realtime unavailable"));
+                        return;
+                    }
+                    JsonObject body=readYachtBody(exchange,Set.of("messageId","text"));
+                    sendJson(exchange,201,roomRealtime.chat(token,
+                        roomApiText(body,"messageId"),roomApiText(body,"text")));
+                }
+                case "/chat/delete" -> {
+                    if (roomRealtime == null) {
+                        sendJson(exchange,503,Map.of("error","room realtime unavailable"));
+                        return;
+                    }
+                    JsonObject body=readYachtBody(exchange,Set.of("messageId"));
+                    sendJson(exchange,200,roomRealtime.delete(token,
+                        roomApiText(body,"messageId")));
+                }
                 case "/me/ready" -> {
                     JsonObject body = readYachtBody(exchange, Set.of("ready"));
                     if (!body.has("ready") || !body.get("ready").isJsonPrimitive()
