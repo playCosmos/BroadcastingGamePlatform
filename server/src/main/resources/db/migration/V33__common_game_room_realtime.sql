@@ -7,7 +7,7 @@ CREATE TABLE game_room_chat (
   sequence INTEGER NOT NULL CHECK(sequence > 0),
   message_id TEXT NOT NULL,
   member_id TEXT NOT NULL REFERENCES game_room_member(member_id),
-  body TEXT NOT NULL CHECK(length(body) BETWEEN 1 AND 2000),
+  body TEXT NOT NULL CHECK(length(body) <= 2000),
   created_at TEXT NOT NULL,
   deleted_at TEXT,
   PRIMARY KEY(room_id, sequence),
