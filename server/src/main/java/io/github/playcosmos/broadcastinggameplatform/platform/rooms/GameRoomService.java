@@ -50,10 +50,13 @@ public final class GameRoomService {
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
-    public Room create(String gameId, String nameIgnored, String actorId,
+    public Room create(String gameId, String roomName, String actorId,
                        String displayName, SeatRole hostSeat,
                        int maxPlayers, int maxRoomMembers) throws SQLException {
         validateGameId(gameId);
+        if (roomName == null || roomName.isBlank() || roomName.length() > 100) {
+            throw new IllegalArgumentException("invalid room name");
+        }
         validateActor(actorId, displayName);
         Objects.requireNonNull(hostSeat, "hostSeat");
         validateCapacity(maxPlayers, maxRoomMembers);
@@ -64,19 +67,20 @@ public final class GameRoomService {
             String now = now();
             try (var stmt = connection.prepareStatement("""
                 INSERT INTO game_room (
-                  room_id,game_id,room_code,owner_member_id,state,
+                  room_id,game_id,room_name,room_code,owner_member_id,state,
                   max_players,max_room_members,version,created_at,updated_at
-                ) VALUES(?,?,?,?,?,?,?,0,?,?)
+                ) VALUES(?,?,?,?,?,?,?,?,0,?,?)
                 """)) {
                 stmt.setString(1, roomId);
                 stmt.setString(2, gameId);
-                stmt.setString(3, roomCode);
-                stmt.setString(4, ownerId);
-                stmt.setString(5, RoomState.OPEN_LOBBY.name());
-                stmt.setInt(6, maxPlayers);
-                stmt.setInt(7, maxRoomMembers);
-                stmt.setString(8, now);
+                stmt.setString(3, roomName);
+                stmt.setString(4, roomCode);
+                stmt.setString(5, ownerId);
+                stmt.setString(6, RoomState.OPEN_LOBBY.name());
+                stmt.setInt(7, maxPlayers);
+                stmt.setInt(8, maxRoomMembers);
                 stmt.setString(9, now);
+                stmt.setString(10, now);
                 stmt.executeUpdate();
             }
             insertMember(connection, ownerId, roomId, actorId, displayName,
@@ -130,7 +134,7 @@ public final class GameRoomService {
                 }
                 return room;
             }
-            checkAvailable(room, seat, previous == null ? 1 : 1);
+            checkAvailable(room, seat);
             String now = now();
             if (previous == null) {
                 insertMember(connection, UUID.randomUUID().toString(), roomId,
@@ -331,17 +335,18 @@ public final class GameRoomService {
 
     private static Room read(Connection connection, String roomId) throws SQLException {
         try (var stmt = connection.prepareStatement("""
-            SELECT game_id,room_code,owner_member_id,state,max_players,
+            SELECT game_id,room_name,room_code,owner_member_id,state,max_players,
                    max_room_members,version FROM game_room WHERE room_id=?
             """)) {
             stmt.setString(1, roomId);
             try (var rows = stmt.executeQuery()) {
                 if (!rows.next()) throw new NoSuchElementException("room not found");
-                String gameId = rows.getString(1), code = rows.getString(2);
-                String ownerId = rows.getString(3);
-                RoomState state = RoomState.valueOf(rows.getString(4));
-                int players = rows.getInt(5), members = rows.getInt(6);
-                long version = rows.getLong(7);
+                String gameId = rows.getString(1), name = rows.getString(2);
+                String code = rows.getString(3);
+                String ownerId = rows.getString(4);
+                RoomState state = RoomState.valueOf(rows.getString(5));
+                int players = rows.getInt(6), members = rows.getInt(7);
+                long version = rows.getLong(8);
                 var roster = new ArrayList<Member>();
                 try (var memberStmt = connection.prepareStatement("""
                     SELECT member_id,actor_id,display_name,seat_role,
@@ -361,7 +366,7 @@ public final class GameRoomService {
                         ));
                     }
                 }
-                return new Room(roomId, gameId, code, ownerId, state,
+                return new Room(roomId, gameId, name, code, ownerId, state,
                     players, members, version, roster);
             }
         }
@@ -420,8 +425,8 @@ public final class GameRoomService {
         throw new RoomConflict("room code allocation exhausted");
     }
 
-    private void checkAvailable(Room room, SeatRole seat, int addedMembers) {
-        if (room.memberCount() + addedMembers > room.maxRoomMembers()) {
+    private void checkAvailable(Room room, SeatRole seat) {
+        if (room.memberCount() + 1 > room.maxRoomMembers()) {
             throw new RoomConflict("room capacity reached");
         }
         if (seat == SeatRole.PLAYER && room.playerCount() + 1 > room.maxPlayers()) {
