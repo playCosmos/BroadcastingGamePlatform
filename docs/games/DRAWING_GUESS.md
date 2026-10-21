@@ -14,6 +14,8 @@
 - D6 Automated Qualification / Restart Recovery: **IMPLEMENTED**
 - D6 Physical mobile/stylus field validation: PENDING
 
+> **공통 룸 확장 계획:** [`docs/COMMON_GAME_ROOM_PLAN.md`](../COMMON_GAME_ROOM_PLAN.md). 기존 `STREAMER_DRAWER`/`ROTATING_DRAWER` 는 *현재 구현된 출제 정책*으로 유지한다. 새로운 참가 방식은 방송 채팅 정답형 / 초대형 플레이어 룸 / 복수 스트리머 혼합형으로 구분하고, 출제 정책·입력 원천·Canvas 이어 그리기는 별도의 규칙으로 확장한다. 플레이어 정원과 방 전체 정원(방장 포함)을 구분하며, 외부 방송 시청자는 회원 정원으로 자동 계산하지 않는다. 기존 단일 Provider 채널 구현을 다중 채널로 확장하는 작업은 **아직 미구현**이다.
+
 게임 ID: `drawing_guess`
 
 외부 표시명: **Drawing Guess**
