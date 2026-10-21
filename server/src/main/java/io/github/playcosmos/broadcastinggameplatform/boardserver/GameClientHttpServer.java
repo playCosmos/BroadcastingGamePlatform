@@ -586,6 +586,235 @@ public final class GameClientHttpServer implements AutoCloseable {
         List<DrawingParticipantRequest> participants
     ) {}
 
+    /**
+     * R2 room membership API. Bearer tokens are scoped to ONE room member,
+     * never to administrator credentials. Strict origin is required on writes.
+     * No public response ever returns internal actor ID or credential hashes.
+     */
+    private void commonRoomApi(HttpExchange exchange) throws IOException {
+        if (memberRooms == null) {
+            sendJson(exchange, 503, Map.of("error", "room membership unavailable"));
+            return;
+        }
+        String base = "/api/v1/room-membership";
+        String path = exchange.getRequestURI().getPath();
+        String suffix = path.startsWith(base) ? path.substring(base.length()) : "";
+        String method = exchange.getRequestMethod().toUpperCase(Locale.ROOT);
+        if (!"GET".equals(method) && !"POST".equals(method)) {
+            exchange.sendResponseHeaders(405, -1);
+            exchange.close();
+            return;
+        }
+        // Browser-Origin guard also applies to bearer-token actions, so a
+        // stolen browser context cannot silently replay them cross-origin.
+        if ("POST".equals(method) && !requireRoomApiOrigin(exchange)) return;
+        try {
+            if ("/hosted".equals(suffix) && "POST".equals(method)) {
+                if (!isAdminSession(exchange)) {
+                    sendJson(exchange, 401, Map.of("error", "admin authentication required"));
+                    return;
+                }
+                JsonObject body = readYachtBody(exchange, Set.of(
+                    "gameId", "name", "displayName", "hostSeat",
+                    "maxPlayers", "maxRoomMembers"));
+                String game = roomApiText(body, "gameId");
+                int maxPlayers = roomApiInt(body, "maxPlayers");
+                if (!("yacht".equals(game) && maxPlayers >= 2 && maxPlayers <= 6)
+                    && !("drawing_guess".equals(game)
+                        && maxPlayers >= 1 && maxPlayers <= 20)) {
+                    throw new IllegalArgumentException("unsupported game player capacity");
+                }
+                var hosted = memberRooms.createHostedRoom(game,
+                    roomApiText(body, "name"), roomApiText(body, "displayName"),
+                    roomApiSeat(body, "hostSeat"), maxPlayers,
+                    roomApiInt(body, "maxRoomMembers"));
+                sendJson(exchange, 201, Map.of(
+                    "room", publicRoomMembership(hosted.room()),
+                    "token", hosted.hostCredential().token(),
+                    "memberId", hosted.hostCredential().memberId()));
+                return;
+            }
+            if ("/join".equals(suffix) && "POST".equals(method)) {
+                if (!requirePublicLookupCapacity(exchange)) return;
+                JsonObject body = readYachtBody(exchange,
+                    Set.of("invitation", "displayName"));
+                var admitted = memberRooms.join(
+                    roomApiText(body, "invitation"),
+                    roomApiText(body, "displayName"));
+                sendJson(exchange, 201, Map.of(
+                    "room", publicRoomMembership(memberRooms.room(admitted.token())),
+                    "token", admitted.token(), "memberId", admitted.memberId()));
+                return;
+            }
+            String token = roomApiBearer(exchange);
+            if ("/me".equals(suffix) && "GET".equals(method)) {
+                var principal = memberRooms.authenticate(token);
+                sendJson(exchange, 200, Map.of(
+                    "room", publicRoomMembership(memberRooms.room(token)),
+                    "memberId", principal.memberId(),
+                    "isHost", principal.isHost(),
+                    "seatRole", principal.seatRole().name()));
+                return;
+            }
+            if (!"POST".equals(method)) {
+                sendJson(exchange, 404, Map.of("error", "unknown room route"));
+                return;
+            }
+            switch (suffix) {
+                case "/me/ready" -> {
+                    JsonObject body = readYachtBody(exchange, Set.of("ready"));
+                    if (!body.has("ready") || !body.get("ready").isJsonPrimitive()
+                        || !body.get("ready").getAsJsonPrimitive().isBoolean()) {
+                        throw new IllegalArgumentException("boolean ready required");
+                    }
+                    sendJson(exchange, 200, publicRoomMembership(memberRooms.ready(
+                        token, body.get("ready").getAsBoolean())));
+                }
+                case "/me/seat" -> {
+                    JsonObject body = readYachtBody(exchange, Set.of("seatRole"));
+                    sendJson(exchange, 200, publicRoomMembership(memberRooms.seat(
+                        token, roomApiSeat(body, "seatRole"))));
+                }
+                case "/me/leave" -> {
+                    readYachtBody(exchange, Set.of());
+                    sendJson(exchange, 200,
+                        publicRoomMembership(memberRooms.leave(token)));
+                }
+                case "/me/disconnect" -> {
+                    JsonObject body = readYachtBody(exchange, Set.of("graceSeconds"));
+                    sendJson(exchange, 200,
+                        publicRoomMembership(memberRooms.disconnect(token,
+                            Duration.ofSeconds(roomApiInt(body, "graceSeconds")))));
+                }
+                case "/me/reconnect" -> {
+                    readYachtBody(exchange, Set.of());
+                    sendJson(exchange, 200,
+                        publicRoomMembership(memberRooms.reconnect(token)));
+                }
+                case "/me/rotate" -> {
+                    readYachtBody(exchange, Set.of());
+                    var credential = memberRooms.rotate(token);
+                    sendJson(exchange, 200, Map.of("token", credential.token(),
+                        "memberId", credential.memberId()));
+                }
+                case "/me/logout" -> {
+                    readYachtBody(exchange, Set.of());
+                    memberRooms.revoke(token);
+                    sendJson(exchange, 200, Map.of("status", "REVOKED"));
+                }
+                case "/host/invite" -> {
+                    JsonObject body = readYachtBody(exchange,
+                        Set.of("seatRole", "maxUses", "expiresInSeconds"));
+                    var invite = memberRooms.invite(token,
+                        roomApiSeat(body, "seatRole"), roomApiInt(body, "maxUses"),
+                        Duration.ofSeconds(roomApiInt(body, "expiresInSeconds")));
+                    sendJson(exchange, 201, invite);
+                }
+                case "/host/revoke-invite" -> {
+                    JsonObject body = readYachtBody(exchange, Set.of("invitation"));
+                    memberRooms.revokeInvite(token, roomApiText(body, "invitation"));
+                    sendJson(exchange, 200, Map.of("status", "REVOKED"));
+                }
+                case "/host/transfer" -> {
+                    JsonObject body = readYachtBody(exchange, Set.of("memberId"));
+                    sendJson(exchange, 200,
+                        publicRoomMembership(memberRooms.transferHost(token,
+                            roomApiText(body, "memberId"))));
+                }
+                case "/host/kick" -> {
+                    JsonObject body = readYachtBody(exchange, Set.of("memberId"));
+                    sendJson(exchange, 200,
+                        publicRoomMembership(memberRooms.kick(token,
+                            roomApiText(body, "memberId"))));
+                }
+                case "/host/capacity" -> {
+                    JsonObject body = readYachtBody(exchange,
+                        Set.of("maxPlayers","maxRoomMembers"));
+                    sendJson(exchange, 200,
+                        publicRoomMembership(memberRooms.capacity(token,
+                            roomApiInt(body, "maxPlayers"),
+                            roomApiInt(body, "maxRoomMembers"))));
+                }
+                default -> sendJson(exchange, 404, Map.of("error", "unknown room route"));
+            }
+        } catch (GameRoomAccessService.Forbidden forbidden) {
+            sendJson(exchange, 403, Map.of("error", "room authorization failed"));
+        } catch (GameRoomService.RoomConflict conflict) {
+            sendJson(exchange, 409, Map.of("error", "room operation conflict"));
+        } catch (NoSuchElementException missing) {
+            sendJson(exchange, 404, Map.of("error", "room or member not found"));
+        } catch (IllegalArgumentException | JsonParseException invalid) {
+            sendJson(exchange, 400, Map.of("error", "invalid room request"));
+        } catch (java.sql.SQLException failed) {
+            sendJson(exchange, 500, Map.of("error", "room storage unavailable"));
+        }
+    }
+
+    private boolean requireRoomApiOrigin(HttpExchange exchange) throws IOException {
+        String value = exchange.getRequestHeaders().getFirst("Origin");
+        if (value != null) {
+            try {
+                if (sameOrigin(URI.create(value), expectedPublicOrigin(exchange))) {
+                    return true;
+                }
+            } catch (RuntimeException ignored) {}
+        }
+        sendJson(exchange, 403, Map.of("error", "same-origin request required"));
+        return false;
+    }
+
+    private static String roomApiBearer(HttpExchange exchange) {
+        String authorization = exchange.getRequestHeaders().getFirst("Authorization");
+        if (authorization == null || !authorization.startsWith("Bearer ")
+            || authorization.length() != 50) {
+            throw new GameRoomAccessService.Forbidden("room token missing");
+        }
+        return authorization.substring(7);
+    }
+
+    private static String roomApiText(JsonObject json, String field) {
+        if (!json.has(field) || !json.get(field).isJsonPrimitive()
+            || !json.get(field).getAsJsonPrimitive().isString()) {
+            throw new IllegalArgumentException("expected text: " + field);
+        }
+        String value = json.get(field).getAsString();
+        if (value.isBlank() || value.length() > 128) {
+            throw new IllegalArgumentException("invalid text: " + field);
+        }
+        return value;
+    }
+
+    private static int roomApiInt(JsonObject json, String field) {
+        if (!json.has(field) || !json.get(field).isJsonPrimitive()
+            || !json.get(field).getAsJsonPrimitive().isNumber()
+            || !json.get(field).getAsString().matches("(?:0|[1-9][0-9]{0,8})")) {
+            throw new IllegalArgumentException("expected integer: " + field);
+        }
+        return json.get(field).getAsInt();
+    }
+
+    private static GameRoomModels.SeatRole roomApiSeat(JsonObject json, String field) {
+        return GameRoomModels.SeatRole.valueOf(roomApiText(json, field));
+    }
+
+    private static Object publicRoomMembership(GameRoomModels.Room room) {
+        var visible = room.members().stream().map(member -> Map.of(
+            "memberId", member.memberId(),
+            "displayName", member.displayName(),
+            "seatRole", member.seatRole().name(),
+            "status", member.status().name(),
+            "ready", member.ready(),
+            "isHost", member.memberId().equals(room.ownerMemberId())
+        )).toList();
+        return Map.of(
+            "roomId", room.roomId(), "gameId", room.gameId(),
+            "roomCode", room.roomCode(), "roomName", room.roomName(),
+            "state", room.state().name(), "version", room.version(),
+            "maxPlayers", room.maxPlayers(), "playerCount", room.playerCount(),
+            "maxRoomMembers", room.maxRoomMembers(), "memberCount", room.memberCount(),
+            "members", visible);
+    }
+
     private record YachtCreateRequest(
         String requestId, String name, List<YachtRoomService.Participant> players
     ) {}
