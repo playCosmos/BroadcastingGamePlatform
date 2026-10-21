@@ -50,7 +50,12 @@ public final class GameRoomModels {
             long owners = members.stream()
                 .filter(m -> m.memberId().equals(ownerMemberId)).count();
             if (owners != 1) throw new IllegalArgumentException("room requires one owner");
-            if (playerCount() > maxPlayers || memberCount() > maxRoomMembers) {
+            // Compact record constructors assign fields only AFTER validation.
+            // Count the local canonical list here, never this.members.
+            long occupiedMembers = members.stream().filter(Member::occupies).count();
+            long occupiedPlayers = members.stream().filter(m -> m.occupies()
+                && m.seatRole() == SeatRole.PLAYER).count();
+            if (occupiedPlayers > maxPlayers || occupiedMembers > maxRoomMembers) {
                 throw new IllegalArgumentException("room occupancy exceeds capacity");
             }
         }
