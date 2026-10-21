@@ -62,7 +62,9 @@ public final class YachtV30MigrationProbe {
             try (var connection = upgradedDb.open();
                  var query = connection.createStatement()) {
                 try (var schema = query.executeQuery("PRAGMA user_version")) {
-                    if (!schema.next() || schema.getInt(1) != 27)
+                    // Newer migrations may follow V30; never require that
+                    // V30 be the terminal schema version of the platform.
+                    if (!schema.next() || schema.getInt(1) < 27)
                         throw new AssertionError("V30 migration not applied");
                 }
                 query.executeUpdate("""
