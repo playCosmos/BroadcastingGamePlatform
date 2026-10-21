@@ -73,7 +73,8 @@ public final class GameRoomYachtR4HttpProbe {
             require(request(client,base,ROOT+"/yacht","GET",null,null,null)
                 .statusCode()==403,"public member state is private");
             var before=asState(request(client,base,ROOT+"/yacht","GET",null,host,null));
-            require(before.get("yacht").isJsonNull(),"no match is started prematurely");
+            require(!before.has("yacht") || before.get("yacht").isJsonNull(),
+                "no match is started prematurely");
             require(request(client,base,ROOT+"/yacht/start","POST","{}",host,null)
                 .statusCode()==409,"host cannot start without two ready players");
 
