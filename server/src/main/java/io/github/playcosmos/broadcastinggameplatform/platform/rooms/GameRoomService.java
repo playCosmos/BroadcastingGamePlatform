@@ -39,7 +39,7 @@ public final class GameRoomService {
     }
 
     @FunctionalInterface
-    private interface SqlWork<T> { T run(Connection connection) throws SQLException; }
+    interface SqlWork<T> { T run(Connection connection) throws SQLException; }
 
     public GameRoomService(DatabaseAccess database) {
         this(database, Clock.systemUTC());
@@ -314,7 +314,7 @@ public final class GameRoomService {
         });
     }
 
-    private <T> T write(SqlWork<T> operation) throws SQLException {
+    <T> T write(SqlWork<T> operation) throws SQLException {
         try (var connection = database.open();
              var control = connection.createStatement()) {
             // Acquire the SQLite writer reservation BEFORE checking occupancy.
@@ -333,7 +333,7 @@ public final class GameRoomService {
         }
     }
 
-    private static Room read(Connection connection, String roomId) throws SQLException {
+    static Room read(Connection connection, String roomId) throws SQLException {
         try (var stmt = connection.prepareStatement("""
             SELECT game_id,room_name,room_code,owner_member_id,state,max_players,
                    max_room_members,version FROM game_room WHERE room_id=?
@@ -372,7 +372,7 @@ public final class GameRoomService {
         }
     }
 
-    private static void insertMember(Connection connection, String memberId,
+    static void insertMember(Connection connection, String memberId,
         String roomId, String actorId, String displayName, SeatRole seat,
         String now) throws SQLException {
         try (var stmt = connection.prepareStatement("""
@@ -391,7 +391,7 @@ public final class GameRoomService {
         }
     }
 
-    private void bump(Connection connection, Room room) throws SQLException {
+    void bump(Connection connection, Room room) throws SQLException {
         try (var stmt = connection.prepareStatement("""
             UPDATE game_room SET version=?,updated_at=?
             WHERE room_id=? AND version=?
@@ -434,26 +434,26 @@ public final class GameRoomService {
         }
     }
 
-    private static void requireOpen(Room room) {
+    static void requireOpen(Room room) {
         if (room.state() != RoomState.OPEN_LOBBY
             && room.state() != RoomState.POST_GAME) {
             throw new RoomConflict("membership change requires lobby or post-game");
         }
     }
 
-    private static void validateCapacity(int players, int members) {
+    static void validateCapacity(int players, int members) {
         if (players < 1 || members < players || members > ABSOLUTE_MEMBER_LIMIT) {
             throw new IllegalArgumentException("invalid room capacity");
         }
     }
 
-    private static void validateGameId(String gameId) {
+    static void validateGameId(String gameId) {
         if (gameId == null || !gameId.matches("[a-z][a-z0-9_]{1,39}")) {
             throw new IllegalArgumentException("invalid game ID");
         }
     }
 
-    private static void validateActor(String actorId, String displayName) {
+    static void validateActor(String actorId, String displayName) {
         requireId(actorId, "actorId");
         if (displayName == null || displayName.isBlank()
             || displayName.length() > 80) {
