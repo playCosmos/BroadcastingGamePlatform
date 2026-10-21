@@ -114,7 +114,7 @@
     visible("inviteControls", host);
     $("inviteRole").querySelector('option[value="PLAYER"]').disabled = !pregame;
     if (!pregame) $("inviteRole").value = "SPECTATOR";
-    $("start").hidden = !host || !pregame;
+    $("start").hidden = !host || (!pregame && !interruptedStart);
     $("start").disabled = !joined || room.playerCount < 2
       || room.members.some(m => m.seatRole === "PLAYER"
         && (m.status !== "JOINED" || !m.ready));
