@@ -41,7 +41,9 @@
     try { result = await response.json(); }
     catch { throw new Error("서버 응답을 읽을 수 없습니다."); }
     if (!response.ok) {
-      throw new Error(result.error || "요청 실패 (HTTP " + response.status + ")");
+      const error = new Error(result.error || "요청 실패 (HTTP " + response.status + ")");
+      error.status = response.status;
+      throw error;
     }
     return result;
   }
@@ -110,6 +112,11 @@
     const host = Boolean(me?.isHost), joined = me?.status === "JOINED";
     const pregame = room.state === "OPEN_LOBBY";
     const interruptedStart = room.state === "PLAYING" && !state.yacht;
+    text("lobbyHint", pregame
+      ? "모든 플레이어가 준비되면 방장이 경기를 시작할 수 있습니다."
+      : interruptedStart
+        ? "경기 복구 중입니다. 방장이 시작을 다시 누르면 기존 매치로 복귀합니다."
+        : "경기 중에는 관전자 초대만 발급할 수 있습니다.");
     // Keep the host invite panel available for late spectators while the
     // match is running. Player invitation remains forbidden after kickoff.
     visible("lobby", pregame || interruptedStart
@@ -239,7 +246,18 @@
       await connectSockets();
       await refreshChat();
     } catch(error) {
-      notice(error.message || "룸 정보를 가져올 수 없습니다.", true);
+      if (error.status === 401 || error.status === 403) {
+        token = "";
+        sessionStorage.removeItem(STORE);
+        memberSocket?.close();
+        gameSocket?.close();
+        memberSocket = gameSocket = null;
+        visible("admission", true);
+        visible("game", false);
+        notice("룸 회원 세션이 만료되거나 취소됐습니다. 다시 초대받아 입장하세요.", true);
+      } else {
+        notice(error.message || "룸 정보를 가져올 수 없습니다.", true);
+      }
     } finally {
       running = false;
       if (refreshRequested) {
