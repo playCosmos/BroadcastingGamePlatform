@@ -276,6 +276,22 @@ public final class DrawingSyncService {
         }
     }
 
+    /**
+     * Trusted-server bridge for R5. Never route an unverified client directly
+     * here: the caller first rechecks R2 membership and active drawer turn.
+     * The private Canvas bearer remains server-side and cannot survive a kick
+     * as a freely reusable client credential.
+     */
+    public String appendForAuthorizedRound(String roundId,String rawJson) {
+        State state=requiredStateForRound(roundId);
+        synchronized(state) {
+            if(state.drawerToken == null || state.drawerToken.isBlank()) {
+                reissueDrawerToken(roundId);
+            }
+            return append(state.code,state.drawerToken,rawJson);
+        }
+    }
+
     private static void validatePayload(
         String type,
         JsonElement payload
