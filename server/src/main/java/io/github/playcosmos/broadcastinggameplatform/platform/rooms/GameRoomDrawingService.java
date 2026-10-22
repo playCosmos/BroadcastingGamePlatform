@@ -31,6 +31,8 @@ public final class GameRoomDrawingService {
         boolean canDraw, String nextDrawerMemberId) {}
     public record CanvasEvent(String roundId,String json) {}
     public record Guess(String status,int rank,int guesserScore,int drawerScore) {}
+    public record PrivatePrompt(String roundId,String answer,
+                                List<String> acceptedAnswers) {}
 
     private final GameRoomService rooms;
     private final GameRoomAccessService access;
@@ -232,6 +234,21 @@ public final class GameRoomDrawingService {
         // Crucial: do NOT return RoundPrivate or DrawerSession to a public
         // projection. The raw answer and Canvas token stay server-side.
         return state(token);
+    }
+
+    /** The current drawer alone may recover the word after browser refresh. */
+    public PrivatePrompt myPrompt(String token)throws SQLException {
+        var principal=access.authenticate(token);
+        Room room=access.room(token);
+        Binding binding=required(room);
+        requireConnectedPlayer(room,principal.memberId());
+        var match=repository.findActiveMatchByRoom(binding.nativeRoomId());
+        if(match==null)throw new GameRoomService.RoomConflict("no active match");
+        var round=repository.findActiveRoundByMatch(match.matchId());
+        if(round==null || !round.drawerParticipantId().equals(principal.memberId()))
+            throw new GameRoomAccessService.Forbidden("not active drawer");
+        return new PrivatePrompt(round.roundId(),round.prompt().answer(),
+            round.prompt().acceptedAnswers());
     }
 
     /** Only current drawer may append a trusted, bounded Canvas event. */
