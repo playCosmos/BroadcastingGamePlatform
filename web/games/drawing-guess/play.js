@@ -111,10 +111,15 @@
       && round?.roundId===privateDrawer.roundId));
     set("secretAnswer",privateDrawer?.answer||"");
     el("endRound").hidden=!round || (!owner && !state.isDrawer);
+    const nextIndex=game?.lastCompletedRound
+      ? game.lastCompletedRound.roundIndex+1 : 0;
+    const allDone=nextIndex>=state.totalRounds && state.totalRounds>0;
+    const nextDrawer=game?.participants?.length
+      ? game.participants[nextIndex%game.participants.length]?.participantId : null;
     el("nextRound").hidden=Boolean(round)||r.state!=="PLAYING"
-      ||me?.seatRole!=="PLAYER";
+      ||me?.seatRole!=="PLAYER" || nextDrawer!==state.memberId || allDone;
     el("finishMatch").hidden=!owner || !nativeRoom
-      || r.state!=="PLAYING" || Boolean(round);
+      || r.state!=="PLAYING" || Boolean(round) || !allDone;
     el("guessForm").hidden=!round || state.isDrawer || me?.seatRole!=="PLAYER";
     el("clearCanvas").disabled=!state.isDrawer || !privateDrawer;
     const board=el("scoreboard");board.replaceChildren();
