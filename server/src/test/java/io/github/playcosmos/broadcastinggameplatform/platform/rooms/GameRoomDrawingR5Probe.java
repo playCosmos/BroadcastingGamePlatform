@@ -52,6 +52,8 @@ public final class GameRoomDrawingR5Probe {
             check(state.game()!=null && state.game().activeMatch()!=null
                 && state.game().activeMatch().totalRounds()==2,
                 "R5 creates native match for ready players");
+            check(state.configuredRounds()==2 && state.durationSeconds()==120,
+                "recovery-safe round count and duration are projected from SQLite");
             check(state.room().playerCount()==2 && state.room().memberCount()==3,
                 "player limit and overall membership count independent");
             check(repo.findRoomBySourceRoom(roomId).roomId().equals(state.nativeRoomId()),
@@ -147,8 +149,10 @@ public final class GameRoomDrawingR5Probe {
                     new DrawingSyncService(db2)),
                 new DrawingSyncService(db2),(code,event)->{});
             check(recovered.state(host).nativeRoomId().equals(nativeId)
-                && recovered.state(host).room().state().name().equals("POST_GAME"),
-                "native match binding and common room survive SQLite restart");
+                && recovered.state(host).room().state().name().equals("POST_GAME")
+                && recovered.state(host).configuredRounds()==2
+                && recovered.state(host).durationSeconds()==120,
+                "native match and frozen settings survive SQLite restart");
 
             var solo=access.createHostedRoom("drawing_guess","Streamer example",
                 "Streamer",SeatRole.PLAYER,1,4);
