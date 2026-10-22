@@ -856,6 +856,16 @@ public final class GameClientHttpServer implements AutoCloseable {
      * R5: member-scoped room drawing controls. No provider-guess shortcut,
      * and the secret canvas token + answer are NEVER returned by /drawing.
      */
+    private static Object sharedDrawingView(GameRoomDrawingService.State state) {
+        var safe=new java.util.LinkedHashMap<String,Object>();
+        safe.put("room",publicRoomMembership(state.room()));
+        safe.put("drawing",state.drawing());
+        safe.put("memberId",state.memberId());
+        safe.put("isDrawer",state.isDrawer());
+        safe.put("totalRounds",state.totalRounds());
+        return safe;
+    }
+
     private void sharedDrawingApi(HttpExchange exchange,String method,
                                   String suffix,String token) throws IOException {
         if(sharedDrawing==null){
@@ -864,7 +874,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         }
         try{
             if("/drawing".equals(suffix) && "GET".equals(method)){
-                sendJson(exchange,200,sharedDrawing.state(token));
+                sendJson(exchange,200,sharedDrawingView(sharedDrawing.state(token)));
                 return;
             }
             if(!"POST".equals(method)){
@@ -874,9 +884,9 @@ public final class GameClientHttpServer implements AutoCloseable {
                 case "/drawing/start" -> {
                     JsonObject body=readYachtBody(exchange,Set.of(
                         "totalRounds","roundDurationSeconds"));
-                    sendJson(exchange,200,sharedDrawing.start(token,
+                    sendJson(exchange,200,sharedDrawingView(sharedDrawing.start(token,
                         roomApiInt(body,"totalRounds"),
-                        roomApiInt(body,"roundDurationSeconds")));
+                        roomApiInt(body,"roundDurationSeconds"))));
                 }
                 case "/drawing/next-round" -> {
                     JsonObject body=readYachtBody(exchange,Set.of(
@@ -894,8 +904,11 @@ public final class GameClientHttpServer implements AutoCloseable {
                             accepted.add(value.getAsString());
                         }
                     }
-                    sendJson(exchange,201,sharedDrawing.nextRound(token,
-                        roomApiText(body,"answer"),List.copyOf(accepted)));
+                    var round=sharedDrawing.nextRound(token,
+                        roomApiText(body,"answer"),List.copyOf(accepted));
+                    sendJson(exchange,201,Map.of(
+                        "state",sharedDrawingView(round.state()),
+                        "privateDrawer",round.privateDrawer()));
                 }
                 case "/drawing/drawer-recovery" -> {
                     readYachtBody(exchange,Set.of());
@@ -908,11 +921,11 @@ public final class GameClientHttpServer implements AutoCloseable {
                 }
                 case "/drawing/end-round" -> {
                     readYachtBody(exchange,Set.of());
-                    sendJson(exchange,200,sharedDrawing.completeRound(token));
+                    sendJson(exchange,200,sharedDrawingView(sharedDrawing.completeRound(token)));
                 }
                 case "/drawing/finish" -> {
                     readYachtBody(exchange,Set.of());
-                    sendJson(exchange,200,sharedDrawing.completeMatch(token));
+                    sendJson(exchange,200,sharedDrawingView(sharedDrawing.completeMatch(token)));
                 }
                 default -> sendJson(exchange,404,Map.of("error","unknown drawing route"));
             }
