@@ -381,10 +381,17 @@ public final class GameRoomDrawingService {
 
     private String expectedDrawer(Room room,Binding binding,int index)
         throws SQLException {
+        // Use the native match's immutable ordered roster, NOT the mutable
+        // membership occupancy. Kick/disconnect must not silently reassign
+        // another member's drawing turn or diverge from DrawingGuessGameService.
+        var nativeRoom=repository.findRoom(binding.nativeRoomId());
         if(binding.mode()==DrawerPolicy.STREAMER_DRAWER)
-            return repository.findRoom(binding.nativeRoomId()).streamerParticipantId();
-        var roster=players(room);
-        return roster.get(index % roster.size()).memberId();
+            return nativeRoom.streamerParticipantId();
+        var roster=nativeRoom.participants().stream()
+            .filter(DrawingGuessRepository.Participant::canDraw).toList();
+        if(roster.isEmpty())
+            throw new GameRoomService.RoomConflict("frozen drawer roster unavailable");
+        return roster.get(index % roster.size()).participantId();
     }
 
     private static void requireDrawing(Room room) {
