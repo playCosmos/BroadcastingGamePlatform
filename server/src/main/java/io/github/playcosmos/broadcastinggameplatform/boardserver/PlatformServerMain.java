@@ -8,6 +8,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.Yac
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomYachtService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomDrawingService;
 import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
@@ -89,6 +90,8 @@ public final class PlatformServerMain {
         }
 
         var commonRoomAccess = new GameRoomAccessService(database);
+        var sharedDrawing=new GameRoomDrawingService(database,commonRoomAccess,
+            drawingGame,drawingRepository,drawingSync);
         var roomSocket = new AtomicReference<BoardGameWebSocketServer>();
         var roomRealtime = new GameRoomRealtimeService(database, commonRoomAccess,
             (roomId, event) -> {
@@ -293,7 +296,8 @@ public final class PlatformServerMain {
             yachtGame,
             commonRoomAccess,
             roomRealtime,
-            sharedYacht
+            sharedYacht,
+            sharedDrawing
         );
         var http = new BoardGameHttpServer(
             config,

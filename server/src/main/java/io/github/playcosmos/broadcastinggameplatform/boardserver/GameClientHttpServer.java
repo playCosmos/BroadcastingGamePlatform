@@ -16,6 +16,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomMode
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomYachtService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomDrawingService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.util.ConcurrentModificationException;
@@ -90,6 +91,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final GameRoomAccessService memberRooms;
     private final GameRoomRealtimeService roomRealtime;
     private final GameRoomYachtService sharedYacht;
+    private final GameRoomDrawingService sharedDrawing;
     private final AtomicReference<String> adminBootstrapToken;
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
@@ -298,6 +300,21 @@ public final class GameClientHttpServer implements AutoCloseable {
         YachtRoomService yachtGame, GameRoomAccessService memberRooms,
         GameRoomRealtimeService roomRealtime, GameRoomYachtService sharedYacht
     ) throws IOException {
+        this(config,workingDirectory,rooms,runtime,adminAuthStore,platformEvents,
+            providers,viewerDraw,drawingGameSync,drawingGame,yachtGame,
+            memberRooms,roomRealtime,sharedYacht,null);
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config, Path workingDirectory,
+        RoomService rooms, BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore, PlatformEventBus platformEvents,
+        ProviderRegistry providers, ViewerDrawService viewerDraw,
+        DrawingSyncService drawingGameSync, DrawingGuessGameService drawingGame,
+        YachtRoomService yachtGame, GameRoomAccessService memberRooms,
+        GameRoomRealtimeService roomRealtime, GameRoomYachtService sharedYacht,
+        GameRoomDrawingService sharedDrawing
+    ) throws IOException {
         var drawingSync = drawingGameSync;
         var normalized = config.normalized();
         this.config = normalized;
@@ -317,6 +334,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.memberRooms = memberRooms;
         this.roomRealtime = roomRealtime;
         this.sharedYacht = sharedYacht;
+        this.sharedDrawing = sharedDrawing;
         this.adminBootstrapToken = new AtomicReference<>(
             randomToken(24)
         );
@@ -683,6 +701,10 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             String token = roomApiBearer(exchange);
+            if (suffix.equals("/drawing") || suffix.startsWith("/drawing/")) {
+                sharedDrawingApi(exchange,method,suffix,token);
+                return;
+            }
             if (suffix.equals("/yacht") || suffix.startsWith("/yacht/")) {
                 sharedYachtApi(exchange,method,suffix,token);
                 return;
@@ -827,6 +849,96 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange, 400, Map.of("error", "invalid room request"));
         } catch (java.sql.SQLException failed) {
             sendJson(exchange, 500, Map.of("error", "room storage unavailable"));
+        }
+    }
+
+    /**
+     * R5: member-scoped room drawing controls. No provider-guess shortcut,
+     * and the secret canvas token + answer are NEVER returned by /drawing.
+     */
+    private static Object sharedDrawingView(GameRoomDrawingService.State state) {
+        var safe=new java.util.LinkedHashMap<String,Object>();
+        safe.put("room",publicRoomMembership(state.room()));
+        safe.put("drawing",state.drawing());
+        safe.put("memberId",state.memberId());
+        safe.put("isDrawer",state.isDrawer());
+        safe.put("totalRounds",state.totalRounds());
+        return safe;
+    }
+
+    private void sharedDrawingApi(HttpExchange exchange,String method,
+                                  String suffix,String token) throws IOException {
+        if(sharedDrawing==null){
+            sendJson(exchange,503,Map.of("error","member drawing service unavailable"));
+            return;
+        }
+        try{
+            if("/drawing".equals(suffix) && "GET".equals(method)){
+                sendJson(exchange,200,sharedDrawingView(sharedDrawing.state(token)));
+                return;
+            }
+            if(!"POST".equals(method)){
+                exchange.sendResponseHeaders(405,-1);exchange.close();return;
+            }
+            switch(suffix){
+                case "/drawing/start" -> {
+                    JsonObject body=readYachtBody(exchange,Set.of(
+                        "totalRounds","roundDurationSeconds"));
+                    sendJson(exchange,200,sharedDrawingView(sharedDrawing.start(token,
+                        roomApiInt(body,"totalRounds"),
+                        roomApiInt(body,"roundDurationSeconds"))));
+                }
+                case "/drawing/next-round" -> {
+                    JsonObject body=readYachtBody(exchange,Set.of(
+                        "answer","acceptedAnswers"));
+                    List<String> accepted=new java.util.ArrayList<>();
+                    if(body.has("acceptedAnswers")){
+                        if(!body.get("acceptedAnswers").isJsonArray()
+                            || body.getAsJsonArray("acceptedAnswers").size()>10)
+                            throw new IllegalArgumentException("invalid acceptedAnswers");
+                        for(var value:body.getAsJsonArray("acceptedAnswers")){
+                            if(!value.isJsonPrimitive()
+                                || !value.getAsJsonPrimitive().isString()
+                                || value.getAsString().length()>80)
+                                throw new IllegalArgumentException("invalid answer alias");
+                            accepted.add(value.getAsString());
+                        }
+                    }
+                    var round=sharedDrawing.nextRound(token,
+                        roomApiText(body,"answer"),List.copyOf(accepted));
+                    sendJson(exchange,201,Map.of(
+                        "state",sharedDrawingView(round.state()),
+                        "privateDrawer",round.privateDrawer()));
+                }
+                case "/drawing/drawer-recovery" -> {
+                    readYachtBody(exchange,Set.of());
+                    sendJson(exchange,200,sharedDrawing.recoverDrawer(token));
+                }
+                case "/drawing/guess" -> {
+                    JsonObject body=readYachtBody(exchange,Set.of("guess"));
+                    sendJson(exchange,200,sharedDrawing.guess(token,
+                        roomApiText(body,"guess")));
+                }
+                case "/drawing/end-round" -> {
+                    readYachtBody(exchange,Set.of());
+                    sendJson(exchange,200,sharedDrawingView(sharedDrawing.completeRound(token)));
+                }
+                case "/drawing/finish" -> {
+                    readYachtBody(exchange,Set.of());
+                    sendJson(exchange,200,sharedDrawingView(sharedDrawing.completeMatch(token)));
+                }
+                default -> sendJson(exchange,404,Map.of("error","unknown drawing route"));
+            }
+        }catch(GameRoomAccessService.Forbidden denied){
+            sendJson(exchange,403,Map.of("error","Drawing Guess permission denied"));
+        }catch(IllegalStateException conflict){
+            sendJson(exchange,409,Map.of("error","Drawing Guess state conflict"));
+        }catch(NoSuchElementException missing){
+            sendJson(exchange,404,Map.of("error","Drawing Guess match unavailable"));
+        }catch(IllegalArgumentException | JsonParseException invalid){
+            sendJson(exchange,400,Map.of("error","invalid Drawing Guess member request"));
+        }catch(java.sql.SQLException failure){
+            sendJson(exchange,500,Map.of("error","Drawing Guess persistence error"));
         }
     }
 
