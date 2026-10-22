@@ -870,6 +870,17 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             return;
         }
+        if ("/drawing/my-prompt".equals(suffix) && "GET".equals(method)) {
+            try {sendJson(exchange,200,sharedDrawing.myPrompt(token));}
+            catch (GameRoomAccessService.Forbidden denied) {
+                sendJson(exchange,403,Map.of("error","drawer permission required"));
+            } catch (IllegalStateException conflict) {
+                sendJson(exchange,409,Map.of("error","no active drawer prompt"));
+            } catch(java.sql.SQLException failed) {
+                sendJson(exchange,500,Map.of("error","drawing storage unavailable"));
+            }
+            return;
+        }
         if (!"POST".equals(method)) {
             exchange.sendResponseHeaders(405,-1);
             exchange.close();
