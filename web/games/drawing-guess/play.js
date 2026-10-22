@@ -180,27 +180,21 @@
     return {x:Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),
       y:Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))};
   };
+  let pendingStrokeId="";
   canvas.addEventListener("pointerdown",e=>{
     if(!state?.isDrawer || !privateDrawer || canvasSocket?.readyState!==WebSocket.OPEN)return;
     pointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
-    const strokeId="s-"+safeId();
-    emit("canvas.stroke.begin",{stroke:{strokeId,tool:"pen",color:"#191919",
-      width:7,points:[pointerPoint(e)]}});
+    pendingStrokeId="s-"+safeId();
+    emit("canvas.stroke.begin",{stroke:{strokeId:pendingStrokeId,tool:"pen",
+      color:"#191919",width:7,points:[pointerPoint(e)]}});
     e.preventDefault();
   });
   canvas.addEventListener("pointermove",e=>{
-    if(pointer!==e.pointerId)return;
+    if(pointer!==e.pointerId || !pendingStrokeId)return;
     emit("canvas.stroke.points",{strokeId:pendingStrokeId,
       points:[pointerPoint(e)]});
     e.preventDefault();
   });
-  let pendingStrokeId="";
-  // Use the same stroke ID across begin, append, end. Render after server echo.
-  canvas.addEventListener("pointerdown",e=>{
-    if(pointer===e.pointerId)pendingStrokeId=
-      lastSentStrokeId;
-  });
-  let lastSentStrokeId="";
   canvas.addEventListener("pointerup",e=>{
     if(pointer!==e.pointerId)return;
     emit("canvas.stroke.end",{strokeId:pendingStrokeId});
