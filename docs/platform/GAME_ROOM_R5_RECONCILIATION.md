@@ -25,6 +25,7 @@ Status: **implementation in Draft; no merge, release, or tag**. Parent is PR #42
 - `/drawing/guess` scores authenticated room participants (PLAYER and SPECTATOR except current drawer), with room chat explicitly excluded.
 - After a crash following lobby reservation, expose immutable mode/rounds/duration in member state to let the host retry safely without guessing initial form defaults.
 - The UI must gate drawing controls by `canDraw`; the server always makes the final authorization decision. Invalid/expired credentials never fall back to administrator permissions.
+- Native Drawing participant order is authoritative once the match starts. The R2 access layer currently forbids active PLAYER kicks/leaves/seat changes; preserve that rule, and calculate future drawers from the persisted native participant order rather than a potentially changing membership view. No forfeiture/skipping policy is implied.
 - No schema/migration rewrites, no merging competing `V35` migrations; #42's V35 and `source_room_id` storage are authoritative.
 
 ## Acceptance gates
