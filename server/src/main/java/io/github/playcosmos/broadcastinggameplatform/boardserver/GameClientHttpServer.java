@@ -950,6 +950,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         json.put("nativeRoomId",state.nativeRoomId());
         json.put("game",state.game());
         json.put("canDraw",state.canDraw());
+        json.put("nextDrawerMemberId",state.nextDrawerMemberId());
         return json;
     }
 
