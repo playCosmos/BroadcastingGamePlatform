@@ -28,7 +28,8 @@ import java.util.function.BiConsumer;
 public final class GameRoomDrawingService {
     public record Snapshot(Room room, String memberId, DrawerPolicy mode,
         String nativeRoomId, DrawingGuessGameService.PublicRoomSnapshot game,
-        boolean canDraw, String nextDrawerMemberId) {}
+        boolean canDraw, String nextDrawerMemberId,
+        int configuredRounds, int durationSeconds) {}
     public record CanvasEvent(String roundId,String json) {}
     public record Guess(String status,int rank,int guesserScore,int drawerScore) {}
     public record PrivatePrompt(String roundId,String answer,
@@ -61,7 +62,9 @@ public final class GameRoomDrawingService {
         Binding binding=binding(room.roomId());
         if(binding==null || binding.nativeRoomId()==null) {
             return new Snapshot(room,principal.memberId(),
-                binding==null?null:binding.mode(),null,null,false,null);
+                binding==null?null:binding.mode(),null,null,false,null,
+                binding==null?0:binding.configuredRounds(),
+                binding==null?0:binding.durationSeconds());
         }
         var game=drawing.publicRoom(binding.nativeRoomId());
         return snapshot(room,principal.memberId(),binding,game);
@@ -347,7 +350,8 @@ public final class GameRoomDrawingService {
                 nextDrawer=expectedDrawer(room,binding,index);
         }
         return new Snapshot(room,memberId,binding.mode(),binding.nativeRoomId(),
-            game,activeDrawer && connected(room,memberId),nextDrawer);
+            game,activeDrawer && connected(room,memberId),nextDrawer,
+            binding.configuredRounds(),binding.durationSeconds());
     }
 
     private Binding required(Room room)throws SQLException {
@@ -363,13 +367,14 @@ public final class GameRoomDrawingService {
     private Binding binding(String roomId)throws SQLException {
         try(var connection=rooms.databaseForAccess().open();
             var stmt=connection.prepareStatement("""
-                SELECT drawing_room_id,match_id,drawer_policy
+                SELECT drawing_room_id,match_id,drawer_policy,configured_rounds,duration_seconds
                 FROM game_room_drawing_link WHERE room_id=?
                 """)) {
             stmt.setString(1,roomId);
             try(var rows=stmt.executeQuery()){
                 return rows.next()?new Binding(rows.getString(1),
-                    rows.getString(2),DrawerPolicy.valueOf(rows.getString(3))):null;
+                    rows.getString(2),DrawerPolicy.valueOf(rows.getString(3)),
+                    rows.getInt(4),rows.getInt(5)):null;
             }
         }
     }
@@ -401,5 +406,6 @@ public final class GameRoomDrawingService {
     }
     private record Reservation(Room room,DrawerPolicy mode,int rounds,
                                int seconds,String hostId) {}
-    private record Binding(String nativeRoomId,String matchId,DrawerPolicy mode) {}
+    private record Binding(String nativeRoomId,String matchId,DrawerPolicy mode,
+                           int configuredRounds,int durationSeconds) {}
 }
