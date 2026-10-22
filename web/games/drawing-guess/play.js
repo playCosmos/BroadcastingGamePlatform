@@ -180,28 +180,39 @@
     return {x:Math.max(0,Math.min(1,(e.clientX-rect.left)/rect.width)),
       y:Math.max(0,Math.min(1,(e.clientY-rect.top)/rect.height))};
   };
-  let pendingStrokeId="";
+  let pendingStrokeId="",pendingPoints=[],pointTimer=0;
+  function flushPoints() {
+    if(pointTimer){clearTimeout(pointTimer);pointTimer=0;}
+    if(pendingStrokeId && pendingPoints.length) {
+      emit("canvas.stroke.points",{strokeId:pendingStrokeId,
+        points:pendingPoints.splice(0)});
+    }
+  }
   canvas.addEventListener("pointerdown",e=>{
     if(!state?.isDrawer || !privateDrawer || canvasSocket?.readyState!==WebSocket.OPEN)return;
     pointer=e.pointerId;canvas.setPointerCapture(e.pointerId);
     pendingStrokeId="s-"+safeId();
+    pendingPoints=[];
     emit("canvas.stroke.begin",{stroke:{strokeId:pendingStrokeId,tool:"pen",
       color:"#191919",width:7,points:[pointerPoint(e)]}});
     e.preventDefault();
   });
   canvas.addEventListener("pointermove",e=>{
     if(pointer!==e.pointerId || !pendingStrokeId)return;
-    emit("canvas.stroke.points",{strokeId:pendingStrokeId,
-      points:[pointerPoint(e)]});
+    pendingPoints.push(pointerPoint(e));
+    if(!pointTimer)pointTimer=setTimeout(flushPoints,34);
     e.preventDefault();
   });
   canvas.addEventListener("pointerup",e=>{
     if(pointer!==e.pointerId)return;
+    flushPoints();
     emit("canvas.stroke.end",{strokeId:pendingStrokeId});
     pointer=null;pendingStrokeId="";e.preventDefault();
   });
   canvas.addEventListener("pointercancel",()=>{
-    if(pointer!==null)emit("canvas.stroke.end",{strokeId:pendingStrokeId});
+    if(pointer!==null){
+      flushPoints();emit("canvas.stroke.end",{strokeId:pendingStrokeId});
+    }
     pointer=null;pendingStrokeId="";
   });
   el("clearCanvas").addEventListener("click",()=>emit("canvas.clear"));
@@ -221,6 +232,9 @@
       memberSocket.addEventListener("open",()=>memberSocket.send(JSON.stringify({
         type:"room.subscribe",token,afterSequence:-1
       })));
+      memberSocket.addEventListener("close",()=>{
+        if(token && activeMemberRoom===roomId)activeMemberRoom="";
+      });
       memberSocket.addEventListener("message",event=>{
         try{
           const message=JSON.parse(event.data);
