@@ -228,7 +228,7 @@ public final class GameRoomDrawingService {
         int next=repository.nextRoundIndex(game.activeMatch().matchId());
         if(next>=game.activeMatch().totalRounds())
             throw new GameRoomService.RoomConflict("match rounds exhausted");
-        String drawer=expectedDrawer(room,binding,next);
+        String drawer=expectedDrawer(binding,next);
         if(!drawer.equals(principal.memberId()))
             throw new GameRoomAccessService.Forbidden("not selected drawer");
         drawing.startRound(game.activeMatch().matchId(),
@@ -347,7 +347,7 @@ public final class GameRoomDrawingService {
         if(game.activeMatch()!=null && game.activeRound()==null) {
             int index=repository.nextRoundIndex(game.activeMatch().matchId());
             if(index<game.activeMatch().totalRounds())
-                nextDrawer=expectedDrawer(room,binding,index);
+                nextDrawer=expectedDrawer(binding,index);
         }
         return new Snapshot(room,memberId,binding.mode(),binding.nativeRoomId(),
             game,activeDrawer && connected(room,memberId),nextDrawer,
@@ -379,7 +379,7 @@ public final class GameRoomDrawingService {
         }
     }
 
-    private String expectedDrawer(Room room,Binding binding,int index)
+    private String expectedDrawer(Binding binding,int index)
         throws SQLException {
         // Use the native match's immutable ordered roster, NOT the mutable
         // membership occupancy. Kick/disconnect must not silently reassign
