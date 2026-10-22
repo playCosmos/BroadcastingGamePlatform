@@ -28,6 +28,7 @@
   let snapshot=null,memberSocket=null,canvasSocket=null,wsBase="";
   let roomBinding="",drawingBinding="",chatSequence=-1,canvasSequence=0;
   let drawingActive=false,strokeId="",lastPoint=null,sendQueue=Promise.resolve();
+  let currentPointer=null,pendingPoints=[],pointTimer=null;
   let refreshBusy=false,rerun=false,busy=false,roundWordId="";
   const ctx=$("canvas").getContext("2d");
   const strokes=new Map();
@@ -75,6 +76,11 @@
     $("start").disabled=room.playerCount<1
       || room.members.some(m=>m.seatRole==="PLAYER"
           && (m.status!=="JOINED"||!m.ready));
+    if(snapshot.configuredRounds>0){
+      $("mode").value=snapshot.mode;
+      $("rounds").value=String(snapshot.configuredRounds);
+      $("duration").value=String(snapshot.durationSeconds);
+    }
     $("mode").disabled=recovering;
     $("rounds").disabled=recovering;
     $("duration").disabled=recovering;
@@ -121,6 +127,8 @@
         ? "다음 출제자: "+memberName(snapshot.nextDrawerMemberId)
         : "라운드가 종료되었습니다.");
     $("canvas").classList.toggle("readonly",!snapshot.canDraw);
+    show("clearCanvas",Boolean(round&&snapshot.canDraw));
+    $("clearCanvas").disabled=!snapshot.canDraw;
     $("canvasHelp").textContent=snapshot.canDraw
       ? "그리기 권한이 있습니다. 마우스 또는 터치로 그려주세요."
       : "현재 출제자의 그림을 관전할 수 있습니다.";
@@ -183,29 +191,46 @@
       applyEvent(result.json);
     }).catch(e=>say(e.message||"그림 전송에 실패했습니다.",true));
   }
+  // Batch high-frequency pointer samples to reduce HTTP requests while
+  // preserving the ordered, authenticated server-authoritative event stream.
+  function flushPoints(){
+    if(pointTimer!==null){clearTimeout(pointTimer);pointTimer=null;}
+    if(drawingActive && strokeId && pendingPoints.length){
+      drawCommand({type:"canvas.stroke.points",payload:{
+        strokeId,points:pendingPoints.splice(0)}});
+    }
+  }
   const canvas=$("canvas");
   canvas.addEventListener("pointerdown",e=>{
-    if(!snapshot?.canDraw || !snapshot.game?.activeRound || busy)return;
+    if(drawingActive || !snapshot?.canDraw || !snapshot.game?.activeRound || busy)return;
     e.preventDefault();canvas.setPointerCapture(e.pointerId);
-    drawingActive=true;strokeId=id("stroke-");lastPoint=point(e);
+    drawingActive=true;currentPointer=e.pointerId;
+    strokeId=id("stroke-");lastPoint=point(e);pendingPoints=[];
     drawCommand({type:"canvas.stroke.begin",payload:{
-      stroke:{strokeId,points:[lastPoint]}}});
+      stroke:{strokeId,tool:"pen",color:"#1c2936",width:4,points:[lastPoint]}}});
   });
   canvas.addEventListener("pointermove",e=>{
-    if(!drawingActive)return;
+    if(!drawingActive || e.pointerId!==currentPointer)return;
     e.preventDefault();
     const p=point(e);
     if(Math.hypot(p.x-lastPoint.x,p.y-lastPoint.y)<0.004)return;
     lastPoint=p;
-    drawCommand({type:"canvas.stroke.points",payload:{strokeId,points:[p]}});
+    pendingPoints.push(p);
+    if(pendingPoints.length>=96)flushPoints();
+    else if(pointTimer===null)pointTimer=setTimeout(flushPoints,34);
   });
   const stopStroke=e=>{
-    if(!drawingActive)return;
-    e.preventDefault();drawingActive=false;
+    if(!drawingActive || e.pointerId!==currentPointer)return;
+    e.preventDefault();flushPoints();drawingActive=false;currentPointer=null;
     drawCommand({type:"canvas.stroke.end",payload:{strokeId}});
+    strokeId="";pendingPoints=[];
   };
   canvas.addEventListener("pointerup",stopStroke);
   canvas.addEventListener("pointercancel",stopStroke);
+  $("clearCanvas").addEventListener("click",()=>{
+    if(snapshot?.canDraw && snapshot.game?.activeRound)
+      drawCommand({type:"canvas.clear",payload:{}});
+  });
   redraw();
 
   async function refreshChat(){
