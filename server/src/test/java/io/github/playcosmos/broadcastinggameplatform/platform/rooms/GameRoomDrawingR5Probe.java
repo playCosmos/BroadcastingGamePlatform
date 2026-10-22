@@ -127,6 +127,10 @@ public final class GameRoomDrawingR5Probe {
             check(adapter.draw(player.token(),
                 "{\"type\":\"canvas.clear\",\"payload\":{}}").json()
                     .contains("canvas.clear"),"second drawer writes own canvas");
+            access.disconnect(player.token(),Duration.ofMinutes(1));
+            forbidden(()->adapter.completeRound(player.token()),
+                "disconnected drawer must reconnect before ending a round");
+            access.reconnect(player.token());
             adapter.completeRound(player.token());
             var finished=adapter.finish(host);
             check("POST_GAME".equals(finished.room().state().name()),
