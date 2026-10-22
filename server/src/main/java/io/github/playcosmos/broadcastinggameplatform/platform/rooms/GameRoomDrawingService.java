@@ -28,7 +28,7 @@ import java.util.function.BiConsumer;
 public final class GameRoomDrawingService {
     public record Snapshot(Room room, String memberId, DrawerPolicy mode,
         String nativeRoomId, DrawingGuessGameService.PublicRoomSnapshot game,
-        boolean canDraw) {}
+        boolean canDraw, String nextDrawerMemberId) {}
     public record CanvasEvent(String roundId,String json) {}
     public record Guess(String status,int rank,int guesserScore,int drawerScore) {}
 
@@ -59,7 +59,7 @@ public final class GameRoomDrawingService {
         Binding binding=binding(room.roomId());
         if(binding==null || binding.nativeRoomId()==null) {
             return new Snapshot(room,principal.memberId(),
-                binding==null?null:binding.mode(),null,null,false);
+                binding==null?null:binding.mode(),null,null,false,null);
         }
         var game=drawing.publicRoom(binding.nativeRoomId());
         return snapshot(room,principal.memberId(),binding,game);
@@ -320,8 +320,14 @@ public final class GameRoomDrawingService {
         throws SQLException {
         boolean activeDrawer=game.activeRound()!=null
             && game.activeRound().drawerParticipantId().equals(memberId);
+        String nextDrawer=null;
+        if(game.activeMatch()!=null && game.activeRound()==null) {
+            int index=repository.nextRoundIndex(game.activeMatch().matchId());
+            if(index<game.activeMatch().totalRounds())
+                nextDrawer=expectedDrawer(room,binding,index);
+        }
         return new Snapshot(room,memberId,binding.mode(),binding.nativeRoomId(),
-            game,activeDrawer && connected(room,memberId));
+            game,activeDrawer && connected(room,memberId),nextDrawer);
     }
 
     private Binding required(Room room)throws SQLException {
