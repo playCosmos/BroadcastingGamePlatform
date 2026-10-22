@@ -40,6 +40,14 @@ public final class YachtV30MigrationProbe {
                     )
                     """);
                 stmt.execute("CREATE INDEX idx_yacht_match_phase ON yacht_match(phase)");
+                // This compact V29 fixture must also include the existing D2
+                // room table: a later V35 migration adds source_room_id to it.
+                // It is not an R5 room and retains the legacy NULL origin.
+                stmt.execute("""
+                    CREATE TABLE drawing_guess_room (
+                      room_id TEXT PRIMARY KEY NOT NULL
+                    )
+                    """);
                 try (var insert = connection.prepareStatement("""
                     INSERT INTO yacht_match(match_id,version,phase,state_json,updated_at)
                     VALUES('legacy-yacht',0,'READY',?,'2026-10-20T00:00:00Z')
