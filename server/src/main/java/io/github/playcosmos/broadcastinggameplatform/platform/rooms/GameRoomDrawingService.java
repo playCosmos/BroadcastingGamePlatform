@@ -246,6 +246,8 @@ public final class GameRoomDrawingService {
     public State completeRound(String token) throws SQLException {
         var principal=access.authenticate(token);
         var room=access.room(token);
+        if(getMember(room,principal.memberId()).status()!=MemberStatus.JOINED)
+            throw new GameRoomAccessService.Forbidden("disconnected member cannot end round");
         var linked=requireLink(room.roomId());
         var round=repository.findActiveRoundByMatch(linked.matchId());
         if(round==null)throw new GameRoomService.RoomConflict("no active round");
@@ -260,6 +262,8 @@ public final class GameRoomDrawingService {
         if(!principal.isHost())throw new GameRoomAccessService.Forbidden(
             "only room host may finish match");
         var room=access.room(token);
+        if(getMember(room,principal.memberId()).status()!=MemberStatus.JOINED)
+            throw new GameRoomAccessService.Forbidden("disconnected host cannot finish");
         var linked=requireLink(room.roomId());
         var match=repository.findMatch(linked.matchId());
         if(repository.findActiveRoundByMatch(linked.matchId())!=null
