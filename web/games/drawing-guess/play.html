@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>Drawing Guess · 룸 플레이</title>
+  <link rel="stylesheet" href="./play.css"><script src="./play.js" defer></script>
+</head>
+<body><main class="shell">
+  <header><div><p class="eyebrow">GAMECENTER / DRAWING GUESS / ROOM PLAY</p>
+    <h1>Drawing Guess</h1><p class="muted">룸형 · 순환 출제 · 일반 룸 채팅과 정답 제출 분리</p></div>
+    <a href="/">← 게임 선택</a></header>
+  <p id="status" role="status" aria-live="polite">룸을 생성하거나 초대 링크로 들어오세요.</p>
+  <div id="admission" class="cols">
+    <form class="panel" id="create">
+      <h2>새 게임룸</h2><p class="muted">룸 생성에는 플랫폼 관리자 로그인이 필요합니다.</p>
+      <label>룸 이름 <input name="name" maxlength="100" value="Drawing Room" required></label>
+      <label>표시 이름 <input name="displayName" maxlength="80" required></label>
+      <label>최대 플레이어 수 <input type="number" name="maxPlayers" min="2" max="20" value="6" required></label>
+      <label>방 전체 정원 <input type="number" name="maxRoomMembers" min="2" max="256" value="20" required></label>
+      <label><input type="checkbox" name="hostPlays" checked> 방장도 플레이어로 참가</label>
+      <button>룸 개설</button>
+    </form>
+    <form class="panel" id="join">
+      <h2>초대받아 입장</h2><p class="muted">초대권은 방장이 발급합니다. 룸 코드만으로는 입장할 수 없습니다.</p>
+      <label>초대 토큰 <input name="invitation" required autocomplete="off"></label>
+      <label>표시 이름 <input name="displayName" maxlength="80" required></label>
+      <button>입장</button>
+    </form>
+  </div>
+  <div id="room" hidden>
+    <section class="panel room-top">
+      <div><h2 id="roomName">Room</h2>
+        <p class="muted">룸 코드 <strong id="roomCode">------</strong> · <span id="phase">대기</span></p></div>
+      <div><span id="population"></span> <button id="leave" type="button" class="secondary">퇴장</button></div>
+    </section>
+    <div class="layout"><div class="main-column">
+      <section class="panel" id="lobby">
+        <h2>참가자 · 대기실</h2><ul id="members" class="member-list"></ul>
+        <div class="toolbar"><button id="ready" type="button">준비하기</button>
+          <button id="changeSeat" type="button" class="secondary">자리 전환</button></div>
+        <div id="hostControls">
+          <h3>방장 · 경기 시작</h3><label>총 라운드 <input id="totalRounds" type="number" min="2" max="120" value="6"></label>
+          <label>제한 시간(초) <input id="duration" type="number" min="10" max="600" value="80"></label>
+          <button id="startMatch" type="button">회전 출제 시작</button>
+          <h3>플레이어 / 관전자 초대</h3>
+          <div class="toolbar"><select id="inviteRole"><option value="PLAYER">플레이어</option><option value="SPECTATOR">관전자</option></select>
+            <button id="invite" type="button" class="secondary">초대 링크 만들기</button></div>
+          <output id="inviteOutput" class="break"></output>
+          <button id="copyInvite" type="button" class="secondary" hidden>복사</button>
+        </div>
+      </section>
+      <section class="panel" id="drawPane" hidden>
+        <h2 id="roundTitle">Drawing</h2>
+        <p id="roundInfo" class="muted"></p>
+        <div id="promptBox" hidden><strong>출제자 전용 제시어: <span id="secretAnswer"></span></strong></div>
+        <div class="canvas-frame"><canvas id="art" width="960" height="560" aria-label="그림 캔버스"></canvas></div>
+        <div class="toolbar"><button type="button" id="clearCanvas" class="secondary">전체 지우기</button>
+          <button type="button" id="endRound" class="secondary">라운드 종료</button>
+          <span id="canvasStatus" class="muted">Canvas 연결 확인 중…</span></div>
+        <form id="nextRound"><h3>다음 출제자 · 비밀 제시어 입력</h3>
+          <label>정답<input name="answer" maxlength="128" autocomplete="off" required></label>
+          <label>다른 인정 답변(쉼표로 구분)<input name="accepted" maxlength="400" autocomplete="off"></label>
+          <button>다음 라운드 시작</button></form>
+        <form id="guessForm" hidden><h3>정답 맞히기</h3>
+          <div class="toolbar"><input name="guess" maxlength="128" autocomplete="off" required placeholder="정답은 여기에 입력하세요">
+            <button>정답 제출</button></div>
+          <p id="guessResult" class="muted"></p></form>
+        <button id="finishMatch" type="button" hidden>경기 완료</button>
+      </section>
+    </div><aside class="aside">
+      <section class="panel"><h2>점수표</h2><div id="scoreboard">경기 시작 전입니다.</div></section>
+      <section class="panel chat">
+        <h2>룸 채팅</h2><p class="muted">채팅은 정답 판정에 사용하지 않습니다.</p>
+        <ul id="messages" class="messages"></ul>
+        <form id="chatForm" class="toolbar"><input name="text" maxlength="500" required autocomplete="off" placeholder="대화 입력">
+          <button type="submit" class="secondary">전송</button></form>
+      </section>
+    </aside></div>
+  </div>
+</main></body></html>
