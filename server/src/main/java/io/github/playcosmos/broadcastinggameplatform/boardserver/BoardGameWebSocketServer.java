@@ -641,6 +641,11 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         return sent;
     }
 
+    /** Trusted HTTP Canvas writes can notify legacy read-only subscribers. */
+    public boolean broadcastDrawingEvent(String drawingCode,String json) {
+        return broadcastDrawing(drawingCode,json);
+    }
+
     private boolean broadcastDrawing(String drawingCode, String json) {
         boolean sent = false;
         for (var entry : channelByConnection.entrySet()) {
