@@ -131,8 +131,10 @@ public final class GameRoomDrawingR5HttpProbe {
                 "other PLAYER state cannot leak answer or canvas credential");
             var spectatorView=send(client,base,ROOT+"/drawing","GET",null,viewer,null);
             check(spectatorView.statusCode()==200
-                && !spectatorView.body().contains("비밀정답"),
-                "spectator room and canvas state cannot reveal answer");
+                && !spectatorView.body().contains("비밀정답")
+                && !spectatorView.body().contains("actorId")
+                && !spectatorView.body().contains("drawerToken"),
+                "spectator public state excludes prompt, actor IDs and drawer secret");
             check(send(client,base,ROOT+"/drawing/drawer-recovery","POST",
                 "{}",guest,null).statusCode()==403,
                 "other player cannot recover secret drawer token");
