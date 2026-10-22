@@ -8,5 +8,7 @@ CREATE TABLE game_room_drawing_link (
   drawing_room_id TEXT UNIQUE REFERENCES drawing_guess_room(room_id),
   match_id TEXT UNIQUE REFERENCES drawing_guess_match(match_id),
   drawer_policy TEXT NOT NULL CHECK(drawer_policy IN ('STREAMER_DRAWER','ROTATING_DRAWER')),
+  configured_rounds INTEGER NOT NULL CHECK(configured_rounds BETWEEN 1 AND 200),
+  duration_seconds INTEGER NOT NULL CHECK(duration_seconds BETWEEN 10 AND 600),
   created_at TEXT NOT NULL
 );
