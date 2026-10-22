@@ -61,7 +61,7 @@ public final class GameRoomDrawingR5HttpProbe {
             var base=URI.create("http://127.0.0.1:"+clientPort);
             var client=HttpClient.newHttpClient();
             check(request(client,base,"/games/drawing-guess/room/","GET",
-                null,null,null,null).body().contains("R5 independent UI"),
+                null,null,null,null,null).body().contains("R5 independent UI"),
                 "new room client not embedded in admin or OBS path");
             var roomBody="""
                 {"gameId":"drawing_guess","name":"Room type",
