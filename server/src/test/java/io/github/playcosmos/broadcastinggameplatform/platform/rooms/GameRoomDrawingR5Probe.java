@@ -83,6 +83,13 @@ public final class GameRoomDrawingR5Probe {
             check(!first.game().toString().contains("apple")
                 && !first.game().toString().contains("drawerToken"),
                 "member public game state does not expose private answer");
+            // The shared-room drawer can draw only with a live member session;
+            // a native canvas token must not bypass a kick via legacy WS.
+            var nativeCanvasToken=canvas.reissueDrawerToken(
+                first.game().activeRound().roundId());
+            check(!canvas.isAuthorizedDrawer(nativeCanvasToken.drawingCode(),
+                    nativeCanvasToken.drawerToken()),
+                "shared-room native drawer token cannot authorize legacy WS write");
             forbidden(()->adapter.draw(player.token(),
                 "{\"type\":\"canvas.clear\",\"payload\":{}}"),
                 "other player cannot write active canvas");
