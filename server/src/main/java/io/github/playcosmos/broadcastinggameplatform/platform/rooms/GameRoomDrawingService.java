@@ -105,23 +105,29 @@ public final class GameRoomDrawingService {
                 }
                 DrawerPolicy committed=requested;
                 try(var lookup=connection.prepareStatement("""
-                    SELECT drawer_policy FROM game_room_drawing_link WHERE room_id=?
+                    SELECT drawer_policy,configured_rounds,duration_seconds
+                    FROM game_room_drawing_link WHERE room_id=?
                     """)) {
                     lookup.setString(1,room.roomId());
                     try(var rows=lookup.executeQuery()) {
                         if(rows.next()) {
                             committed=DrawerPolicy.valueOf(rows.getString(1));
-                            if(committed!=requested)
-                                throw new GameRoomService.RoomConflict("mode already frozen");
+                            if(committed!=requested || rows.getInt(2)!=rounds
+                                || rows.getInt(3)!=seconds)
+                                throw new GameRoomService.RoomConflict(
+                                    "match configuration already frozen");
                         } else {
                             try(var insert=connection.prepareStatement("""
                                 INSERT INTO game_room_drawing_link(
-                                  room_id,drawing_room_id,match_id,drawer_policy,created_at
-                                ) VALUES (?,NULL,NULL,?,?)
+                                  room_id,drawing_room_id,match_id,drawer_policy,
+                                  configured_rounds,duration_seconds,created_at
+                                ) VALUES (?,NULL,NULL,?,?,?,?)
                                 """)){
                                 insert.setString(1,room.roomId());
                                 insert.setString(2,requested.name());
-                                insert.setString(3,Instant.now().toString());
+                                insert.setInt(3,rounds);
+                                insert.setInt(4,seconds);
+                                insert.setString(5,Instant.now().toString());
                                 insert.executeUpdate();
                             }
                         }
@@ -217,7 +223,7 @@ public final class GameRoomDrawingService {
         int next=repository.nextRoundIndex(game.activeMatch().matchId());
         if(next>=game.activeMatch().totalRounds())
             throw new GameRoomService.RoomConflict("match rounds exhausted");
-        String drawer=expectedDrawer(room,binding.mode(),next);
+        String drawer=expectedDrawer(room,binding,next);
         if(!drawer.equals(principal.memberId()))
             throw new GameRoomAccessService.Forbidden("not selected drawer");
         drawing.startRound(game.activeMatch().matchId(),
@@ -342,9 +348,11 @@ public final class GameRoomDrawingService {
         }
     }
 
-    private static String expectedDrawer(Room room,DrawerPolicy policy,int index) {
+    private String expectedDrawer(Room room,Binding binding,int index)
+        throws SQLException {
+        if(binding.mode()==DrawerPolicy.STREAMER_DRAWER)
+            return repository.findRoom(binding.nativeRoomId()).streamerParticipantId();
         var roster=players(room);
-        if(policy==DrawerPolicy.STREAMER_DRAWER)return room.ownerMemberId();
         return roster.get(index % roster.size()).memberId();
     }
 
