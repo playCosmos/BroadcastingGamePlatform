@@ -294,6 +294,9 @@ public final class GameRoomDrawingService {
     public Snapshot completeRound(String token)throws SQLException {
         var principal=access.authenticate(token);
         var room=access.room(token);
+        if(!connected(room,principal.memberId()))
+            throw new GameRoomAccessService.Forbidden(
+                "disconnected member cannot complete round");
         Binding binding=required(room);
         var match=repository.findActiveMatchByRoom(binding.nativeRoomId());
         if(match==null)throw new GameRoomService.RoomConflict("match ended");
