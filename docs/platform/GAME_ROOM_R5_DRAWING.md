@@ -38,7 +38,10 @@
 ## 검증·한계
 
 - `GameRoomDrawingR5HttpProbe`: 실제 HTTP에서 관리자 생성 → PLAYER 2명 READY → 비방장 시작 거절 → 순환 출제 2라운드 → 차례 아닌 출제자·관전자 비밀 차단 → 정답/중복 점수 검사 → Canvas 권한 복구 → POST_GAME 및 SQLite 재시작 복구.
+- `web/games/drawing-guess/play-probe.js`: HTML 컨트롤/권한 바인딩, 스트로크 작성·전송, 룸/정답 채팅 분리, 실시간 창·비밀 취급 검증. `server/check-browser-javascript.ps1`에서 정적 UI/JS 검사를 수행한다.
+- Windows 배포 패키지에 독립 `play.html`, `play.css`, `play.js`가 포함되는지 검증하며 기존 `/games/drawing-guess/` 방송 오버레이는 유지한다.
 - Yacht R4/Room R1–R3/기존 Drawing D2 및 Board 회귀 검사, V35 DB 백업 마이그레이션과 Windows 빌드를 유지.
-- R5의 첫 단계는 **회원 인증 엔진·HTTP 연결 중심**. 다중 장치에서 실제 Canvas 도구와 게임 UI 연계, 실시간 회원 라운드 이벤트 자동 갱신은 별도 브라우저 클라이언트 후속 작업으로 남는다. 이는 전체 R5 사용자 플레이 완성을 뜻하지 않는다.
+- **독립 베타 브라우저 화면 추가**: `/games/drawing-guess/play.html` (`play.js`, `play.css`). 메인 게임 선택에서 기존 방송형 관리자 UI와 별도 링크로 진입한다. 관리자 세션으로 룸 최초 개설, 초대 토큰으로 다중 플레이어/관전자 입장, READY·좌석·방장 초대, 현재 출제자만 제시어와 Canvas 쓰기, 나머지 참가자 그림 관전/정답 입력, R3 채팅, 스코어보드 표시를 지원한다. 그림 전송은 레거시 DrawingSyncService의 canvas 메시지 스키마를 사용한다.
+- **브라우저 검증 한계**: JavaScript 문법, 정적 UI 계약, 회원 HTTP 2라운드 통합과 Canvas 토큰 검증을 자동화했으나 실제 사람의 멀티디바이스 터치/펜 표시, 렌더링 시각 품질, WSS 프록시 경유 테스트를 완료했다고 주장하지 않는다. 해당 QA는 베타 수용 게이트로 남는다.
 - 기존 Drawing Guess 룸 생성은 create-key idempotency를 제공하지 않는다. R5 시작 도중 프로세스가 강제 종료되면 접근 권한 없는 orphan DRAFT 룸이 남을 수 있다. 자동 정리/동시 프로세스 경쟁 완전 차단은 후속 안정화 항목으로 명확하게 기록한다.
 - 실제 멀티 스트리머 SOOP 참여자와 공통 회원 ID의 신원 바인딩, 여러 화가가 하나의 캔버스를 동시에 공유하는 이어그리기는 **R6/R7**이다.
