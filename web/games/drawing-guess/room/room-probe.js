@@ -57,7 +57,7 @@ for(const path of [
   '"/drawing/guess"','"/drawing/canvas"','"/drawing/complete-round"',
   '"/drawing/finish"','"/chat"'
 ]) has(js,path,"canonical member API "+path);
-has(js,'mode:$("#mode")', "server-defined mode submitted");
+has(js,'mode:$("mode").value',"server-defined mode submitted");
 has(js,'configuredRounds>0',"frozen startup settings recovered");
 has(js,'String(snapshot.configuredRounds)',"original round count restored");
 has(js,'String(snapshot.durationSeconds)',"original duration restored");
