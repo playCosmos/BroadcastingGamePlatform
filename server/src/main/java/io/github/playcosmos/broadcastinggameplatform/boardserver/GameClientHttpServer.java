@@ -3097,6 +3097,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             "/games/drawing-guess/".length()
         );
         if (relative.isBlank()) relative = "index.html";
+        if ("room/".equals(relative)) relative = "room/index.html";
         Path allowedRoot = webRoot
             .resolve("games/drawing-guess")
             .normalize();
