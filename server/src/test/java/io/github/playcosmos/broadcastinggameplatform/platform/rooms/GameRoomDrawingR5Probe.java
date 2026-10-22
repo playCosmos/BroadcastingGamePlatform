@@ -70,6 +70,8 @@ public final class GameRoomDrawingR5Probe {
             conflict(()->access.join(access.invite(host,SeatRole.PLAYER,1,
                 Duration.ofMinutes(1)).token(),"Late"),
                 "no midgame player admission");
+            conflict(()->access.kick(host,player.memberId()),
+                "active player cannot be removed from frozen drawer rotation");
             var extraViewer=access.join(access.invite(host,SeatRole.SPECTATOR,1,
                 Duration.ofMinutes(1)).token(),"Late Viewer");
             check(adapter.state(extraViewer.token()).room().memberCount()==4,
