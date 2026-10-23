@@ -61,7 +61,7 @@ has(js,'cache:"no-store"',"game requests not cached");
 has(js,'const API="/api/v1/room-membership"',"member API exclusively");
 for(const path of [
   '"/public/hosted"','"/public/join"','"/public/rooms?gameId=drawing_guess"',
-  '"/join"','"/host/invite"','"/me/ready"','"/me/seat"'
+  '"/join"','"/host/invite"','"/me/ready"','"/me/seat"',
   '"/drawing/start"','"/drawing/round"','"/drawing/my-prompt"',
   '"/drawing/guess"','"/drawing/canvas"','"/drawing/complete-round"',
   '"/drawing/finish"','"/chat"'
