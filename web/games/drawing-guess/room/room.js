@@ -38,6 +38,38 @@
   const ctx=$("canvas").getContext("2d");
   const strokes=new Map();
 
+  async function loadPublicRooms(){
+    const listing=await request("/public/rooms?gameId=drawing_guess","GET",null,"");
+    const list=$("publicRooms");
+    list.replaceChildren();
+    if(!listing.rooms.length){
+      const li=document.createElement("li");
+      li.textContent="현재 공개방이 없습니다.";
+      list.append(li);
+      return;
+    }
+    for(const room of listing.rooms){
+      const li=document.createElement("li");
+      const button=document.createElement("button");
+      const details=document.createElement("span");
+      details.textContent=room.roomName+" · "+room.roomCode+
+        " · 인원 "+room.memberCount+"/"+room.maxRoomMembers+
+        " · 플레이어 "+room.playerCount+"/"+room.maxPlayers;
+      button.type="button";
+      button.className="secondary";
+      button.textContent="선택";
+      button.addEventListener("click",()=>{
+        $("publicJoinForm").elements.roomCode.value=room.roomCode;
+        $("publicJoinForm").elements.seatRole.value=
+          room.state==="PLAYING"||room.playerCount>=room.maxPlayers
+            ?"SPECTATOR":"PLAYER";
+        $("publicJoinForm").elements.displayName.focus();
+      });
+      li.append(details,button);
+      list.append(li);
+    }
+  }
+
   function operation(action){
     if(busy)return;
     busy=true;
@@ -338,7 +370,7 @@
       const maxRoomMembers=Number(form.get("maxRoomMembers"));
       if(maxRoomMembers<maxPlayers)
         throw new Error("방 최대 정원은 플레이어 정원 이상이어야 합니다.");
-      const room=await request("/hosted","POST",{
+      const room=await request("/public/hosted","POST",{
         gameId:"drawing_guess",name:form.get("name"),
         displayName:form.get("displayName"),
         hostSeat:form.has("hostPlays")?"PLAYER":"SPECTATOR",
@@ -347,6 +379,22 @@
       await refresh();
     });
   });
+  $("publicJoinForm").addEventListener("submit",event=>{
+    event.preventDefault();operation(async()=>{
+      const form=new FormData(event.currentTarget);
+      const code=String(form.get("roomCode")||"").trim().toUpperCase();
+      const member=await request("/public/join","POST",{
+        gameId:"drawing_guess",roomCode:code,
+        displayName:form.get("displayName"),
+        seatRole:form.get("seatRole")},"");
+      accept(member.token);
+      history.replaceState(null,"",location.pathname);
+      say("공개방에 입장했습니다.");await refresh();
+    });
+  });
+  $("refreshPublicRooms").addEventListener("click",()=>operation(
+    async()=>{await loadPublicRooms();say("공개방 목록을 새로고침했습니다.");}
+  ));
   $("joinForm").addEventListener("submit",event=>{
     event.preventDefault();operation(async()=>{
       const form=new FormData(event.currentTarget);
@@ -431,8 +479,11 @@
     show("room",false);show("admission",true);
     say("룸에서 퇴장했습니다.");
   }));
-  const invite=new URLSearchParams(location.hash.slice(1)).get("invite");
+  const admissionHash=new URLSearchParams(location.hash.slice(1));
+  const invite=admissionHash.get("invite");
   if(invite)$("joinForm").elements.invitation.value=invite;
+  const publicCode=admissionHash.get("room");
+  if(publicCode)$("publicJoinForm").elements.roomCode.value=publicCode;
   if(secret){show("admission",false);show("room",true);refresh();}
   else {
     try{
@@ -440,5 +491,6 @@
         say("이전 참가 세션이 종료되었습니다. 새 참가 시에도 서버의 입장 정책이 적용됩니다.",true);
     }catch{/* storage unavailable */}
   }
+  if(!secret)loadPublicRooms().catch(e=>say(e.message,true));
   setInterval(()=>{if(secret)refresh();},3000);
 })();

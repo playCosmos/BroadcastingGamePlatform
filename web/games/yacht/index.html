@@ -15,11 +15,11 @@
         <p class="subtitle">독립 멀티플레이 게임 · 최대 3회 주사위 · 13개 점수 항목</p></div>
       <a class="home-link" href="/">게임 선택으로 돌아가기 ↗</a>
     </header>
-    <div id="notice" class="notice" role="status" aria-live="polite">룸을 만들거나 초대 링크로 입장하세요.</div>
+    <div id="notice" class="notice" role="status" aria-live="polite">계정 없이 공개방을 만들거나 방 코드·초대 링크로 바로 입장하세요.</div>
     <section id="admission" class="entry grid-two">
       <form id="createRoom" class="panel">
-        <p class="eyebrow">HOST / ADMIN SESSION</p><h2>새 룸 생성</h2>
-        <p class="muted">게임룸 생성은 플랫폼 관리자 로그인이 필요합니다. 실제 플레이는 별도 회원 권한으로 진행됩니다.</p>
+        <p class="eyebrow">GUEST / PUBLIC HOST</p><h2>공개방 생성</h2>
+        <p class="muted">로그인 없이 방을 만들고 플레이할 수 있습니다. 방 코드만 공유하면 즉시 입장할 수 있습니다.</p>
         <label>방 이름<input name="name" maxlength="100" required value="Yacht Room"></label>
         <label>표시 이름<input name="displayName" maxlength="80" required placeholder="방장 닉네임"></label>
         <div class="grid-two tight">
@@ -29,9 +29,20 @@
         <label class="checkline"><input type="checkbox" name="hostPlays" checked> 방장도 직접 플레이</label>
         <button type="submit" class="primary">룸 생성</button>
       </form>
+      <section class="panel"><p class="eyebrow">PUBLIC ROOMS</p><h2>공개방 입장</h2>
+        <p class="muted">방 코드를 입력하거나 목록에서 선택하세요. 방장 승인은 필요하지 않습니다.</p>
+        <form id="publicJoinRoom">
+          <label>방 코드<input name="roomCode" minlength="6" maxlength="6" required autocomplete="off" spellcheck="false" placeholder="6자리 코드"></label>
+          <label>표시 이름<input name="displayName" maxlength="80" required placeholder="참가 닉네임"></label>
+          <label>참가 역할<select name="seatRole"><option value="PLAYER">플레이어</option><option value="SPECTATOR">관전자</option></select></label>
+          <button type="submit" class="primary">공개방 입장</button>
+        </form>
+        <div class="toolbar"><h3>현재 공개방</h3><button type="button" id="refreshPublicRooms" class="secondary">목록 새로고침</button></div>
+        <ul id="publicRooms" class="roster" aria-live="polite"></ul>
+      </section>
       <form id="joinRoom" class="panel">
         <p class="eyebrow">INVITED PLAYER / SPECTATOR</p><h2>초대받아 입장</h2>
-        <p class="muted">방장에게서 받은 초대 토큰 또는 초대 링크가 필요합니다. 룸 코드만으로는 입장할 수 없습니다.</p>
+        <p class="muted">비공개방은 기존 초대 링크를 사용합니다. 별도의 방장 승인은 필요하지 않습니다.</p>
         <label>초대 토큰<input name="invitation" autocomplete="off" spellcheck="false" required placeholder="초대 링크의 토큰"></label>
         <label>표시 이름<input name="displayName" maxlength="80" required placeholder="참가 닉네임"></label>
         <button type="submit" class="primary">입장하기</button>
