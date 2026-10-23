@@ -36,6 +36,9 @@ public final class GameRoomAccessService {
     private static final Base64.Encoder TOKEN_ENCODER =
         Base64.getUrlEncoder().withoutPadding();
     private static final Duration MEMBER_TTL = Duration.ofDays(7);
+    private static final Duration PUBLIC_LOBBY_IDLE = Duration.ofMinutes(90);
+    private static final Duration PUBLIC_POST_GAME_IDLE = Duration.ofMinutes(30);
+    private static final Duration PUBLIC_HEARTBEAT_INTERVAL = Duration.ofMinutes(1);
     private static final Duration MAX_INVITE_TTL = Duration.ofDays(7);
     private static final int MAX_INVITE_USES = 256;
     private final GameRoomService rooms;
@@ -119,11 +122,12 @@ public final class GameRoomAccessService {
                 displayName,hostSeat,maxPlayers,maxMembers);
             if(publiclyJoinable) {
                 try(var insert=connection.prepareStatement("""
-                    INSERT INTO game_room_public(room_id,created_at)
-                    VALUES(?,?)
+                    INSERT INTO game_room_public(room_id,created_at,last_active_at)
+                    VALUES(?,?,?)
                     """)) {
                     insert.setString(1,room.roomId());
                     insert.setString(2,clock.instant().toString());
+                    insert.setString(3,clock.instant().toString());
                     insert.executeUpdate();
                 }
             }
@@ -204,8 +208,144 @@ public final class GameRoomAccessService {
                 "guest-"+UUID.randomUUID(),displayName,role,
                 clock.instant().toString());
             rooms.bump(connection,room);
+            markPublicActivity(connection,roomId);
             return issueSession(connection,roomId,memberId);
         });
+    }
+
+    /**
+     * Public room liveness is only refreshed by an authenticated, JOINED
+     * member. Anonymous directory traffic cannot prevent idle expiry. The
+     * separate heartbeat column avoids game room version churn while clients
+     * poll every 3 seconds.
+     */
+    public void heartbeat(String token) throws SQLException {
+        rooms.write(connection -> {
+            Principal principal=requireSession(connection,token);
+            Room room=GameRoomService.read(connection,principal.roomId());
+            Member member=member(room,principal.memberId());
+            if(member.status()!=MemberStatus.JOINED)
+                throw new Forbidden("connected member required");
+            if(room.state()!=GameRoomModels.RoomState.OPEN_LOBBY
+                && room.state()!=GameRoomModels.RoomState.POST_GAME) return null;
+            try(var stmt=connection.prepareStatement("""
+                UPDATE game_room_public SET last_active_at=?
+                WHERE room_id=?
+                  AND (last_active_at IS NULL OR last_active_at<?)
+                """)) {
+                stmt.setString(1,now());
+                stmt.setString(2,room.roomId());
+                stmt.setString(3,clock.instant()
+                    .minus(PUBLIC_HEARTBEAT_INTERVAL).toString());
+                stmt.executeUpdate();
+            }
+            return null;
+        });
+    }
+
+    /**
+     * Host explicitly closes an inactive/finished room; never silently abort
+     * an active match. All room sessions and invites are revoked atomically.
+     */
+    public Room closeRoom(String hostToken) throws SQLException {
+        Room closed=rooms.write(connection -> {
+            Principal host=requireHost(connection,hostToken);
+            Room current=GameRoomService.read(connection,host.roomId());
+            if(current.state()==GameRoomModels.RoomState.PLAYING)
+                throw new GameRoomService.RoomConflict(
+                    "finish active match before closing room");
+            if(current.state()==GameRoomModels.RoomState.CLOSED)
+                throw new GameRoomService.RoomConflict("room already closed");
+            closeRoomInTransaction(connection,current);
+            return GameRoomService.read(connection,current.roomId());
+        });
+        signalRoomClosed(closed);
+        return closed;
+    }
+
+    /**
+     * Transactional pruning of abandoned PUBLIC lobbies and completed rooms.
+     * Never expires PLAYING matches or existing invite-only rooms. Valid
+     * heartbeat writes serialize with pruning through BEGIN IMMEDIATE.
+     */
+    public int expireIdlePublicRooms() throws SQLException {
+        List<Room> expired=rooms.write(connection -> {
+            var stale=new ArrayList<Room>();
+            try(var stmt=connection.prepareStatement("""
+                SELECT r.room_id
+                FROM game_room r
+                JOIN game_room_public pub ON pub.room_id=r.room_id
+                WHERE (r.state='OPEN_LOBBY'
+                         AND pub.last_active_at<?)
+                   OR (r.state='POST_GAME'
+                         AND pub.last_active_at<?)
+                ORDER BY pub.last_active_at ASC LIMIT 128
+                """)) {
+                stmt.setString(1,clock.instant().minus(PUBLIC_LOBBY_IDLE).toString());
+                stmt.setString(2,clock.instant().minus(PUBLIC_POST_GAME_IDLE).toString());
+                try(var rows=stmt.executeQuery()) {
+                    while(rows.next())stale.add(
+                        GameRoomService.read(connection,rows.getString(1)));
+                }
+            }
+            for(Room room:stale)closeRoomInTransaction(connection,room);
+            return stale;
+        });
+        for(Room room:expired)signalRoomClosed(room);
+        return expired.size();
+    }
+
+    private void signalRoomClosed(Room room) {
+        for(Member member:room.members())
+            notifyMemberRevoked(room.roomId(),member.memberId());
+    }
+
+    private void closeRoomInTransaction(Connection connection,Room room)
+        throws SQLException {
+        if(room.state()==GameRoomModels.RoomState.PLAYING)
+            throw new GameRoomService.RoomConflict("active game protected");
+        try(var stmt=connection.prepareStatement("""
+            UPDATE game_room SET state='CLOSED'
+            WHERE room_id=? AND state IN ('OPEN_LOBBY','POST_GAME')
+            """)) {
+            stmt.setString(1,room.roomId());
+            if(stmt.executeUpdate()!=1)
+                throw new GameRoomService.RoomConflict("room cannot close");
+        }
+        try(var stmt=connection.prepareStatement("""
+            UPDATE game_room_member
+            SET membership_status='LEFT',ready=0,grace_expires_at=NULL
+            WHERE room_id=?
+              AND membership_status IN ('JOINED','DISCONNECTED_GRACE')
+            """)) {
+            stmt.setString(1,room.roomId());stmt.executeUpdate();
+        }
+        try(var stmt=connection.prepareStatement("""
+            UPDATE game_room_session SET revoked_at=?
+            WHERE room_id=? AND revoked_at IS NULL
+            """)) {
+            stmt.setString(1,now());stmt.setString(2,room.roomId());
+            stmt.executeUpdate();
+        }
+        try(var stmt=connection.prepareStatement("""
+            UPDATE game_room_invite SET revoked_at=?
+            WHERE room_id=? AND revoked_at IS NULL
+            """)) {
+            stmt.setString(1,now());stmt.setString(2,room.roomId());
+            stmt.executeUpdate();
+        }
+        rooms.bump(connection,room);
+    }
+
+    private void markPublicActivity(Connection connection,String roomId)
+        throws SQLException {
+        try(var stmt=connection.prepareStatement("""
+            UPDATE game_room_public SET last_active_at=? WHERE room_id=?
+            """)) {
+            stmt.setString(1,now());
+            stmt.setString(2,roomId);
+            stmt.executeUpdate();
+        }
     }
 
     public Principal authenticate(String token) throws SQLException {
@@ -312,6 +452,7 @@ public final class GameRoomAccessService {
                 }
             }
             rooms.bump(connection, room);
+            markPublicActivity(connection,roomId);
             return issueSession(connection, roomId, memberId);
         });
     }
