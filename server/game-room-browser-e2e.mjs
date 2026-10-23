@@ -16,6 +16,7 @@ const cp=process.env.GAME_ROOM_PROBE_CLASSPATH
     ||["target/test-classes","target/classes","target/probe-dependencies/*"].join(
         process.platform==="win32"?";":":");
 let server,chrome,cdp,userDir,tlsProxy,checks=0;
+const tlsConnections=new Set();
 const failures=[];
 const nap=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function poll(action,label,timeout=15000){
@@ -239,6 +240,10 @@ async function launchTlsProxy(base,ws){
             res.end("proxy failure");
         });
         req.pipe(upstream);
+    });
+    tlsProxy.on("connection",socket=>{
+        tlsConnections.add(socket);
+        socket.on("close",()=>tlsConnections.delete(socket));
     });
     tlsProxy.on("upgrade",(request,browserSocket,head)=>{
         const upstream=net.connect(Number(upstreamWs.port),"127.0.0.1");
@@ -532,7 +537,9 @@ catch(error){
     throw error;
 }finally{
     if(cdp?.socket?.readyState===WebSocket.OPEN)cdp.socket.close();
+    if(chrome&&!chrome.killed)chrome.kill();
+    for(const socket of tlsConnections)socket.destroy();
     if(tlsProxy)await new Promise(resolve=>tlsProxy.close(resolve));
-    for(const p of [chrome,server])if(p&&!p.killed){p.kill();}
+    if(server&&!server.killed)server.kill();
     if(userDir)await rm(userDir,{recursive:true,force:true,maxRetries:4,retryDelay:150});
 }
