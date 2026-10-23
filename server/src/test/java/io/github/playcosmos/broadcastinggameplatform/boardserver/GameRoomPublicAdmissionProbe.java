@@ -171,6 +171,43 @@ public final class GameRoomPublicAdmissionProbe {
             check(fresh.publicRooms("drawing_guess").stream()
                 .noneMatch(p->p.roomCode().equals(privateCode)),
                 "private room remains hidden after SQLite restart");
+            check(send(client,base,API+"/host/close","POST","{}",
+                base.toString(),null,spectatorToken).statusCode()==403,
+                "non-host cannot close a public game room");
+            check(send(client,base,API+"/host/close","POST","{}",
+                "https://attacker.invalid",null,host).statusCode()==403,
+                "cross-origin host closure denied");
+            var ticket=send(client,base,API+"/host/invite","POST",
+                "{\"seatRole\":\"PLAYER\",\"maxUses\":1,\"expiresInSeconds\":3600}",
+                base.toString(),null,host);
+            check(ticket.statusCode()==201,"host can issue invite before closing");
+            String closeInvite=json(ticket).get("token").getAsString();
+            var closeResult=send(client,base,API+"/host/close","POST","{}",
+                base.toString(),null,host);
+            check(closeResult.statusCode()==200
+                && closeResult.body().contains("\"state\":\"CLOSED\"")
+                && closeResult.body().contains("\"memberCount\":0"),
+                "host close atomically empties room and marks CLOSED");
+            check(send(client,base,API+"/me","GET",null,null,null,host)
+                .statusCode()==403
+                && send(client,base,API+"/me","GET",null,null,null,spectatorToken)
+                    .statusCode()==403,
+                "public host and spectator bearers both revoked");
+            check(send(client,base,API+"/join","POST",
+                "{\"invitation\":\""+closeInvite+"\",\"displayName\":\"late\"}",
+                base.toString(),null,null).statusCode()==403,
+                "host closure revokes previously issued invitations");
+            check(send(client,base,API+"/public/join","POST",
+                join(code,"Late visitor","SPECTATOR"),base.toString(),null,null)
+                .statusCode()==409,
+                "closed public room denies new code admission");
+            check(!send(client,base,API+"/public/rooms?gameId=drawing_guess",
+                "GET",null,null,null,null).body().contains(code),
+                "closed public room is removed from discovery");
+            check(send(client,base,API+"/me","GET",null,null,null,
+                json(privateRoom).get("token").getAsString()).statusCode()==200,
+                "unrelated private room remains usable after public close");
+
             System.out.println("GAME_ROOM_PUBLIC_ADMISSION_PASSED checks="+checks+
                 " guest_host=equal public_directory=private_hidden"+
                 " direct_join=role_and_capacity_checked kick=revoked"+

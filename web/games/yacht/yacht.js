@@ -167,6 +167,7 @@
     text("playerPopulation", "플레이어 " + room.playerCount + " / " + room.maxPlayers + "명");
     const me = room.members.find(m => m.memberId === state.memberId);
     const host = Boolean(me?.isHost), joined = me?.status === "JOINED";
+    visible("closeRoom",host && room.state!=="PLAYING");
     const pregame = room.state === "OPEN_LOBBY";
     const interruptedStart = room.state === "PLAYING" && !state.yacht;
     text("lobbyHint", pregame
@@ -460,6 +461,18 @@
       await refreshChat();
     });
   });
+  $("closeRoom").addEventListener("click",()=>operation(async()=>{
+    if(!confirm("게임룸을 닫습니까? 모든 참가자 연결과 초대권이 종료됩니다."))return;
+    await request("/host/close","POST",{});
+    token="";state=null;
+    sessionStorage.removeItem(STORE);
+    memberSocket?.close();gameSocket?.close();
+    memberSocket=gameSocket=null;
+    configuredRoom="";configuredYacht="";
+    visible("game",false);visible("admission",true);
+    notice("방을 닫았습니다.");
+    await loadPublicRooms();
+  }));
   $("leaveRoom").addEventListener("click", () => operation(async () => {
     if (!confirm("게임룸에서 퇴장합니까? 방장은 먼저 다른 참가자에게 방장을 위임해야 합니다.")) return;
     await request("/me/leave","POST",{});

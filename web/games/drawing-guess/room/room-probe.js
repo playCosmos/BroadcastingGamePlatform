@@ -19,7 +19,7 @@ function no(text,substring,description=substring) {
 for(const name of [
   "admission","createForm","publicJoinForm","refreshPublicRooms",
   "publicRooms","joinForm","room","roomName","roomCode","roomPhase",
-  "roomCapacity","leave","lobby","members","ready","seat","hostSettings",
+  "roomCapacity","closeRoom","leave","lobby","members","ready","seat","hostSettings",
   "mode","rounds","duration","start","inviteBox","inviteRole","inviteUses",
   "invite","inviteOutput","copyInvite","play","roundHeading","roundDetails",
   "completeRound","finishMatch","promptForm","drawerWord","canvas","canvasHelp",
@@ -68,6 +68,8 @@ for(const path of [
 ]) has(js,path,"canonical member API "+path);
 has(js,'mode:$("mode").value',"server-defined mode submitted");
 has(js,'roomCode:code',"room admission uses typed public code");
+has(js,'show("closeRoom",isHost() && room.state!=="PLAYING")',"host cannot close an active match in UI");
+has(js,'request("/host/close","POST",{})',"host close uses member-scoped HTTP");
 has(js,'seatRole:form.get("seatRole")',"guest controls own player/spectator seat");
 has(js,'details.textContent=room.roomName',"directory room name rendered as safe text");
 has(js,'await loadPublicRooms()',"user can reload public directory");
