@@ -196,15 +196,17 @@ async function backend(page,path,method="GET",body=null,token=null){
 async function userToken(page,key){
     return cdp.eval(page,"sessionStorage.getItem("+JSON.stringify(key)+")");
 }
-async function startMemberObserver(page,roomId,memberToken,wsBase){
+async function startMemberObserver(page,roomId,memberToken,wsBase,
+    afterSequence=-1){
     return cdp.eval(page,`(async()=>{
         const url=${JSON.stringify(wsBase)}+"?memberRoomId="+
             encodeURIComponent(${JSON.stringify(roomId)});
         const token=${JSON.stringify(memberToken)};
+        const afterSequence=${JSON.stringify(afterSequence)};
         const ws=new WebSocket(url);
         window.__roomObserver={code:-1,events:[],ws};
         ws.addEventListener("open",()=>{
-            ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence:-1}));
+            ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence}));
         });
         ws.addEventListener("message",ev=>window.__roomObserver.events.push(ev.data));
         ws.addEventListener("close",ev=>window.__roomObserver.code=ev.code);
@@ -359,6 +361,63 @@ async function recoverCanvasWssAfterAbruptDrop(mobile,viewer,hostToken,
     await poll(async()=>await cdp.eval(viewer,
         "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
         "reloaded browser authorizes fresh member-only WSS subscribe");
+}
+
+/**
+ * Reproduce an abrupt member-room transport loss and verify that durable chat
+ * is replayed once from its monotonic cursor, while the user UI and bearer
+ * survive the network outage. No new identity or extra member seat is issued.
+ */
+async function recoverMemberWssAfterAbruptDrop(mobile,viewer,hostToken,
+    viewerToken,tls){
+    const state=await backend(viewer,"/me","GET",null,viewerToken);
+    check(state.status===200,"guest remains joined after Canvas recovery");
+    const roomId=state.data.room.roomId;
+    const fragment="memberRoomId="+encodeURIComponent(roomId);
+    await poll(()=>activeUpgrades(fragment).length>=2,
+        "host and guest member-room sockets active prior to network cut");
+    const oldIds=new Set(activeUpgrades(fragment).map(([id])=>id));
+    check(dropUpgrades(fragment)>=2,
+        "force-drop live member WS upgrades without a clean close frame");
+    const messageId="r10recover-"+Date.now().toString(36);
+    const text="recovered-once-"+messageId;
+    const posted=await backend(mobile,"/chat","POST",{messageId,text},hostToken);
+    check(posted.status===201 && Number(posted.data.sequence)>0,
+        "host chat persists during WSS outage");
+    await poll(()=>activeUpgrades(fragment).some(([id])=>!oldIds.has(id)),
+        "member-room socket automatically reopens after unclean disconnect",
+        13000);
+    await poll(async()=>await cdp.eval(viewer,
+        `document.getElementById("chatList").innerText.includes(${JSON.stringify(text)})`),
+        "guest chat UI eventually reconciles missed event");
+    const appearances=await cdp.eval(viewer,`[...document.querySelectorAll(
+        "#chatList li")].filter(x=>x.textContent.includes(
+        ${JSON.stringify(text)})).length`);
+    check(appearances===1,
+        "reconnected browser shows persisted chat exactly once");
+
+    // Test the server's replay contract independently of the periodically
+    // refreshed chat UI, which can legitimately use HTTP as fallback.
+    await startMemberObserver(viewer,roomId,viewerToken,tls.ws,
+        posted.data.sequence-1);
+    await poll(async()=>await cdp.eval(viewer,`window.__roomObserver.events
+        .some(x=>x.includes(${JSON.stringify(messageId)}))`),
+        "replay subscription catches exact missed chat sequence");
+    const count=await cdp.eval(viewer,`window.__roomObserver.events
+        .filter(x=>x.includes(${JSON.stringify(messageId)})).length`);
+    check(count===1,"missed event replay has no duplicates");
+    await cdp.eval(viewer,"window.__roomObserver.ws.close();true");
+    await startMemberObserver(viewer,roomId,viewerToken,tls.ws,
+        posted.data.sequence);
+    await poll(async()=>await cdp.eval(viewer,`window.__roomObserver.events
+        .some(x=>x.includes("room.snapshot"))`),
+        "cursor-resumed room subscription authenticates after outage");
+    await nap(250);
+    check(await cdp.eval(viewer,`window.__roomObserver.events
+        .every(x=>!x.includes(${JSON.stringify(messageId)}))`),
+        "resubscription after acknowledged cursor skips older chat");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"chat replay does not replace guest member credential");
 }
 
 async function mobileWssAcceptance(base,ws){
@@ -542,6 +601,8 @@ async function mobileWssAcceptance(base,ws){
         "mobile touch draw does not scroll page under finger");
     await recoverCanvasWssAfterAbruptDrop(mobile,viewer,mobileToken,
         viewerToken,inkSamples,tls);
+    await recoverMemberWssAfterAbruptDrop(mobile,viewer,mobileToken,
+        viewerToken,tls);
     const outsider=await backend(viewer,"/me","GET",null,viewerToken);
     const member=outsider.data.room.members.find(x=>
         x.displayName==="Secure Viewer");
@@ -701,7 +762,8 @@ async function run(){
     process.stdout.write(prefix+" checks="+checks+
         " browsers=2-contexts drawing=host-join-kick-rejoin-close"+
         " ws=authenticated-revoked yacht=guest-match"+
-        " mobile=390px+touch tls=https+wss credentials=isolated\n");
+        " mobile=390px+touch tls=https+wss recovery=canvas+chat"+ 
+        " credentials=isolated\n");
 }
 try{await run();}
 catch(error){
