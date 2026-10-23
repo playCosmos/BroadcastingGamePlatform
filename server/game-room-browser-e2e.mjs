@@ -385,11 +385,44 @@ async function mobileWssAcceptance(base,ws){
     await touchStroke(mobile,box);
     const drawState=await backend(mobile,"/drawing","GET",null,mobileToken);
     check(drawState.status===200,"mobile drawer retains member permission");
-    await poll(async()=>await cdp.eval(viewer,`(()=>{
-        const c=document.getElementById("canvas");
-        const pixels=c.getContext("2d").getImageData(400,280,1,1).data;
+    const remotePixel=`(()=>{
+        const c=document.getElementById("canvas"),ctx=c.getContext("2d");
+        const pixels=ctx.getImageData(400,280,1,1).data;
         return pixels[0]<130 && pixels[1]<130 && pixels[2]<130;
-    })()`),"spectator canvas replays touch stroke over WSS",13000);
+    })()`;
+    try {
+        await poll(async()=>await cdp.eval(viewer,remotePixel),
+            "spectator canvas replays touch stroke over WSS",13000);
+    }catch(failure){
+        const diagnose=`(()=>{
+            const c=document.getElementById("canvas");
+            const ctx=c.getContext("2d");
+            const steps=[0.15,0.3,0.45,0.6,0.8];
+            return {
+                notice:document.getElementById("notice").textContent,
+                roomState:document.getElementById("roomPhase").textContent,
+                help:document.getElementById("canvasHelp").textContent,
+                pixels:steps.map(v=>{
+                    const rgba=ctx.getImageData(Math.round(v*960),280,1,1).data;
+                    return [v,...rgba];
+                }),
+                activeCanvasSockets:[...performance.getEntriesByType("resource")]
+                    .filter(x=>x.name.includes("drawingCode")).length,
+                rect:(()=>{
+                    const r=c.getBoundingClientRect();
+                    return {x:r.x,y:r.y,w:r.width,h:r.height};
+                })()
+            };
+        })()`;
+        const mobileState=await cdp.eval(mobile,diagnose);
+        const viewerState=await cdp.eval(viewer,diagnose);
+        const serverState=await backend(viewer,"/drawing","GET",null,viewerToken);
+        throw Error(String(failure)+"; mobile="+JSON.stringify(mobileState)+
+            "; viewer="+JSON.stringify(viewerState)+
+            "; game="+JSON.stringify(serverState).slice(0,2200)+
+            "; badHttp="+JSON.stringify(cdp.network.slice(-18))+
+            "; exceptions="+JSON.stringify(cdp.exceptions.slice(-10)));
+    }
     check((await cdp.eval(mobile,"window.scrollY"))===box.scrollY,
         "mobile touch draw does not scroll page under finger");
     const outsider=await backend(viewer,"/me","GET",null,viewerToken);
