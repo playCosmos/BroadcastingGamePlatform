@@ -200,23 +200,36 @@ public final class DrawingSyncService {
         }
     }
 
+    /**
+     * Resolve common-GameRoom drawings from the *server database*, not any
+     * client-declared room ID. A null result denotes a legacy public overlay.
+     * Database errors fail closed; never downgrade a member round to public.
+     */
+    public String memberRoomIdForCode(String code) {
+        State state = activeState(code);
+        return memberRoomIdForRound(state.roundId);
+    }
+
     private boolean isMemberRoomRound(String roundId) {
-        if (database == null) return false;
+        return memberRoomIdForRound(roundId) != null;
+    }
+
+    private String memberRoomIdForRound(String roundId) {
+        if (database == null || roundId == null) return null;
         try (var connection = database.open();
              var stmt = connection.prepareStatement("""
-                 SELECT 1
+                 SELECT g.source_room_id
                  FROM drawing_guess_round r
                  JOIN drawing_guess_match m ON m.match_id = r.match_id
                  JOIN drawing_guess_room g ON g.room_id = m.room_id
-                 WHERE r.round_id = ? AND g.source_room_id IS NOT NULL
+                 WHERE r.round_id = ?
                  LIMIT 1
                  """)) {
             stmt.setString(1, roundId);
             try (var rows = stmt.executeQuery()) {
-                return rows.next();
+                return rows.next() ? rows.getString(1) : null;
             }
         } catch (java.sql.SQLException failure) {
-            // Fail closed, including if a migration or read is incomplete.
             throw new IllegalStateException(
                 "unable to verify drawing room token scope", failure
             );
