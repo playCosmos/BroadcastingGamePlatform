@@ -178,15 +178,15 @@ public final class GameRoomPublicAdmissionProbe {
                 "https://attacker.invalid",null,host).statusCode()==403,
                 "cross-origin host closure denied");
             var ticket=send(client,base,API+"/host/invite","POST",
-                "{\\"seatRole\\":\\"PLAYER\\",\\"maxUses\\":1,\\"expiresInSeconds\\":3600}",
+                "{\"seatRole\":\"PLAYER\",\"maxUses\":1,\"expiresInSeconds\":3600}",
                 base.toString(),null,host);
             check(ticket.statusCode()==201,"host can issue invite before closing");
             String closeInvite=json(ticket).get("token").getAsString();
             var closeResult=send(client,base,API+"/host/close","POST","{}",
                 base.toString(),null,host);
             check(closeResult.statusCode()==200
-                && closeResult.body().contains("\\"state\\":\\"CLOSED\\"")
-                && closeResult.body().contains("\\"memberCount\\":0"),
+                && closeResult.body().contains("\"state\":\"CLOSED\"")
+                && closeResult.body().contains("\"memberCount\":0"),
                 "host close atomically empties room and marks CLOSED");
             check(send(client,base,API+"/me","GET",null,null,null,host)
                 .statusCode()==403
@@ -194,7 +194,7 @@ public final class GameRoomPublicAdmissionProbe {
                     .statusCode()==403,
                 "public host and spectator bearers both revoked");
             check(send(client,base,API+"/join","POST",
-                "{\\"invitation\\":\\""+closeInvite+"\\",\\"displayName\\":\\"late\\"}",
+                "{\"invitation\":\""+closeInvite+"\",\"displayName\":\"late\"}",
                 base.toString(),null,null).statusCode()==403,
                 "host closure revokes previously issued invitations");
             check(send(client,base,API+"/public/join","POST",
