@@ -382,6 +382,22 @@ async function mobileWssAcceptance(base,ws){
     })()`);
     check(box.width>100 && box.touchAction==="none",
         "mobile drawing canvas interactive with touch-action:none");
+    // Record actual browser-generated touch/pointer events, not synthetic JS
+    // events. Wait until the deferred prompt submission fully releases the
+    // shared operation lock before dispatching the gesture.
+    await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        window.__touchTrace=[];
+        for(const type of ["touchstart","touchmove","touchend",
+                           "pointerdown","pointermove","pointerup",
+                           "pointercancel"]){
+            canvas.addEventListener(type,e=>window.__touchTrace.push({
+                type:e.type,pointerType:e.pointerType||"",
+                x:e.clientX,y:e.clientY,buttons:e.buttons
+            }),{capture:true,passive:true});
+        }
+    })()`);
+    await nap(300);
     await touchStroke(mobile,box);
     const drawState=await backend(mobile,"/drawing","GET",null,mobileToken);
     check(drawState.status===200,"mobile drawer retains member permission");
@@ -415,9 +431,20 @@ async function mobileWssAcceptance(base,ws){
             };
         })()`;
         const mobileState=await cdp.eval(mobile,diagnose);
+        const touchEvents=await cdp.eval(mobile,"window.__touchTrace||[]");
+        const target=await cdp.eval(mobile,`(()=>{
+            const box=document.getElementById("canvas").getBoundingClientRect();
+            const target=document.elementFromPoint(
+                box.left+box.width*0.5,box.top+box.height*0.5);
+            return {element:target?.id||target?.tagName,
+                viewport:[window.innerWidth,window.innerHeight],
+                scale:window.visualViewport?.scale};
+        })()`);
         const viewerState=await cdp.eval(viewer,diagnose);
         const serverState=await backend(viewer,"/drawing","GET",null,viewerToken);
-        throw Error(String(failure)+"; mobile="+JSON.stringify(mobileState)+
+        throw Error(String(failure)+"; touch="+JSON.stringify(touchEvents)+
+            "; hitTest="+JSON.stringify(target)+
+            "; mobile="+JSON.stringify(mobileState)+
             "; viewer="+JSON.stringify(viewerState)+
             "; game="+JSON.stringify(serverState).slice(0,2200)+
             "; badHttp="+JSON.stringify(cdp.network.slice(-18))+
