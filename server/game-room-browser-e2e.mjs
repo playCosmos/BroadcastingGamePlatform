@@ -352,9 +352,26 @@ async function mobileWssAcceptance(base,ws){
         "document.getElementById('promptForm').hidden===false"),
         "streamer host may author the drawing prompt");
     await fill(mobile,"promptForm",{answer:"turtle",accepted:""});
-    await poll(async()=>await cdp.eval(mobile,
-        "document.getElementById('clearCanvas').hidden===false"),
-        "mobile pointer canvas enabled for current drawer");
+    try {
+        await poll(async()=>await cdp.eval(mobile,
+            "document.getElementById('clearCanvas').hidden===false"),
+            "mobile pointer canvas enabled for current drawer");
+    }catch(failure){
+        const page=await cdp.eval(mobile,`({
+            notice:document.getElementById("notice").textContent,
+            promptHidden:document.getElementById("promptForm").hidden,
+            promptAnswer:document.getElementById("promptForm").elements.answer.value,
+            clearHidden:document.getElementById("clearCanvas").hidden,
+            clearDisabled:document.getElementById("clearCanvas").disabled,
+            help:document.getElementById("canvasHelp").textContent,
+            roomState:document.getElementById("roomPhase").textContent
+        })`);
+        const server=await backend(mobile,"/drawing","GET",null,mobileToken);
+        throw Error(String(failure)+"; page="+JSON.stringify(page)+
+            "; drawing="+JSON.stringify(server).slice(0,2200)+
+            "; http="+JSON.stringify(cdp.network.slice(-12))+
+            "; exceptions="+JSON.stringify(cdp.exceptions.slice(-12)));
+    }
 
     const box=await cdp.eval(mobile,`(()=>{
         const el=document.getElementById("canvas");
