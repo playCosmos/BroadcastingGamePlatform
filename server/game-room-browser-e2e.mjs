@@ -69,7 +69,7 @@ async function launchChrome(){
 }
 class CDP{
     constructor(url){
-        this.nextId=0;this.pending=new Map();this.exceptions=[];
+        this.nextId=0;this.pending=new Map();this.exceptions=[];this.network=[];
         this.socket=new WebSocket(url);
         this.ready=new Promise((resolve,reject)=>{
             this.socket.addEventListener("open",resolve,{once:true});
@@ -87,6 +87,12 @@ class CDP{
             }else if(msg.method==="Runtime.exceptionThrown") {
                 const detail=msg.params?.exceptionDetails;
                 this.exceptions.push(detail?.text+" "+detail?.exception?.description);
+            }else if(msg.method==="Network.responseReceived") {
+                const response=msg.params?.response;
+                if(response?.status>=400)
+                    this.network.push({status:response.status,url:response.url});
+            }else if(msg.method==="Network.loadingFailed") {
+                this.network.push({failed:msg.params?.errorText});
             }
         });
     }
@@ -108,6 +114,7 @@ class CDP{
             targetId,flatten:true});
         await this.send("Runtime.enable",{},sessionId);
         await this.send("Page.enable",{},sessionId);
+        await this.send("Network.enable",{},sessionId);
         const page={browserContextId,targetId,sessionId};
         await this.navigate(page,url);
         return page;
@@ -123,7 +130,10 @@ class CDP{
     }
     async navigate(page,url){
         await this.send("Page.navigate",{url},page.sessionId);
-        await poll(async()=>await this.eval(page,"document.readyState==='complete'"),
+        // about:blank may still report complete before the new document
+        // commits; require the exact final URL plus completed readyState.
+        await poll(async()=>await this.eval(page,`document.readyState==='complete'
+            && location.href===${JSON.stringify(url)}`),
             "page navigation "+url);
     }
 }
@@ -192,10 +202,25 @@ async function run(){
         name:"Chrome Drawing test",displayName:"Browser Host",
         maxPlayers:2,maxRoomMembers:3
     });
-    const code=await poll(async()=>{
-        const text=await getRoom(host,"#roomCode");
-        return /^[A-HJ-NP-Z2-9]{6}$/.test(text)?text:null;
-    },"Drawing room creation");
+    let code;
+    try {
+        code=await poll(async()=>{
+            const text=await getRoom(host,"#roomCode");
+            return /^[A-HJ-NP-Z2-9]{6}$/.test(text)?text:null;
+        },"Drawing room creation");
+    }catch(e){
+        const state=await cdp.eval(host,`({
+            url:location.href,notice:document.getElementById('notice')?.textContent,
+            roomCode:document.getElementById('roomCode')?.textContent,
+            admissionHidden:document.getElementById('admission')?.hidden,
+            storage:!!sessionStorage.getItem('gamecenter.drawing.room.member.v1'),
+            createPresent:!!document.getElementById('createForm'),
+            scripts:[...document.scripts].map(x=>x.src)
+        })`);
+        throw Error(String(e)+"; DOM="+JSON.stringify(state)+
+            "; HTTP="+JSON.stringify(cdp.network.slice(-12))+
+            "; JS="+JSON.stringify(cdp.exceptions.slice(-12)));
+    }
     check(code.length===6,"host creates room through real form");
     await poll(async()=>await cdp.eval(guest,`document.body.innerText.includes(${JSON.stringify(code)})`),
         "public Drawing directory updated",8000).catch(async()=>{
