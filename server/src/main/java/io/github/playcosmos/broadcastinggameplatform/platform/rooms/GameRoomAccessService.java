@@ -220,24 +220,51 @@ public final class GameRoomAccessService {
      * poll every 3 seconds.
      */
     public void heartbeat(String token) throws SQLException {
-        rooms.write(connection -> {
+        // Read-mostly path: browser polls every 3 seconds. Do not take a
+        // BEGIN IMMEDIATE write lock for each poll across every active room.
+        boolean stale;
+        try(var connection=openRead()) {
             Principal principal=requireSession(connection,token);
             Room room=GameRoomService.read(connection,principal.roomId());
             Member member=member(room,principal.memberId());
             if(member.status()!=MemberStatus.JOINED)
                 throw new Forbidden("connected member required");
             if(room.state()!=GameRoomModels.RoomState.OPEN_LOBBY
-                && room.state()!=GameRoomModels.RoomState.POST_GAME) return null;
+                && room.state()!=GameRoomModels.RoomState.POST_GAME)return;
             try(var stmt=connection.prepareStatement("""
-                UPDATE game_room_public SET last_active_at=?
-                WHERE room_id=?
-                  AND (last_active_at IS NULL OR last_active_at<?)
+                SELECT last_active_at FROM game_room_public WHERE room_id=?
                 """)) {
-                stmt.setString(1,now());
-                stmt.setString(2,room.roomId());
-                stmt.setString(3,clock.instant()
-                    .minus(PUBLIC_HEARTBEAT_INTERVAL).toString());
-                stmt.executeUpdate();
+                stmt.setString(1,room.roomId());
+                try(var rows=stmt.executeQuery()) {
+                    if(!rows.next())return; // private room; no heartbeat table
+                    String seen=rows.getString(1);
+                    stale=seen==null || !Instant.parse(seen).isAfter(
+                        clock.instant().minus(PUBLIC_HEARTBEAT_INTERVAL));
+                }
+            }
+        }
+        if(!stale)return;
+        // Retry authorization atomically, so a concurrently closed room
+        // cannot be brought back to life by a late heartbeat.
+        rooms.write(connection -> {
+            Principal principal=requireSession(connection,token);
+            Room room=GameRoomService.read(connection,principal.roomId());
+            if(room.state()==GameRoomModels.RoomState.OPEN_LOBBY
+                || room.state()==GameRoomModels.RoomState.POST_GAME) {
+                Member member=member(room,principal.memberId());
+                if(member.status()!=MemberStatus.JOINED)
+                    throw new Forbidden("connected member required");
+                try(var stmt=connection.prepareStatement("""
+                    UPDATE game_room_public SET last_active_at=?
+                    WHERE room_id=?
+                      AND (last_active_at IS NULL OR last_active_at<=?)
+                    """)) {
+                    stmt.setString(1,now());
+                    stmt.setString(2,room.roomId());
+                    stmt.setString(3,clock.instant().minus(
+                        PUBLIC_HEARTBEAT_INTERVAL).toString());
+                    stmt.executeUpdate();
+                }
             }
             return null;
         });
