@@ -227,7 +227,7 @@ public final class GameRoomDrawingR5TransportProbe {
                     "{\"stroke\":{\"strokeId\":\"line-a\",\"points\":[{\"x\":0.1,\"y\":0.2}]}}"),
                 host);
             check(stroke.statusCode()==200 &&
-                stroke.body().contains("\"sequence\":2"),
+                canvasSequence(stroke)==2,
                 "stroke begin is committed exactly once in order");
             check(observer1.expect("canvas.stroke.begin").contains("\"sequence\":2"),
                 "first browser receives live stroke");
@@ -238,7 +238,7 @@ public final class GameRoomDrawingR5TransportProbe {
                     "{\"strokeId\":\"line-a\",\"points\":[{\"x\":0.3,\"y\":0.4},{\"x\":0.7,\"y\":0.8}]}"),
                 host);
             check(samples.statusCode()==200 &&
-                samples.body().contains("\"sequence\":3"),
+                canvasSequence(samples)==3,
                 "two real pointer samples sent in one authorized HTTP batch");
             check(observer1.expect("canvas.stroke.points").contains("\"sequence\":3"),
                 "Canvas batch streamed with original ordering");
@@ -321,6 +321,10 @@ public final class GameRoomDrawingR5TransportProbe {
     }
     private static String event(String type,String payload) {
         return "{\"event\":{\"type\":\""+type+"\",\"payload\":"+payload+"}}";
+    }
+    private static long canvasSequence(HttpResponse<String> response) {
+        return JsonParser.parseString(read(response).get("json").getAsString())
+            .getAsJsonObject().get("sequence").getAsLong();
     }
     private static JsonObject read(HttpResponse<String> response) {
         return JsonParser.parseString(response.body()).getAsJsonObject();
