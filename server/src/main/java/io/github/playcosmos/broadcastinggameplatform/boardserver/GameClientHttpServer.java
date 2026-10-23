@@ -780,10 +780,12 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             String token = roomApiBearer(exchange);
             if (suffix.equals("/drawing") || suffix.startsWith("/drawing/")) {
+                if("GET".equals(method))memberRooms.heartbeat(token);
                 sharedDrawingApi(exchange,method,suffix,token);
                 return;
             }
             if (suffix.equals("/yacht") || suffix.startsWith("/yacht/")) {
+                if("GET".equals(method))memberRooms.heartbeat(token);
                 sharedYachtApi(exchange,method,suffix,token);
                 return;
             }
