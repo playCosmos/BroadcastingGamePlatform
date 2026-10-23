@@ -35,9 +35,9 @@ HTTP writes still require a trusted same-origin browser request. Every visitor r
 - Guest public creation: 3 attempts per 10 minutes per remote address; public direct joins: 30 attempts per 10 minutes per remote address (bounded 4,096 in-memory rate windows). This is **abuse throttling**, not identity-based banning; deployments behind multiple reverse proxies or multiple server nodes need shared limits.
 - Maximum concurrently OPEN_LOBBY/PLAYING public rooms is 128. Public lists return at most 30. These ceilings are operational protections, not game-specific room capacity rules.
 
-## Drawing Guess client
+## Game clients (Drawing Guess and Yacht)
 
-`/games/drawing-guess/room/` now allows guest creation, browser listing, room-code join with selected PLAYER/SPECTATOR role, and retains invitation token admission. Public listing names render through `textContent`, not HTML insertion. Shared Canvas member authentication and immediate kicks remain from PR #45.
+Both `/games/drawing-guess/room/` and `/games/yacht/` now allow guest creation, browser listing, room-code join with selected PLAYER/SPECTATOR role, and retain invitation token admission. Public listing names render through `textContent`, not HTML insertion. Shared Canvas member authentication and immediate kicks remain from PR #45.
 
 ## Acceptance and known follow-ons
 
