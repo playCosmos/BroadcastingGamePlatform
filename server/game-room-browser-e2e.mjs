@@ -580,6 +580,10 @@ async function run(){
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('roster').children.length===2"),
         "Yacht renders two real players after first room refresh");
+    // The roster can render inside joinPublicRoom's final refresh while the
+    // UI command lock is still held. Do not press Ready before admission
+    // settles, or the real client's intentionally guarded handler drops it.
+    await nap(350);
     await click(guest,"ready");
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('ready').textContent.includes('취소')"),
