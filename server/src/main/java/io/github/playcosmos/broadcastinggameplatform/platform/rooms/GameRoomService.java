@@ -421,6 +421,16 @@ public final class GameRoomService {
             stmt.setLong(4, room.version());
             if (stmt.executeUpdate() != 1) throw new RoomConflict("room version conflict");
         }
+        // Meaningful room mutations (including game completion) count as
+        // liveness. An active match moving into POST_GAME must not expire
+        // immediately because its last lobby heartbeat was old.
+        try (var stmt=connection.prepareStatement("""
+            UPDATE game_room_public SET last_active_at=? WHERE room_id=?
+            """)) {
+            stmt.setString(1,now());
+            stmt.setString(2,room.roomId());
+            stmt.executeUpdate();
+        }
     }
 
     private static String allocateCode(Connection connection, String gameId)
