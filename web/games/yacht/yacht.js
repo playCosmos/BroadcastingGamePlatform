@@ -77,6 +77,37 @@
     finally { busy = false; }
   }
 
+  async function loadPublicRooms() {
+    const listing=await request("/public/rooms?gameId=yacht","GET",null,"");
+    const list=$("publicRooms");
+    list.replaceChildren();
+    if(!listing.rooms.length) {
+      const li=document.createElement("li");
+      li.textContent="현재 공개방이 없습니다.";
+      list.append(li);
+      return;
+    }
+    for(const room of listing.rooms) {
+      const li=document.createElement("li");
+      const label=document.createElement("span");
+      const button=document.createElement("button");
+      label.textContent=room.roomName+" · "+room.roomCode+
+        " · 참여 "+room.memberCount+"/"+room.maxRoomMembers+
+        " · 플레이어 "+room.playerCount+"/"+room.maxPlayers;
+      button.type="button";
+      button.className="secondary";
+      button.textContent="선택";
+      button.addEventListener("click",()=>{
+        $("publicJoinRoom").elements.roomCode.value=room.roomCode;
+        $("publicJoinRoom").elements.seatRole.value=
+          room.state==="PLAYING"||room.playerCount>=room.maxPlayers
+            ?"SPECTATOR":"PLAYER";
+        $("publicJoinRoom").elements.displayName.focus();
+      });
+      li.append(label,button);list.append(li);
+    }
+  }
+
   async function createRoom(event) {
     event.preventDefault();
     await operation(async () => {
@@ -85,13 +116,13 @@
       const maxRoomMembers = Number(form.get("maxRoomMembers"));
       if (maxRoomMembers < maxPlayers)
         throw new Error("방 최대 정원은 최대 플레이어 수 이상이어야 합니다.");
-      const result = await request("/hosted", "POST", {
+      const result = await request("/public/hosted", "POST", {
         gameId: "yacht", name: form.get("name"), displayName: form.get("displayName"),
         hostSeat: form.has("hostPlays") ? "PLAYER" : "SPECTATOR",
         maxPlayers, maxRoomMembers
       }, "");
       saveSession(result.token);
-      notice("룸이 생성됐습니다. 참가자를 초대하세요.");
+      notice("공개방이 생성됐습니다. 방 코드를 공유해 참가시킬 수 있습니다.");
       await refresh();
     });
   }
@@ -107,6 +138,23 @@
       saveSession(result.token);
       history.replaceState(null, "", location.pathname);
       notice("게임룸에 입장했습니다.");
+      await refresh();
+    });
+  }
+
+  async function joinPublicRoom(event) {
+    event.preventDefault();
+    await operation(async()=>{
+      const form=new FormData(event.currentTarget);
+      const joined=await request("/public/join","POST",{
+        gameId:"yacht",
+        roomCode:String(form.get("roomCode")||"").trim().toUpperCase(),
+        displayName:form.get("displayName"),
+        seatRole:form.get("seatRole")
+      },"");
+      saveSession(joined.token);
+      history.replaceState(null,"",location.pathname);
+      notice("공개방에 입장했습니다.");
       await refresh();
     });
   }
@@ -366,6 +414,10 @@
 
   $("createRoom").addEventListener("submit", createRoom);
   $("joinRoom").addEventListener("submit", joinRoom);
+  $("publicJoinRoom").addEventListener("submit", joinPublicRoom);
+  $("refreshPublicRooms").addEventListener("click",()=>operation(async()=>{
+    await loadPublicRooms();notice("공개방 목록을 새로고침했습니다.");
+  }));
   $("ready").addEventListener("click", () => operation(async () => {
     const me = state.room.members.find(m => m.memberId === state.memberId);
     await request("/me/ready","POST",{ready:!me.ready});
@@ -417,8 +469,12 @@
     notice("게임룸에서 퇴장했습니다.");
   }));
 
-  const invitation = new URLSearchParams(location.hash.slice(1)).get("invite");
-  if (invitation) $("joinRoom").elements.invitation.value = invitation;
+  const fragment = new URLSearchParams(location.hash.slice(1));
+  const invitation=fragment.get("invite");
+  if(invitation)$("joinRoom").elements.invitation.value=invitation;
+  const roomCode=fragment.get("room");
+  if(roomCode)$("publicJoinRoom").elements.roomCode.value=roomCode;
   if (token) { visible("admission",false); visible("game",true); refresh(); }
+  if(!token)loadPublicRooms().catch(e=>notice(e.message,true));
   setInterval(() => { if (token) refresh(); }, 3000);
 })();
