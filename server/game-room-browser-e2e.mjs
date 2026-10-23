@@ -550,8 +550,9 @@ async function run(){
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('game').hidden===false && document.getElementById('roomCode').textContent.trim().length===6"),
         "Yacht guest enters independently");
-    check(await cdp.eval(guest,"document.getElementById('roster').children.length===2"),
-        "Yacht renders two real players");
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById('roster').children.length===2"),
+        "Yacht renders two real players after first room refresh");
     await click(guest,"ready");
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('ready').textContent.includes('취소')"),
