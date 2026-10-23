@@ -343,7 +343,11 @@ async function recoverCanvasWssAfterAbruptDrop(mobile,viewer,hostToken,
     // Refresh/page reload is a distinct recovery mode: no old in-memory
     // cursor or stroke map survives, so the member-only Canvas replay
     // must rebuild the line from SQLite.
-    await cdp.navigate(viewer,tls.base+"/games/drawing-guess/room/");
+    await cdp.eval(viewer,"window.__reloadSentinel=true");
+    await cdp.send("Page.reload",{ignoreCache:true},viewer.sessionId);
+    await poll(async()=>await cdp.eval(viewer,
+        "document.readyState==='complete'&&!window.__reloadSentinel"),
+        "new document loaded after real browser refresh");
     await poll(async()=>await cdp.eval(viewer,inkSamples)>10,
         "page reload restores Drawing Canvas history over authenticated WSS");
     check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
