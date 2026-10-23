@@ -54,9 +54,13 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 32
+                    if (currentSchemaVersion == 33
+                        && previousSchemaVersion == 32) {
+                        // V36 only adds the opt-in room visibility table.
+                        statement.execute("DROP TABLE game_room_public");
+                    } else if (currentSchemaVersion == 32
                         && previousSchemaVersion == 31) {
-                        // Reconstruct pre-V35 schema, not only PRAGMA version.
+                        // V35 removes the common drawing binding and source key.
                         statement.execute("DROP TABLE game_room_drawing_link");
                         statement.execute("DROP INDEX ux_drawing_guess_source_room");
                         statement.execute("ALTER TABLE drawing_guess_room DROP COLUMN source_room_id");
