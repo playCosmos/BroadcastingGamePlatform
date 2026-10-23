@@ -35,6 +35,11 @@ try {
         }
     }
 
+    node --check server/game-room-browser-e2e.mjs
+    if ($LASTEXITCODE -ne 0) {
+        throw "real GameRoom Chrome DevTools script syntax check failed"
+    }
+
     if (-not (Test-Path "web/vendor/box2d-wasm/entry.js")) {
         throw "box2d-wasm entry missing"
     }
