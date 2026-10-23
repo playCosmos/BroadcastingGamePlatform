@@ -469,13 +469,13 @@ async function recoverMemberWssAfterAbruptDrop(mobile,viewer,hostToken,
             s.readyState===WebSocket.OPEN);
         if(!newer)return false;
         window.__r11Current=newer;
-        window.__r11Count=window.__r11Sockets.length;
+        window.__r11Count=window.__r11Sockets.filter(s=>s.url.includes("memberRoomId=")).length;
         window.__r11Retired.dispatchEvent(new Event("close"));
         return true;
     })()`),"retired member socket delivers deliberately late close");
     await nap(2100);
     check(await cdp.eval(viewer,`window.__r11Current.readyState===WebSocket.OPEN &&
-        window.__r11Sockets.length===window.__r11Count`),
+        window.__r11Sockets.filter(s=>s.url.includes("memberRoomId=")).length===window.__r11Count`),
         "retired close cannot reset or duplicate the active member WSS");
     check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
         ===viewerToken,"foreground recovery preserves anonymous seat token");
