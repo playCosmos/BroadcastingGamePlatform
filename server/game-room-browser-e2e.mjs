@@ -157,6 +157,12 @@ class CDP{
             "page navigation "+url);
     }
 }
+async function waitRoomIdle(page,element){
+    await poll(async()=>await cdp.eval(page,
+        `document.getElementById(${JSON.stringify(element)})
+        ?.getAttribute("aria-busy")!=="true"`),
+        "room action completed: "+element);
+}
 async function fill(page,form,values){
     return cdp.eval(page,`(()=>{const f=document.getElementById(${JSON.stringify(form)});
         if(!f)throw Error("missing form");
@@ -469,6 +475,7 @@ async function mobileWssAcceptance(base,ws){
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('ready').textContent.includes('취소')"),
         "mobile host ready action");
+    await waitRoomIdle(mobile,"room");
     await cdp.eval(mobile,`(()=>{
         document.getElementById("mode").value="STREAMER_DRAWER";
         document.getElementById("rounds").value="1";
@@ -478,6 +485,7 @@ async function mobileWssAcceptance(base,ws){
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('promptForm').hidden===false"),
         "streamer host may author the drawing prompt");
+    await waitRoomIdle(mobile,"room");
     await fill(mobile,"promptForm",{answer:"turtle",accepted:""});
     try {
         await poll(async()=>await cdp.eval(mobile,
@@ -731,10 +739,9 @@ async function run(){
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('roster').children.length===2"),
         "Yacht renders two real players after first room refresh");
-    // The roster can render inside joinPublicRoom's final refresh while the
-    // UI command lock is still held. Do not press Ready before admission
-    // settles, or the real client's intentionally guarded handler drops it.
-    await nap(350);
+    // Roster rendering may precede admission's final refresh. Wait for
+    // the actual operation lock instead of a platform-dependent sleep.
+    await waitRoomIdle(guest,"game");
     await click(guest,"ready");
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('ready').textContent.includes('취소')"),
