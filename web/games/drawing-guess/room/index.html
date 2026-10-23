@@ -8,18 +8,28 @@
 <header class="top"><div><p class="eyebrow">GAMECENTER / GAME 03 / ROOM PLAY</p>
 <h1>Drawing Guess</h1><p class="muted">방송인 고정 출제 · 플레이어 순환 출제 · 관전과 룸 채팅</p></div>
 <a href="/">게임 선택으로 돌아가기 ↗</a></header>
-<div id="notice" class="notice" role="status" aria-live="polite">새 게임룸을 만들거나 초대 링크로 입장할 수 있습니다.</div>
+<div id="notice" class="notice" role="status" aria-live="polite">계정 없이 공개방을 만들거나 방 코드·초대 링크로 즉시 입장할 수 있습니다.</div>
 <section id="admission" class="grid">
-<form id="createForm" class="panel"><p class="eyebrow">HOST / ADMIN SESSION</p><h2>게임룸 만들기</h2>
-<p class="muted">최초 룸 생성에만 플랫폼 관리자 로그인이 필요합니다. 게임 참가에는 별도 회원 토큰을 사용합니다.</p>
+<form id="createForm" class="panel"><p class="eyebrow">GUEST / PUBLIC HOST</p><h2>공개 게임룸 만들기</h2>
+<p class="muted">로그인이나 관리자 승인 없이 누구나 공개방을 만들고 플레이할 수 있습니다. 방 코드를 공유하면 바로 입장할 수 있습니다.</p>
 <label>방 이름<input name="name" maxlength="100" required value="Drawing Guess Room"></label>
 <label>방장 이름<input name="displayName" maxlength="80" required placeholder="닉네임"></label>
 <div class="grid"><label>최대 플레이어 수<input name="maxPlayers" type="number" min="1" max="20" value="6" required></label>
 <label>방 최대 정원<input name="maxRoomMembers" type="number" min="1" max="256" value="20" required></label></div>
 <label class="checkbox"><input name="hostPlays" type="checkbox" checked> 방장도 플레이어로 참가</label>
 <button class="primary" type="submit">방 만들기</button></form>
-<form id="joinForm" class="panel"><p class="eyebrow">INVITED MEMBER</p><h2>초대받아 참가</h2>
-<p class="muted">초대 링크 또는 방장에게 받은 비밀 초대 토큰이 필요합니다.</p>
+<section class="panel"><p class="eyebrow">PUBLIC ROOMS</p><h2>공개방 바로 입장</h2>
+<p class="muted">방 코드를 입력하거나 목록에서 선택하세요. 방장 승인은 필요하지 않습니다.</p>
+<form id="publicJoinForm">
+<label>방 코드<input name="roomCode" minlength="6" maxlength="6" required autocomplete="off" spellcheck="false" placeholder="6자리 코드"></label>
+<label>표시 이름<input name="displayName" maxlength="80" required placeholder="닉네임"></label>
+<label>참가 역할<select name="seatRole"><option value="PLAYER">플레이어</option><option value="SPECTATOR">관전자</option></select></label>
+<button class="primary" type="submit">공개방 입장</button></form>
+<div class="toolbar"><h3>현재 공개방</h3><button id="refreshPublicRooms" type="button" class="secondary">목록 새로고침</button></div>
+<ul id="publicRooms" class="members" aria-live="polite"></ul>
+</section>
+<form id="joinForm" class="panel"><p class="eyebrow">PRIVATE INVITE</p><h2>초대 링크로 참가</h2>
+<p class="muted">초대권이 있는 방은 기존 링크를 이용해 즉시 참가합니다. 방장 승인은 필요하지 않습니다.</p>
 <label>초대 토큰<input name="invitation" required autocomplete="off" spellcheck="false" placeholder="초대 토큰"></label>
 <label>표시 이름<input name="displayName" maxlength="80" required placeholder="닉네임"></label>
 <button class="primary" type="submit">방 입장</button></form>
