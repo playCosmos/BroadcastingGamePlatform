@@ -3471,6 +3471,14 @@ public final class GameClientHttpServer implements AutoCloseable {
             ? "wss"
             : "ws";
 
+        // A trusted HTTPS reverse proxy normally multiplexes HTTP and WS
+        // upgrades through its PUBLIC origin. Never expose the backend's
+        // plaintext WS port as a WSS endpoint: browsers will fail the TLS
+        // handshake. Deployments with a separate external WS host/port set
+        // publicWebSocketUrl explicitly.
+        if ("wss".equals(scheme) && trustForwarded) {
+            return "wss://" + host + "/";
+        }
         return scheme + "://" + hostname
             + ":" + config.server().websocketPort();
     }

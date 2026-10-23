@@ -1,6 +1,9 @@
 // No browser automation package: use Node's native WebSocket and Chrome/Edge
 // DevTools Protocol to exercise PRODUCTION pages against real HTTP/WS/SQLite.
-import {spawn} from "node:child_process";
+import {spawn,spawnSync} from "node:child_process";
+import http from "node:http";
+import https from "node:https";
+import net from "node:net";
 import {mkdtemp,readFile,rm} from "node:fs/promises";
 import {tmpdir} from "node:os";
 import {join,resolve} from "node:path";
@@ -12,7 +15,8 @@ const prefix="GAME_ROOM_BROWSER_E2E_PASSED";
 const cp=process.env.GAME_ROOM_PROBE_CLASSPATH
     ||["target/test-classes","target/classes","target/probe-dependencies/*"].join(
         process.platform==="win32"?";":":");
-let server,chrome,cdp,userDir,checks=0;
+let server,chrome,cdp,userDir,tlsProxy,checks=0;
+const tlsConnections=new Set();
 const failures=[];
 const nap=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function poll(action,label,timeout=15000){
@@ -51,6 +55,8 @@ async function launchChrome(){
     chrome=spawn(browserExe,[
         "--headless=new","--disable-gpu","--no-sandbox","--no-first-run",
         "--no-default-browser-check","--disable-background-networking",
+        // ONLY for a disposable local self-signed certificate used by CI.
+        "--ignore-certificate-errors",
         "--remote-allow-origins=*","--remote-debugging-port=0",
         "--user-data-dir="+userDir,"about:blank"
     ],{stdio:"ignore",windowsHide:true});
@@ -191,6 +197,298 @@ async function startMemberObserver(page,roomId,memberToken,wsBase){
         return true;
     })()`);
 }
+/**
+ * True TLS-terminating loopback proxy. HTML and REST go to the backend
+ * HTTP listener, upgrade frames go to the plaintext backend WS listener.
+ * This exercises X-Forwarded-* trust and the actual browser wss:// stack.
+ */
+async function launchTlsProxy(base,ws){
+    const certPath=join(userDir,"game-room-e2e.p12");
+    const password="ci-only-ephemeral-cert";
+    const generated=spawnSync("keytool",[
+        "-genkeypair","-alias","game-room-e2e",
+        "-keyalg","RSA","-keysize","2048","-validity","1",
+        "-storetype","PKCS12","-keystore",certPath,
+        "-storepass",password,"-keypass",password,
+        "-dname","CN=localhost","-ext","SAN=ip:127.0.0.1,dns:localhost",
+        "-noprompt"
+    ],{encoding:"utf8",windowsHide:true});
+    if(generated.status!==0)
+        throw Error("keytool failed to create throwaway TLS certificate: "+
+            generated.stderr);
+    const upstreamHttp=new URL(base);
+    const upstreamWs=new URL(ws);
+    tlsProxy=https.createServer({
+        pfx:await readFile(certPath),passphrase:password
+    },(req,res)=>{
+        const upstream=http.request({
+            hostname:"127.0.0.1",
+            port:upstreamHttp.port,
+            path:req.url,method:req.method,
+            headers:{
+                ...req.headers,
+                host:req.headers.host,
+                "x-forwarded-host":req.headers.host,
+                "x-forwarded-proto":"https"
+            }
+        },response=>{
+            res.writeHead(response.statusCode,response.headers);
+            response.pipe(res);
+        });
+        upstream.on("error",error=>{
+            if(!res.headersSent)res.writeHead(502);
+            res.end("proxy failure");
+        });
+        req.pipe(upstream);
+    });
+    tlsProxy.on("connection",socket=>{
+        tlsConnections.add(socket);
+        socket.on("close",()=>tlsConnections.delete(socket));
+    });
+    tlsProxy.on("upgrade",(request,browserSocket,head)=>{
+        const upstream=net.connect(Number(upstreamWs.port),"127.0.0.1");
+        upstream.on("connect",()=>{
+            const lines=[
+                request.method+" "+request.url+" HTTP/1.1",
+                ...Object.entries(request.headers).map(([name,value])=>
+                    name+": "+value),
+                "X-Forwarded-Proto: https",
+                "X-Forwarded-Host: "+request.headers.host,
+                "",""
+            ];
+            upstream.write(lines.join("\r\n"));
+            if(head.length)upstream.write(head);
+            browserSocket.pipe(upstream).pipe(browserSocket);
+        });
+        upstream.on("error",()=>browserSocket.destroy());
+        browserSocket.on("error",()=>upstream.destroy());
+    });
+    await new Promise((resolve,reject)=>{
+        tlsProxy.once("error",reject);
+        tlsProxy.listen(0,"127.0.0.1",resolve);
+    });
+    const port=tlsProxy.address().port;
+    return {
+        base:"https://127.0.0.1:"+port,
+        ws:"wss://127.0.0.1:"+port+"/"
+    };
+}
+
+/** Real CDP touch events (not synthetic JS PointerEvents). */
+async function touchStroke(page,coordinates){
+    const xs=[0.15,0.3,0.45,0.6,0.8];
+    const touch=(ratio)=>[{
+        x:Math.round(coordinates.x+coordinates.width*ratio),
+        y:Math.round(coordinates.y+coordinates.height*0.5),
+        id:1,radiusX:5,radiusY:5,force:0.65
+    }];
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchStart",touchPoints:touch(xs[0])},page.sessionId);
+    for(const ratio of xs.slice(1)){
+        await cdp.send("Input.dispatchTouchEvent",{
+            type:"touchMove",touchPoints:touch(ratio)},page.sessionId);
+        await nap(45);
+    }
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchEnd",touchPoints:[]},page.sessionId);
+}
+
+async function mobileWssAcceptance(base,ws){
+    const tls=await launchTlsProxy(base,ws);
+    const mobile=await cdp.page(tls.base+"/games/drawing-guess/room/");
+    const viewer=await cdp.page(tls.base+"/games/drawing-guess/room/");
+    await cdp.send("Emulation.setDeviceMetricsOverride",{
+        width:390,height:844,deviceScaleFactor:1,mobile:true
+    },mobile.sessionId);
+    await cdp.send("Emulation.setTouchEmulationEnabled",{
+        enabled:true,maxTouchPoints:2
+    },mobile.sessionId);
+    check(await cdp.eval(mobile,"location.protocol==='https:'"),
+        "real TLS browser page loaded successfully");
+    const discovered=await cdp.eval(mobile,
+        "fetch('/api/client/config').then(r=>r.json())");
+    check(discovered.websocketUrl===tls.ws,
+        "trusted HTTPS proxy advertises the public WSS port, not internal WS");
+    check(await cdp.eval(mobile,
+        "window.isSecureContext && window.matchMedia('(pointer: coarse)').matches"),
+        "mobile CSS + secure browser context active");
+    await fill(mobile,"createForm",{
+        name:"TLS mobile drawing",displayName:"Touch Host",
+        maxPlayers:1,maxRoomMembers:3
+    });
+    const code=await poll(async()=>{
+        const value=await getRoom(mobile,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(value)?value:null;
+    },"TLS mobile guest room hosting");
+    check(!!code,"mobile form writes through HTTPS proxy and same-origin ACL");
+    await fill(viewer,"publicJoinForm",{
+        roomCode:code,displayName:"Secure Viewer",seatRole:"SPECTATOR"
+    });
+    await poll(async()=>await cdp.eval(viewer,
+        "document.getElementById('roomCapacity').textContent.includes('2/3')"),
+        "TLS spectator joins with HTTPS same-origin POST");
+    const mobileToken=await userToken(mobile,
+        "gamecenter.drawing.room.member.v1");
+    const viewerToken=await userToken(viewer,
+        "gamecenter.drawing.room.member.v1");
+    const state=await backend(viewer,"/me","GET",null,viewerToken);
+    check(state.status===200,"HTTPS reverse proxy routes authorized member REST");
+    await startMemberObserver(viewer,state.data.room.roomId,viewerToken,tls.ws);
+    await poll(async()=>await cdp.eval(viewer,
+        "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
+        "WSS upgrade and authenticated room replay through TLS proxy");
+
+    await click(mobile,"ready");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('ready').textContent.includes('취소')"),
+        "mobile host ready action");
+    await cdp.eval(mobile,`(()=>{
+        document.getElementById("mode").value="STREAMER_DRAWER";
+        document.getElementById("rounds").value="1";
+        document.getElementById("duration").value="180";
+    })()`);
+    await click(mobile,"start");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('promptForm').hidden===false"),
+        "streamer host may author the drawing prompt");
+    await fill(mobile,"promptForm",{answer:"turtle",accepted:""});
+    try {
+        await poll(async()=>await cdp.eval(mobile,
+            "document.getElementById('clearCanvas').hidden===false"),
+            "mobile pointer canvas enabled for current drawer");
+    }catch(failure){
+        const page=await cdp.eval(mobile,`({
+            notice:document.getElementById("notice").textContent,
+            promptHidden:document.getElementById("promptForm").hidden,
+            promptAnswer:document.getElementById("promptForm").elements.answer.value,
+            clearHidden:document.getElementById("clearCanvas").hidden,
+            clearDisabled:document.getElementById("clearCanvas").disabled,
+            help:document.getElementById("canvasHelp").textContent,
+            roomState:document.getElementById("roomPhase").textContent
+        })`);
+        const server=await backend(mobile,"/drawing","GET",null,mobileToken);
+        throw Error(String(failure)+"; page="+JSON.stringify(page)+
+            "; drawing="+JSON.stringify(server).slice(0,2200)+
+            "; http="+JSON.stringify(cdp.network.slice(-12))+
+            "; exceptions="+JSON.stringify(cdp.exceptions.slice(-12)));
+    }
+
+    const box=await cdp.eval(mobile,`(()=>{
+        const el=document.getElementById("canvas");
+        el.scrollIntoView({block:"center"});
+        const rect=el.getBoundingClientRect();
+        return {x:rect.x,y:rect.y,width:rect.width,height:rect.height,
+            touchAction:getComputedStyle(el).touchAction,scrollY};
+    })()`);
+    check(box.width>100 && box.touchAction==="none",
+        "mobile drawing canvas interactive with touch-action:none");
+    // Record actual browser-generated touch/pointer events, not synthetic JS
+    // events. Wait until the deferred prompt submission fully releases the
+    // shared operation lock before dispatching the gesture.
+    await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        window.__touchTrace=[];
+        for(const type of ["touchstart","touchmove","touchend",
+                           "pointerdown","pointermove","pointerup",
+                           "pointercancel"]){
+            canvas.addEventListener(type,e=>window.__touchTrace.push({
+                type:e.type,pointerType:e.pointerType||"",
+                x:e.clientX,y:e.clientY,buttons:e.buttons
+            }),{capture:true,passive:true});
+        }
+    })()`);
+    await nap(300);
+    await touchStroke(mobile,box);
+    const drawState=await backend(mobile,"/drawing","GET",null,mobileToken);
+    check(drawState.status===200,"mobile drawer retains member permission");
+    // Sample the full logical Canvas, not a hard-coded y coordinate.
+    // Browser viewport reflow between measuring the rect and dispatching
+    // touch points can place a genuine stroke anywhere within the canvas.
+    // White background -> no ink; a stroke covers dozens of sample points.
+    const inkSamples=`(()=>{
+        const c=document.getElementById("canvas");
+        const rgba=c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+        let count=0;
+        for(let y=12;y<c.height-12;y+=3){
+            for(let x=12;x<c.width-12;x+=3){
+                const i=(y*c.width+x)*4;
+                if(rgba[i]<130 && rgba[i+1]<130 && rgba[i+2]<130)
+                    count++;
+            }
+        }
+        return count;
+    })()`;
+    try {
+        await poll(async()=>{
+            const local=await cdp.eval(mobile,inkSamples);
+            const remote=await cdp.eval(viewer,inkSamples);
+            return local>10 && remote>10;
+        },"real mobile stroke rendered locally and to WSS spectator",13000);
+    }catch(failure){
+        const diagnose=`(()=>{
+            const c=document.getElementById("canvas");
+            const ctx=c.getContext("2d");
+            const steps=[0.15,0.3,0.45,0.6,0.8];
+            return {
+                notice:document.getElementById("notice").textContent,
+                roomState:document.getElementById("roomPhase").textContent,
+                help:document.getElementById("canvasHelp").textContent,
+                pixels:steps.map(v=>{
+                    const rgba=ctx.getImageData(Math.round(v*960),280,1,1).data;
+                    return [v,...rgba];
+                }),
+                activeCanvasSockets:[...performance.getEntriesByType("resource")]
+                    .filter(x=>x.name.includes("drawingCode")).length,
+                rect:(()=>{
+                    const r=c.getBoundingClientRect();
+                    return {x:r.x,y:r.y,w:r.width,h:r.height};
+                })()
+            };
+        })()`;
+        const mobileState=await cdp.eval(mobile,diagnose);
+        const ink={
+            mobile:await cdp.eval(mobile,inkSamples),
+            viewer:await cdp.eval(viewer,inkSamples)
+        };
+        const touchEvents=await cdp.eval(mobile,"window.__touchTrace||[]");
+        const target=await cdp.eval(mobile,`(()=>{
+            const box=document.getElementById("canvas").getBoundingClientRect();
+            const target=document.elementFromPoint(
+                box.left+box.width*0.5,box.top+box.height*0.5);
+            return {element:target?.id||target?.tagName,
+                viewport:[window.innerWidth,window.innerHeight],
+                scale:window.visualViewport?.scale};
+        })()`);
+        const viewerState=await cdp.eval(viewer,diagnose);
+        const serverState=await backend(viewer,"/drawing","GET",null,viewerToken);
+        throw Error(String(failure)+"; ink="+JSON.stringify(ink)+
+            "; touch="+JSON.stringify(touchEvents)+
+            "; hitTest="+JSON.stringify(target)+
+            "; mobile="+JSON.stringify(mobileState)+
+            "; viewer="+JSON.stringify(viewerState)+
+            "; game="+JSON.stringify(serverState).slice(0,2200)+
+            "; badHttp="+JSON.stringify(cdp.network.slice(-18))+
+            "; exceptions="+JSON.stringify(cdp.exceptions.slice(-10)));
+    }
+    check((await cdp.eval(mobile,"window.scrollY"))===box.scrollY,
+        "mobile touch draw does not scroll page under finger");
+    const outsider=await backend(viewer,"/me","GET",null,viewerToken);
+    const member=outsider.data.room.members.find(x=>
+        x.displayName==="Secure Viewer");
+    const kicked=await backend(mobile,"/host/kick","POST",{
+        memberId:member.memberId
+    },mobileToken);
+    check(kicked.status===200,"HTTPS host kick accepted through trusted proxy");
+    await poll(async()=>await cdp.eval(viewer,
+        "window.__roomObserver.code===1008"),
+        "revoked WSS member subscription closes 1008 across TLS proxy");
+    check((await backend(viewer,"/me","GET",null,viewerToken)).status===403,
+        "revoked credential remains invalid through HTTPS proxy");
+    const noOverflow=await cdp.eval(mobile,
+        "document.documentElement.scrollWidth<=window.innerWidth+2");
+    check(noOverflow,"real 390px mobile Drawing UI has no horizontal overflow");
+}
+
 async function run(){
     const {base,ws}=await launchServer();
     await launchChrome();
@@ -299,8 +597,13 @@ async function run(){
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('game').hidden===false && document.getElementById('roomCode').textContent.trim().length===6"),
         "Yacht guest enters independently");
-    check(await cdp.eval(guest,"document.getElementById('roster').children.length===2"),
-        "Yacht renders two real players");
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById('roster').children.length===2"),
+        "Yacht renders two real players after first room refresh");
+    // The roster can render inside joinPublicRoom's final refresh while the
+    // UI command lock is still held. Do not press Ready before admission
+    // settles, or the real client's intentionally guarded handler drops it.
+    await nap(350);
     await click(guest,"ready");
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('ready').textContent.includes('취소')"),
@@ -322,12 +625,13 @@ async function run(){
         "({scroll:document.documentElement.scrollWidth,client:window.innerWidth})");
     check(viewport.scroll<=viewport.client+2,
         "Yacht mobile viewport has no horizontal overflow: "+JSON.stringify(viewport));
+    await mobileWssAcceptance(base,ws);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
         " browsers=2-contexts drawing=host-join-kick-rejoin-close"+
         " ws=authenticated-revoked yacht=guest-match"+
-        " mobile=390px credentials=isolated\n");
+        " mobile=390px+touch tls=https+wss credentials=isolated\n");
 }
 try{await run();}
 catch(error){
@@ -335,6 +639,9 @@ catch(error){
     throw error;
 }finally{
     if(cdp?.socket?.readyState===WebSocket.OPEN)cdp.socket.close();
-    for(const p of [chrome,server])if(p&&!p.killed){p.kill();}
+    if(chrome&&!chrome.killed)chrome.kill();
+    for(const socket of tlsConnections)socket.destroy();
+    if(tlsProxy)await new Promise(resolve=>tlsProxy.close(resolve));
+    if(server&&!server.killed)server.kill();
     if(userDir)await rm(userDir,{recursive:true,force:true,maxRetries:4,retryDelay:150});
 }
