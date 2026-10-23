@@ -401,14 +401,29 @@ async function mobileWssAcceptance(base,ws){
     await touchStroke(mobile,box);
     const drawState=await backend(mobile,"/drawing","GET",null,mobileToken);
     check(drawState.status===200,"mobile drawer retains member permission");
-    const remotePixel=`(()=>{
-        const c=document.getElementById("canvas"),ctx=c.getContext("2d");
-        const pixels=ctx.getImageData(400,280,1,1).data;
-        return pixels[0]<130 && pixels[1]<130 && pixels[2]<130;
+    // Sample the full logical Canvas, not a hard-coded y coordinate.
+    // Browser viewport reflow between measuring the rect and dispatching
+    // touch points can place a genuine stroke anywhere within the canvas.
+    // White background -> no ink; a stroke covers dozens of sample points.
+    const inkSamples=`(()=>{
+        const c=document.getElementById("canvas");
+        const rgba=c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+        let count=0;
+        for(let y=12;y<c.height-12;y+=3){
+            for(let x=12;x<c.width-12;x+=3){
+                const i=(y*c.width+x)*4;
+                if(rgba[i]<130 && rgba[i+1]<130 && rgba[i+2]<130)
+                    count++;
+            }
+        }
+        return count;
     })()`;
     try {
-        await poll(async()=>await cdp.eval(viewer,remotePixel),
-            "spectator canvas replays touch stroke over WSS",13000);
+        await poll(async()=>{
+            const local=await cdp.eval(mobile,inkSamples);
+            const remote=await cdp.eval(viewer,inkSamples);
+            return local>10 && remote>10;
+        },"real mobile stroke rendered locally and to WSS spectator",13000);
     }catch(failure){
         const diagnose=`(()=>{
             const c=document.getElementById("canvas");
@@ -431,6 +446,10 @@ async function mobileWssAcceptance(base,ws){
             };
         })()`;
         const mobileState=await cdp.eval(mobile,diagnose);
+        const ink={
+            mobile:await cdp.eval(mobile,inkSamples),
+            viewer:await cdp.eval(viewer,inkSamples)
+        };
         const touchEvents=await cdp.eval(mobile,"window.__touchTrace||[]");
         const target=await cdp.eval(mobile,`(()=>{
             const box=document.getElementById("canvas").getBoundingClientRect();
@@ -442,7 +461,8 @@ async function mobileWssAcceptance(base,ws){
         })()`);
         const viewerState=await cdp.eval(viewer,diagnose);
         const serverState=await backend(viewer,"/drawing","GET",null,viewerToken);
-        throw Error(String(failure)+"; touch="+JSON.stringify(touchEvents)+
+        throw Error(String(failure)+"; ink="+JSON.stringify(ink)+
+            "; touch="+JSON.stringify(touchEvents)+
             "; hitTest="+JSON.stringify(target)+
             "; mobile="+JSON.stringify(mobileState)+
             "; viewer="+JSON.stringify(viewerState)+
