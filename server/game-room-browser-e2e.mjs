@@ -17,6 +17,20 @@ const cp=process.env.GAME_ROOM_PROBE_CLASSPATH
         process.platform==="win32"?";":":");
 let server,chrome,cdp,userDir,tlsProxy,checks=0;
 const tlsConnections=new Set();
+const upgradedSockets=new Map();
+let nextUpgradeId=0;
+function activeUpgrades(fragment){
+    return [...upgradedSockets].filter(([,connection])=>
+        connection.path.includes(fragment) && !connection.browser.destroyed);
+}
+function dropUpgrades(fragment){
+    const connected=activeUpgrades(fragment);
+    for(const [,connection] of connected){
+        connection.browser.destroy();
+        connection.upstream.destroy();
+    }
+    return connected.length;
+}
 const failures=[];
 const nap=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function poll(action,label,timeout=15000){
@@ -143,6 +157,12 @@ class CDP{
             "page navigation "+url);
     }
 }
+async function waitRoomIdle(page,element){
+    await poll(async()=>await cdp.eval(page,
+        `document.getElementById(${JSON.stringify(element)})
+        ?.getAttribute("aria-busy")!=="true"`),
+        "room action completed: "+element);
+}
 async function fill(page,form,values){
     return cdp.eval(page,`(()=>{const f=document.getElementById(${JSON.stringify(form)});
         if(!f)throw Error("missing form");
@@ -182,15 +202,17 @@ async function backend(page,path,method="GET",body=null,token=null){
 async function userToken(page,key){
     return cdp.eval(page,"sessionStorage.getItem("+JSON.stringify(key)+")");
 }
-async function startMemberObserver(page,roomId,memberToken,wsBase){
+async function startMemberObserver(page,roomId,memberToken,wsBase,
+    afterSequence=-1){
     return cdp.eval(page,`(async()=>{
         const url=${JSON.stringify(wsBase)}+"?memberRoomId="+
             encodeURIComponent(${JSON.stringify(roomId)});
         const token=${JSON.stringify(memberToken)};
+        const afterSequence=${JSON.stringify(afterSequence)};
         const ws=new WebSocket(url);
         window.__roomObserver={code:-1,events:[],ws};
         ws.addEventListener("open",()=>{
-            ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence:-1}));
+            ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence}));
         });
         ws.addEventListener("message",ev=>window.__roomObserver.events.push(ev.data));
         ws.addEventListener("close",ev=>window.__roomObserver.code=ev.code);
@@ -247,6 +269,11 @@ async function launchTlsProxy(base,ws){
     });
     tlsProxy.on("upgrade",(request,browserSocket,head)=>{
         const upstream=net.connect(Number(upstreamWs.port),"127.0.0.1");
+        const id=++nextUpgradeId;
+        upgradedSockets.set(id,{path:request.url,browser:browserSocket,upstream});
+        const clear=()=>upgradedSockets.delete(id);
+        browserSocket.on("close",clear);
+        upstream.on("close",clear);
         upstream.on("connect",()=>{
             const lines=[
                 request.method+" "+request.url+" HTTP/1.1",
@@ -291,6 +318,112 @@ async function touchStroke(page,coordinates){
     }
     await cdp.send("Input.dispatchTouchEvent",{
         type:"touchEnd",touchPoints:[]},page.sessionId);
+}
+
+/**
+ * Abort upgraded sockets like a dropped Wi-Fi connection, with no clean WS
+ * close frame. Confirm the browser resubscribes, durable Canvas history
+ * replays and both member and drawing sessions retain the same identity.
+ */
+async function recoverCanvasWssAfterAbruptDrop(mobile,viewer,hostToken,
+    viewerToken,inkSamples,tls){
+    const state=await backend(mobile,"/drawing","GET",null,hostToken);
+    check(state.status===200 && !!state.data.game?.drawingCode,
+        "active Canvas round available before forced network drop");
+    const drawingCode=state.data.game.drawingCode;
+    const fragment="drawingCode="+encodeURIComponent(drawingCode);
+    await poll(()=>activeUpgrades(fragment).length>=2,
+        "both drawer and spectator Canvas WS streams established");
+    const original=await cdp.eval(viewer,inkSamples);
+    check(original>10,"spectator has persisted drawing before outage");
+    const oldIds=new Set(activeUpgrades(fragment).map(([id])=>id));
+    check(dropUpgrades(fragment)>=2,
+        "forced abrupt WSS network loss terminates both Canvas transports");
+    await poll(()=>activeUpgrades(fragment).some(([id])=>!oldIds.has(id)),
+        "Canvas auto reconnect opens new WSS upgrade after 1006",12000);
+    // No trusted state is cleared on network loss. Replaying history must
+    // restore Canvas pixels without creating another guest identity.
+    await poll(async()=>await cdp.eval(viewer,inkSamples)>10,
+        "reconnected spectator recovers authoritative Canvas ink");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"network loss does not rotate or expose member token");
+
+    // Refresh/page reload is a distinct recovery mode: no old in-memory
+    // cursor or stroke map survives, so the member-only Canvas replay
+    // must rebuild the line from SQLite.
+    await cdp.eval(viewer,"window.__reloadSentinel=true");
+    await cdp.send("Page.reload",{ignoreCache:true},viewer.sessionId);
+    await poll(async()=>await cdp.eval(viewer,
+        "document.readyState==='complete'&&!window.__reloadSentinel"),
+        "new document loaded after real browser refresh");
+    await poll(async()=>await cdp.eval(viewer,inkSamples)>10,
+        "page reload restores Drawing Canvas history over authenticated WSS");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"same-tab page refresh preserves authorized guest seat");
+    // The independent, non-reconnecting test observer is recreated after
+    // navigation for the later 1008 policy close check.
+    const members=await backend(viewer,"/me","GET",null,viewerToken);
+    await startMemberObserver(viewer,members.data.room.roomId,viewerToken,tls.ws);
+    await poll(async()=>await cdp.eval(viewer,
+        "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
+        "reloaded browser authorizes fresh member-only WSS subscribe");
+}
+
+/**
+ * Reproduce an abrupt member-room transport loss and verify that durable chat
+ * is replayed once from its monotonic cursor, while the user UI and bearer
+ * survive the network outage. No new identity or extra member seat is issued.
+ */
+async function recoverMemberWssAfterAbruptDrop(mobile,viewer,hostToken,
+    viewerToken,tls){
+    const state=await backend(viewer,"/me","GET",null,viewerToken);
+    check(state.status===200,"guest remains joined after Canvas recovery");
+    const roomId=state.data.room.roomId;
+    const fragment="memberRoomId="+encodeURIComponent(roomId);
+    await poll(()=>activeUpgrades(fragment).length>=2,
+        "host and guest member-room sockets active prior to network cut");
+    const oldIds=new Set(activeUpgrades(fragment).map(([id])=>id));
+    check(dropUpgrades(fragment)>=2,
+        "force-drop live member WS upgrades without a clean close frame");
+    const messageId="r10recover-"+Date.now().toString(36);
+    const text="recovered-once-"+messageId;
+    const posted=await backend(mobile,"/chat","POST",{messageId,text},hostToken);
+    check(posted.status===201 && Number(posted.data.sequence)>0,
+        "host chat persists during WSS outage");
+    await poll(()=>activeUpgrades(fragment).some(([id])=>!oldIds.has(id)),
+        "member-room socket automatically reopens after unclean disconnect",
+        13000);
+    await poll(async()=>await cdp.eval(viewer,
+        `document.getElementById("chatList").innerText.includes(${JSON.stringify(text)})`),
+        "guest chat UI eventually reconciles missed event");
+    const appearances=await cdp.eval(viewer,`[...document.querySelectorAll(
+        "#chatList li")].filter(x=>x.textContent.includes(
+        ${JSON.stringify(text)})).length`);
+    check(appearances===1,
+        "reconnected browser shows persisted chat exactly once");
+
+    // Test the server's replay contract independently of the periodically
+    // refreshed chat UI, which can legitimately use HTTP as fallback.
+    await startMemberObserver(viewer,roomId,viewerToken,tls.ws,
+        posted.data.sequence-1);
+    await poll(async()=>await cdp.eval(viewer,`window.__roomObserver.events
+        .some(x=>x.includes(${JSON.stringify(messageId)}))`),
+        "replay subscription catches exact missed chat sequence");
+    const count=await cdp.eval(viewer,`window.__roomObserver.events
+        .filter(x=>x.includes(${JSON.stringify(messageId)})).length`);
+    check(count===1,"missed event replay has no duplicates");
+    await cdp.eval(viewer,"window.__roomObserver.ws.close();true");
+    await startMemberObserver(viewer,roomId,viewerToken,tls.ws,
+        posted.data.sequence);
+    await poll(async()=>await cdp.eval(viewer,`window.__roomObserver.events
+        .some(x=>x.includes("room.snapshot"))`),
+        "cursor-resumed room subscription authenticates after outage");
+    await nap(250);
+    check(await cdp.eval(viewer,`window.__roomObserver.events
+        .every(x=>!x.includes(${JSON.stringify(messageId)}))`),
+        "resubscription after acknowledged cursor skips older chat");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"chat replay does not replace guest member credential");
 }
 
 async function mobileWssAcceptance(base,ws){
@@ -342,6 +475,7 @@ async function mobileWssAcceptance(base,ws){
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('ready').textContent.includes('취소')"),
         "mobile host ready action");
+    await waitRoomIdle(mobile,"room");
     await cdp.eval(mobile,`(()=>{
         document.getElementById("mode").value="STREAMER_DRAWER";
         document.getElementById("rounds").value="1";
@@ -351,6 +485,7 @@ async function mobileWssAcceptance(base,ws){
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('promptForm').hidden===false"),
         "streamer host may author the drawing prompt");
+    await waitRoomIdle(mobile,"room");
     await fill(mobile,"promptForm",{answer:"turtle",accepted:""});
     try {
         await poll(async()=>await cdp.eval(mobile,
@@ -472,6 +607,10 @@ async function mobileWssAcceptance(base,ws){
     }
     check((await cdp.eval(mobile,"window.scrollY"))===box.scrollY,
         "mobile touch draw does not scroll page under finger");
+    await recoverCanvasWssAfterAbruptDrop(mobile,viewer,mobileToken,
+        viewerToken,inkSamples,tls);
+    await recoverMemberWssAfterAbruptDrop(mobile,viewer,mobileToken,
+        viewerToken,tls);
     const outsider=await backend(viewer,"/me","GET",null,viewerToken);
     const member=outsider.data.room.members.find(x=>
         x.displayName==="Secure Viewer");
@@ -600,10 +739,9 @@ async function run(){
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('roster').children.length===2"),
         "Yacht renders two real players after first room refresh");
-    // The roster can render inside joinPublicRoom's final refresh while the
-    // UI command lock is still held. Do not press Ready before admission
-    // settles, or the real client's intentionally guarded handler drops it.
-    await nap(350);
+    // Roster rendering may precede admission's final refresh. Wait for
+    // the actual operation lock instead of a platform-dependent sleep.
+    await waitRoomIdle(guest,"game");
     await click(guest,"ready");
     await poll(async()=>await cdp.eval(guest,
         "document.getElementById('ready').textContent.includes('취소')"),
@@ -631,7 +769,8 @@ async function run(){
     process.stdout.write(prefix+" checks="+checks+
         " browsers=2-contexts drawing=host-join-kick-rejoin-close"+
         " ws=authenticated-revoked yacht=guest-match"+
-        " mobile=390px+touch tls=https+wss credentials=isolated\n");
+        " mobile=390px+touch tls=https+wss recovery=canvas+chat"+ 
+        " credentials=isolated\n");
 }
 try{await run();}
 catch(error){
