@@ -17,6 +17,20 @@ const cp=process.env.GAME_ROOM_PROBE_CLASSPATH
         process.platform==="win32"?";":":");
 let server,chrome,cdp,userDir,tlsProxy,checks=0;
 const tlsConnections=new Set();
+const upgradedSockets=new Map();
+let nextUpgradeId=0;
+function activeUpgrades(fragment){
+    return [...upgradedSockets].filter(([,connection])=>
+        connection.path.includes(fragment) && !connection.browser.destroyed);
+}
+function dropUpgrades(fragment){
+    const connected=activeUpgrades(fragment);
+    for(const [,connection] of connected){
+        connection.browser.destroy();
+        connection.upstream.destroy();
+    }
+    return connected.length;
+}
 const failures=[];
 const nap=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 async function poll(action,label,timeout=15000){
@@ -247,6 +261,11 @@ async function launchTlsProxy(base,ws){
     });
     tlsProxy.on("upgrade",(request,browserSocket,head)=>{
         const upstream=net.connect(Number(upstreamWs.port),"127.0.0.1");
+        const id=++nextUpgradeId;
+        upgradedSockets.set(id,{path:request.url,browser:browserSocket,upstream});
+        const clear=()=>upgradedSockets.delete(id);
+        browserSocket.on("close",clear);
+        upstream.on("close",clear);
         upstream.on("connect",()=>{
             const lines=[
                 request.method+" "+request.url+" HTTP/1.1",
@@ -291,6 +310,51 @@ async function touchStroke(page,coordinates){
     }
     await cdp.send("Input.dispatchTouchEvent",{
         type:"touchEnd",touchPoints:[]},page.sessionId);
+}
+
+/**
+ * Abort upgraded sockets like a dropped Wi-Fi connection, with no clean WS
+ * close frame. Confirm the browser resubscribes, durable Canvas history
+ * replays and both member and drawing sessions retain the same identity.
+ */
+async function recoverCanvasWssAfterAbruptDrop(mobile,viewer,hostToken,
+    viewerToken,inkSamples,tls){
+    const state=await backend(mobile,"/drawing","GET",null,hostToken);
+    check(state.status===200 && !!state.data.game?.drawingCode,
+        "active Canvas round available before forced network drop");
+    const drawingCode=state.data.game.drawingCode;
+    const fragment="drawingCode="+encodeURIComponent(drawingCode);
+    await poll(()=>activeUpgrades(fragment).length>=2,
+        "both drawer and spectator Canvas WS streams established");
+    const original=await cdp.eval(viewer,inkSamples);
+    check(original>10,"spectator has persisted drawing before outage");
+    const oldIds=new Set(activeUpgrades(fragment).map(([id])=>id));
+    check(dropUpgrades(fragment)>=2,
+        "forced abrupt WSS network loss terminates both Canvas transports");
+    await poll(()=>activeUpgrades(fragment).some(([id])=>!oldIds.has(id)),
+        "Canvas auto reconnect opens new WSS upgrade after 1006",12000);
+    // No trusted state is cleared on network loss. Replaying history must
+    // restore Canvas pixels without creating another guest identity.
+    await poll(async()=>await cdp.eval(viewer,inkSamples)>10,
+        "reconnected spectator recovers authoritative Canvas ink");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"network loss does not rotate or expose member token");
+
+    // Refresh/page reload is a distinct recovery mode: no old in-memory
+    // cursor or stroke map survives, so the member-only Canvas replay
+    // must rebuild the line from SQLite.
+    await cdp.navigate(viewer,tls.base+"/games/drawing-guess/room/");
+    await poll(async()=>await cdp.eval(viewer,inkSamples)>10,
+        "page reload restores Drawing Canvas history over authenticated WSS");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"same-tab page refresh preserves authorized guest seat");
+    // The independent, non-reconnecting test observer is recreated after
+    // navigation for the later 1008 policy close check.
+    const members=await backend(viewer,"/me","GET",null,viewerToken);
+    await startMemberObserver(viewer,members.data.room.roomId,viewerToken,tls.ws);
+    await poll(async()=>await cdp.eval(viewer,
+        "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
+        "reloaded browser authorizes fresh member-only WSS subscribe");
 }
 
 async function mobileWssAcceptance(base,ws){
@@ -472,6 +536,8 @@ async function mobileWssAcceptance(base,ws){
     }
     check((await cdp.eval(mobile,"window.scrollY"))===box.scrollY,
         "mobile touch draw does not scroll page under finger");
+    await recoverCanvasWssAfterAbruptDrop(mobile,viewer,mobileToken,
+        viewerToken,inkSamples,tls);
     const outsider=await backend(viewer,"/me","GET",null,viewerToken);
     const member=outsider.data.room.members.find(x=>
         x.displayName==="Secure Viewer");
