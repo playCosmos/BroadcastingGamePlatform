@@ -14,7 +14,9 @@ import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayList;
 import java.util.Base64;
+import java.util.List;
 import java.util.HexFormat;
 import java.util.NoSuchElementException;
 import java.util.Objects;
@@ -84,13 +86,125 @@ public final class GameRoomAccessService {
                                       String displayName, SeatRole hostSeat,
                                       int maxPlayers, int maxMembers)
         throws SQLException {
+        return createHostedRoom(gameId,roomName,displayName,
+            hostSeat,maxPlayers,maxMembers,false);
+    }
+
+    /** Browser-callable hosting: same R2 rights as admin-created host. */
+    public HostedRoom createPublicHostedRoom(String gameId,String roomName,
+        String displayName,SeatRole hostSeat,int maxPlayers,int maxMembers)
+        throws SQLException {
+        return createHostedRoom(gameId,roomName,displayName,
+            hostSeat,maxPlayers,maxMembers,true);
+    }
+
+    private HostedRoom createHostedRoom(String gameId,String roomName,
+        String displayName,SeatRole hostSeat,int maxPlayers,int maxMembers,
+        boolean publiclyJoinable) throws SQLException {
         return rooms.write(connection -> {
-            var room = rooms.createInTransaction(connection,
-                gameId, roomName, "guest-" + UUID.randomUUID(),
-                displayName, hostSeat, maxPlayers, maxMembers);
-            Credential secret = issueSession(connection,
-                room.roomId(), room.ownerMemberId());
-            return new HostedRoom(room, secret);
+            if(publiclyJoinable) {
+                try(var limit=connection.prepareStatement("""
+                    SELECT COUNT(*) FROM game_room_public pub
+                    JOIN game_room r ON r.room_id=pub.room_id
+                    WHERE r.state IN ('OPEN_LOBBY','PLAYING')
+                    """);
+                    var result=limit.executeQuery()) {
+                    if(result.next() && result.getInt(1)>=128)
+                        throw new GameRoomService.RoomConflict(
+                            "public room capacity reached");
+                }
+            }
+            var room=rooms.createInTransaction(connection,
+                gameId,roomName,"guest-"+UUID.randomUUID(),
+                displayName,hostSeat,maxPlayers,maxMembers);
+            if(publiclyJoinable) {
+                try(var insert=connection.prepareStatement("""
+                    INSERT INTO game_room_public(room_id,created_at)
+                    VALUES(?,?)
+                    """)) {
+                    insert.setString(1,room.roomId());
+                    insert.setString(2,clock.instant().toString());
+                    insert.executeUpdate();
+                }
+            }
+            Credential secret=issueSession(connection,
+                room.roomId(),room.ownerMemberId());
+            return new HostedRoom(room,secret);
+        });
+    }
+
+    public record PublicRoom(String gameId,String roomCode,String roomName,
+        String state,int maxPlayers,int playerCount,
+        int maxRoomMembers,int memberCount) {}
+
+    /** Only explicitly public rooms, with no member list or secrets. */
+    public List<PublicRoom> publicRooms(String gameId) throws SQLException {
+        if(!"drawing_guess".equals(gameId)&&!"yacht".equals(gameId))
+            throw new IllegalArgumentException("unsupported game");
+        try(var connection=openRead();
+            var query=connection.prepareStatement("""
+                SELECT r.room_id
+                FROM game_room r JOIN game_room_public pub ON pub.room_id=r.room_id
+                WHERE r.game_id=? AND r.state IN ('OPEN_LOBBY','PLAYING')
+                ORDER BY pub.created_at DESC LIMIT 30
+                """)) {
+            query.setString(1,gameId);
+            var result=new ArrayList<PublicRoom>();
+            try(var rows=query.executeQuery()) {
+                while(rows.next()) {
+                    Room room=GameRoomService.read(connection,rows.getString(1));
+                    result.add(new PublicRoom(room.gameId(),room.roomCode(),
+                        room.roomName(),room.state().name(),room.maxPlayers(),
+                        room.playerCount(),room.maxRoomMembers(),
+                        room.memberCount()));
+                }
+            }
+            return List.copyOf(result);
+        }
+    }
+
+    /** Atomic, invite-free admission to a public room by game-scoped code. */
+    public Credential joinPublic(String gameId,String roomCode,
+        String displayName,SeatRole role) throws SQLException {
+        if(!"drawing_guess".equals(gameId)&&!"yacht".equals(gameId))
+            throw new IllegalArgumentException("unsupported game");
+        if(roomCode==null || !roomCode.matches("[A-HJ-NP-Z2-9]{6}"))
+            throw new NoSuchElementException("public room not found");
+        if(displayName==null || displayName.isBlank() || displayName.length()>80)
+            throw new IllegalArgumentException("invalid display name");
+        Objects.requireNonNull(role,"seatRole");
+        return rooms.write(connection -> {
+            String roomId;
+            try(var query=connection.prepareStatement("""
+                SELECT r.room_id FROM game_room r
+                JOIN game_room_public pub ON pub.room_id=r.room_id
+                WHERE r.game_id=? AND r.room_code=?
+                """)) {
+                query.setString(1,gameId);
+                query.setString(2,roomCode);
+                try(var rows=query.executeQuery()) {
+                    if(!rows.next())
+                        throw new NoSuchElementException("public room not found");
+                    roomId=rows.getString(1);
+                }
+            }
+            Room room=GameRoomService.read(connection,roomId);
+            if(room.state()==GameRoomModels.RoomState.PLAYING
+                && role!=SeatRole.SPECTATOR)
+                throw new GameRoomService.RoomConflict(
+                    "active match accepts spectators only");
+            if(room.state()!=GameRoomModels.RoomState.PLAYING)
+                GameRoomService.requireOpen(room);
+            if(room.memberCount()>=room.maxRoomMembers())
+                throw new GameRoomService.RoomConflict("room full");
+            if(role==SeatRole.PLAYER && room.playerCount()>=room.maxPlayers())
+                throw new GameRoomService.RoomConflict("player seats full");
+            String memberId=UUID.randomUUID().toString();
+            GameRoomService.insertMember(connection,memberId,roomId,
+                "guest-"+UUID.randomUUID(),displayName,role,
+                clock.instant().toString());
+            rooms.bump(connection,room);
+            return issueSession(connection,roomId,memberId);
         });
     }
 
