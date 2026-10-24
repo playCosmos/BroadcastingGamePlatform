@@ -70,6 +70,9 @@ public final class GameRoomTelephoneR13bProbe {
             invalid(()->telephone.submit(a,null,
                 "[[{\"x\":-1,\"y\":0.5}]]"),"out-of-canvas points rejected");
             invalid(()->telephone.submit(a,null,
+                "[{\"points\":[{\"x\":0.1,\"y\":0.2}],\"color\":\"javascript:alert(1)\"}]"),
+                "only canonical hex colors may be persisted");
+            invalid(()->telephone.submit(a,null,
                 "[[{\"x\":0.1,\"y\":0.5,\"html\":\"<script>\"}],[1]]"),
                 "malformed drawing rejected");
             String sketch="[[{\"x\":0.1,\"y\":0.2},{\"x\":0.7,\"y\":0.8}]]";
