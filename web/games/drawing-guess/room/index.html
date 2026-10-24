@@ -57,7 +57,7 @@
 <div class="toolbar"><button id="ready" type="button" class="primary">준비하기</button>
 <button id="seat" type="button" class="secondary">역할 전환</button></div>
 <div id="hostSettings" class="hostsettings" hidden><h3>경기 설정</h3>
-<div class="toolbar"><label>모드<select id="mode"><option value="ROTATING_DRAWER">플레이어 순환 출제</option><option value="STREAMER_DRAWER">방송인 고정 출제</option><option value="STREAMER_ROTATION">다중 스트리머 순환 출제</option><option value="TELEPHONE_CHAIN">전화 그림 · 문장→그림→설명</option></select></label>
+<div class="toolbar"><label>모드<select id="mode"><option value="ROTATING_DRAWER">플레이어 순환 출제</option><option value="STREAMER_DRAWER">방송인 고정 출제</option><option value="STREAMER_ROTATION">다중 스트리머 순환 출제</option><option value="TELEPHONE_CHAIN">전화 그림 · 문장→그림→설명</option><option value="TELEPHONE_COOP">협동 이어 그리기 · 그림 릴레이</option></select></label>
 <label>라운드 수<input id="rounds" type="number" min="1" max="200" value="4"></label>
 <label>라운드 제한 시간(초)<input id="duration" type="number" min="10" max="600" value="80"></label></div>
 <button id="start" type="button" class="primary">경기 시작</button></div>
@@ -115,6 +115,7 @@
     <strong id="telephoneProgress" class="code"></strong>
   </div>
   <p class="muted" id="telephoneDeadline" aria-live="polite"></p>
+  <p class="muted" id="telephoneCoopGuide" hidden>이전 참가자의 그림은 유지됩니다. 내 차례에 추가한 획만 지우거나 실행취소할 수 있습니다.</p>
   <div id="telephonePrompt" class="telephonePrompt" hidden></div>
   <canvas id="telephoneIncoming" width="960" height="560" hidden
     aria-label="앞 참가자가 그린 그림" class="telephoneCanvas"></canvas>
@@ -141,11 +142,16 @@
   <p id="telephoneWaiting" class="muted" hidden></p>
   <section id="telephoneReveal" hidden>
     <h3>모두의 이야기 앨범</h3>
-    <p class="muted">처음 문장이 다음 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.</p>
+    <p class="muted" id="telephoneRevealDescription">처음 문장이 다음 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.</p>
     <div class="toolbar">
       <button type="button" id="telephoneAlbumPrev" class="secondary">← 이전 앨범</button>
       <strong id="telephoneAlbumTitle"></strong>
       <button type="button" id="telephoneAlbumNext" class="secondary">다음 앨범 →</button>
+    </div>
+    <div class="toolbar">
+      <button type="button" id="telephoneStepPrev" class="secondary">← 이전 단계</button>
+      <strong id="telephoneStepLabel" aria-live="polite">1단계</strong>
+      <button type="button" id="telephoneStepNext" class="secondary">다음 단계 →</button>
     </div>
     <div id="telephoneAlbumEntries" class="stack"></div>
   </section>
