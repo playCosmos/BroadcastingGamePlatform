@@ -34,6 +34,7 @@ public final class GameRoomDrawingService {
     public record Guess(String status,int rank,int guesserScore,int drawerScore) {}
     public record PrivatePrompt(String roundId,String answer,
                                 List<String> acceptedAnswers) {}
+    public record BroadcastChannel(String provider,String channelId) {}
 
     private final GameRoomService rooms;
     private final GameRoomAccessService access;
@@ -213,6 +214,123 @@ public final class GameRoomDrawingService {
             });
         }
         return state(hostToken);
+    }
+
+    /**
+     * Explicit incoming broadcast channels; listing is member-scoped.
+     * A binding never connects to a provider or grants access to a room.
+     * Built-in GAMECENTER guesses retain their separate member-token path.
+     */
+    public List<BroadcastChannel> channels(String token) throws SQLException {
+        Room room=access.room(token);
+        requireDrawing(room);
+        var result=new ArrayList<BroadcastChannel>();
+        try(var connection=rooms.databaseForAccess().open();
+            var statement=connection.prepareStatement("""
+                SELECT provider,channel_id
+                FROM game_room_drawing_broadcast_binding
+                WHERE room_id=? ORDER BY provider,channel_id
+                """)) {
+            statement.setString(1,room.roomId());
+            try(var rows=statement.executeQuery()) {
+                while(rows.next())result.add(new BroadcastChannel(
+                    rows.getString(1),rows.getString(2)));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    public List<BroadcastChannel> addChannel(String token,String provider,
+                                            String channelId) throws SQLException {
+        String name=broadcastProvider(provider),channel=broadcastChannel(channelId);
+        rooms.write(connection -> {
+            Room room=authorizedChannelHost(connection,token);
+            try(var existing=connection.prepareStatement("""
+                SELECT 1 FROM game_room_drawing_broadcast_binding
+                WHERE room_id=? AND provider=? AND channel_id=?
+                """)) {
+                existing.setString(1,room.roomId());
+                existing.setString(2,name);
+                existing.setString(3,channel);
+                try(var rows=existing.executeQuery()) {
+                    if(rows.next())return null; // safe idempotent retry
+                }
+            }
+            try(var limit=connection.prepareStatement("""
+                SELECT COUNT(*) FROM game_room_drawing_broadcast_binding
+                WHERE room_id=?
+                """)) {
+                limit.setString(1,room.roomId());
+                try(var rows=limit.executeQuery()) {
+                    if(rows.next() && rows.getInt(1)>=8)
+                        throw new GameRoomService.RoomConflict(
+                            "at most eight broadcast channels per room");
+                }
+            }
+            try(var insert=connection.prepareStatement("""
+                INSERT INTO game_room_drawing_broadcast_binding(
+                    room_id,provider,channel_id,added_at) VALUES(?,?,?,?)
+                """)) {
+                insert.setString(1,room.roomId());
+                insert.setString(2,name);
+                insert.setString(3,channel);
+                insert.setString(4,Instant.now().toString());
+                try {insert.executeUpdate();}
+                catch(SQLException conflict) {
+                    if(conflict.getErrorCode()!=19)throw conflict;
+                    throw new GameRoomService.RoomConflict(
+                        "broadcast channel already bound to another room");
+                }
+            }
+            return null;
+        });
+        return channels(token);
+    }
+
+    public List<BroadcastChannel> removeChannel(String token,String provider,
+                                               String channelId) throws SQLException {
+        String name=broadcastProvider(provider),channel=broadcastChannel(channelId);
+        rooms.write(connection -> {
+            Room room=authorizedChannelHost(connection,token);
+            try(var statement=connection.prepareStatement("""
+                DELETE FROM game_room_drawing_broadcast_binding
+                WHERE room_id=? AND provider=? AND channel_id=?
+                """)) {
+                statement.setString(1,room.roomId());
+                statement.setString(2,name);
+                statement.setString(3,channel);
+                statement.executeUpdate();
+            }
+            return null;
+        });
+        return channels(token);
+    }
+
+    private Room authorizedChannelHost(java.sql.Connection connection,String token)
+        throws SQLException {
+        var caller=access.requireSession(connection,token);
+        Room room=GameRoomService.read(connection,caller.roomId());
+        requireDrawing(room);
+        if(!caller.isHost() || !connected(room,caller.memberId()))
+            throw new GameRoomAccessService.Forbidden("connected host required");
+        if(room.state()!=RoomState.OPEN_LOBBY && room.state()!=RoomState.PLAYING)
+            throw new GameRoomService.RoomConflict("room no longer accepts channels");
+        return room;
+    }
+
+    private static String broadcastProvider(String raw) {
+        String provider=raw==null?"":raw.trim().toUpperCase(java.util.Locale.ROOT);
+        if(!provider.matches("[A-Z][A-Z0-9_]{0,31}")
+            || "GAMECENTER".equals(provider))
+            throw new IllegalArgumentException("invalid external broadcast provider");
+        return provider;
+    }
+
+    private static String broadcastChannel(String raw) {
+        String channel=raw==null?"":raw.trim();
+        if(!channel.matches("[A-Za-z0-9_.:-]{1,128}"))
+            throw new IllegalArgumentException("invalid broadcast channel ID");
+        return channel;
     }
 
     /** Prompt is private and authored by the EXACT current DRAWER member. */
