@@ -71,6 +71,10 @@ public final class GameRoomBroadcastR12Probe {
             check("NO_ACTIVE_ROOM".equals(game.processChatMessage(
                 chat("SOOP","unbound","user-x","horse")).status()),
                 "unbound external events do not enter the room");
+            check("STALE_EVENT".equals(game.processChatMessage(
+                new ChatMessageEvent("SOOP","stream-a","old-user","Old",
+                    "horse",null,System.currentTimeMillis()-600_000)).status()),
+                "replayed pre-round chat cannot score current prompt");
             check("WRONG".equals(game.processChatMessage(
                 chat("SOOP","stream-a","alice","cat")).status()),
                 "bound incorrect guess follows existing judge");
