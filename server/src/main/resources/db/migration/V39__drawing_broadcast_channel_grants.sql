@@ -1,5 +1,8 @@
 -- R12c: existing V38 room/channel labels are NOT trusted grants.
 -- Only bindings with authorized_at populated can route external guesses.
+-- The pre-authorization V38 labels have no operator proof. Discard them
+-- rather than retaining a channel lease that could block a legitimate room.
+DELETE FROM game_room_drawing_broadcast_binding;
 ALTER TABLE game_room_drawing_broadcast_binding
   ADD COLUMN authorized_at TEXT;
 
