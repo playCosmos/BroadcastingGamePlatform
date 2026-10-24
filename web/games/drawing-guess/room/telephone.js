@@ -3,6 +3,7 @@
   const $ = id => document.getElementById(id);
   let state = {active:false},request = null,refresh = null,phaseKey = "";
   let albumIndex = 0,strokes = [],activeStroke = null,pointer = null;
+  let penColor="#25374c",penWidth=6,eraser=false;
   let submitting = false;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   const context = draw.getContext("2d");
@@ -10,18 +11,20 @@
   function paint(canvas,lines) {
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.strokeStyle = "#25374c";ctx.lineWidth = 4;ctx.lineCap = "round";
-    ctx.lineJoin = "round";
+    ctx.lineCap = "round";ctx.lineJoin = "round";
     for(const stroke of lines) {
-      if(!Array.isArray(stroke)||!stroke.length)continue;
+      const points=Array.isArray(stroke)?stroke:stroke?.points;
+      if(!Array.isArray(points)||!points.length)continue;
+      ctx.strokeStyle=typeof stroke.color==="string"?stroke.color:"#25374c";
+      ctx.lineWidth=Number(stroke.width)||4;
       ctx.beginPath();
-      stroke.forEach((p,i)=>{
+      points.forEach((p,i)=>{
         if(!p || !Number.isFinite(p.x) || !Number.isFinite(p.y))return;
         const x=p.x*canvas.width,y=p.y*canvas.height;
         if(i===0)ctx.moveTo(x,y);else ctx.lineTo(x,y);
       });
-      if(stroke.length===1){
-        ctx.lineTo(stroke[0].x*canvas.width+0.1,stroke[0].y*canvas.height+0.1);
+      if(points.length===1){
+        ctx.lineTo(points[0].x*canvas.width+0.1,points[0].y*canvas.height+0.1);
       }
       ctx.stroke();
     }
@@ -122,16 +125,18 @@
        pointer!==null||strokes.length>=100)return;
     event.preventDefault();draw.setPointerCapture(event.pointerId);
     pointer=event.pointerId;
-    activeStroke=[point(event)];strokes.push(activeStroke);
+    activeStroke={points:[point(event)],
+      color:eraser?"#ffffff":penColor,width:eraser?20:penWidth};
+    strokes.push(activeStroke);
     paint(draw,strokes);
   });
   draw.addEventListener("pointermove",event=>{
     if(event.pointerId!==pointer||!activeStroke)return;
     event.preventDefault();
-    if(activeStroke.length>=96)return;
-    const p=point(event),last=activeStroke[activeStroke.length-1];
+    if(activeStroke.points.length>=96)return;
+    const p=point(event),last=activeStroke.points[activeStroke.points.length-1];
     if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)<0.001)return;
-    activeStroke.push(p);paint(draw,strokes);
+    activeStroke.points.push(p);paint(draw,strokes);
   });
   const stop=event=>{
     if(pointer!==event.pointerId)return;
@@ -139,6 +144,23 @@
   };
   draw.addEventListener("pointerup",stop);
   draw.addEventListener("pointercancel",stop);
+  $("telephoneColor").addEventListener("input",event=>{
+    if(/^#[0-9a-fA-F]{6}$/.test(event.target.value)){
+      penColor=event.target.value;eraser=false;
+      $("telephoneEraser").setAttribute("aria-pressed","false");
+    }
+  });
+  $("telephoneWidth").addEventListener("change",event=>{
+    penWidth=Math.max(1,Math.min(24,Number(event.target.value)||6));
+  });
+  $("telephoneEraser").addEventListener("click",()=>{
+    eraser=!eraser;
+    $("telephoneEraser").setAttribute("aria-pressed",String(eraser));
+  });
+  $("telephoneUndo").addEventListener("click",()=>{
+    if(state.mySubmitted||submitting||pointer!==null)return;
+    strokes.pop();paint(draw,strokes);
+  });
   $("telephoneClear").addEventListener("click",()=>{
     if(state.mySubmitted||submitting)return;
     strokes=[];paint(draw,strokes);
