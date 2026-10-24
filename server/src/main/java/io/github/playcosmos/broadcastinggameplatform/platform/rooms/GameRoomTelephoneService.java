@@ -337,11 +337,39 @@ public final class GameRoomTelephoneService {
             throw new IllegalArgumentException("drawing strokes out of bounds");
         var output=new JsonArray();
         for(JsonElement part:inputStrokes) {
-            if(!part.isJsonArray()||part.getAsJsonArray().isEmpty()
-                ||part.getAsJsonArray().size()>96)
+            // Older sketches consisted of bare point arrays; preserve them.
+            // New UX stores fixed-color strokes and a bounded pixel width.
+            JsonObject style=part.isJsonObject()?part.getAsJsonObject():null;
+            JsonElement payload=style==null?part:style.get("points");
+            if(payload==null||!payload.isJsonArray()
+                ||payload.getAsJsonArray().isEmpty()
+                ||payload.getAsJsonArray().size()>96)
                 throw new IllegalArgumentException("invalid stroke");
+            String color="#25374c";
+            int width=4;
+            if(style!=null) {
+                if(style.has("color")) {
+                    if(!style.get("color").isJsonPrimitive())
+                        throw new IllegalArgumentException("invalid brush color");
+                    color=style.get("color").getAsString();
+                    if(!color.matches("#[0-9a-fA-F]{6}"))
+                        throw new IllegalArgumentException("invalid brush color");
+                }
+                if(style.has("width")) {
+                    if(!style.get("width").isJsonPrimitive())
+                        throw new IllegalArgumentException("invalid brush width");
+                    double raw;
+                    try{raw=style.get("width").getAsDouble();}
+                    catch(RuntimeException invalid){
+                        throw new IllegalArgumentException("invalid brush width",invalid);
+                    }
+                    if(!Double.isFinite(raw)||raw!=Math.floor(raw)||raw<1||raw>24)
+                        throw new IllegalArgumentException("brush width outside 1..24");
+                    width=(int)raw;
+                }
+            }
             var points=new JsonArray();
-            for(JsonElement point:part.getAsJsonArray()){
+            for(JsonElement point:payload.getAsJsonArray()){
                 if(!point.isJsonObject())
                     throw new IllegalArgumentException("invalid point");
                 JsonObject obj=point.getAsJsonObject();
@@ -360,7 +388,11 @@ public final class GameRoomTelephoneService {
                 clean.addProperty("x",x);clean.addProperty("y",y);
                 points.add(clean);
             }
-            output.add(points);
+            JsonObject canonical=new JsonObject();
+            canonical.add("points",points);
+            canonical.addProperty("color",color.toLowerCase(java.util.Locale.ROOT));
+            canonical.addProperty("width",width);
+            output.add(canonical);
         }
         return output.toString();
     }
