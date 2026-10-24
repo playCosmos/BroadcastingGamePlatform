@@ -779,8 +779,9 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             if (("/admin/drawing/channel-grants".equals(suffix)
-                || "/admin/drawing/channel-grants/revoke".equals(suffix))
-                && ("GET".equals(method) || "POST".equals(method))) {
+                    && ("GET".equals(method) || "POST".equals(method)))
+                || ("/admin/drawing/channel-grants/revoke".equals(suffix)
+                    && "POST".equals(method))) {
                 if (!isAdminSession(exchange)) {
                     sendJson(exchange,401,Map.of(
                         "error","administrator authentication required"));
@@ -810,15 +811,6 @@ public final class GameClientHttpServer implements AutoCloseable {
                         roomApiText(body,"channelId"));
                     exchange.getResponseHeaders().set("Cache-Control","no-store");
                     sendJson(exchange,200,Map.of("channels",list));
-                    return;
-                }
-                if(!isAdminSession(exchange)) {
-                    sendJson(exchange,401,Map.of(
-                        "error","administrator authentication required"));
-                    return;
-                }
-                if(sharedDrawing==null) {
-                    sendJson(exchange,503,Map.of("error","drawing unavailable"));
                     return;
                 }
                 JsonObject body=readYachtBody(exchange,Set.of(
