@@ -288,9 +288,10 @@ public final class GameRoomDrawingR5HttpProbe {
                 && "yellow duck".equals(
                     read(phaseOne).get("previousContent").getAsString()),
                 "next artist receives only predecessor's private sentence");
-            check(read(request(client,base,ROOT+"/drawing/telephone","GET",
-                null,ts.token(),null,null,null))
-                .get("previousContent").isJsonNull(),
+            var spectatorTask=read(request(client,base,ROOT+
+                "/drawing/telephone","GET",null,ts.token(),null,null,null));
+            check(!spectatorTask.has("previousContent")
+                || spectatorTask.get("previousContent").isJsonNull(),
                 "spectator cannot inspect unrevealed predecessor");
             // 12 strokes x 85 points: >8KiB (ordinary room JSON cap).
             String points=java.util.stream.IntStream.range(0,85)
