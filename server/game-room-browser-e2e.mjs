@@ -736,10 +736,23 @@ async function telephoneBrowserAcceptance(base,coop){
         name:coop?"Collaborative gallery":"Telephone gallery",
         displayName:"Artist A",maxPlayers:3,maxRoomMembers:4
     });
-    const code=await poll(async()=>{
-        const name=await getRoom(host,"#roomCode");
-        return /^[A-HJ-NP-Z2-9]{6}$/.test(name)?name:null;
-    },"telephone three-player room created");
+    let code;
+    try{
+        code=await poll(async()=>{
+            const name=await getRoom(host,"#roomCode");
+            return /^[A-HJ-NP-Z2-9]{6}$/.test(name)?name:null;
+        },"telephone three-player room created");
+    }catch(error){
+        const state=await cdp.eval(host,`({
+            notice:document.getElementById("notice")?.textContent,
+            code:document.getElementById("roomCode")?.textContent,
+            admissionHidden:document.getElementById("admission")?.hidden,
+            auth:!!sessionStorage.getItem("gamecenter.drawing.room.member.v1")
+        })`);
+        throw Error(String(error)+" DOM="+JSON.stringify(state)+
+            " network="+JSON.stringify(cdp.network.slice(-8))+
+            " exceptions="+JSON.stringify(cdp.exceptions.slice(-8)));
+    }
     const members=["Artist B","Artist C","Gallery spectator"];
     for(let i=0;i<3;i++){
         await fill(others[i],"publicJoinForm",{
@@ -1018,8 +1031,17 @@ async function run(){
     check(viewport.scroll<=viewport.client+2,
         "Yacht mobile viewport has no horizontal overflow: "+JSON.stringify(viewport));
     await mobileWssAcceptance(base,ws);
-    await telephoneBrowserAcceptance(base,false);
-    await telephoneBrowserAcceptance(base,true);
+    // The production server deliberately limits public room creation per IP.
+    // Each complete telephone scenario gets a fresh fixture; otherwise the
+    // earlier Drawing/Yacht/browser cases consume its anonymous host quota.
+    server.kill();
+    await poll(()=>server.exitCode!==null,"first E2E fixture shutdown");
+    const normalFixture=await launchServer();
+    await telephoneBrowserAcceptance(normalFixture.base,false);
+    server.kill();
+    await poll(()=>server.exitCode!==null,"normal fixture shutdown");
+    const coopFixture=await launchServer();
+    await telephoneBrowserAcceptance(coopFixture.base,true);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
