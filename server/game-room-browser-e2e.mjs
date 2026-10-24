@@ -524,6 +524,13 @@ async function mobileWssAcceptance(base,ws){
         "gamecenter.drawing.room.member.v1");
     const state=await backend(viewer,"/me","GET",null,viewerToken);
     check(state.status===200,"HTTPS reverse proxy routes authorized member REST");
+    check(await cdp.eval(mobile,
+        "document.getElementById('operatorRoomId').hidden===false"+
+        " && document.getElementById('operatorRoomIdValue').textContent.length===36"),
+        "guest Drawing host can obtain room UUID for operator authorization");
+    check(await cdp.eval(viewer,
+        "document.getElementById('operatorRoomId').hidden"),
+        "spectator is not offered host operator grant workflow");
     await startMemberObserver(viewer,state.data.room.roomId,viewerToken,tls.ws);
     await poll(async()=>await cdp.eval(viewer,
         "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),

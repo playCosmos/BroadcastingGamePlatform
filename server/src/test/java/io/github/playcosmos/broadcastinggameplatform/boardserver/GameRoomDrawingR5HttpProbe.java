@@ -88,16 +88,28 @@ public final class GameRoomDrawingR5HttpProbe {
                 "BGP_ADMIN_SESSION=r5-admin-session",
                 "https://malicious.invalid",null).statusCode()==403,
                 "cross-origin issuance blocked even with an administrator session");
-            check(request(client,base,grants,"POST",grantBody,null,
-                "BGP_ADMIN_SESSION=r5-admin-session",null,null).statusCode()==201,
-                "administrator may issue room-scoped grant");
             var grantReply=request(client,base,grants,"POST",grantBody,null,
                 "BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(request(client,base,grants,"POST",grantBody,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null).statusCode()==409,
+                "duplicate outstanding channel grant requires revocation");
             check(grantReply.statusCode()==201 &&
                 grantReply.headers().firstValue("Cache-Control")
                     .orElse("").equals("no-store"),
                 "grant reply is administrator only and not cacheable");
             String approval=read(grantReply).get("grant").getAsString();
+            String listing=grants+"?roomId="+nativeRoomId;
+            check(request(client,base,listing,"GET",null,null,null,null,null)
+                .statusCode()==401,"anonymous users cannot list operator channel grants");
+            var beforeGrant=request(client,base,listing,"GET",null,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(beforeGrant.statusCode()==200
+                && beforeGrant.body().contains("PENDING")
+                && !beforeGrant.body().contains(approval),
+                "operator listing shows pending channel metadata, never bearer secret");
+            check(request(client,base,grants+"/revoke","GET",
+                null,null,"BGP_ADMIN_SESSION=r5-admin-session",null,null)
+                .statusCode()!=200,"GET cannot revoke channel grants");
             var denied=request(client,base,ROOT+"/drawing/channels/add","POST",
                 "{\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
                 +"\"grant\":\"untrusted\"}",host,null,null,null);
@@ -111,6 +123,32 @@ public final class GameRoomDrawingR5HttpProbe {
             check(request(client,base,ROOT+"/drawing/channels","GET",
                 null,host,null,null,null).statusCode()==200,
                 "authorized member may inspect public channel labels");
+            var statuses=request(client,base,listing,"GET",null,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(statuses.statusCode()==200
+                && statuses.body().contains("BOUND")
+                && !statuses.body().contains(approval),
+                "administrator sees active binding but not consumed bearer");
+            String revokeBody="{\"roomId\":\""+nativeRoomId+
+                "\",\"provider\":\"SOOP\",\"channelId\":\"stream-a\"}";
+            check(request(client,base,grants+"/revoke","POST",revokeBody,
+                host,null,null,null).statusCode()==401,
+                "anonymous host cannot call operator revocation");
+            check(request(client,base,grants+"/revoke","POST",revokeBody,
+                null,"BGP_ADMIN_SESSION=r5-admin-session",
+                "https://malicious.invalid",null).statusCode()==403,
+                "cross-origin request cannot revoke granted channel");
+            var revoked=request(client,base,grants+"/revoke","POST",revokeBody,
+                null,"BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(revoked.statusCode()==200
+                && !revoked.body().contains("BOUND"),
+                "operator revokes live binding and pending grants atomically");
+            check(request(client,base,ROOT+"/drawing/channels","GET",
+                null,host,null,null,null).body().contains("\"channels\":[]"),
+                "revoked channel disappears from host membership listing");
+            check(request(client,base,grants,"POST",grantBody,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null).statusCode()==201,
+                "operator may issue fresh grant after explicit revocation");
             var playerInvite=request(client,base,ROOT+"/host/invite","POST",
                 "{\"seatRole\":\"PLAYER\",\"maxUses\":1,\"expiresInSeconds\":3600}",
                 host,null,null,null);

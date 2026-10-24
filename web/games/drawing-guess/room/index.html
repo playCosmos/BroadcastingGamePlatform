@@ -36,7 +36,11 @@
 </section>
 <section id="room" hidden>
 <div class="panel roomhead"><div><p class="eyebrow">GAME ROOM</p><h2 id="roomName"></h2>
-<span id="roomCode" class="code"></span> · <span id="roomPhase"></span></div>
+<span id="roomCode" class="code"></span> · <span id="roomPhase"></span>
+<div id="operatorRoomId" class="muted" hidden>
+운영자 채널 승인용 게임룸 ID: <code id="operatorRoomIdValue"></code>
+<button type="button" class="secondary" id="copyOperatorRoomId">ID 복사</button>
+</div></div>
 <div><span id="roomCapacity"></span> <button type="button" id="closeRoom" class="secondary" hidden>방 닫기</button> <button type="button" id="leave" class="secondary">퇴장</button></div></div>
 <div class="columns"><div class="stack">
 <section id="lobby" class="panel"><h2>플레이어 대기실</h2>
