@@ -61,6 +61,7 @@
 <form id="broadcastForm" class="toolbar">
 <label>플랫폼<select name="provider"><option value="SOOP">SOOP</option></select></label>
 <label>채널 ID<input name="channelId" maxlength="128" pattern="[A-Za-z0-9_.:-]{1,128}" required autocomplete="off"></label>
+<label>운영자 승인 토큰<input name="grant" maxlength="128" required autocomplete="off" spellcheck="false" type="password" placeholder="해당 방·채널의 일회용 토큰"></label>
 <button type="submit" class="secondary">채널 등록</button>
 </form>
 <ul id="broadcastChannels" class="members" aria-live="polite"></ul>
