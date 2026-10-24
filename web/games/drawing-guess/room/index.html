@@ -3,6 +3,14 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Drawing Guess · GameCenter</title>
 <link rel="stylesheet" href="./room.css">
+<style>
+.telephoneCanvas{display:block;width:100%;max-width:960px;aspect-ratio:12/7;background:white;border:2px solid #465563;border-radius:12px;touch-action:none;margin:12px 0}
+.telephonePrompt{padding:18px;background:#142532;border:1px solid #35546a;border-radius:12px;margin:12px 0;font-size:17px;overflow-wrap:anywhere}
+.telephoneAlbumEntry{padding:14px;border:1px solid #344758;border-radius:10px;margin:10px 0}
+.telephoneAlbumEntry strong{display:block;margin-bottom:9px}
+</style>
+
+<script src="./telephone.js" defer></script>
 <script src="./room.js" defer></script></head>
 <body><main class="shell">
 <header class="top"><div><p class="eyebrow">GAMECENTER / GAME 03 / ROOM PLAY</p>
@@ -49,7 +57,7 @@
 <div class="toolbar"><button id="ready" type="button" class="primary">준비하기</button>
 <button id="seat" type="button" class="secondary">역할 전환</button></div>
 <div id="hostSettings" class="hostsettings" hidden><h3>경기 설정</h3>
-<div class="toolbar"><label>모드<select id="mode"><option value="ROTATING_DRAWER">플레이어 순환 출제</option><option value="STREAMER_DRAWER">방송인 고정 출제</option><option value="STREAMER_ROTATION">다중 스트리머 순환 출제</option></select></label>
+<div class="toolbar"><label>모드<select id="mode"><option value="ROTATING_DRAWER">플레이어 순환 출제</option><option value="STREAMER_DRAWER">방송인 고정 출제</option><option value="STREAMER_ROTATION">다중 스트리머 순환 출제</option><option value="TELEPHONE_CHAIN">전화 그림 · 문장→그림→설명</option></select></label>
 <label>라운드 수<input id="rounds" type="number" min="1" max="200" value="4"></label>
 <label>라운드 제한 시간(초)<input id="duration" type="number" min="10" max="600" value="80"></label></div>
 <button id="start" type="button" class="primary">경기 시작</button></div>
@@ -100,4 +108,39 @@
 <section class="panel chat"><h2>룸 채팅</h2><p class="muted">일반 대화입니다. 정답 제출은 왼쪽 전용 입력창을 사용합니다.</p>
 <ul id="chatList" class="chatList"></ul><form id="chatForm" class="toolbar chatForm">
 <input name="text" maxlength="500" required autocomplete="off" placeholder="메시지 입력…"><button type="submit" class="secondary">전송</button></form></section></aside></div>
+<section id="telephonePlay" class="panel" hidden>
+  <div class="toolbar spaced">
+    <div><p class="eyebrow">TELEPHONE / STORY CHAINS</p><h2>전화 그림 · 이어 전달하기</h2>
+    <p class="muted" id="telephonePhase">각자 문장을 쓰고 그림과 설명을 번갈아 전달합니다.</p></div>
+    <strong id="telephoneProgress" class="code"></strong>
+  </div>
+  <p class="muted" id="telephoneDeadline" aria-live="polite"></p>
+  <div id="telephonePrompt" class="telephonePrompt" hidden></div>
+  <canvas id="telephoneIncoming" width="960" height="560" hidden
+    aria-label="앞 참가자가 그린 그림" class="telephoneCanvas"></canvas>
+  <form id="telephoneTextForm" class="stack" hidden>
+    <label>문장 또는 그림 설명<input id="telephoneText" maxlength="180" required
+      autocomplete="off" placeholder="떠오르는 문장을 입력하세요"></label>
+    <button class="primary" type="submit">작성 완료 · 다음 참가자에게 전달</button>
+  </form>
+  <section id="telephoneDrawingArea" hidden>
+    <canvas id="telephoneCanvas" width="960" height="560" class="telephoneCanvas"
+      aria-label="내가 그리는 그림"></canvas>
+    <div class="toolbar">
+      <button type="button" class="secondary" id="telephoneClear">전체 지우기</button>
+      <button type="button" class="primary" id="telephoneDrawingDone">그림 완료 · 전달</button>
+    </div>
+  </section>
+  <p id="telephoneWaiting" class="muted" hidden></p>
+  <section id="telephoneReveal" hidden>
+    <h3>모두의 이야기 앨범</h3>
+    <p class="muted">처음 문장이 다음 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.</p>
+    <div class="toolbar">
+      <button type="button" id="telephoneAlbumPrev" class="secondary">← 이전 앨범</button>
+      <strong id="telephoneAlbumTitle"></strong>
+      <button type="button" id="telephoneAlbumNext" class="secondary">다음 앨범 →</button>
+    </div>
+    <div id="telephoneAlbumEntries" class="stack"></div>
+  </section>
+</section>
 </section></main></body></html>
