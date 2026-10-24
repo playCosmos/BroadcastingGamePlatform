@@ -2,7 +2,8 @@
   "use strict";
   const $ = id => document.getElementById(id);
   let state = {active:false},request = null,refresh = null,phaseKey = "";
-  let albumIndex = 0,strokes = [],activeStroke = null,pointer = null;
+  let albumIndex = 0,entryIndex=0,strokes = [],baseStrokes = [],
+    activeStroke = null,pointer = null;
   let penColor="#25374c",penWidth=6,eraser=false;
   let submitting = false;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
@@ -40,13 +41,17 @@
     if(!albums.length)return;
     albumIndex=Math.max(0,Math.min(albumIndex,albums.length-1));
     const album=albums[albumIndex];
+    entryIndex=Math.max(0,Math.min(entryIndex,album.entries.length-1));
     $("telephoneAlbumTitle").textContent=(albumIndex+1)+"/"+albums.length+
       " · "+album.originalAuthor+"님의 이야기";
     $("telephoneAlbumPrev").disabled=albumIndex===0;
     $("telephoneAlbumNext").disabled=albumIndex===albums.length-1;
+    $("telephoneStepPrev").disabled=entryIndex===0;
+    $("telephoneStepNext").disabled=entryIndex===album.entries.length-1;
+    $("telephoneStepLabel").textContent=(entryIndex+1)+"/"+album.entries.length+"단계";
     const entries=$("telephoneAlbumEntries");
     entries.replaceChildren();
-    for(const entry of album.entries){
+    for(const entry of album.entries.slice(entryIndex,entryIndex+1)){
       const card=document.createElement("article");
       card.className="telephoneAlbumEntry";
       const heading=document.createElement("strong");
@@ -73,21 +78,36 @@
     if(!data?.active)return;
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
-      phaseKey=key;strokes=[];activeStroke=null;pointer=null;
+      phaseKey=key;strokes=[];baseStrokes=[];activeStroke=null;pointer=null;
       $("telephoneText").value="";
-      paint(draw,[]);
+      if(data.mode==="COOP" && data.previousKind==="DRAWING"){
+        try{
+          const lines=JSON.parse(data.previousContent||"[]");
+          if(Array.isArray(lines))baseStrokes=lines;
+        }catch{baseStrokes=[];}
+      }
+      paint(draw,baseStrokes);
     }
     const reveal=data.state==="REVEAL";
     const drawing=data.taskKind==="DRAWING";
     const text=data.taskKind==="TEXT";
     const input=!reveal&&!data.mySubmitted&&(drawing||text);
+    const coop=data.mode==="COOP";
     $("telephonePhase").textContent=reveal
-      ?"모든 전달이 끝났습니다. 앨범을 순서대로 공개합니다."
-      :data.stage===0
-        ?"1단계 · 나만의 재미있는 문장으로 시작하세요."
-        :drawing
-          ?"받은 문장을 그림으로 표현하세요. 이전 문장 외에는 볼 수 없습니다."
-          :"앞 참가자의 그림을 보고 무엇인지 설명하세요.";
+      ?"모든 전달이 끝났습니다. 앨범을 단계별로 공개합니다."
+      :coop
+        ?data.stage===0
+          ?"1단계 · 첫 그림을 그리세요. 다음 참가자들이 계속 이어 그립니다."
+          :"앞 참가자의 그림 위에 새 내용을 덧그리세요."
+        :data.stage===0
+          ?"1단계 · 나만의 재미있는 문장으로 시작하세요."
+          :drawing
+            ?"받은 문장을 그림으로 표현하세요. 이전 문장 외에는 볼 수 없습니다."
+            :"앞 참가자의 그림을 보고 무엇인지 설명하세요.";
+    visible("telephoneCoopGuide",coop&&!reveal);
+    $("telephoneRevealDescription").textContent=coop
+      ?"한 그림에 차례로 추가한 획이 어떻게 쌓였는지 단계별로 확인하세요."
+      :"처음 문장이 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.";
     $("telephoneProgress").textContent=reveal?"앨범 공개":
       "단계 "+(data.stage+1)+"/"+data.stages+
       " · 제출 "+data.submitted+"/"+data.participants;
@@ -98,8 +118,8 @@
     visible("telephonePrompt",input&&Boolean(data.previousContent&&data.previousKind==="TEXT"));
     $("telephonePrompt").textContent=
       data.previousKind==="TEXT"?(data.previousContent||""):"";
-    visible("telephoneIncoming",input&&data.previousKind==="DRAWING");
-    if(input&&data.previousKind==="DRAWING")
+    visible("telephoneIncoming",input&&!coop&&data.previousKind==="DRAWING");
+    if(input&&!coop&&data.previousKind==="DRAWING")
       incomingDrawing(data.previousContent||"[]",incoming);
     $("telephoneWaiting").textContent=data.mySubmitted
       ?"제출했습니다. 다른 참가자들이 완료하면 다음 단계로 넘어갑니다."
@@ -128,7 +148,7 @@
     activeStroke={points:[point(event)],
       color:eraser?"#ffffff":penColor,width:eraser?20:penWidth};
     strokes.push(activeStroke);
-    paint(draw,strokes);
+    paint(draw,[...baseStrokes,...strokes]);
   });
   draw.addEventListener("pointermove",event=>{
     if(event.pointerId!==pointer||!activeStroke)return;
@@ -136,7 +156,7 @@
     if(activeStroke.points.length>=96)return;
     const p=point(event),last=activeStroke.points[activeStroke.points.length-1];
     if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)<0.001)return;
-    activeStroke.points.push(p);paint(draw,strokes);
+    activeStroke.points.push(p);paint(draw,[...baseStrokes,...strokes]);
   });
   const stop=event=>{
     if(pointer!==event.pointerId)return;
@@ -159,11 +179,11 @@
   });
   $("telephoneUndo").addEventListener("click",()=>{
     if(state.mySubmitted||submitting||pointer!==null)return;
-    strokes.pop();paint(draw,strokes);
+    strokes.pop();paint(draw,[...baseStrokes,...strokes]);
   });
   $("telephoneClear").addEventListener("click",()=>{
     if(state.mySubmitted||submitting)return;
-    strokes=[];paint(draw,strokes);
+    strokes=[];paint(draw,baseStrokes);
   });
   async function submit(body){
     if(submitting||!request)return;
@@ -184,10 +204,17 @@
     if(input)submit({text:input});
   });
   $("telephoneDrawingDone").addEventListener("click",()=>{
-    if(strokes.length && pointer===null)submit({strokes});
+    if(pointer===null && (strokes.length || state.mode==="COOP"))
+      submit({strokes});
   });
-  $("telephoneAlbumPrev").addEventListener("click",()=>{albumIndex--;renderAlbums();});
-  $("telephoneAlbumNext").addEventListener("click",()=>{albumIndex++;renderAlbums();});
+  $("telephoneAlbumPrev").addEventListener("click",()=>{
+    albumIndex--;entryIndex=0;renderAlbums();
+  });
+  $("telephoneAlbumNext").addEventListener("click",()=>{
+    albumIndex++;entryIndex=0;renderAlbums();
+  });
+  $("telephoneStepPrev").addEventListener("click",()=>{entryIndex--;renderAlbums();});
+  $("telephoneStepNext").addEventListener("click",()=>{entryIndex++;renderAlbums();});
   window.setInterval(updateTimer,1000);
   window.TelephoneView={render};
 })();
