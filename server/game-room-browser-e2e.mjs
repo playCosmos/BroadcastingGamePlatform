@@ -790,6 +790,9 @@ async function telephoneBrowserAcceptance(base,coop){
                 `document.getElementById(${JSON.stringify(field)}).hidden===false`),
                 "telephone author "+i+" has correct stage "+stage,17000);
             if(drawing){
+                await cdp.send("Emulation.setTouchEmulationEnabled",{
+                    enabled:true,maxTouchPoints:1
+                },page.sessionId);
                 const bounds=await cdp.eval(page,`(()=>{
                     const canvas=document.getElementById("telephoneCanvas");
                     canvas.scrollIntoView({block:"center"});
@@ -800,9 +803,6 @@ async function telephoneBrowserAcceptance(base,coop){
                 })()`);
                 check(bounds.width>100 && bounds.target==="telephoneCanvas",
                     "telephone canvas is real pointer input target");
-                await cdp.send("Emulation.setTouchEmulationEnabled",{
-                    enabled:true,maxTouchPoints:1
-                },page.sessionId);
                 await touchStroke(page,bounds);
                 await click(page,"telephoneDrawingDone");
             }else{
