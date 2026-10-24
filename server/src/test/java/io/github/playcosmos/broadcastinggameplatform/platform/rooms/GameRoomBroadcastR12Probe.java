@@ -26,7 +26,8 @@ public final class GameRoomBroadcastR12Probe {
             var repo=new DrawingGuessRepository(db);
             var sync=new DrawingSyncService(db);
             var game=new DrawingGuessGameService(repo,sync);
-            var drawing=new GameRoomDrawingService(db,access,repo,game,sync,(id,json)->{});
+            var drawing=new GameRoomDrawingService(db,access,repo,game,sync,
+                (id,json)->{},source->"SOOP".equals(source.provider()));
             var first=access.createHostedRoom("drawing_guess","Stream group",
                 "Streamer A",SeatRole.PLAYER,1,4);
             var other=access.createHostedRoom("drawing_guess","Other host",
@@ -38,27 +39,32 @@ public final class GameRoomBroadcastR12Probe {
                 Duration.ofMinutes(10)).token(),"Viewer");
 
             check(drawing.channels(host).isEmpty(),"new room has no broadcast bindings");
-            forbidden(()->drawing.addChannel(spectator.token(),"SOOP","stream-a"),
+            forbidden(()->drawing.addChannel(spectator.token(),"SOOP","stream-a",null),
                 "spectator cannot bind");
             forbidden(()->drawing.removeChannel(spectator.token(),"SOOP","stream-a"),
                 "spectator cannot remove");
-            invalid(()->drawing.addChannel(host,"GAMECENTER","stream-a"),
+            invalid(()->drawing.addChannel(host,"GAMECENTER","stream-a",null),
                 "native member identity cannot be bound externally");
-            invalid(()->drawing.addChannel(host,"SOOP","bad channel id!"),
+            invalid(()->drawing.addChannel(host,"SOOP","bad channel id!",null),
                 "invalid channel identifier rejected");
-            drawing.addChannel(host,"soop","stream-a");
-            drawing.addChannel(host,"SOOP","stream-b");
-            check(drawing.addChannel(host,"SOOP","stream-a").size()==2,
+            drawing.addChannel(host,"soop","stream-a",
+                grant(drawing,roomId,"stream-a"));
+            drawing.addChannel(host,"SOOP","stream-b",
+                grant(drawing,roomId,"stream-b"));
+            check(drawing.addChannel(host,"SOOP","stream-a",null).size()==2,
                 "retry of same binding is idempotent");
-            conflict(()->drawing.addChannel(otherHost,"SOOP","stream-a"),
+            conflict(()->drawing.addChannel(otherHost,"SOOP","stream-a",
+                grant(drawing,other.room().roomId(),"stream-a")),
                 "one external channel cannot be bound to two shared rooms");
             check(drawing.channels(spectator.token()).size()==2,
                 "member sees public provider/channel binding without credentials");
             check(drawing.channels(host).stream().allMatch(x->x.provider().equals("SOOP")),
                 "provider identity normalized");
-            for(int i=0;i<6;i++)drawing.addChannel(host,"SOOP","extra-"+i);
+            for(int i=0;i<6;i++)drawing.addChannel(host,"SOOP","extra-"+i,
+                grant(drawing,roomId,"extra-"+i));
             check(drawing.channels(host).size()==8,"room channel limit at eight");
-            conflict(()->drawing.addChannel(host,"SOOP","extra-6"),
+            conflict(()->drawing.addChannel(host,"SOOP","extra-6",
+                grant(drawing,roomId,"extra-6")),
                 "ninth channel denied");
             for(int i=0;i<6;i++)drawing.removeChannel(host,"SOOP","extra-"+i);
             check(drawing.channels(host).size()==2,"bounded list remains mutable");
@@ -100,7 +106,7 @@ public final class GameRoomBroadcastR12Probe {
                 new GameRoomAccessService(reopened),new DrawingGuessRepository(reopened),
                 new DrawingGuessGameService(new DrawingGuessRepository(reopened),
                     new DrawingSyncService(reopened)),new DrawingSyncService(reopened),
-                (code,json)->{});
+                (code,json)->{},source->"SOOP".equals(source.provider()));
             check(adapter2.channels(host).size()==2,
                 "room bindings recover from SQLite restart");
             adapter2.removeChannel(host,"SOOP","stream-a");
@@ -117,12 +123,13 @@ public final class GameRoomBroadcastR12Probe {
                 "completed room cannot score further broadcast messages");
             check(adapter2.channels(host).size()==1,
                 "room binding still auditable after finish");
-            conflict(()->adapter2.addChannel(host,"SOOP","new-after-finish"),
+            conflict(()->adapter2.addChannel(host,"SOOP","new-after-finish",null),
                 "completed match cannot silently accept bindings");
             access.closeRoom(host);
             check(drawing.channels(otherHost).isEmpty(),
                 "other host cannot see closed room bindings");
-            check(drawing.addChannel(otherHost,"SOOP","stream-b").size()==1,
+            check(drawing.addChannel(otherHost,"SOOP","stream-b",
+                grant(drawing,other.room().roomId(),"stream-b")).size()==1,
                 "room close frees provider/channel for future public rooms");
             forbidden(()->adapter2.channels(host),
                 "closed room session cannot read bindings");
@@ -138,6 +145,10 @@ public final class GameRoomBroadcastR12Probe {
         }
     }
 
+    private static String grant(GameRoomDrawingService service,String roomId,
+                                String channel)throws Exception {
+        return service.issueChannelGrant(roomId,"SOOP",channel,600).grant();
+    }
     private static ChatMessageEvent chat(String provider,String channel,
                                          String user,String message) {
         return new ChatMessageEvent(provider,channel,user,user,

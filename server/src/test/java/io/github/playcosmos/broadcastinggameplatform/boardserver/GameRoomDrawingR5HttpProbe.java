@@ -49,7 +49,8 @@ public final class GameRoomDrawingR5HttpProbe {
             var repo=new DrawingGuessRepository(db);
             var drawing=new DrawingGuessGameService(repo,canvas);
             var bridge=new GameRoomDrawingService(db,access,repo,drawing,canvas,
-                (code,event)->{});
+                (code,event)->{},source->"SOOP".equals(source.provider())
+                    && "stream-a".equals(source.channelId()));
             var realtime=new GameRoomRealtimeService(db,access,(id,event)->{});
             var admin=new AdminAuthStore(db);
             admin.createSession("r5-admin-session",Instant.now().plusSeconds(1500));
@@ -76,6 +77,40 @@ public final class GameRoomDrawingR5HttpProbe {
             check(created.statusCode()==201,"admin creates member-backed Drawing room");
             String host=read(created).get("token").getAsString();
             String hostId=read(created).get("memberId").getAsString();
+            String nativeRoomId=access.room(host).roomId();
+            String grantBody="{\"roomId\":\""+nativeRoomId+
+                "\",\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
+                +"\"expiresInSeconds\":600}";
+            String grants=ROOT+"/admin/drawing/channel-grants";
+            check(request(client,base,grants,"POST",grantBody,null,null,null,null)
+                .statusCode()==401,"anonymous host cannot issue broadcaster grant");
+            check(request(client,base,grants,"POST",grantBody,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",
+                "https://malicious.invalid",null).statusCode()==403,
+                "cross-origin issuance blocked even with an administrator session");
+            check(request(client,base,grants,"POST",grantBody,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null).statusCode()==201,
+                "administrator may issue room-scoped grant");
+            var grantReply=request(client,base,grants,"POST",grantBody,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(grantReply.statusCode()==201 &&
+                grantReply.headers().firstValue("Cache-Control")
+                    .orElse("").equals("no-store"),
+                "grant reply is administrator only and not cacheable");
+            String approval=read(grantReply).get("grant").getAsString();
+            var denied=request(client,base,ROOT+"/drawing/channels/add","POST",
+                "{\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
+                +"\"grant\":\"untrusted\"}",host,null,null,null);
+            check(denied.statusCode()==403,
+                "host cannot claim broadcaster channel by specifying label");
+            var channelBound=request(client,base,ROOT+"/drawing/channels/add",
+                "POST","{\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
+                +"\"grant\":\""+approval+"\"}",host,null,null,null);
+            check(channelBound.statusCode()==200,
+                "operator-granted channel bound by authenticated host");
+            check(request(client,base,ROOT+"/drawing/channels","GET",
+                null,host,null,null,null).statusCode()==200,
+                "authorized member may inspect public channel labels");
             var playerInvite=request(client,base,ROOT+"/host/invite","POST",
                 "{\"seatRole\":\"PLAYER\",\"maxUses\":1,\"expiresInSeconds\":3600}",
                 host,null,null,null);

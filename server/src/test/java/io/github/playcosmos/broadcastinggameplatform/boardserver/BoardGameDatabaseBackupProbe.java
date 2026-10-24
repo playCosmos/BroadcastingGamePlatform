@@ -54,7 +54,20 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 35
+                    if (currentSchemaVersion == 36
+                        && previousSchemaVersion == 35) {
+                        // Recreate the exact pre-V39 schema (SQLite DROP COLUMN
+                        // cannot remove an indexed or constrained column).
+                        statement.execute(
+                            "DROP TABLE game_room_drawing_broadcast_grant");
+                        statement.execute(
+                            "DROP INDEX idx_game_room_drawing_broadcast_room");
+                        statement.execute(
+                            "ALTER TABLE game_room_drawing_broadcast_binding DROP COLUMN authorized_at");
+                        statement.execute(
+                            "CREATE INDEX idx_game_room_drawing_broadcast_room "
+                            + "ON game_room_drawing_broadcast_binding(room_id)");
+                    } else if (currentSchemaVersion == 35
                         && previousSchemaVersion == 34) {
                         // V38 adds optional incoming broadcast channel leases.
                         statement.execute(

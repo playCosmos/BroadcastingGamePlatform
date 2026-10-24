@@ -529,23 +529,25 @@ async function mobileWssAcceptance(base,ws){
         "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
         "WSS upgrade and authenticated room replay through TLS proxy");
 
-    // R12: real production browser hosts bind incoming SOOP channel labels.
-    // Only configured provider events (not browser form values) can score.
-    await fill(mobile,"broadcastForm",{
-        provider:"SOOP",channelId:"r12-e2e-channel"
-    });
-    await poll(async()=>await cdp.eval(mobile,
-        "document.getElementById('broadcastChannels').textContent.includes('r12-e2e-channel')"),
-        "guest Drawing host configures received broadcast channel");
+    // R12c: a guest host cannot claim a broadcast simply by typing its ID.
+    // The real test server has no operator-provisioned SOOP streamer.
+    const unauthorized=await backend(mobile,"/drawing/channels/add","POST",{
+        provider:"SOOP",channelId:"r12-e2e-channel",
+        grant:"untrusted-input"
+    },mobileToken);
+    check(unauthorized.status===403,
+        "guest host cannot bind arbitrary stream without operator source and grant");
+    check(await cdp.eval(mobile,
+        "document.getElementById('broadcastForm').elements.grant.required"),
+        "host UI requires an explicit one-time channel grant");
     check(await cdp.eval(viewer,
         "document.getElementById('broadcastSettings').hidden"),
         "spectator cannot access broadcast binding controls");
     const allowedChannels=await backend(viewer,
         "/drawing/channels","GET",null,viewerToken);
     check(allowedChannels.status===200 &&
-        allowedChannels.data.channels.length===1 &&
-        allowedChannels.data.channels[0].channelId==="r12-e2e-channel",
-        "spectator reads host-bound channel labels without mutation permission");
+        allowedChannels.data.channels.length===0,
+        "unverified channel labels are invisible to spectators");
 
     await click(mobile,"ready");
     await poll(async()=>await cdp.eval(mobile,
