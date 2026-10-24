@@ -124,6 +124,8 @@
     $("roomName").textContent=room.roomName;
     $("roomCode").textContent=room.roomCode;
     $("roomPhase").textContent=room.state;
+    show("operatorRoomId",isHost());
+    $("operatorRoomIdValue").textContent=isHost()?room.roomId:"";
     $("roomCapacity").textContent="참여 "+room.memberCount+"/"+room.maxRoomMembers
       +" · 플레이어 "+room.playerCount+"/"+room.maxPlayers;
     const lobby=room.state==="OPEN_LOBBY";
