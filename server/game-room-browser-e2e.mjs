@@ -534,7 +534,7 @@ async function mobileWssAcceptance(base,ws){
     const unauthorized=await backend(mobile,"/drawing/channels/add","POST",{
         provider:"SOOP",channelId:"r12-e2e-channel",
         grant:"untrusted-input"
-    },hostToken);
+    },mobileToken);
     check(unauthorized.status===403,
         "guest host cannot bind arbitrary stream without operator source and grant");
     check(await cdp.eval(mobile,
