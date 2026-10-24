@@ -152,7 +152,8 @@
   }
   draw.addEventListener("pointerdown",event=>{
     if(state.taskKind!=="DRAWING"||state.mySubmitted||submitting||
-       pointer!==null||strokes.length>=100)return;
+       pointer!==null||(strokes.length>=100 &&
+         !(eraser&&state.mode==="COOP")))return;
     event.preventDefault();draw.setPointerCapture(event.pointerId);
     pointer=event.pointerId;
     erasingLocal=eraser && state.mode==="COOP";
