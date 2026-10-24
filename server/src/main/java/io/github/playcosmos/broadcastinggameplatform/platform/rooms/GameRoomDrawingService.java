@@ -348,7 +348,8 @@ public final class GameRoomDrawingService {
                 UPDATE game_room_drawing_broadcast_grant
                 SET consumed_at=?
                 WHERE grant_hash=? AND room_id=? AND provider=? AND channel_id=?
-                  AND consumed_at IS NULL AND expires_at>?
+                  AND consumed_at IS NULL
+                  AND julianday(expires_at)>julianday(?)
                 """)) {
                 consume.setString(1,now);
                 consume.setString(2,grantHash(grant));
