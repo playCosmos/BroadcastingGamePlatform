@@ -95,4 +95,6 @@
     catch{ $("grantSecret").select();status("자동 복사가 불가능합니다. 선택된 토큰을 직접 복사하세요."); }
   });
   $("grantRoom").addEventListener("input",()=>{clearSecret();$("grantList").replaceChildren();});
+  $("grantForm").elements.channelId.addEventListener("input",clearSecret);
+  window.addEventListener("pagehide",clearSecret);
 })();
