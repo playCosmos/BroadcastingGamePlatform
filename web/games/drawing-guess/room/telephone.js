@@ -3,7 +3,7 @@
   const $ = id => document.getElementById(id);
   let state = {active:false},request = null,refresh = null,phaseKey = "";
   let albumIndex = 0,entryIndex=0,strokes = [],baseStrokes = [],
-    activeStroke = null,pointer = null;
+    activeStroke = null,pointer = null,erasingLocal=false;
   let penColor="#25374c",penWidth=6,eraser=false;
   let submitting = false;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
@@ -78,7 +78,8 @@
     if(!data?.active)return;
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
-      phaseKey=key;strokes=[];baseStrokes=[];activeStroke=null;pointer=null;
+      phaseKey=key;strokes=[];baseStrokes=[];activeStroke=null;
+      pointer=null;erasingLocal=false;
       $("telephoneText").value="";
       if(data.mode==="COOP" && data.previousKind==="DRAWING"){
         try{
@@ -140,27 +141,43 @@
     return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),
             y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
   }
+  function eraseOwnStroke(p){
+    // In cooperative mode the eraser can remove only strokes created
+    // in this browser's current stage. Previously submitted art is not
+    // part of this mutable array.
+    const near=stroke=>(stroke.points||[]).some(q=>
+      Math.hypot(p.x-q.x,p.y-q.y)<0.03);
+    strokes=strokes.filter(stroke=>!near(stroke));
+    paint(draw,[...baseStrokes,...strokes]);
+  }
   draw.addEventListener("pointerdown",event=>{
     if(state.taskKind!=="DRAWING"||state.mySubmitted||submitting||
        pointer!==null||strokes.length>=100)return;
     event.preventDefault();draw.setPointerCapture(event.pointerId);
     pointer=event.pointerId;
+    erasingLocal=eraser && state.mode==="COOP";
+    if(erasingLocal){
+      activeStroke=null;
+      eraseOwnStroke(point(event));
+      return;
+    }
     activeStroke={points:[point(event)],
       color:eraser?"#ffffff":penColor,width:eraser?20:penWidth};
     strokes.push(activeStroke);
     paint(draw,[...baseStrokes,...strokes]);
   });
   draw.addEventListener("pointermove",event=>{
-    if(event.pointerId!==pointer||!activeStroke)return;
+    if(event.pointerId!==pointer)return;
     event.preventDefault();
-    if(activeStroke.points.length>=96)return;
+    if(erasingLocal){eraseOwnStroke(point(event));return;}
+    if(!activeStroke||activeStroke.points.length>=96)return;
     const p=point(event),last=activeStroke.points[activeStroke.points.length-1];
     if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)<0.001)return;
     activeStroke.points.push(p);paint(draw,[...baseStrokes,...strokes]);
   });
   const stop=event=>{
     if(pointer!==event.pointerId)return;
-    event.preventDefault();pointer=null;activeStroke=null;
+    event.preventDefault();pointer=null;activeStroke=null;erasingLocal=false;
   };
   draw.addEventListener("pointerup",stop);
   draw.addEventListener("pointercancel",stop);
