@@ -1056,9 +1056,15 @@ public final class GameClientHttpServer implements AutoCloseable {
             String action=suffix.substring("/drawing/".length());
             switch(action) {
                 case "telephone/start" -> {
-                    var json=readYachtBody(exchange,Set.of("durationSeconds"));
+                    var json=readYachtBody(exchange,Set.of("durationSeconds","mode"));
+                    var telephoneMode=json.has("mode")
+                        ?io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                            .GameRoomTelephoneService.Mode.valueOf(
+                                roomApiText(json,"mode"))
+                        :io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                            .GameRoomTelephoneService.Mode.NORMAL;
                     sendJson(exchange,200,sharedDrawing.telephone().start(
-                        token,roomApiInt(json,"durationSeconds")));
+                        token,roomApiInt(json,"durationSeconds"),telephoneMode));
                 }
                 case "telephone/submit" -> {
                     var json=readTelephoneBody(exchange);
