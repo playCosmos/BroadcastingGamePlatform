@@ -36,7 +36,7 @@ public final class GameRoomDrawingService {
     public record Snapshot(Room room, String memberId, DrawerPolicy mode,
         String nativeRoomId, DrawingGuessGameService.PublicRoomSnapshot game,
         boolean canDraw, String nextDrawerMemberId,
-        int configuredRounds, int durationSeconds) {}
+        int configuredRounds, int durationSeconds,boolean streamerRotation) {}
     public record CanvasEvent(String roundId,String json) {}
     public record Guess(String status,int rank,int guesserScore,int drawerScore) {}
     public record PrivatePrompt(String roundId,String answer,
@@ -89,7 +89,8 @@ public final class GameRoomDrawingService {
             return new Snapshot(room,principal.memberId(),
                 binding==null?null:binding.mode(),null,null,false,null,
                 binding==null?0:binding.configuredRounds(),
-                binding==null?0:binding.durationSeconds());
+                binding==null?0:binding.durationSeconds(),
+                binding!=null && binding.streamerRotation());
         }
         var game=drawing.publicRoom(binding.nativeRoomId());
         return snapshot(room,principal.memberId(),binding,game);
@@ -102,6 +103,14 @@ public final class GameRoomDrawingService {
      */
     public Snapshot start(String hostToken,DrawerPolicy requested,
                           int rounds,int seconds)throws SQLException {
+        return start(hostToken,requested,rounds,seconds,false);
+    }
+
+    public Snapshot start(String hostToken,DrawerPolicy requested,
+                          int rounds,int seconds,boolean streamerRotation)
+        throws SQLException {
+        if(streamerRotation && requested!=DrawerPolicy.ROTATING_DRAWER)
+            throw new IllegalArgumentException("streamer rotation requires rotating mode");
         if(requested==null)throw new IllegalArgumentException("mode required");
         if(rounds<1 || rounds>200 || seconds<10 || seconds>600)
             throw new IllegalArgumentException("invalid round configuration");
@@ -133,9 +142,31 @@ public final class GameRoomDrawingService {
                         m.status()!=MemberStatus.JOINED || !m.ready()))
                         throw new GameRoomService.RoomConflict("all players must ready");
                 }
+                // Freeze trusted membership IDs in the reservation transaction,
+                // not the mutable provider/channel mapping after match startup.
+                List<String> selected=new ArrayList<>();
+                if(streamerRotation && room.state()==RoomState.OPEN_LOBBY) {
+                    var assigned=new java.util.HashSet<String>();
+                    try(var stmt=connection.prepareStatement("""
+                        SELECT drawer_member_id
+                        FROM game_room_drawing_broadcast_binding
+                        WHERE room_id=? AND authorized_at IS NOT NULL
+                          AND drawer_member_id IS NOT NULL
+                        """)) {
+                        stmt.setString(1,room.roomId());
+                        try(var rows=stmt.executeQuery()){
+                            while(rows.next())assigned.add(rows.getString(1));
+                        }
+                    }
+                    for(Member player:players)
+                        if(assigned.contains(player.memberId()))selected.add(player.memberId());
+                    if(selected.size()<2 || !assigned.equals(new java.util.HashSet<>(selected)))
+                        throw new GameRoomService.RoomConflict(
+                            "at least two connected, authorized streamer players required");
+                }
                 DrawerPolicy committed=requested;
                 try(var lookup=connection.prepareStatement("""
-                    SELECT drawer_policy,configured_rounds,duration_seconds
+                    SELECT drawer_policy,configured_rounds,duration_seconds,streamer_rotation
                     FROM game_room_drawing_link WHERE room_id=?
                     """)) {
                     lookup.setString(1,room.roomId());
@@ -143,22 +174,40 @@ public final class GameRoomDrawingService {
                         if(rows.next()) {
                             committed=DrawerPolicy.valueOf(rows.getString(1));
                             if(committed!=requested || rows.getInt(2)!=rounds
-                                || rows.getInt(3)!=seconds)
+                                || rows.getInt(3)!=seconds
+                                || (rows.getInt(4)==1)!=streamerRotation)
                                 throw new GameRoomService.RoomConflict(
                                     "match configuration already frozen");
                         } else {
                             try(var insert=connection.prepareStatement("""
                                 INSERT INTO game_room_drawing_link(
                                   room_id,drawing_room_id,match_id,drawer_policy,
-                                  configured_rounds,duration_seconds,created_at
-                                ) VALUES (?,NULL,NULL,?,?,?,?)
+                                  configured_rounds,duration_seconds,created_at,
+                                  streamer_rotation
+                                ) VALUES (?,NULL,NULL,?,?,?,?,?)
                                 """)){
                                 insert.setString(1,room.roomId());
                                 insert.setString(2,requested.name());
                                 insert.setInt(3,rounds);
                                 insert.setInt(4,seconds);
                                 insert.setString(5,Instant.now().toString());
+                                insert.setInt(6,streamerRotation?1:0);
                                 insert.executeUpdate();
+                            }
+                            if(streamerRotation) {
+                                int index=0;
+                                for(String memberId:selected) {
+                                    try(var freeze=connection.prepareStatement("""
+                                        INSERT INTO game_room_drawing_drawer_roster(
+                                          room_id,drawer_order,member_id)
+                                        VALUES(?,?,?)
+                                        """)) {
+                                        freeze.setString(1,room.roomId());
+                                        freeze.setInt(2,index++);
+                                        freeze.setString(3,memberId);
+                                        freeze.executeUpdate();
+                                    }
+                                }
                             }
                         }
                     }
@@ -175,17 +224,22 @@ public final class GameRoomDrawingService {
                     }
                     rooms.bump(connection,room);
                 }
-                return new Reservation(room,committed,rounds,seconds,caller.memberId());
+                return new Reservation(room,committed,rounds,seconds,
+                    caller.memberId(),streamerRotation);
             });
             // Reuse deterministic native creation identity after any partial
             // process crash; never trust supplied roster IDs from the client.
             var nativeRoom=repository.findRoomBySourceRoom(reservation.room().roomId());
             if(nativeRoom==null){
                 var roster=new ArrayList<DrawingGuessRepository.ParticipantInput>();
+                var selected=reservation.streamerRotation()
+                    ?new java.util.HashSet<>(frozenDrawerIds(reservation.room().roomId()))
+                    :java.util.Set.<String>of();
                 for(Member member:players(reservation.room())) {
                     roster.add(new DrawingGuessRepository.ParticipantInput(
                         member.memberId(),"GAMECENTER",member.memberId(),
-                        member.displayName(),true));
+                        member.displayName(),!reservation.streamerRotation()
+                            || selected.contains(member.memberId())));
                 }
                 try {
                     nativeRoom=repository.createRoom(
@@ -691,7 +745,8 @@ public final class GameRoomDrawingService {
         }
         return new Snapshot(room,memberId,binding.mode(),binding.nativeRoomId(),
             game,activeDrawer && connected(room,memberId),nextDrawer,
-            binding.configuredRounds(),binding.durationSeconds());
+            binding.configuredRounds(),binding.durationSeconds(),
+            binding.streamerRotation());
     }
 
     private Binding required(Room room)throws SQLException {
@@ -707,14 +762,15 @@ public final class GameRoomDrawingService {
     private Binding binding(String roomId)throws SQLException {
         try(var connection=rooms.databaseForAccess().open();
             var stmt=connection.prepareStatement("""
-                SELECT drawing_room_id,match_id,drawer_policy,configured_rounds,duration_seconds
+                SELECT drawing_room_id,match_id,drawer_policy,configured_rounds,
+                       duration_seconds,streamer_rotation
                 FROM game_room_drawing_link WHERE room_id=?
                 """)) {
             stmt.setString(1,roomId);
             try(var rows=stmt.executeQuery()){
                 return rows.next()?new Binding(rows.getString(1),
                     rows.getString(2),DrawerPolicy.valueOf(rows.getString(3)),
-                    rows.getInt(4),rows.getInt(5)):null;
+                    rows.getInt(4),rows.getInt(5),rows.getInt(6)==1):null;
             }
         }
     }
@@ -752,7 +808,8 @@ public final class GameRoomDrawingService {
             && m.seatRole()==SeatRole.PLAYER).toList();
     }
     private record Reservation(Room room,DrawerPolicy mode,int rounds,
-                               int seconds,String hostId) {}
+                               int seconds,String hostId,boolean streamerRotation) {}
     private record Binding(String nativeRoomId,String matchId,DrawerPolicy mode,
-                           int configuredRounds,int durationSeconds) {}
+                           int configuredRounds,int durationSeconds,
+                           boolean streamerRotation) {}
 }
