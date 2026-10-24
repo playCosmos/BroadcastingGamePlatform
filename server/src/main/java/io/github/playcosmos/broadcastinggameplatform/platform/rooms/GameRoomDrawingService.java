@@ -78,6 +78,7 @@ public final class GameRoomDrawingService {
         Predicate<BroadcastChannel> operatorSource) {
         this.operatorSource=Objects.requireNonNull(operatorSource);
         this.rooms=new GameRoomService(Objects.requireNonNull(database));
+        this.telephone=new GameRoomTelephoneService(database,access);
         this.access=Objects.requireNonNull(access);
         this.repository=Objects.requireNonNull(repository);
         this.drawing=Objects.requireNonNull(drawing);
