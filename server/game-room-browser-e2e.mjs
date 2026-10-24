@@ -210,12 +210,15 @@ async function startMemberObserver(page,roomId,memberToken,wsBase,
         const token=${JSON.stringify(memberToken)};
         const afterSequence=${JSON.stringify(afterSequence)};
         const ws=new WebSocket(url);
-        window.__roomObserver={code:-1,events:[],ws};
+        const observer={code:-1,events:[],ws};
+        window.__roomObserver=observer;
         ws.addEventListener("open",()=>{
             ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence}));
         });
-        ws.addEventListener("message",ev=>window.__roomObserver.events.push(ev.data));
-        ws.addEventListener("close",ev=>window.__roomObserver.code=ev.code);
+        // A retired observer must never mutate the newer one's counters
+        // or 1008 close code when its close event arrives late.
+        ws.addEventListener("message",ev=>observer.events.push(ev.data));
+        ws.addEventListener("close",ev=>observer.code=ev.code);
         return true;
     })()`);
 }
@@ -666,7 +669,17 @@ async function mobileWssAcceptance(base,ws){
         viewerToken,inkSamples,tls);
     await recoverMemberWssAfterAbruptDrop(mobile,viewer,mobileToken,
         viewerToken,tls);
-    const outsider=await backend(viewer,"/me","GET",null,viewerToken);
+    // R11 deliberately drops every room WSS upgrade, including the
+    // independent R10 observer. Restore an authenticated observer and
+    // receive its snapshot before asserting a subsequent 1008 kick.
+    const beforeKick=await backend(viewer,"/me","GET",null,viewerToken);
+    check(beforeKick.status===200,
+        "viewer membership survives recovery before 1008 kick check");
+    await startMemberObserver(viewer,beforeKick.data.room.roomId,viewerToken,tls.ws);
+    await poll(async()=>await cdp.eval(viewer,
+        "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
+        "restored kick observer has a live authenticated WSS subscription");
+    const outsider=beforeKick;
     const member=outsider.data.room.members.find(x=>
         x.displayName==="Secure Viewer");
     const kicked=await backend(mobile,"/host/kick","POST",{
