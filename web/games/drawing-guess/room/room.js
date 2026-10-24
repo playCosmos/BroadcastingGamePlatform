@@ -91,6 +91,7 @@
     }catch{/* browser persistence may be disabled */}
     secret="";
     snapshot=null;telephone={active:false};
+    window.TelephoneView.render(telephone,null,null);
     sessionStorage.removeItem(STORAGE);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
@@ -103,6 +104,7 @@
     sessionStorage.setItem(STORAGE,secretValue);
     try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
     roomBinding="";drawingBinding="";telephone={active:false};
+    window.TelephoneView.render(telephone,null,null);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
     chatSequence=-1;canvasSequence=0;
