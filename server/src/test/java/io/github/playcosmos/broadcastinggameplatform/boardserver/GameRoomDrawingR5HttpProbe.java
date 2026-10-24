@@ -247,6 +247,88 @@ public final class GameRoomDrawingR5HttpProbe {
             check(request(client,base,ROOT+"/drawing","GET",null,
                 other.hostCredential().token(),null,null,null).statusCode()==200,
                 "unrelated game room remains independent");
+            // R13b real HTTP: separate private stage service, large bounded
+            // sketches, host start, spectator read-only and gallery reveal.
+            var telephoneRoom=access.createHostedRoom("drawing_guess","Telephone",
+                "A",io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                    .GameRoomModels.SeatRole.PLAYER,3,4);
+            String ta=telephoneRoom.hostCredential().token();
+            var tb=access.join(access.invite(ta,io.github.playcosmos
+                .broadcastinggameplatform.platform.rooms.GameRoomModels.SeatRole.PLAYER,
+                1,Duration.ofMinutes(5)).token(),"B");
+            var tc=access.join(access.invite(ta,io.github.playcosmos
+                .broadcastinggameplatform.platform.rooms.GameRoomModels.SeatRole.PLAYER,
+                1,Duration.ofMinutes(5)).token(),"C");
+            var ts=access.join(access.invite(ta,io.github.playcosmos
+                .broadcastinggameplatform.platform.rooms.GameRoomModels.SeatRole.SPECTATOR,
+                1,Duration.ofMinutes(5)).token(),"Watching");
+            access.ready(ta,true);access.ready(tb.token(),true);
+            access.ready(tc.token(),true);
+            check(request(client,base,ROOT+"/drawing/telephone/start","POST",
+                "{\"durationSeconds\":60}",tb.token(),null,null,null)
+                .statusCode()==403,"telephone only host starts game");
+            check(request(client,base,ROOT+"/drawing/telephone/start","POST",
+                "{\"durationSeconds\":60}",ta,null,null,null).statusCode()==200,
+                "host starts separate telephone mode by HTTP");
+            check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
+                "{\"stage\":0,\"text\":\"red panda\"}",ts.token(),null,null,null)
+                .statusCode()==403,"spectator cannot author telephone prompt");
+            for(int k=0;k<3;k++){
+                String key=k==0?ta:k==1?tb.token():tc.token();
+                String word=k==0?"red panda":k==1?"blue comet":"yellow duck";
+                check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
+                    "{\"stage\":0,\"text\":\""+word+"\"}",
+                    key,null,null,null).statusCode()==200,
+                    "prompt submit uses member token without provider identity");
+            }
+            var phaseOne=request(client,base,ROOT+"/drawing/telephone",
+                "GET",null,ta,null,null,null);
+            check(phaseOne.statusCode()==200
+                && read(phaseOne).get("stage").getAsInt()==1
+                && "yellow duck".equals(
+                    read(phaseOne).get("previousContent").getAsString()),
+                "next artist receives only predecessor's private sentence");
+            check(read(request(client,base,ROOT+"/drawing/telephone","GET",
+                null,ts.token(),null,null,null))
+                .get("previousContent").isJsonNull(),
+                "spectator cannot inspect unrevealed predecessor");
+            // 12 strokes x 85 points: >8KiB (ordinary room JSON cap).
+            String points=java.util.stream.IntStream.range(0,85)
+                .mapToObj(i->"{\"x\":0.2,\"y\":0.4}")
+                .collect(java.util.stream.Collectors.joining(",","[","]"));
+            String sketch=java.util.stream.IntStream.range(0,12)
+                .mapToObj(i->points)
+                .collect(java.util.stream.Collectors.joining(",","[","]"));
+            check(sketch.length()>8192,"HTTP test exercises larger-than-8KiB art");
+            var bigSketch=request(client,base,ROOT+"/drawing/telephone/submit",
+                "POST","{\"stage\":1,\"strokes\":"+sketch+"}",
+                ta,null,null,null);
+            check(bigSketch.statusCode()==200,
+                "telephone sketch can exceed ordinary 8KiB control limit");
+            check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
+                "{\"stage\":0,\"text\":\"old delayed turn\"}",
+                tb.token(),null,null,null).statusCode()==409,
+                "stale member write cannot claim next phase");
+            check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
+                "{\"stage\":1,\"strokes\":[[{\"x\":0.3,\"y\":0.4}]]}",
+                tb.token(),null,null,null).statusCode()==200,
+                "second artist submits touch canvas points");
+            check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
+                "{\"stage\":1,\"strokes\":[[{\"x\":0.3,\"y\":0.4}]]}",
+                tc.token(),null,null,null).statusCode()==200,
+                "third artist completes drawing stage");
+            for(String key:new String[]{ta,tb.token(),tc.token()})
+                check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
+                    "{\"stage\":2,\"text\":\"a silly bird\"}",key,null,null,null)
+                    .statusCode()==200,"last descriptions finish each album");
+            var albums=request(client,base,ROOT+"/drawing/telephone","GET",
+                null,ts.token(),null,null,null);
+            check(albums.statusCode()==200
+                && "REVEAL".equals(read(albums).get("state").getAsString())
+                && read(albums).getAsJsonArray("albums").size()==3,
+                "only completed public reveal exposes full albums");
+            check("POST_GAME".equals(access.room(ta).state().name()),
+                "telephone mode completes shared GameRoom lifecycle");
             System.out.println("GAME_ROOM_DRAWING_HTTP_R5_PASSED checks="+checks+
                 " mode=rotating auth=member-only prompt=drawer-secret"+
                 " canvas=verified actorSpoof=blocked csrf=blocked"+
