@@ -11,3 +11,13 @@ CREATE TABLE game_room_drawing_broadcast_binding (
 );
 CREATE INDEX idx_game_room_drawing_broadcast_room
     ON game_room_drawing_broadcast_binding(room_id);
+
+-- A closed common room must not hold a platform channel indefinitely.
+-- Covers explicit host close and lifecycle-driven idle expiration.
+CREATE TRIGGER trg_release_drawing_broadcast_on_room_close
+AFTER UPDATE OF state ON game_room
+WHEN NEW.state='CLOSED' AND OLD.state<>'CLOSED'
+BEGIN
+    DELETE FROM game_room_drawing_broadcast_binding
+    WHERE room_id=NEW.room_id;
+END;
