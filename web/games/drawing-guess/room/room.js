@@ -471,7 +471,8 @@
     const form=new FormData(submitted);
     operation(async()=>{
       await request("/drawing/channels/add","POST",{
-        provider:form.get("provider"),channelId:String(form.get("channelId")).trim()
+        provider:form.get("provider"),channelId:String(form.get("channelId")).trim(),
+        grant:String(form.get("grant")||"").trim()
       });
       submitted.elements.channelId.value="";
       await refreshChannels();
