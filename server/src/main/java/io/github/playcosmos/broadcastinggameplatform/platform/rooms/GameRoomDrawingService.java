@@ -42,6 +42,8 @@ public final class GameRoomDrawingService {
     public record PrivatePrompt(String roundId,String answer,
                                 List<String> acceptedAnswers) {}
     public record BroadcastChannel(String provider,String channelId) {}
+    public record StreamerAssignment(String provider,String channelId,
+                                     String memberId) {}
     public record ChannelGrant(String grant,String provider,String channelId,
                                String roomId,String expiresAt) {}
     /** Non-secret metadata for operator-only listing. */
@@ -607,6 +609,85 @@ public final class GameRoomDrawingService {
         if(!channel.matches("[A-Za-z0-9_.:-]{1,128}"))
             throw new IllegalArgumentException("invalid broadcast channel ID");
         return channel;
+    }
+
+    /** Host-only lobby mapping: operator permission is already verified by R12c. */
+    public List<StreamerAssignment> streamerAssignments(String token)
+        throws SQLException {
+        var principal=access.authenticate(token);
+        if(!principal.isHost())throw new GameRoomAccessService.Forbidden(
+            "only host can inspect streamer seats");
+        Room room=access.room(token);
+        requireDrawing(room);
+        var result=new ArrayList<StreamerAssignment>();
+        try(var conn=rooms.databaseForAccess().open();
+            var stmt=conn.prepareStatement("""
+                SELECT provider,channel_id,drawer_member_id
+                FROM game_room_drawing_broadcast_binding
+                WHERE room_id=? AND authorized_at IS NOT NULL
+                  AND drawer_member_id IS NOT NULL
+                ORDER BY provider,channel_id
+                """)) {
+            stmt.setString(1,room.roomId());
+            try(var rows=stmt.executeQuery()) {
+                while(rows.next())result.add(new StreamerAssignment(
+                    rows.getString(1),rows.getString(2),rows.getString(3)));
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    /** The host chooses the actual connected PLAYER seat for an approved feed. */
+    public List<StreamerAssignment> assignStreamer(String token,
+        String provider,String channelId,String memberId)throws SQLException {
+        String name=broadcastProvider(provider),channel=broadcastChannel(channelId);
+        String target=memberId==null?"":memberId.trim();
+        if(!target.isEmpty() && !target.matches("[0-9a-f-]{36}"))
+            throw new IllegalArgumentException("invalid game room member");
+        rooms.write(connection->{
+            var caller=access.requireSession(connection,token);
+            Room room=GameRoomService.read(connection,caller.roomId());
+            requireDrawing(room);
+            if(!caller.isHost() || !connected(room,caller.memberId()))
+                throw new GameRoomAccessService.Forbidden("connected host required");
+            if(room.state()!=RoomState.OPEN_LOBBY)
+                throw new GameRoomService.RoomConflict(
+                    "streamer assignments freeze at game start");
+            if(!target.isEmpty())
+                requireConnectedPlayer(room,target);
+            try(var stmt=connection.prepareStatement("""
+                UPDATE game_room_drawing_broadcast_binding
+                SET drawer_member_id=?
+                WHERE room_id=? AND provider=? AND channel_id=?
+                  AND authorized_at IS NOT NULL
+                """)) {
+                stmt.setString(1,target.isEmpty()?null:target);
+                stmt.setString(2,room.roomId());
+                stmt.setString(3,name);
+                stmt.setString(4,channel);
+                if(stmt.executeUpdate()!=1)
+                    throw new GameRoomService.RoomConflict(
+                        "approved broadcast channel required");
+            }
+            return null;
+        });
+        return streamerAssignments(token);
+    }
+
+    /** Ordered immutable reservation, deliberately independent of channel revocation. */
+    private List<String> frozenDrawerIds(String roomId)throws SQLException {
+        var ids=new ArrayList<String>();
+        try(var connection=rooms.databaseForAccess().open();
+            var stmt=connection.prepareStatement("""
+                SELECT member_id FROM game_room_drawing_drawer_roster
+                WHERE room_id=? ORDER BY drawer_order
+                """)) {
+            stmt.setString(1,roomId);
+            try(var rows=stmt.executeQuery()){
+                while(rows.next())ids.add(rows.getString(1));
+            }
+        }
+        return List.copyOf(ids);
     }
 
     /** Prompt is private and authored by the EXACT current DRAWER member. */
