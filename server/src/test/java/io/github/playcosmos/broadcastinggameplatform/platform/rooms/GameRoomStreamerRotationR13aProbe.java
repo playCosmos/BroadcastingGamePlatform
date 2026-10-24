@@ -62,7 +62,7 @@ public final class GameRoomStreamerRotationR13aProbe {
             access.ready(host,true);
             access.ready(nonDrawer.token(),true);
             access.ready(second.token(),true);
-            conflict(()->drawing.start(host,DrawerPolicy.STREAMER_DRAWER,
+            invalid(()->drawing.start(host,DrawerPolicy.STREAMER_DRAWER,
                 2,180,true),"legacy fixed streamer cannot use new rotation flag");
             var match=drawing.start(host,DrawerPolicy.ROTATING_DRAWER,2,180,true);
             check(match.streamerRotation() && match.nativeRoomId()!=null,
@@ -82,10 +82,10 @@ public final class GameRoomStreamerRotationR13aProbe {
                 2,180,false),"cannot change frozen streamer rotation flag");
             conflict(()->drawing.assignStreamer(host,"SOOP","channel-one",
                 nonDrawer.memberId()),"host cannot rewrite association mid-match");
-            var roundOne=drawing.startRound(host,"r13a-one","lemon",List.of());
-            check(roundOne.canDraw(),"selected streamer can draw first round");
             forbidden(()->drawing.startRound(nonDrawer.token(),
                 "spoof","lemon",List.of()),"nonselected player cannot author round");
+            var roundOne=drawing.startRound(host,"r13a-one","lemon",List.of());
+            check(roundOne.canDraw(),"selected streamer can draw first round");
             forbidden(()->drawing.myPrompt(nonDrawer.token()),
                 "nonselected player cannot recover secret");
             forbidden(()->drawing.draw(nonDrawer.token(),
@@ -152,6 +152,11 @@ public final class GameRoomStreamerRotationR13aProbe {
     private static void conflict(Action action,String label)throws Exception{
         checks++;
         try{action.run();}catch(GameRoomService.RoomConflict expected){return;}
+        throw new AssertionError(label);
+    }
+    private static void invalid(Action action,String label)throws Exception{
+        checks++;
+        try{action.run();}catch(IllegalArgumentException expected){return;}
         throw new AssertionError(label);
     }
     private static void check(boolean ok,String label){
