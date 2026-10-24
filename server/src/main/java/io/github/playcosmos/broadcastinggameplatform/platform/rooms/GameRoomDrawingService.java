@@ -18,6 +18,13 @@ import java.util.List;
 import java.util.Objects;
 import java.util.ArrayList;
 import java.util.NoSuchElementException;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.security.NoSuchAlgorithmException;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.time.Duration;
+import java.util.function.Predicate;
 import java.util.function.BiConsumer;
 
 /**
@@ -35,6 +42,9 @@ public final class GameRoomDrawingService {
     public record PrivatePrompt(String roundId,String answer,
                                 List<String> acceptedAnswers) {}
     public record BroadcastChannel(String provider,String channelId) {}
+    public record ChannelGrant(String grant,String provider,String channelId,
+                               String roomId,String expiresAt) {}
+    private static final SecureRandom GRANT_RANDOM=new SecureRandom();
 
     private final GameRoomService rooms;
     private final GameRoomAccessService access;
@@ -42,12 +52,23 @@ public final class GameRoomDrawingService {
     private final DrawingGuessGameService drawing;
     private final DrawingSyncService canvas;
     private final BiConsumer<String,String> broadcast;
+    private final Predicate<BroadcastChannel> operatorSource;
     private static final Object START_LOCK=new Object();
 
     public GameRoomDrawingService(DatabaseAccess database,
         GameRoomAccessService access, DrawingGuessRepository repository,
         DrawingGuessGameService drawing,DrawingSyncService canvas,
         BiConsumer<String,String> broadcast) {
+        this(database,access,repository,drawing,canvas,broadcast,
+            source->false); // no implicit trust for old constructor
+    }
+
+    public GameRoomDrawingService(DatabaseAccess database,
+        GameRoomAccessService access, DrawingGuessRepository repository,
+        DrawingGuessGameService drawing,DrawingSyncService canvas,
+        BiConsumer<String,String> broadcast,
+        Predicate<BroadcastChannel> operatorSource) {
+        this.operatorSource=Objects.requireNonNull(operatorSource);
         this.rooms=new GameRoomService(Objects.requireNonNull(database));
         this.access=Objects.requireNonNull(access);
         this.repository=Objects.requireNonNull(repository);
@@ -229,7 +250,8 @@ public final class GameRoomDrawingService {
             var statement=connection.prepareStatement("""
                 SELECT provider,channel_id
                 FROM game_room_drawing_broadcast_binding
-                WHERE room_id=? ORDER BY provider,channel_id
+                WHERE room_id=? AND authorized_at IS NOT NULL
+                ORDER BY provider,channel_id
                 """)) {
             statement.setString(1,room.roomId());
             try(var rows=statement.executeQuery()) {
@@ -240,51 +262,150 @@ public final class GameRoomDrawingService {
         return List.copyOf(result);
     }
 
+    /**
+     * The admin authentication check occurs at the HTTP boundary only.
+     * Operator provisioning is an explicit grant, not broadcaster OAuth proof.
+     * A grant is scoped to ONE room, provider, channel, and expiration.
+     */
+    public ChannelGrant issueChannelGrant(String roomId,String provider,
+                                          String channelId,int ttlSeconds)
+        throws SQLException {
+        String name=broadcastProvider(provider),channel=broadcastChannel(channelId);
+        if(ttlSeconds<60 || ttlSeconds>3600)
+            throw new IllegalArgumentException("grant expiry must be 60..3600 seconds");
+        if(!operatorSource.test(new BroadcastChannel(name,channel)))
+            throw new GameRoomAccessService.Forbidden(
+                "operator has not provisioned this broadcast source");
+        Room room=rooms.find(roomId);
+        requireDrawing(room);
+        if(room.state()!=RoomState.OPEN_LOBBY && room.state()!=RoomState.PLAYING)
+            throw new GameRoomService.RoomConflict("room not eligible for grant");
+        byte[] bytes=new byte[32];
+        GRANT_RANDOM.nextBytes(bytes);
+        String secret=Base64.getUrlEncoder().withoutPadding().encodeToString(bytes);
+        Instant issued=Instant.now(),expires=issued.plusSeconds(ttlSeconds);
+        rooms.write(connection->{
+            try(var insert=connection.prepareStatement("""
+                INSERT INTO game_room_drawing_broadcast_grant(
+                    grant_hash,room_id,provider,channel_id,issued_at,
+                    expires_at,consumed_at) VALUES(?,?,?,?,?,?,NULL)
+                """)) {
+                insert.setString(1,grantHash(secret));
+                insert.setString(2,roomId);
+                insert.setString(3,name);
+                insert.setString(4,channel);
+                insert.setString(5,issued.toString());
+                insert.setString(6,expires.toString());
+                insert.executeUpdate();
+            }
+            return null;
+        });
+        return new ChannelGrant(secret,name,channel,roomId,expires.toString());
+    }
+
+    /** The one-time grant is consumed in the SAME transaction as binding. */
     public List<BroadcastChannel> addChannel(String token,String provider,
-                                            String channelId) throws SQLException {
+                                            String channelId,String grant)
+        throws SQLException {
         String name=broadcastProvider(provider),channel=broadcastChannel(channelId);
         rooms.write(connection -> {
             Room room=authorizedChannelHost(connection,token);
-            try(var existing=connection.prepareStatement("""
-                SELECT 1 FROM game_room_drawing_broadcast_binding
+            if(!operatorSource.test(new BroadcastChannel(name,channel)))
+                throw new GameRoomAccessService.Forbidden(
+                    "broadcast source not operator provisioned");
+            boolean existing=false;
+            try(var lookup=connection.prepareStatement("""
+                SELECT authorized_at FROM game_room_drawing_broadcast_binding
                 WHERE room_id=? AND provider=? AND channel_id=?
                 """)) {
-                existing.setString(1,room.roomId());
-                existing.setString(2,name);
-                existing.setString(3,channel);
-                try(var rows=existing.executeQuery()) {
-                    if(rows.next())return null; // safe idempotent retry
+                lookup.setString(1,room.roomId());
+                lookup.setString(2,name);
+                lookup.setString(3,channel);
+                try(var rows=lookup.executeQuery()) {
+                    if(rows.next()) {
+                        if(rows.getString(1)!=null)return null;
+                        existing=true; // unverified V38 label is not authority
+                    }
                 }
             }
-            try(var limit=connection.prepareStatement("""
-                SELECT COUNT(*) FROM game_room_drawing_broadcast_binding
-                WHERE room_id=?
+            if(!existing) {
+                try(var limit=connection.prepareStatement("""
+                    SELECT COUNT(*) FROM game_room_drawing_broadcast_binding
+                    WHERE room_id=?
+                    """)) {
+                    limit.setString(1,room.roomId());
+                    try(var rows=limit.executeQuery()) {
+                        if(rows.next() && rows.getInt(1)>=8)
+                            throw new GameRoomService.RoomConflict(
+                                "at most eight broadcast channels per room");
+                    }
+                }
+            }
+            if(grant==null || !grant.matches("[A-Za-z0-9_-]{43}"))
+                throw new GameRoomAccessService.Forbidden("channel grant required");
+            String now=Instant.now().toString();
+            try(var consume=connection.prepareStatement("""
+                UPDATE game_room_drawing_broadcast_grant
+                SET consumed_at=?
+                WHERE grant_hash=? AND room_id=? AND provider=? AND channel_id=?
+                  AND consumed_at IS NULL AND expires_at>?
                 """)) {
-                limit.setString(1,room.roomId());
-                try(var rows=limit.executeQuery()) {
-                    if(rows.next() && rows.getInt(1)>=8)
+                consume.setString(1,now);
+                consume.setString(2,grantHash(grant));
+                consume.setString(3,room.roomId());
+                consume.setString(4,name);
+                consume.setString(5,channel);
+                consume.setString(6,now);
+                if(consume.executeUpdate()!=1)
+                    throw new GameRoomAccessService.Forbidden(
+                        "channel grant invalid, expired or already consumed");
+            }
+            if(existing) {
+                try(var update=connection.prepareStatement("""
+                    UPDATE game_room_drawing_broadcast_binding
+                    SET authorized_at=? WHERE room_id=? AND provider=?
+                      AND channel_id=? AND authorized_at IS NULL
+                    """)) {
+                    update.setString(1,now);
+                    update.setString(2,room.roomId());
+                    update.setString(3,name);
+                    update.setString(4,channel);
+                    if(update.executeUpdate()!=1)
                         throw new GameRoomService.RoomConflict(
-                            "at most eight broadcast channels per room");
+                            "channel binding changed");
                 }
-            }
-            try(var insert=connection.prepareStatement("""
-                INSERT INTO game_room_drawing_broadcast_binding(
-                    room_id,provider,channel_id,added_at) VALUES(?,?,?,?)
-                """)) {
-                insert.setString(1,room.roomId());
-                insert.setString(2,name);
-                insert.setString(3,channel);
-                insert.setString(4,Instant.now().toString());
-                try {insert.executeUpdate();}
-                catch(SQLException conflict) {
-                    if(conflict.getErrorCode()!=19)throw conflict;
-                    throw new GameRoomService.RoomConflict(
-                        "broadcast channel already bound to another room");
+            } else {
+                try(var insert=connection.prepareStatement("""
+                    INSERT INTO game_room_drawing_broadcast_binding(
+                        room_id,provider,channel_id,added_at,authorized_at)
+                    VALUES(?,?,?,?,?)
+                    """)) {
+                    insert.setString(1,room.roomId());
+                    insert.setString(2,name);
+                    insert.setString(3,channel);
+                    insert.setString(4,now);
+                    insert.setString(5,now);
+                    try {insert.executeUpdate();}
+                    catch(SQLException conflict) {
+                        if(conflict.getErrorCode()!=19)throw conflict;
+                        throw new GameRoomService.RoomConflict(
+                            "broadcast channel already bound to another room");
+                    }
                 }
             }
             return null;
         });
         return channels(token);
+    }
+
+    private static String grantHash(String secret) {
+        try {
+            byte[] bytes=MessageDigest.getInstance("SHA-256").digest(
+                secret.getBytes(StandardCharsets.US_ASCII));
+            return java.util.HexFormat.of().formatHex(bytes);
+        } catch(NoSuchAlgorithmException missing) {
+            throw new IllegalStateException("SHA-256 unavailable",missing);
+        }
     }
 
     public List<BroadcastChannel> removeChannel(String token,String provider,
