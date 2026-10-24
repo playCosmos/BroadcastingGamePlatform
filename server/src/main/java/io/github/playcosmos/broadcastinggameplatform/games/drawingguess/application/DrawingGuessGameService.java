@@ -421,7 +421,16 @@ public final class DrawingGuessGameService {
         Instant guessedAt = event.occurredAtEpochMs() > 0
             ? Instant.ofEpochMilli(event.occurredAtEpochMs())
             : Instant.now();
+        Instant startedAt = Instant.parse(round.startedAt());
         Instant expiresAt = Instant.parse(round.expiresAt());
+        // A buffered/replayed chat message sent before this prompt was
+        // available cannot earn points after a new multi-channel round starts.
+        if (guessedAt.isBefore(startedAt)) {
+            return new ChatGuessResult(
+                "STALE_EVENT", room.roomId(), round.roundId(),
+                null, event.nickname(), 0, 0, 0
+            );
+        }
         if (!guessedAt.isBefore(expiresAt)) {
             return new ChatGuessResult(
                 "ROUND_EXPIRED",
@@ -504,7 +513,6 @@ public final class DrawingGuessGameService {
         }
 
         int rank = publicRound.correctGuesses().size() + 1;
-        Instant startedAt = Instant.parse(round.startedAt());
         var award = new ClassicScorePolicy(
             room.scoreConfig()
         ).score(
