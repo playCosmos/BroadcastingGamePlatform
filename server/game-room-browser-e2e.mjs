@@ -786,9 +786,9 @@ async function telephoneBrowserAcceptance(base,coop){
         return result.data.active && result.data.mode===(coop?"COOP":"NORMAL")
             && result.data.stage===0;
     },"authoritative telephone mode started");
-    check(await cdp.eval(host,
+    await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephonePlay').hidden===false"),
-        "host sees telephone stage panel");
+        "host sees telephone stage panel after rendering");
     const spectator=await backend(pages[3],"/drawing/telephone","GET",
         null,tokens[3]);
     check(spectator.status===200 && !spectator.data.previousContent &&
