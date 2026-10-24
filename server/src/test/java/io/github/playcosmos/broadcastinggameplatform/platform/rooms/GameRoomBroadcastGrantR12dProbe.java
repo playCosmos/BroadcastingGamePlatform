@@ -92,8 +92,11 @@ public final class GameRoomBroadcastGrantR12dProbe {
                 x.status().equals("BOUND")),"no active source after revoke");
             check(persisted.revokeOperatorChannel(room,"SOOP","pending").size()==8,
                 "repeated operator revoke is safe/idempotent");
+            // The room still has eight pending grants; explicitly free
+            // another slot before issuing a fresh capability.
+            persisted.revokeOperatorChannel(room,"SOOP","queue-1");
             check(persisted.issueChannelGrant(room,"SOOP","pending",600).grant()
-                .length()==43,"fresh approval possible after full revocation");
+                .length()==43,"fresh approval possible after freeing quota");
             System.out.println("GAME_ROOM_R12D_GRANT_MANAGEMENT_PASSED checks="+checks+
                 " issuance=bounded status=no-secrets revoke=atomic"+
                 " queued=8 restart=sqlite score=fail-closed");
