@@ -34,11 +34,20 @@ public record BoardServerConfig(
         var d = defaults();
         String id = streamerId == null ? "" : streamerId.trim();
         if ("STREAMER_ID".equals(id)) id = "";
+        var normalizedSoop = soop == null ? d.soop : soop.normalized();
+        if (!id.isBlank()
+            && normalizedSoop.additionalStreamerIds().contains(id))
+            throw new IllegalArgumentException(
+                "SOOP primary cannot also be an additional source");
+        if (normalizedSoop.additionalStreamerIds().size()
+            + (id.isBlank() ? 0 : 1) > 8)
+            throw new IllegalArgumentException(
+                "at most eight SOOP streams including primary");
         return new BoardServerConfig(
             id,
             server == null ? d.server : server.normalized(),
             storage == null ? d.storage : storage.normalized(),
-            soop == null ? d.soop : soop.normalized()
+            normalizedSoop
         );
     }
 
