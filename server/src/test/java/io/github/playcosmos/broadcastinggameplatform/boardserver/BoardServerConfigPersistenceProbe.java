@@ -69,6 +69,11 @@ public final class BoardServerConfigPersistenceProbe {
                     "existing config.json was modified during load"
                 );
             }
+            if (!loaded.soop().additionalStreamerIds().isEmpty()) {
+                throw new IllegalStateException(
+                    "legacy SOOP config must load with no extra sources"
+                );
+            }
             if (!"existing-streamer".equals(loaded.streamerId())) {
                 throw new IllegalStateException("existing streamerId was not loaded");
             }
