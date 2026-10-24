@@ -114,6 +114,12 @@ public final class GameRoomTelephoneService {
     }
 
     public View submit(String token,String text,String drawingJson)throws SQLException {
+        return submit(token,-1,text,drawingJson);
+    }
+
+    /** Browser requests must carry the exact phase they observed. */
+    public View submit(String token,int expectedStage,String text,String drawingJson)
+        throws SQLException {
         return rooms.write(conn->{
             var principal=access.requireSession(conn,token);
             Room room=GameRoomService.read(conn,principal.roomId());
@@ -126,6 +132,8 @@ public final class GameRoomTelephoneService {
             match=match(conn,room.roomId());
             if(!"PLAYING".equals(match.state()))
                 throw new GameRoomService.RoomConflict("album reveal already started");
+            if(expectedStage>=0 && expectedStage!=match.stage())
+                throw new GameRoomService.RoomConflict("stale telephone stage");
             int slot=slot(conn,room.roomId(),principal.memberId());
             if(slot<0)throw new GameRoomAccessService.Forbidden(
                 "only original frozen players may submit");
