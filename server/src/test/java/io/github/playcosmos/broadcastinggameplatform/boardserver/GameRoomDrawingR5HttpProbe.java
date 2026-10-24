@@ -78,9 +78,9 @@ public final class GameRoomDrawingR5HttpProbe {
             String host=read(created).get("token").getAsString();
             String hostId=read(created).get("memberId").getAsString();
             String nativeRoomId=access.room(host).roomId();
-            String grantBody="{\\\"roomId\\\":\\\""+nativeRoomId+
-                "\\\",\\\"provider\\\":\\\"SOOP\\\",\\\"channelId\\\":\\\"stream-a\\\","
-                +"\\\"expiresInSeconds\\\":600}";
+            String grantBody="{\"roomId\":\""+nativeRoomId+
+                "\",\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
+                +"\"expiresInSeconds\":600}";
             String grants=ROOT+"/admin/drawing/channel-grants";
             check(request(client,base,grants,"POST",grantBody,null,null,null,null)
                 .statusCode()==401,"anonymous host cannot issue broadcaster grant");
@@ -99,13 +99,13 @@ public final class GameRoomDrawingR5HttpProbe {
                 "grant reply is administrator only and not cacheable");
             String approval=read(grantReply).get("grant").getAsString();
             var denied=request(client,base,ROOT+"/drawing/channels/add","POST",
-                "{\\\"provider\\\":\\\"SOOP\\\",\\\"channelId\\\":\\\"stream-a\\\","
-                +"\\\"grant\\\":\\\"untrusted\\\"}",host,null,null,null);
+                "{\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
+                +"\"grant\":\"untrusted\"}",host,null,null,null);
             check(denied.statusCode()==403,
                 "host cannot claim broadcaster channel by specifying label");
             var channelBound=request(client,base,ROOT+"/drawing/channels/add",
-                "POST","{\\\"provider\\\":\\\"SOOP\\\",\\\"channelId\\\":\\\"stream-a\\\","
-                +"\\\"grant\\\":\\\""+approval+"\\\"}",host,null,null,null);
+                "POST","{\"provider\":\"SOOP\",\"channelId\":\"stream-a\","
+                +"\"grant\":\""+approval+"\"}",host,null,null,null);
             check(channelBound.statusCode()==200,
                 "operator-granted channel bound by authenticated host");
             check(request(client,base,ROOT+"/drawing/channels","GET",
