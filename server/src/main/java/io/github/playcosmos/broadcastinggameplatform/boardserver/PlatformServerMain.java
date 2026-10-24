@@ -15,6 +15,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEve
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
+import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopMultiBroadcastProvider;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopProviderConfig;
 import io.github.playcosmos.broadcastinggameplatform.operations.WindowsConsoleEncoding;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
@@ -184,12 +185,11 @@ public final class PlatformServerMain {
 
         var platformEvents = new PlatformEventBus();
         var providers = new ProviderRegistry();
-        var soop = new SoopBroadcastProvider(
-            new SoopProviderConfig(
-                config.streamerId(),
-                config.soop().enabled(),
-                config.soop().offlinePollSeconds()
-            ).normalized(),
+        var soop = new SoopMultiBroadcastProvider(
+            config.streamerId(),
+            config.soop().additionalStreamerIds(),
+            config.soop().enabled(),
+            config.soop().offlinePollSeconds(),
             platformEvents
         );
         providers.register(soop);
