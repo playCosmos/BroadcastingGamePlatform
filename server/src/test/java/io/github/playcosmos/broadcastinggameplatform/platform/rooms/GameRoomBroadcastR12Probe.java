@@ -118,7 +118,14 @@ public final class GameRoomBroadcastR12Probe {
             check(adapter2.channels(host).size()==1,
                 "room binding still auditable after finish");
             conflict(()->adapter2.addChannel(host,"SOOP","new-after-finish"),
-                "closed match cannot silently accept bindings");
+                "completed match cannot silently accept bindings");
+            access.closeRoom(host);
+            check(drawing.channels(otherHost).isEmpty(),
+                "other host cannot see closed room bindings");
+            check(drawing.addChannel(otherHost,"SOOP","stream-b").size()==1,
+                "room close frees provider/channel for future public rooms");
+            forbidden(()->adapter2.channels(host),
+                "closed room session cannot read bindings");
             System.out.println("GAME_ROOM_BROADCAST_R12_PASSED checks="+checks+
                 " channels=2 host_acl=true duplicate_score=blocked"+
                 " persistence=sqlite source=event_bus guest_parity=true");
