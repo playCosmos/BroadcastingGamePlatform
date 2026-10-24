@@ -129,8 +129,8 @@ public final class GameRoomDrawingR5HttpProbe {
                 && statuses.body().contains("BOUND")
                 && !statuses.body().contains(approval),
                 "administrator sees active binding but not consumed bearer");
-            String revokeBody="{\\"roomId\\":\\""+nativeRoomId+
-                "\\",\\"provider\\":\\"SOOP\\",\\"channelId\\":\\"stream-a\\"}";
+            String revokeBody="{\"roomId\":\""+nativeRoomId+
+                "\",\"provider\":\"SOOP\",\"channelId\":\"stream-a\"}";
             check(request(client,base,grants+"/revoke","POST",revokeBody,
                 host,null,null,null).statusCode()==401,
                 "anonymous host cannot call operator revocation");
@@ -144,7 +144,7 @@ public final class GameRoomDrawingR5HttpProbe {
                 && !revoked.body().contains("BOUND"),
                 "operator revokes live binding and pending grants atomically");
             check(request(client,base,ROOT+"/drawing/channels","GET",
-                null,host,null,null,null).body().contains("\\"channels\\":[]"),
+                null,host,null,null,null).body().contains("\"channels\":[]"),
                 "revoked channel disappears from host membership listing");
             check(request(client,base,grants,"POST",grantBody,null,
                 "BGP_ADMIN_SESSION=r5-admin-session",null,null).statusCode()==201,
