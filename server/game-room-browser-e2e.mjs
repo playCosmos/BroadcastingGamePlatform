@@ -723,6 +723,153 @@ async function mobileWssAcceptance(base,ws){
     check(noOverflow,"real 390px mobile Drawing UI has no horizontal overflow");
 }
 
+/**
+ * Dedicated real Chrome/Edge three-player acceptance: the production guest
+ * form, real text/drawing controls, private handoff and slide reveal.
+ * NORMAL and COOP each create an isolated room with three browser contexts.
+ */
+async function telephoneBrowserAcceptance(base,coop){
+    const pages=await Promise.all(Array.from({length:4},()=>cdp.page(
+        base+"/games/drawing-guess/room/")));
+    const [host,...others]=pages;
+    await fill(host,"createForm",{
+        name:coop?"Collaborative gallery":"Telephone gallery",
+        displayName:"Artist A",maxPlayers:3,maxRoomMembers:4
+    });
+    const code=await poll(async()=>{
+        const name=await getRoom(host,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(name)?name:null;
+    },"telephone three-player room created");
+    const members=["Artist B","Artist C","Gallery spectator"];
+    for(let i=0;i<3;i++){
+        await fill(others[i],"publicJoinForm",{
+            roomCode:code,displayName:members[i],
+            seatRole:i===2?"SPECTATOR":"PLAYER"
+        });
+        await poll(async()=>await cdp.eval(others[i],
+            "document.getElementById('roomCode').textContent.trim().length===6"),
+            "telephone "+members[i]+" joined");
+    }
+    const tokens=await Promise.all(pages.map(page=>userToken(page,
+        "gamecenter.drawing.room.member.v1")));
+    for(let i=0;i<3;i++){
+        const result=await backend(pages[i],"/me/ready","POST",
+            {ready:true},tokens[i]);
+        check(result.status===200,"anonymous telephone player ready "+i);
+    }
+    await cdp.eval(host,"window.dispatchEvent(new Event('online'));true");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('start').disabled===false"),
+        "three telephone players ready for start");
+    await cdp.eval(host,`(()=>{
+        document.getElementById("mode").value=${JSON.stringify(
+            coop?"TELEPHONE_COOP":"TELEPHONE_CHAIN")};
+        document.getElementById("duration").value="90";
+        return true;
+    })()`);
+    await click(host,"start");
+    await poll(async()=>{
+        const result=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return result.data.active && result.data.mode===(coop?"COOP":"NORMAL")
+            && result.data.stage===0;
+    },"authoritative telephone mode started");
+    check(await cdp.eval(host,
+        "document.getElementById('telephonePlay').hidden===false"),
+        "host sees telephone stage panel");
+    const spectator=await backend(pages[3],"/drawing/telephone","GET",
+        null,tokens[3]);
+    check(spectator.status===200 && !spectator.data.previousContent &&
+        !spectator.data.taskKind && spectator.data.albums.length===0,
+        "spectator sees neither prompt nor unrevealed album");
+    for(let stage=0;stage<3;stage++){
+        const drawing=coop || stage===1;
+        for(let i=0;i<3;i++){
+            const page=pages[i];
+            const field=drawing?"telephoneDrawingArea":"telephoneTextForm";
+            await poll(async()=>await cdp.eval(page,
+                `document.getElementById(${JSON.stringify(field)}).hidden===false`),
+                "telephone author "+i+" has correct stage "+stage,17000);
+            if(drawing){
+                const bounds=await cdp.eval(page,`(()=>{
+                    const canvas=document.getElementById("telephoneCanvas");
+                    canvas.scrollIntoView({block:"center"});
+                    const r=canvas.getBoundingClientRect();
+                    return {x:r.x,y:r.y,width:r.width,height:r.height,
+                        target:document.elementFromPoint(
+                            r.x+r.width*0.5,r.y+r.height*0.5)?.id};
+                })()`);
+                check(bounds.width>100 && bounds.target==="telephoneCanvas",
+                    "telephone canvas is real pointer input target");
+                await cdp.send("Emulation.setTouchEmulationEnabled",{
+                    enabled:true,maxTouchPoints:1
+                },page.sessionId);
+                await touchStroke(page,bounds);
+                await click(page,"telephoneDrawingDone");
+            }else{
+                await cdp.eval(page,`(()=>{
+                    document.getElementById("telephoneText").value=
+                        ${JSON.stringify("step-"+stage+"-writer-"+i)};
+                    document.getElementById("telephoneTextForm").requestSubmit();
+                    return true;
+                })()`);
+            }
+            const outcome=await poll(async()=>{
+                const found=await backend(page,"/drawing/telephone","GET",
+                    null,tokens[i]);
+                return found.data.mySubmitted || found.data.stage>stage ||
+                    found.data.state==="REVEAL"?found.data:null;
+            },"telephone submitted authoritative stage "+stage+" member "+i);
+            check(outcome.active,"telephone submission remains in room lifecycle");
+        }
+        await poll(async()=>{
+            const result=await backend(host,"/drawing/telephone","GET",
+                null,tokens[0]);
+            return result.data.stage>stage||result.data.state==="REVEAL";
+        },"telephone stage transition "+stage);
+        if(stage<2){
+            const next=await backend(host,"/drawing/telephone","GET",
+                null,tokens[0]);
+            check(next.data.previousKind===(coop?"DRAWING":
+                stage===0?"TEXT":"DRAWING"),
+                "private predecessor artifact handed off to next author");
+            if(coop && stage===0){
+                await poll(async()=>await cdp.eval(host,
+                    "document.getElementById('telephoneDrawingArea').hidden===false"),
+                    "cooperative stage two editable canvas");
+                check(await cdp.eval(host,
+                    "document.getElementById('telephoneIncoming').hidden"),
+                    "cooperative mode reuses same canvas, not a separate preview");
+            }
+        }
+    }
+    const final=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(final.data.state==="REVEAL"&&final.data.albums.length===3,
+        "three complete albums unveiled together");
+    const viewer=await backend(pages[3],"/drawing/telephone","GET",
+        null,tokens[3]);
+    check(viewer.data.albums.length===3,
+        "spectator may see gallery only after reveal");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneReveal').hidden===false"),
+        "real browser opens gallery stage navigator");
+    check(await cdp.eval(host,
+        "document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
+        "album shows one stage, not all results at once");
+    await click(host,"telephoneStepNext");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"+
+        " && document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
+        "real UI advances one album slide with bounded visible content");
+    await click(host,"telephoneAlbumNext");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"),
+        "next album resets to its first slide");
+    check((await backend(host,"/me","GET",null,tokens[0]))
+        .data.room.state==="POST_GAME",
+        "telephone conclusion retains original game room membership");
+}
+
 async function run(){
     const {base,ws}=await launchServer();
     await launchChrome();
@@ -871,6 +1018,8 @@ async function run(){
     check(viewport.scroll<=viewport.client+2,
         "Yacht mobile viewport has no horizontal overflow: "+JSON.stringify(viewport));
     await mobileWssAcceptance(base,ws);
+    await telephoneBrowserAcceptance(base,false);
+    await telephoneBrowserAcceptance(base,true);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
