@@ -34,11 +34,10 @@ public final class SoopMultiBroadcastProvider implements BroadcastProvider {
         var legacy = new SoopProviderConfig(legacyStreamerId, enabled,
             offlinePollSeconds).normalized();
         primaryId = legacy.streamerId();
-        var entries = new LinkedHashMap<String, SoopBroadcastProvider>();
-        // Keep the historical connection alive as the primary authority.
-        primary = new SoopBroadcastProvider(legacy, events);
-        if (!primaryId.isBlank()) entries.put(primaryId, primary);
-        var seen = new LinkedHashSet<String>(entries.keySet());
+        // Validate the entire budget BEFORE creating any supervisor threads.
+        var seen = new LinkedHashSet<String>();
+        if (!primaryId.isBlank()) seen.add(primaryId);
+        var extras = new ArrayList<String>();
         if (additionalStreamerIds != null) {
             if (additionalStreamerIds.size() > MAX_STREAMS)
                 throw new IllegalArgumentException("too many SOOP sources");
@@ -50,10 +49,15 @@ public final class SoopMultiBroadcastProvider implements BroadcastProvider {
                     throw new IllegalArgumentException("duplicate SOOP source");
                 if (seen.size() > MAX_STREAMS)
                     throw new IllegalArgumentException("SOOP source budget exceeded");
-                entries.put(id, new SoopBroadcastProvider(
-                    new SoopProviderConfig(id, enabled, offlinePollSeconds), events));
+                extras.add(id);
             }
         }
+        var entries = new LinkedHashMap<String, SoopBroadcastProvider>();
+        primary = new SoopBroadcastProvider(legacy, events);
+        if (!primaryId.isBlank()) entries.put(primaryId, primary);
+        for (String id : extras)
+            entries.put(id, new SoopBroadcastProvider(
+                new SoopProviderConfig(id, enabled, offlinePollSeconds), events));
         sources = java.util.Collections.unmodifiableMap(entries);
     }
 
