@@ -311,9 +311,10 @@ public final class GameRoomDrawingR5HttpProbe {
                 tb.token(),null,null,null).statusCode()==409,
                 "stale member write cannot claim next phase");
             check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
-                "{\"stage\":1,\"strokes\":[[{\"x\":0.3,\"y\":0.4}]]}",
+                "{\"stage\":1,\"strokes\":[{\"points\":[{\"x\":0.3,\"y\":0.4}],"
+                +"\"color\":\"#f47b52\",\"width\":6}]}",
                 tb.token(),null,null,null).statusCode()==200,
-                "second artist submits touch canvas points");
+                "second artist submits colored touch canvas strokes");
             check(request(client,base,ROOT+"/drawing/telephone/submit","POST",
                 "{\"stage\":1,\"strokes\":[[{\"x\":0.3,\"y\":0.4}]]}",
                 tc.token(),null,null,null).statusCode()==200,
