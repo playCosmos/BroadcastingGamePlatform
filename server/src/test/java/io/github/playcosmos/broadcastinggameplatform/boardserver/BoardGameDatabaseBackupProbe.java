@@ -54,7 +54,12 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 38
+                    if (currentSchemaVersion == 39
+                        && previousSchemaVersion == 38) {
+                        // V42 only introduces a defaulted cooperative mode.
+                        statement.execute(
+                            "ALTER TABLE game_room_telephone_match DROP COLUMN mode");
+                    } else if (currentSchemaVersion == 38
                         && previousSchemaVersion == 37) {
                         // Telephone mode V41 owns three independent match tables.
                         statement.execute("DROP TABLE game_room_telephone_entry");
