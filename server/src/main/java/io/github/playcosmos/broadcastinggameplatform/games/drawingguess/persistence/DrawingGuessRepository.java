@@ -512,6 +512,7 @@ public final class DrawingGuessRepository {
                  JOIN drawing_guess_room native ON native.room_id=link.drawing_room_id
                  WHERE common.state='PLAYING' AND native.state='ACTIVE'
                    AND native.chat_guess_enabled=1
+                   AND binding.authorized_at IS NOT NULL
                    AND binding.provider=? AND binding.channel_id=?
                  ORDER BY updated_at DESC
                  """)) {
