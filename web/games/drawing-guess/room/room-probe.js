@@ -71,6 +71,10 @@ has(js,'mode:rotateStreamers?"ROTATING_DRAWER":$("mode").value,',
 has(js,'streamerRotation:rotateStreamers',"server receives explicit multi-streamer intent");
 has(html,'<option value="STREAMER_ROTATION">',"host can choose streamer turns");
 has(html,'<option value="TELEPHONE_CHAIN">',"telephone chain phase mode is available");
+has(html,'<option value="TELEPHONE_COOP">',"cooperative drawing is distinct from writing relay");
+has(html,'id="telephoneStepPrev"',"reveal step navigation exists");
+has(html,'id="telephoneStepNext"',"reveal next-step navigation exists");
+has(js,'mode:coop?"COOP":"NORMAL"',"explicit authoritative telephone mode chosen by host");
 has(html,'id="telephoneReveal"',"album reveal panel exists");
 has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
 has(js,'request("/drawing/telephone")',"telephone state follows member authentication");
