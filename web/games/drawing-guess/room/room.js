@@ -132,6 +132,7 @@
     show("lobby",lobby||recovering);
     show("hostSettings",isHost()&&(lobby||recovering));
     show("inviteBox",isHost()&&(lobby||room.state==="PLAYING"));
+    show("broadcastSettings",isHost()&&(lobby||room.state==="PLAYING"));
     $("start").disabled=room.playerCount<1
       || room.members.some(m=>m.seatRole==="PLAYER"
           && (m.status!=="JOINED"||!m.ready));
@@ -292,6 +293,30 @@
   });
   redraw();
 
+  async function refreshChannels(){
+    if(!secret || !isHost())return;
+    const channels=(await request("/drawing/channels")).channels;
+    const list=$("broadcastChannels");
+    list.replaceChildren();
+    for(const channel of channels){
+      const li=document.createElement("li");
+      const name=document.createElement("span");
+      const remove=document.createElement("button");
+      name.textContent=channel.provider+" · "+channel.channelId;
+      remove.type="button";remove.className="secondary";
+      remove.textContent="연결 해제";
+      remove.addEventListener("click",()=>operation(async()=>{
+        await request("/drawing/channels/remove","POST",channel);
+        await refreshChannels();
+      }));
+      li.append(name,remove);list.append(li);
+    }
+    if(!channels.length){
+      const li=document.createElement("li");
+      li.textContent="등록된 방송 채널이 없습니다.";
+      list.append(li);
+    }
+  }
   async function refreshChat(){
     if(!secret)return;
     const data=await request("/chat?after=-1");
@@ -374,6 +399,7 @@
     try{
       snapshot=await request("/drawing");
       render();await socketConnections();await refreshChat();
+      if(isHost())await refreshChannels();
     }catch(e){
       if(e.status===403)invalidateSession();
       else say(e.message||"상태 조회 실패",true);
@@ -439,6 +465,19 @@
       seatRole:user()?.seatRole==="PLAYER"?"SPECTATOR":"PLAYER"});
     await refresh();
   }));
+  $("broadcastForm").addEventListener("submit",event=>{
+    event.preventDefault();
+    const submitted=event.currentTarget;
+    const form=new FormData(submitted);
+    operation(async()=>{
+      await request("/drawing/channels/add","POST",{
+        provider:form.get("provider"),channelId:String(form.get("channelId")).trim()
+      });
+      submitted.elements.channelId.value="";
+      await refreshChannels();
+      say("방송 채널을 등록했습니다. 서버에서 수신 중인 채팅만 반영됩니다.");
+    });
+  });
   $("start").addEventListener("click",()=>operation(async()=>{
     snapshot=await request("/drawing/start","POST",{
       mode:$("mode").value,rounds:Number($("rounds").value),
