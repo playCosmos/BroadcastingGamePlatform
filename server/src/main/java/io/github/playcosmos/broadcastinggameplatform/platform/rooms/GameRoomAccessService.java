@@ -361,6 +361,14 @@ public final class GameRoomAccessService {
             stmt.setString(1,now());stmt.setString(2,room.roomId());
             stmt.executeUpdate();
         }
+        // Explicitly release external channel leases when a room closes,
+        // including public-room idle expiration through this same helper.
+        try(var release=connection.prepareStatement("""
+            DELETE FROM game_room_drawing_broadcast_binding WHERE room_id=?
+            """)) {
+            release.setString(1,room.roomId());
+            release.executeUpdate();
+        }
         rooms.bump(connection,room);
     }
 
