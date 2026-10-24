@@ -54,7 +54,12 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 34
+                    if (currentSchemaVersion == 35
+                        && previousSchemaVersion == 34) {
+                        // V38 adds optional incoming broadcast channel leases.
+                        statement.execute(
+                            "DROP TABLE game_room_drawing_broadcast_binding");
+                    } else if (currentSchemaVersion == 34
                         && previousSchemaVersion == 33) {
                         // Recover real V36 schema before replaying V37.
                         statement.execute("DROP INDEX idx_game_room_public_idle");
