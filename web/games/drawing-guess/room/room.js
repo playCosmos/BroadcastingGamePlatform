@@ -135,11 +135,13 @@
     show("hostSettings",isHost()&&(lobby||recovering));
     show("inviteBox",isHost()&&(lobby||room.state==="PLAYING"));
     show("broadcastSettings",isHost()&&(lobby||room.state==="PLAYING"));
+    show("streamerAssignBox",isHost()&&lobby);
     $("start").disabled=room.playerCount<1
       || room.members.some(m=>m.seatRole==="PLAYER"
           && (m.status!=="JOINED"||!m.ready));
     if(snapshot.configuredRounds>0){
-      $("mode").value=snapshot.mode;
+      $("mode").value=snapshot.streamerRotation
+        ?"STREAMER_ROTATION":snapshot.mode;
       $("rounds").value=String(snapshot.configuredRounds);
       $("duration").value=String(snapshot.durationSeconds);
     }
@@ -319,6 +321,44 @@
       list.append(li);
     }
   }
+  async function refreshStreamerAssignments(){
+    if(!secret || !isHost())return;
+    const assignments=(await request("/drawing/streamers")).assignments;
+    const channels=(await request("/drawing/channels")).channels;
+    const select=$("streamerChannel");
+    select.replaceChildren();
+    const memberSelect=$("streamerMember");
+    memberSelect.replaceChildren();
+    for(const channel of channels){
+      const option=document.createElement("option");
+      option.value=channel.provider+"|"+channel.channelId;
+      option.textContent=channel.provider+" · "+channel.channelId;
+      select.append(option);
+    }
+    const unassign=document.createElement("option");
+    unassign.value="";unassign.textContent="배정 해제";
+    memberSelect.append(unassign);
+    for(const member of snapshot.room.members){
+      if(member.seatRole!=="PLAYER" || member.status!=="JOINED")continue;
+      const option=document.createElement("option");
+      option.value=member.memberId;
+      option.textContent=member.displayName;
+      memberSelect.append(option);
+    }
+    const list=$("streamerAssignments");list.replaceChildren();
+    for(const entry of assignments){
+      const item=document.createElement("li");
+      item.textContent=entry.provider+" · "+entry.channelId+
+        " → "+memberName(entry.memberId);
+      list.append(item);
+    }
+    if(!assignments.length){
+      const item=document.createElement("li");
+      item.textContent="아직 배정된 스트리머 출제자가 없습니다.";
+      list.append(item);
+    }
+    $("streamerAssignForm").querySelector("button").disabled=!channels.length;
+  }
   async function refreshChat(){
     if(!secret)return;
     const data=await request("/chat?after=-1");
@@ -401,7 +441,10 @@
     try{
       snapshot=await request("/drawing");
       render();await socketConnections();await refreshChat();
-      if(isHost())await refreshChannels();
+      if(isHost()){
+        await refreshChannels();
+        await refreshStreamerAssignments();
+      }
     }catch(e){
       if(e.status===403)invalidateSession();
       else say(e.message||"상태 조회 실패",true);
@@ -491,10 +534,24 @@
       say("방송 채널을 등록했습니다. 서버에서 수신 중인 채팅만 반영됩니다.");
     });
   });
+  $("streamerAssignForm").addEventListener("submit",event=>{
+    event.preventDefault();
+    operation(async()=>{
+      const [provider,channelId]=String($("streamerChannel").value).split("|");
+      await request("/drawing/streamers/assign","POST",{
+        provider,channelId,memberId:$("streamerMember").value
+      });
+      await refreshStreamerAssignments();
+      say("출제자 배정을 저장했습니다.");
+    });
+  });
   $("start").addEventListener("click",()=>operation(async()=>{
+    const rotateStreamers=$("mode").value==="STREAMER_ROTATION";
     snapshot=await request("/drawing/start","POST",{
-      mode:$("mode").value,rounds:Number($("rounds").value),
-      durationSeconds:Number($("duration").value)});
+      mode:rotateStreamers?"ROTATING_DRAWER":$("mode").value,
+      rounds:Number($("rounds").value),
+      durationSeconds:Number($("duration").value),
+      streamerRotation:rotateStreamers});
     say("경기가 시작됐습니다.");render();await refresh();
   }));
   $("promptForm").addEventListener("submit",event=>{

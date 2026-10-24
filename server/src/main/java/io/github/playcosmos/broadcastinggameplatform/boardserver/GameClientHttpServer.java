@@ -1013,6 +1013,18 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             return;
         }
+        if ("/drawing/streamers".equals(suffix) && "GET".equals(method)) {
+            try {sendJson(exchange,200,Map.of(
+                "assignments",sharedDrawing.streamerAssignments(token)));}
+            catch(GameRoomAccessService.Forbidden denied) {
+                sendJson(exchange,403,Map.of("error","host permission required"));
+            } catch(java.sql.SQLException failed) {
+                sendJson(exchange,500,Map.of("error","drawing storage unavailable"));
+            } catch(IllegalStateException conflict) {
+                sendJson(exchange,409,Map.of("error","drawing room unavailable"));
+            }
+            return;
+        }
         if ("/drawing/my-prompt".equals(suffix) && "GET".equals(method)) {
             try {sendJson(exchange,200,sharedDrawing.myPrompt(token));}
             catch (GameRoomAccessService.Forbidden denied) {
@@ -1046,13 +1058,30 @@ public final class GameClientHttpServer implements AutoCloseable {
                         token,roomApiText(json,"provider"),
                         roomApiText(json,"channelId"))));
                 }
+                case "streamers/assign" -> {
+                    var json=readYachtBody(exchange,Set.of(
+                        "provider","channelId","memberId"));
+                    sendJson(exchange,200,Map.of("assignments",
+                        sharedDrawing.assignStreamer(token,
+                            roomApiText(json,"provider"),
+                            roomApiText(json,"channelId"),
+                            roomApiText(json,"memberId"))));
+                }
                 case "start" -> {
                     var json=readYachtBody(exchange,Set.of(
-                        "mode","rounds","durationSeconds"));
+                        "mode","rounds","durationSeconds","streamerRotation"));
                     var mode=DrawerPolicy.valueOf(roomApiText(json,"mode"));
+                    boolean streamerRotation=false;
+                    if(json.has("streamerRotation")) {
+                        if(!json.get("streamerRotation").isJsonPrimitive()
+                            || !json.get("streamerRotation").getAsJsonPrimitive().isBoolean())
+                            throw new IllegalArgumentException(
+                                "boolean streamerRotation required");
+                        streamerRotation=json.get("streamerRotation").getAsBoolean();
+                    }
                     sendJson(exchange,200,sharedDrawingView(sharedDrawing.start(
                         token,mode,roomApiInt(json,"rounds"),
-                        roomApiInt(json,"durationSeconds"))));
+                        roomApiInt(json,"durationSeconds"),streamerRotation)));
                 }
                 case "round" -> {
                     var json=readYachtBody(exchange,Set.of(
@@ -1123,6 +1152,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         // a recovering host must retry with these immutable settings.
         json.put("configuredRounds",state.configuredRounds());
         json.put("durationSeconds",state.durationSeconds());
+        json.put("streamerRotation",state.streamerRotation());
         return json;
     }
 

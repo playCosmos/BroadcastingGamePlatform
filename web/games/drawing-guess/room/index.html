@@ -49,7 +49,7 @@
 <div class="toolbar"><button id="ready" type="button" class="primary">준비하기</button>
 <button id="seat" type="button" class="secondary">역할 전환</button></div>
 <div id="hostSettings" class="hostsettings" hidden><h3>경기 설정</h3>
-<div class="toolbar"><label>모드<select id="mode"><option value="ROTATING_DRAWER">플레이어 순환 출제</option><option value="STREAMER_DRAWER">방송인 고정 출제</option></select></label>
+<div class="toolbar"><label>모드<select id="mode"><option value="ROTATING_DRAWER">플레이어 순환 출제</option><option value="STREAMER_DRAWER">방송인 고정 출제</option><option value="STREAMER_ROTATION">다중 스트리머 순환 출제</option></select></label>
 <label>라운드 수<input id="rounds" type="number" min="1" max="200" value="4"></label>
 <label>라운드 제한 시간(초)<input id="duration" type="number" min="10" max="600" value="80"></label></div>
 <button id="start" type="button" class="primary">경기 시작</button></div>
@@ -69,6 +69,16 @@
 <button type="submit" class="secondary">채널 등록</button>
 </form>
 <ul id="broadcastChannels" class="members" aria-live="polite"></ul>
+<div id="streamerAssignBox">
+<h3>다중 스트리머 출제자 배정</h3>
+<p class="muted">운영자가 승인한 방송 채널과 현재 게임룸의 실제 플레이어를 연결합니다. 출제자 2명 이상을 배정하고 '다중 스트리머 순환 출제'로 경기를 시작하세요. 경기 시작 후 배정과 출제 순서는 고정됩니다.</p>
+<form id="streamerAssignForm" class="toolbar">
+<label>승인된 채널<select id="streamerChannel" required></select></label>
+<label>출제할 플레이어<select id="streamerMember" required></select></label>
+<button type="submit" class="secondary">출제자 배정</button>
+</form>
+</div>
+<ul id="streamerAssignments" class="members" aria-live="polite"></ul>
 </section>
 <section id="play" class="panel" hidden><div class="toolbar spaced">
 <div><h2 id="roundHeading">그림 맞히기</h2><p class="muted" id="roundDetails"></p></div>
