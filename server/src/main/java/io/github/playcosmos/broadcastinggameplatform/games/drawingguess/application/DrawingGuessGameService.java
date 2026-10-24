@@ -425,7 +425,7 @@ public final class DrawingGuessGameService {
         Instant expiresAt = Instant.parse(round.expiresAt());
         // A buffered/replayed chat message sent before this prompt was
         // available cannot earn points after a new multi-channel round starts.
-        if (guessedAt.isBefore(startedAt)) {
+        if (guessedAt.toEpochMilli() < startedAt.toEpochMilli()) {
             return new ChatGuessResult(
                 "STALE_EVENT", room.roomId(), round.roundId(),
                 null, event.nickname(), 0, 0, 0
