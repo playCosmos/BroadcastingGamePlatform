@@ -123,6 +123,32 @@ public final class GameRoomDrawingR5HttpProbe {
             check(request(client,base,ROOT+"/drawing/channels","GET",
                 null,host,null,null,null).statusCode()==200,
                 "authorized member may inspect public channel labels");
+            var statuses=request(client,base,listing,"GET",null,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(statuses.statusCode()==200
+                && statuses.body().contains("BOUND")
+                && !statuses.body().contains(approval),
+                "administrator sees active binding but not consumed bearer");
+            String revokeBody="{\\"roomId\\":\\""+nativeRoomId+
+                "\\",\\"provider\\":\\"SOOP\\",\\"channelId\\":\\"stream-a\\"}";
+            check(request(client,base,grants+"/revoke","POST",revokeBody,
+                host,null,null,null).statusCode()==401,
+                "anonymous host cannot call operator revocation");
+            check(request(client,base,grants+"/revoke","POST",revokeBody,
+                null,"BGP_ADMIN_SESSION=r5-admin-session",
+                "https://malicious.invalid",null).statusCode()==403,
+                "cross-origin request cannot revoke granted channel");
+            var revoked=request(client,base,grants+"/revoke","POST",revokeBody,
+                null,"BGP_ADMIN_SESSION=r5-admin-session",null,null);
+            check(revoked.statusCode()==200
+                && !revoked.body().contains("BOUND"),
+                "operator revokes live binding and pending grants atomically");
+            check(request(client,base,ROOT+"/drawing/channels","GET",
+                null,host,null,null,null).body().contains("\\"channels\\":[]"),
+                "revoked channel disappears from host membership listing");
+            check(request(client,base,grants,"POST",grantBody,null,
+                "BGP_ADMIN_SESSION=r5-admin-session",null,null).statusCode()==201,
+                "operator may issue fresh grant after explicit revocation");
             var playerInvite=request(client,base,ROOT+"/host/invite","POST",
                 "{\"seatRole\":\"PLAYER\",\"maxUses\":1,\"expiresInSeconds\":3600}",
                 host,null,null,null);
