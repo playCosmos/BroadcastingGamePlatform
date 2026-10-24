@@ -350,7 +350,7 @@
         const socket=new WebSocket(url("drawingCode="+encodeURIComponent(code)));
         canvasSocket=socket;
         socket.addEventListener("open",()=>{
-          if(secret&&drawingBinding===code)
+          if(secret&&socket===canvasSocket&&drawingBinding===code)
             socket.send(JSON.stringify({type:"drawing.subscribe",token:secret}));
         });
         socket.addEventListener("message",ev=>{
