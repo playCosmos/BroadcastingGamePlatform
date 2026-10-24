@@ -1035,11 +1035,13 @@ async function run(){
     // Each complete telephone scenario gets a fresh fixture; otherwise the
     // earlier Drawing/Yacht/browser cases consume its anonymous host quota.
     server.kill();
-    await poll(()=>server.exitCode!==null,"first E2E fixture shutdown");
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "first E2E fixture shutdown");
     const normalFixture=await launchServer();
     await telephoneBrowserAcceptance(normalFixture.base,false);
     server.kill();
-    await poll(()=>server.exitCode!==null,"normal fixture shutdown");
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "normal fixture shutdown");
     const coopFixture=await launchServer();
     await telephoneBrowserAcceptance(coopFixture.base,true);
     check(cdp.exceptions.length===0,
