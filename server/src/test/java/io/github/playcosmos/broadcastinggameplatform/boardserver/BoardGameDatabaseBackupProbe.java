@@ -54,7 +54,17 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 36
+                    if (currentSchemaVersion == 37
+                        && previousSchemaVersion == 36) {
+                        // R13a V40 freezes the drawer roster and adds optional
+                        // metadata without changing the old game-room policy.
+                        statement.execute(
+                            "DROP TABLE game_room_drawing_drawer_roster");
+                        statement.execute(
+                            "ALTER TABLE game_room_drawing_link DROP COLUMN streamer_rotation");
+                        statement.execute(
+                            "ALTER TABLE game_room_drawing_broadcast_binding DROP COLUMN drawer_member_id");
+                    } else if (currentSchemaVersion == 36
                         && previousSchemaVersion == 35) {
                         // Recreate the exact pre-V39 schema (SQLite DROP COLUMN
                         // cannot remove an indexed or constrained column).
