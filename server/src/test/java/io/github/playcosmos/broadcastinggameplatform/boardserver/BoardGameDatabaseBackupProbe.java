@@ -54,7 +54,13 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 37
+                    if (currentSchemaVersion == 38
+                        && previousSchemaVersion == 37) {
+                        // Telephone mode V41 owns three independent match tables.
+                        statement.execute("DROP TABLE game_room_telephone_entry");
+                        statement.execute("DROP TABLE game_room_telephone_player");
+                        statement.execute("DROP TABLE game_room_telephone_match");
+                    } else if (currentSchemaVersion == 37
                         && previousSchemaVersion == 36) {
                         // R13a V40 freezes the drawer roster and adds optional
                         // metadata without changing the old game-room policy.
