@@ -52,6 +52,9 @@ public final class GameRoomDrawingService {
     private static final SecureRandom GRANT_RANDOM=new SecureRandom();
 
     private final GameRoomService rooms;
+    private final GameRoomTelephoneService telephone;
+
+    public GameRoomTelephoneService telephone() { return telephone; }
     private final GameRoomAccessService access;
     private final DrawingGuessRepository repository;
     private final DrawingGuessGameService drawing;
