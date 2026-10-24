@@ -124,6 +124,13 @@
     <button class="primary" type="submit">작성 완료 · 다음 참가자에게 전달</button>
   </form>
   <section id="telephoneDrawingArea" hidden>
+    <div class="toolbar" role="group" aria-label="전화 그림 도구">
+      <label>색상 <input type="color" id="telephoneColor" value="#25374c" aria-label="펜 색상"></label>
+      <label>굵기 <select id="telephoneWidth"><option value="3">가늘게</option>
+        <option value="6" selected>보통</option><option value="12">굵게</option></select></label>
+      <button type="button" class="secondary" id="telephoneEraser">지우개</button>
+      <button type="button" class="secondary" id="telephoneUndo">실행취소</button>
+    </div>
     <canvas id="telephoneCanvas" width="960" height="560" class="telephoneCanvas"
       aria-label="내가 그리는 그림"></canvas>
     <div class="toolbar">
