@@ -990,6 +990,17 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange,503,Map.of("error","drawing membership unavailable"));
             return;
         }
+        if ("/drawing/telephone".equals(suffix) && "GET".equals(method)) {
+            try {sendJson(exchange,200,sharedDrawing.telephone().state(token));}
+            catch(GameRoomAccessService.Forbidden denied) {
+                sendJson(exchange,403,Map.of("error","member unauthorized"));
+            } catch(java.sql.SQLException failed) {
+                sendJson(exchange,500,Map.of("error","telephone DB unavailable"));
+            } catch(IllegalStateException conflict) {
+                sendJson(exchange,409,Map.of("error","telephone state unavailable"));
+            }
+            return;
+        }
         if ("/drawing".equals(suffix) && "GET".equals(method)) {
             try {sendJson(exchange,200,sharedDrawingView(sharedDrawing.state(token)));}
             catch (GameRoomAccessService.Forbidden error) {
@@ -1044,6 +1055,20 @@ public final class GameClientHttpServer implements AutoCloseable {
         try {
             String action=suffix.substring("/drawing/".length());
             switch(action) {
+                case "telephone/start" -> {
+                    var json=readYachtBody(exchange,Set.of("durationSeconds"));
+                    sendJson(exchange,200,sharedDrawing.telephone().start(
+                        token,roomApiInt(json,"durationSeconds")));
+                }
+                case "telephone/submit" -> {
+                    var json=readTelephoneBody(exchange);
+                    String submittedText=json.has("text")
+                        ?roomApiText(json,"text"):null;
+                    String strokes=json.has("strokes")
+                        ?GSON.toJson(json.get("strokes")):null;
+                    sendJson(exchange,200,sharedDrawing.telephone().submit(
+                        token,roomApiInt(json,"stage"),submittedText,strokes));
+                }
                 case "channels/add" -> {
                     var json=readYachtBody(exchange,Set.of(
                         "provider","channelId","grant"));
@@ -1479,6 +1504,23 @@ public final class GameClientHttpServer implements AutoCloseable {
                 throw new IllegalArgumentException("unexpected Yacht field");
             }
         }
+        return body;
+    }
+
+    /** Telephone sketch uploads are larger than ordinary 8KiB controls.
+     * Keep this route-specific limit to avoid broadening unrelated attack
+     * surfaces on Yacht and GameRoom JSON control requests. */
+    private static JsonObject readTelephoneBody(HttpExchange exchange)
+        throws IOException {
+        byte[] raw=exchange.getRequestBody().readNBytes(180_513);
+        if(raw.length>180_512)
+            throw new IllegalArgumentException("telephone sketch exceeds 180KiB");
+        var body=GSON.fromJson(new String(raw,StandardCharsets.UTF_8),
+            JsonObject.class);
+        if(body==null)throw new IllegalArgumentException("JSON object required");
+        for(String key:body.keySet())
+            if(!Set.of("stage","text","strokes").contains(key))
+                throw new IllegalArgumentException("unexpected telephone field");
         return body;
     }
 
