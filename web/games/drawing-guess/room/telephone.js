@@ -147,7 +147,9 @@
     if(submitting||!request)return;
     submitting=true;
     try{
-      state=await request("/drawing/telephone/submit","POST",body);
+      state=await request("/drawing/telephone/submit","POST",{
+        stage:state.stage,...body
+      });
       phaseKey="";
       await refresh();
     }catch(error){
