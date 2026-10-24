@@ -2,6 +2,9 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import java.net.URI;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
+import java.util.HashSet;
 
 public record BoardServerConfig(
     String streamerId,
@@ -159,9 +162,38 @@ public record BoardServerConfig(
         }
     }
 
-    public record Soop(boolean enabled, int offlinePollSeconds) {
+    /**
+     * Trusted operator-provisioned SOOP sources. streamerId at the document
+     * root stays the primary/legacy broadcaster. Additional sources never
+     * grant public guests the ability to open arbitrary provider sessions.
+     */
+    public record Soop(boolean enabled, int offlinePollSeconds,
+                       List<String> additionalStreamerIds) {
+        public Soop(boolean enabled, int offlinePollSeconds) {
+            this(enabled, offlinePollSeconds, List.of());
+        }
+
         Soop normalized() {
-            return new Soop(enabled, offlinePollSeconds >= 5 ? offlinePollSeconds : 30);
+            var extra = new ArrayList<String>();
+            var seen = new HashSet<String>();
+            if (additionalStreamerIds != null) {
+                if (additionalStreamerIds.size() > 8)
+                    throw new IllegalArgumentException(
+                        "at most eight additional SOOP streamer IDs");
+                for (String raw : additionalStreamerIds) {
+                    String id = raw == null ? "" : raw.trim();
+                    if (!id.matches("[A-Za-z0-9_.:-]{1,128}"))
+                        throw new IllegalArgumentException(
+                            "invalid additional SOOP streamer ID");
+                    if (!seen.add(id))
+                        throw new IllegalArgumentException(
+                            "duplicate additional SOOP streamer ID");
+                    extra.add(id);
+                }
+            }
+            return new Soop(enabled,
+                offlinePollSeconds >= 5 ? offlinePollSeconds : 30,
+                List.copyOf(extra));
         }
     }
 }
