@@ -869,6 +869,9 @@ async function telephoneBrowserAcceptance(base,coop){
     check(await cdp.eval(host,
         "document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
         "album shows one stage, not all results at once");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneReveal').hidden===false"),
+        "spectator has revealed gallery before presenter moves cursor");
     check(await cdp.eval(pages[3],
         "document.getElementById('telephoneStepNext').disabled"),
         "spectator slide controls cannot alter the host presentation");
