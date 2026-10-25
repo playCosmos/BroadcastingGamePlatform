@@ -74,6 +74,10 @@ has(html,'<option value="TELEPHONE_CHAIN">',"telephone chain phase mode is avail
 has(html,'<option value="TELEPHONE_COOP">',"cooperative drawing is distinct from writing relay");
 has(html,'id="telephoneStepPrev"',"reveal step navigation exists");
 has(html,'id="telephoneStepNext"',"reveal next-step navigation exists");
+has(html,'id="telephonePresentToggle"',"host can broadcast selected album slide");
+has(html,'id="telephoneFollowToggle"',"audience can opt out of shared slideshow");
+has(server,'sharedDrawing.telephone().present(',"host presentation API uses authenticated room bearer");
+has(js,'isHost:isHost()',"presenter role is the authenticated room owner");
 has(js,'mode:coop?"COOP":"NORMAL"',"explicit authoritative telephone mode chosen by host");
 has(html,'id="telephoneReveal"',"album reveal panel exists");
 has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
