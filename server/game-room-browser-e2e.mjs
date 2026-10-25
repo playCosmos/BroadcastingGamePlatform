@@ -869,15 +869,47 @@ async function telephoneBrowserAcceptance(base,coop){
     check(await cdp.eval(host,
         "document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
         "album shows one stage, not all results at once");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepNext').disabled"),
+        "spectator slide controls cannot alter the host presentation");
     await click(host,"telephoneStepNext");
-    check(await cdp.eval(host,
+    await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"+
         " && document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
-        "real UI advances one album slide with bounded visible content");
+        "host advances authoritative album slide");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "spectator follows host's newly presented slide");
+    const shown=await backend(pages[1],"/drawing/telephone","GET",
+        null,tokens[1]);
+    check(shown.data.presentation.stepIndex===1
+        && shown.data.presentation.revision===1,
+        "player receives revisioned shared reveal position");
+    await cdp.navigate(pages[3],
+        base+"/games/drawing-guess/room/");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "spectator refresh reconstructs exact host slide using same guest token");
+    check((await userToken(pages[3],
+        "gamecenter.drawing.room.member.v1"))===tokens[3],
+        "reloaded spectator retains original game-room identity");
     await click(host,"telephoneAlbumNext");
-    check(await cdp.eval(host,
-        "document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"),
-        "next album resets to its first slide");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"+
+        " && document.getElementById('telephoneAlbumTitle').textContent.startsWith('2/')"),
+        "host changes album and resets to its first slide");
+    await poll(async()=>await cdp.eval(pages[2],
+        "document.getElementById('telephoneAlbumTitle').textContent.startsWith('2/')"+
+        " && document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"),
+        "another active player follows album selection");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneAlbumTitle').textContent.startsWith('2/')"),
+        "reconnected spectator follows subsequent host album change");
+    const finalCursor=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+    check(finalCursor.data.presentation.albumIndex===1
+        && finalCursor.data.presentation.stepIndex===0
+        && finalCursor.data.presentation.revision===2,
+        "host slideshow cursor persisted in SQLite with monotonic revision");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
