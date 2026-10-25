@@ -291,10 +291,22 @@
        state.state!=="REVEAL"||!state.presentation)return;
     presenting=true;
     try{
-      const next=await request("/drawing/telephone/playback","POST",{
-        action,intervalSeconds:seconds,
-        expectedRevision:state.presentation.revision
+      const execute=revision=>request("/drawing/telephone/playback","POST",{
+        action,intervalSeconds:seconds,expectedRevision:revision
       });
+      let next;
+      try{
+        next=await execute(state.presentation.revision);
+      }catch(error){
+        // A timer tick may commit between clicking Pause and this POST.
+        // Retry only safe host intents after refreshing the authoritative
+        // cursor, never using a stale browser-selected album position.
+        if(error.status!==409 || !["PAUSE","SPEED"].includes(action))
+          throw error;
+        const fresh=await request("/drawing/telephone");
+        if(fresh.state!=="REVEAL" || !fresh.presentation)throw error;
+        next=await execute(fresh.presentation.revision);
+      }
       state=next;
       renderAlbums();
       if(refresh)await refresh();
