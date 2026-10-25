@@ -878,6 +878,58 @@ async function telephoneBrowserAcceptance(base,coop){
     check(await cdp.eval(host,
         "document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"),
         "next album resets to its first slide");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephonePresentToggle').hidden"),
+        "spectator never receives host slideshow button");
+    await click(host,"telephonePresentToggle");
+    await poll(async()=>{
+        const status=await backend(pages[3],"/drawing/telephone","GET",
+            null,tokens[3]);
+        return status.data.presentation?.enabled
+            && status.data.presentation?.albumIndex===1
+            && status.data.presentation?.revision===1;
+    },"host presentation cursor shared with spectator");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneAlbumTitle').textContent.startsWith('2/3')"),
+        "spectator follows room host presentation by default");
+    check((await backend(pages[3],"/drawing/telephone/present","POST",{
+        expectedRevision:1,enabled:true,albumIndex:0,stepIndex:0
+    },tokens[3])).status===403,
+        "anonymous spectator may never move the shared slide");
+    await click(host,"telephoneStepNext");
+    await poll(async()=>{
+        const status=await backend(host,"/drawing/telephone","GET",
+            null,tokens[0]);
+        return status.data.presentation?.stepIndex===1 &&
+            status.data.presentation?.revision===2;
+    },"host advances durable shared presentation to second slide");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "audience browser receives host-selected slide");
+    await click(pages[3],"telephoneFollowToggle");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneFollowToggle').textContent.includes('꺼짐')"),
+        "spectator may opt out to browse album independently");
+    await click(host,"telephoneStepNext");
+    await poll(async()=>{
+        const response=await backend(host,"/drawing/telephone","GET",
+            null,tokens[0]);
+        return response.data.presentation?.stepIndex===2;
+    },"host moves independently of opted-out audience");
+    await nap(2000);
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "audience opted out retains local slide");
+    await click(pages[3],"telephoneFollowToggle");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('3/')"),
+        "spectator can rejoin synchronized host slideshow");
+    await click(host,"telephonePresentToggle");
+    await poll(async()=>{
+        const response=await backend(pages[3],"/drawing/telephone","GET",
+            null,tokens[3]);
+        return response.data.presentation?.enabled===false;
+    },"host exits synchronized slideshow without changing game results");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
