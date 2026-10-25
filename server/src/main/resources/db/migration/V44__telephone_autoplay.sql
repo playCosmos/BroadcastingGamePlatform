@@ -1,4 +1,4 @@
--- R13f: server-clock playback state; older revealed albums stay paused.
+-- R13f server-clock playback state with old revealed albums paused.
 ALTER TABLE game_room_telephone_match
  ADD COLUMN reveal_playing INTEGER NOT NULL DEFAULT 0
  CHECK(reveal_playing IN (0,1));
