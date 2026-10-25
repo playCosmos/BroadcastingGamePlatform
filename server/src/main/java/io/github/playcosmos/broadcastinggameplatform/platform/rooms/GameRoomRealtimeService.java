@@ -71,6 +71,67 @@ public final class GameRoomRealtimeService {
         this.clock = Objects.requireNonNull(clock);
     }
 
+    /**
+     * Best-effort live notification for an already COMMITTED presenter change.
+     * The canonical position stays in telephone SQLite; this durable event is
+     * a wake-up cue for room WebSocket subscribers, not a second authority.
+     * Repeated HTTP retries never generate a second notification.
+     */
+    public Event announceTelephonePresentation(String token,long revision)
+        throws SQLException {
+        if(revision<=0)throw new IllegalArgumentException(
+            "only advanced reveal revisions can be announced");
+        WriteResult result=rooms.write(connection->{
+            var host=access.requireSession(connection,token);
+            if(!host.isHost())
+                throw new Forbidden("only host may announce album presentation");
+            requireConnected(connection,host.roomId(),host.memberId());
+            int album,step;
+            try(var stmt=connection.prepareStatement("""
+                SELECT reveal_album,reveal_step,reveal_revision
+                FROM game_room_telephone_match
+                WHERE room_id=? AND state='REVEAL'
+                """)) {
+                stmt.setString(1,host.roomId());
+                try(var rows=stmt.executeQuery()) {
+                    if(!rows.next() || rows.getLong(3)!=revision)
+                        // Later revisions win. Old requests must never wake
+                        // clients with stale state during concurrent swipes.
+                        return null;
+                    album=rows.getInt(1);
+                    step=rows.getInt(2);
+                }
+            }
+            String eventId="telephone-reveal-"+revision;
+            try(var stmt=connection.prepareStatement("""
+                SELECT payload FROM game_room_event
+                WHERE room_id=? AND event_type='room.telephone.presentation'
+                ORDER BY sequence DESC LIMIT 1
+                """)) {
+                stmt.setString(1,host.roomId());
+                try(var rows=stmt.executeQuery()) {
+                    if(rows.next()){
+                        Event last=JSON.fromJson(rows.getString(1),Event.class);
+                        if(eventId.equals(last.messageId()))
+                            return new WriteResult(last,false);
+                    }
+                }
+            }
+            long sequence=nextSequence(connection,host.roomId());
+            String payload="{\"albumIndex\":"+album+
+                ",\"stepIndex\":"+step+",\"revision\":"+revision+"}";
+            Event event=new Event("room.telephone.presentation",host.roomId(),
+                sequence,host.memberId(),eventId,null,payload,
+                clock.instant().toString());
+            persistEvent(connection,event);
+            pruneHistory(connection,host.roomId(),sequence);
+            return new WriteResult(event,true);
+        });
+        if(result==null)return null;
+        if(result.created())publish(result.event());
+        return result.event();
+    }
+
     public Event chat(String token, String messageId, String text) throws SQLException {
         if (messageId == null || !messageId.matches("[A-Za-z0-9_-]{8,64}")) {
             throw new IllegalArgumentException("invalid chat messageId");
