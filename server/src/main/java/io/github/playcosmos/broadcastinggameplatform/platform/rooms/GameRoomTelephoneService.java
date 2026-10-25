@@ -27,11 +27,16 @@ public final class GameRoomTelephoneService {
     public enum Mode { NORMAL, COOP }
     public record AlbumEntry(int stage,String kind,String content,String author) {}
     public record Album(String originalAuthor,List<AlbumEntry> entries) {}
+    /** Shared cursor is revealed only after all albums are complete. */
+    public record Presentation(boolean enabled,int albumIndex,int stepIndex,
+                               int revision) {}
     public record View(boolean active,String state,int stage,int stages,int seconds,
                        String stageStartedAt,int submitted,int participants,
                        String taskKind,String previousKind,String previousContent,
-                       boolean mySubmitted,List<Album> albums,Mode mode) {}
-    private record Match(int stage,int size,int seconds,String started,String state,Mode mode) {}
+                       boolean mySubmitted,List<Album> albums,Mode mode,
+                       Presentation presentation) {}
+    private record Match(int stage,int size,int seconds,String started,
+                         String state,Mode mode,Presentation presentation) {}
     private record Slot(int order,String memberId,String name) {}
 
     private final GameRoomService rooms;
@@ -113,10 +118,56 @@ public final class GameRoomTelephoneService {
             drawing(room);
             Match match=match(conn,room.roomId());
             if(match==null) return new View(false,"LOBBY",0,0,0,null,
-                0,0,null,null,null,false,List.of(),Mode.NORMAL);
+                0,0,null,null,null,false,List.of(),Mode.NORMAL,null);
             advanceExpired(conn,room,match);
             return view(conn,GameRoomService.read(conn,room.roomId()),
                 principal.memberId(),match(conn,room.roomId()));
+        });
+    }
+
+    /**
+     * Host-only synchronized reveal cursor. All changes are compare-and-set
+     * under the GameRoom SQLite writer transaction. The version prevents
+     * stale tabs from overwriting the presentation stage.
+     */
+    public View present(String token,int expectedRevision,boolean enabled,
+        int albumIndex,int stepIndex)throws SQLException {
+        return rooms.write(conn->{
+            var principal=access.requireSession(conn,token);
+            Room room=GameRoomService.read(conn,principal.roomId());
+            drawing(room);
+            if(!principal.isHost() || !connected(room,principal.memberId()))
+                throw new GameRoomAccessService.Forbidden(
+                    "connected room host required for presentation");
+            Match m=match(conn,room.roomId());
+            if(m==null || !"REVEAL".equals(m.state())
+                || room.state()!=RoomState.POST_GAME)
+                throw new GameRoomService.RoomConflict(
+                    "albums must finish before presentation");
+            if(albumIndex<0 || albumIndex>=m.size()
+                || stepIndex<0 || stepIndex>=m.size())
+                throw new IllegalArgumentException("presentation slide outside album");
+            if(expectedRevision!=m.presentation().revision())
+                throw new GameRoomService.RoomConflict(
+                    "stale presentation revision");
+            try(var update=conn.prepareStatement("""
+                UPDATE game_room_telephone_match
+                SET presentation_enabled=?,presentation_album=?,
+                    presentation_step=?,
+                    presentation_revision=presentation_revision+1
+                WHERE room_id=? AND state='REVEAL'
+                  AND presentation_revision=?
+                """)) {
+                update.setInt(1,enabled?1:0);
+                update.setInt(2,albumIndex);
+                update.setInt(3,stepIndex);
+                update.setString(4,room.roomId());
+                update.setInt(5,expectedRevision);
+                if(update.executeUpdate()!=1)
+                    throw new GameRoomService.RoomConflict(
+                        "presentation concurrently updated");
+            }
+            return view(conn,room,principal.memberId(),match(conn,room.roomId()));
         });
     }
 
@@ -259,7 +310,7 @@ public final class GameRoomTelephoneService {
             m.started(),reveal?m.size():count(conn,room.roomId(),m.stage()),
             m.size(),slot>=0?kind:null,previousKind,previousContent,
             submitted,reveal?albums(conn,room.roomId(),m.size()):List.of(),
-            m.mode());
+            m.mode(),reveal?m.presentation():null);
     }
 
     private List<Album> albums(Connection conn,String roomId,int size)
@@ -335,14 +386,18 @@ public final class GameRoomTelephoneService {
 
     private static Match match(Connection conn,String roomId)throws SQLException {
         try(var stmt=conn.prepareStatement("""
-            SELECT stage,roster_size,duration_seconds,stage_started_at,state,mode
+            SELECT stage,roster_size,duration_seconds,stage_started_at,state,mode,
+                   presentation_enabled,presentation_album,presentation_step,
+                   presentation_revision
             FROM game_room_telephone_match WHERE room_id=?
             """)) {
             stmt.setString(1,roomId);
             try(var rows=stmt.executeQuery()){
                 return rows.next()?new Match(rows.getInt(1),rows.getInt(2),
                     rows.getInt(3),rows.getString(4),rows.getString(5),
-                    Mode.valueOf(rows.getString(6))):null;
+                    Mode.valueOf(rows.getString(6)),
+                    new Presentation(rows.getInt(7)==1,rows.getInt(8),
+                        rows.getInt(9),rows.getInt(10))):null;
             }
         }
     }
