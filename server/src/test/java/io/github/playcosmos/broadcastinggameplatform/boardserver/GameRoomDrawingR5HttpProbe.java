@@ -347,6 +347,20 @@ public final class GameRoomDrawingR5HttpProbe {
                 null,ts.token(),null,null,null))
                 .getAsJsonObject("presentation").get("revision").getAsLong()==1,
                 "spectator receives canonical persisted presentation revision");
+            var liveEvents=request(client,base,ROOT+"/events?since=0",
+                "GET",null,ts.token(),null,null,null);
+            check(liveEvents.statusCode()==200
+                && liveEvents.body().contains("room.telephone.presentation")
+                && liveEvents.body().contains("telephone-reveal-1"),
+                "host HTTP commit produces durable room WebSocket replay event");
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                presentBody,ta,null,null,null).statusCode()==200,
+                "identical presenter HTTP retry remains idempotent");
+            var afterRetry=request(client,base,ROOT+"/events?since=0",
+                "GET",null,ts.token(),null,null,null);
+            check(read(afterRetry).getAsJsonArray("events").size()==
+                read(liveEvents).getAsJsonArray("events").size(),
+                "retry does not create another room presentation event");
             check(request(client,base,ROOT+"/drawing/telephone/present","POST",
                 "{\"albumIndex\":2,\"stepIndex\":1,"
                 +"\"expectedRevision\":0}",ta,null,null,null)
