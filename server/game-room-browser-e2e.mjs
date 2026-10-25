@@ -935,11 +935,29 @@ async function telephoneBrowserAcceptance(base,coop){
         select.value="3";
         select.dispatchEvent(new Event("change",{bubbles:true}));
     })()`);
-    await poll(async()=>{
-        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
-        return x.data.playback.intervalSeconds===3
-            && x.data.presentation.revision===3;
-    },"host can change slideshow interval through real browser");
+    try{
+        await poll(async()=>{
+            const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+            return x.data.playback.intervalSeconds===3
+                && x.data.presentation.revision===3;
+        },"host can change slideshow interval through real browser");
+    }catch(error){
+        const page=await cdp.eval(host,`({
+            notice:document.getElementById("notice").textContent,
+            speed:document.getElementById("telephonePlaybackSpeed").value,
+            disabled:document.getElementById("telephonePlaybackSpeed").disabled,
+            controlsHidden:document.getElementById("telephonePlaybackControls").hidden,
+            playLabel:document.getElementById("telephoneAutoplay").textContent,
+            stage:document.getElementById("telephoneStepLabel").textContent
+        })`);
+        const server=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        throw Error(error.message+" client="+JSON.stringify(page)+
+            " server="+JSON.stringify({
+                playback:server.data.playback,
+                presentation:server.data.presentation,
+                state:server.data.state,status:server.status
+            })+" exceptions="+JSON.stringify(cdp.exceptions.slice(-4)));
+    }
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneAutoplay').disabled===false"),
         "speed selection has completed before starting autoplay");
