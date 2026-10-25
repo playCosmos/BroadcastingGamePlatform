@@ -380,6 +380,32 @@
     });
     list.scrollTop=list.scrollHeight;
   }
+  // A room WebSocket event is only a wake-up hint. Fetch the canonical
+  // committed cursor and discard any older response that arrives out of order.
+  async function syncTelephoneReveal(event,roomId,credential){
+    if(!telephone?.active || telephone.state!=="REVEAL")return;
+    let version;
+    try{
+      const cue=JSON.parse(event.text||"{}");
+      version=cue.revision;
+    }catch{return;}
+    if(!Number.isSafeInteger(version) || version<=
+      (telephone.presentation?.revision??-1))return;
+    try{
+      const latest=await request("/drawing/telephone");
+      if(!secret || secret!==credential || roomBinding!==roomId ||
+        !snapshot || snapshot.room.roomId!==roomId)return;
+      if(latest.state!=="REVEAL" || !latest.presentation ||
+        latest.presentation.revision<(telephone.presentation?.revision??-1))
+        return;
+      telephone=latest;
+      window.TelephoneView.render(telephone,request,refresh,isHost());
+    }catch{
+      if(secret===credential && roomBinding===roomId)
+        refresh().catch(()=>{});
+    }
+  }
+
   async function socketConnections(){
     if(!secret || !snapshot)return;
     if(!wsBase){
@@ -404,6 +430,8 @@
           if(typeof data.sequence==="number")chatSequence=Math.max(chatSequence,data.sequence);
           if(data.type==="room.chat.message"||data.type==="room.chat.deleted")
             refreshChat().catch(()=>{});
+          if(data.type==="room.telephone.presentation")
+            syncTelephoneReveal(data,roomId,secret).catch(()=>{});
         }catch{/* malformed wire message */}
       });
       socket.addEventListener("close",()=>{
