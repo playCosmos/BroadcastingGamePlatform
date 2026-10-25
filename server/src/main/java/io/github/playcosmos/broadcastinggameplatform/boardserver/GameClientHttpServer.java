@@ -1066,6 +1066,20 @@ public final class GameClientHttpServer implements AutoCloseable {
                     sendJson(exchange,200,sharedDrawing.telephone().start(
                         token,roomApiInt(json,"durationSeconds"),telephoneMode));
                 }
+                case "telephone/present" -> {
+                    var json=readYachtBody(exchange,Set.of(
+                        "albumIndex","stepIndex","expectedRevision"));
+                    if(!json.has("expectedRevision") ||
+                        !json.get("expectedRevision").isJsonPrimitive() ||
+                        !json.get("expectedRevision").getAsJsonPrimitive()
+                            .isNumber())
+                        throw new IllegalArgumentException(
+                            "numeric reveal revision required");
+                    long revision=json.get("expectedRevision").getAsLong();
+                    sendJson(exchange,200,sharedDrawing.telephone().present(
+                        token,roomApiInt(json,"albumIndex"),
+                        roomApiInt(json,"stepIndex"),revision));
+                }
                 case "telephone/submit" -> {
                     var json=readTelephoneBody(exchange);
                     String submittedText=json.has("text")
