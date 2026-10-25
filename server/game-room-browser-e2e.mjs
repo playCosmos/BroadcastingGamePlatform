@@ -930,6 +930,9 @@ async function telephoneBrowserAcceptance(base,coop){
     check(await cdp.eval(pages[3],
         "document.getElementById('telephonePlaybackControls').hidden"),
         "spectator cannot see the host's automatic playback actions");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephonePlaybackSpeed').disabled===false"),
+        "prior presenter request completed before changing slideshow interval");
     await cdp.eval(host,`(()=>{
         const select=document.getElementById("telephonePlaybackSpeed");
         select.value="3";
@@ -981,6 +984,10 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "window.__roomObserver?.events.some(e=>e.includes('telephone-reveal-5'))"),
         "automatic timer step is broadcast on existing room WebSocket");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"+
+        " && document.getElementById('telephoneAutoplay').textContent==='일시정지'"),
+        "play request completed before host clicks pause");
     await click(host,"telephoneAutoplay");
     await poll(async()=>{
         const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
