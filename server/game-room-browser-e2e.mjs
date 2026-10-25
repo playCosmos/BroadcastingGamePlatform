@@ -989,12 +989,30 @@ async function telephoneBrowserAcceptance(base,coop){
         " && document.getElementById('telephoneAutoplay').textContent==='일시정지'"),
         "play request completed before host clicks pause");
     await click(host,"telephoneAutoplay");
-    await poll(async()=>{
-        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
-        return !x.data.playback.playing
-            && x.data.playback.nextAt===null
-            && x.data.presentation.stepIndex>=1;
-    },"host pause freezes the current authoritative slide");
+    try{
+        await poll(async()=>{
+            const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+            return !x.data.playback.playing
+                && x.data.playback.nextAt===null
+                && x.data.presentation.stepIndex>=1;
+        },"host pause freezes the current authoritative slide");
+    }catch(error){
+        const page=await cdp.eval(host,`({
+            notice:document.getElementById("notice").textContent,
+            playLabel:document.getElementById("telephoneAutoplay").textContent,
+            playDisabled:document.getElementById("telephoneAutoplay").disabled,
+            stage:document.getElementById("telephoneStepLabel").textContent,
+            album:document.getElementById("telephoneAlbumTitle").textContent,
+            timer:document.getElementById("telephonePlaybackProgress").textContent
+        })`);
+        const server=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        throw Error(error.message+" client="+JSON.stringify(page)+
+            " server="+JSON.stringify({
+                playback:server.data.playback,
+                presentation:server.data.presentation,
+                state:server.data.state,status:server.status
+            })+" exceptions="+JSON.stringify(cdp.exceptions.slice(-4)));
+    }
     check(await cdp.eval(host,
         "document.getElementById('telephoneAutoplay').textContent==='자동 재생'"),
         "real host UI switches back from pause to play control");
