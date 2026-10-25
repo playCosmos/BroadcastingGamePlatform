@@ -5,7 +5,7 @@
   let albumIndex = 0,entryIndex=0,strokes = [],baseStrokes = [],
     activeStroke = null,pointer = null,erasingLocal=false;
   let penColor="#25374c",penWidth=6,eraser=false;
-  let submitting = false;
+  let submitting = false,followingHost=true,isHost=false,presenting=false;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   const context = draw.getContext("2d");
   function visible(id,yes){$(id).hidden=!yes;}
@@ -72,10 +72,14 @@
       entries.append(card);
     }
   }
-  function render(data,send,onRefresh){
+  function render(data,send,onRefresh,options={}){
     state=data||{active:false};request=send;refresh=onRefresh;
+    isHost=Boolean(options.isHost);
     visible("telephonePlay",Boolean(data?.active));
-    if(!data?.active)return;
+    if(!data?.active){
+      followingHost=true;
+      return;
+    }
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
       phaseKey=key;strokes=[];baseStrokes=[];activeStroke=null;
@@ -125,7 +129,33 @@
     $("telephoneWaiting").textContent=data.mySubmitted
       ?"제출했습니다. 다른 참가자들이 완료하면 다음 단계로 넘어갑니다."
       :"현재 단계에 참가하지 않는 관전자입니다. 결과 앨범을 기다려 주세요.";
-    if(reveal)renderAlbums();
+    if(reveal) {
+      const presentation=data.presentation;
+      visible("telephonePresentToggle",isHost);
+      visible("telephoneFollowToggle",!isHost);
+      $("telephonePresentToggle").textContent=presentation?.enabled
+        ?"방장 발표 종료":"방장 발표 시작";
+      $("telephoneFollowToggle").textContent=followingHost
+        ?"방장 발표 따라가기: 켜짐":"방장 발표 따라가기: 꺼짐";
+      $("telephonePresentationStatus").textContent=presentation?.enabled
+        ?(followingHost?"방장의 화면을 함께 보고 있습니다.":"각자 앨범을 탐색 중입니다.")
+        :"자유롭게 앨범을 탐색할 수 있습니다.";
+      if(presentation?.enabled && (isHost||followingHost)){
+        albumIndex=presentation.albumIndex;
+        entryIndex=presentation.stepIndex;
+      }
+      const locked=Boolean(presentation?.enabled && followingHost && !isHost);
+      $("telephoneAlbumPrev").disabled=locked;
+      $("telephoneAlbumNext").disabled=locked;
+      $("telephoneStepPrev").disabled=locked;
+      $("telephoneStepNext").disabled=locked;
+      renderAlbums();
+      if(locked){
+        for(const id of ["telephoneAlbumPrev","telephoneAlbumNext",
+                         "telephoneStepPrev","telephoneStepNext"])
+          $(id).disabled=true;
+      }
+    }
     updateTimer();
   }
   function updateTimer(){
@@ -225,14 +255,44 @@
     if(pointer===null && (strokes.length || state.mode==="COOP"))
       submit({strokes});
   });
-  $("telephoneAlbumPrev").addEventListener("click",()=>{
-    albumIndex--;entryIndex=0;renderAlbums();
+  async function pushPresentation(enabled,a=albumIndex,step=entryIndex){
+    if(!isHost||presenting||!state.presentation||!request)return;
+    presenting=true;
+    try {
+      const old=state.presentation;
+      const next=await request("/drawing/telephone/present","POST",{
+        expectedRevision:old.revision,enabled,albumIndex:a,stepIndex:step
+      });
+      state=next;
+      albumIndex=a;entryIndex=step;
+      render(next,request,refresh,{isHost:true});
+    } catch(error) {
+      $("notice").textContent=error.message||"발표 화면 변경 실패";
+      await refresh();
+    } finally {
+      presenting=false;
+    }
+  }
+  function navigate(a,step){
+    const albums=state.albums||[];
+    if(a<0||a>=albums.length||step<0||step>=albums[a].entries.length)return;
+    if(isHost&&state.presentation?.enabled){
+      void pushPresentation(true,a,step);
+    }else{
+      albumIndex=a;entryIndex=step;renderAlbums();
+    }
+  }
+  $("telephonePresentToggle").addEventListener("click",()=>{
+    void pushPresentation(!state.presentation?.enabled);
   });
-  $("telephoneAlbumNext").addEventListener("click",()=>{
-    albumIndex++;entryIndex=0;renderAlbums();
+  $("telephoneFollowToggle").addEventListener("click",()=>{
+    followingHost=!followingHost;
+    render(state,request,refresh,{isHost});
   });
-  $("telephoneStepPrev").addEventListener("click",()=>{entryIndex--;renderAlbums();});
-  $("telephoneStepNext").addEventListener("click",()=>{entryIndex++;renderAlbums();});
+  $("telephoneAlbumPrev").addEventListener("click",()=>navigate(albumIndex-1,0));
+  $("telephoneAlbumNext").addEventListener("click",()=>navigate(albumIndex+1,0));
+  $("telephoneStepPrev").addEventListener("click",()=>navigate(albumIndex,entryIndex-1));
+  $("telephoneStepNext").addEventListener("click",()=>navigate(albumIndex,entryIndex+1));
   window.setInterval(updateTimer,1000);
   window.TelephoneView={render};
 })();

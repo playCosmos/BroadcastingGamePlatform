@@ -144,6 +144,11 @@
   <section id="telephoneReveal" hidden>
     <h3>모두의 이야기 앨범</h3>
     <p class="muted" id="telephoneRevealDescription">처음 문장이 다음 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.</p>
+    <div class="toolbar" id="telephonePresentationControls">
+      <button type="button" class="primary" id="telephonePresentToggle" hidden>방장 발표 시작</button>
+      <button type="button" class="secondary" id="telephoneFollowToggle">방장 발표 따라가기: 켜짐</button>
+      <span class="muted" id="telephonePresentationStatus" aria-live="polite"></span>
+    </div>
     <div class="toolbar">
       <button type="button" id="telephoneAlbumPrev" class="secondary">← 이전 앨범</button>
       <strong id="telephoneAlbumTitle"></strong>
