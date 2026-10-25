@@ -924,6 +924,55 @@ async function telephoneBrowserAcceptance(base,coop){
         && finalCursor.data.presentation.stepIndex===0
         && finalCursor.data.presentation.revision===2,
         "host slideshow cursor persisted in SQLite with monotonic revision");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephonePlaybackControls').hidden===false"),
+        "authenticated room host sees automatic slideshow controls");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephonePlaybackControls').hidden"),
+        "spectator cannot see the host's automatic playback actions");
+    await cdp.eval(host,`(()=>{
+        const select=document.getElementById("telephonePlaybackSpeed");
+        select.value="3";
+        select.dispatchEvent(new Event("change",{bubbles:true}));
+    })()`);
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.playback.intervalSeconds===3
+            && x.data.presentation.revision===3;
+    },"host can change slideshow interval through real browser");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"),
+        "speed selection has completed before starting autoplay");
+    await startMemberObserver(pages[3],
+        (await backend(host,"/me","GET",null,tokens[0])).data.room.roomId,
+        tokens[3],memberWs);
+    await poll(async()=>await cdp.eval(pages[3],
+        "window.__roomObserver?.events.some(e=>e.includes('room.snapshot'))"),
+        "authenticated spectator listens before autonomous slide progression");
+    await click(host,"telephoneAutoplay");
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.playback.playing && x.data.presentation.revision===4;
+    },"host starts server-controlled autoplay");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneStepNext').disabled"),
+        "manual navigation is locked while autoplay is running");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "server clock advances autonomous slide on spectator screen",13000);
+    await poll(async()=>await cdp.eval(pages[3],
+        "window.__roomObserver?.events.some(e=>e.includes('telephone-reveal-5'))"),
+        "automatic timer step is broadcast on existing room WebSocket");
+    await click(host,"telephoneAutoplay");
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return !x.data.playback.playing
+            && x.data.playback.nextAt===null
+            && x.data.presentation.stepIndex>=1;
+    },"host pause freezes the current authoritative slide");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').textContent==='자동 재생'"),
+        "real host UI switches back from pause to play control");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
