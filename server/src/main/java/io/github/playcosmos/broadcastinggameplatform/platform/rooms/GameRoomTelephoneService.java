@@ -34,7 +34,8 @@ public final class GameRoomTelephoneService {
                        String stageStartedAt,int submitted,int participants,
                        String taskKind,String previousKind,String previousContent,
                        boolean mySubmitted,List<Album> albums,Mode mode,
-                       Presentation presentation,Playback playback) {}
+                       Presentation presentation,Playback playback,
+                       String serverNow) {}
     private record Match(int stage,int size,int seconds,String started,String state,
                          Mode mode,Presentation presentation,Playback playback) {}
     private record Slot(int order,String memberId,String name) {}
@@ -118,7 +119,8 @@ public final class GameRoomTelephoneService {
             drawing(room);
             Match match=match(conn,room.roomId());
             if(match==null) return new View(false,"LOBBY",0,0,0,null,
-                0,0,null,null,null,false,List.of(),Mode.NORMAL,null,null);
+                0,0,null,null,null,false,List.of(),Mode.NORMAL,null,null,
+                Instant.now().toString());
             advanceExpired(conn,room,match);
             advancePlayback(conn,room.roomId(),match(conn,room.roomId()));
             return view(conn,GameRoomService.read(conn,room.roomId()),
@@ -432,7 +434,7 @@ public final class GameRoomTelephoneService {
             m.size(),slot>=0?kind:null,previousKind,previousContent,
             submitted,reveal?albums(conn,room.roomId(),m.size()):List.of(),
             m.mode(),reveal?m.presentation():null,
-            reveal?m.playback():null);
+            reveal?m.playback():null,Instant.now().toString());
     }
 
     private List<Album> albums(Connection conn,String roomId,int size)
