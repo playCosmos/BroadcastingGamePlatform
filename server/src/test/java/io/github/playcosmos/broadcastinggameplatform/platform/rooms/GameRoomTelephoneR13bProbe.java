@@ -4,6 +4,7 @@ import io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameDataba
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomModels.SeatRole;
 import java.nio.file.Files;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 /** R13b: three concurrent albums, alternating writing/drawing/guessing. */
@@ -35,6 +36,13 @@ public final class GameRoomTelephoneR13bProbe {
             var initial=telephone.start(a,90);
             check(initial.active() && initial.stage()==0 && initial.stages()==3,
                 "three player albums reserved in one game-room");
+            check(Math.abs(Duration.between(Instant.parse(initial.serverNow()),
+                Instant.now()).toMillis())<5000,
+                "every authorized telephone view carries a fresh server clock");
+            check(Math.abs(Duration.between(
+                Instant.parse(telephone.state(v).serverNow()),
+                Instant.now()).toMillis())<5000,
+                "anonymous spectator receives clock metadata without prompt");
             check("TEXT".equals(initial.taskKind()) &&
                 initial.previousContent()==null,"first turn starts private text");
             check("PLAYING".equals(access.room(a).state().name()),
