@@ -101,7 +101,7 @@ has(telephone,'strokes=strokes.filter(',"cooperative eraser filters only local s
 has(telephone,'redraw(){paint(draw,[...baseStrokes,...strokes])',"inherited canvas stays read-only");
 has(telephone,'draw.addEventListener("pointercancel"',"touch cancel rolls back partial edits");
 has(telephone,'draw.addEventListener("lostpointercapture"',"lost touch pointer capture rolls back");
-has(telephone,'phaseKey="";resetDraft();updateTools();return;',"room switch removes previous draft");
+has(telephone,'phaseKey="";resetDraft();updateTools();',"room switch removes previous draft");
 has(telephone,'canEdit() && pointer===null',"drawing submission is stage-scoped");
 no(telephone,'innerHTML',"telephone never renders untrusted input as HTML");
 
