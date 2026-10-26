@@ -907,6 +907,12 @@ async function telephoneBrowserAcceptance(base,coop){
     check((await userToken(pages[3],
         "gamecenter.drawing.room.member.v1"))===tokens[3],
         "reloaded spectator retains original game-room identity");
+    // The preceding step POST can render the new slide before its async
+    // refresh/finally restores the host's navigation controls. Do not
+    // interpret that legitimate in-flight guard as a failed click.
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAlbumNext').disabled===false"),
+        "previous host presentation request finishes before changing albums");
     await click(host,"telephoneAlbumNext");
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"+
