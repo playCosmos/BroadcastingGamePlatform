@@ -1671,6 +1671,12 @@ async function telephoneBrowserAcceptance(base,coop){
         "[...document.querySelectorAll('#telephoneAlbumTimeline button,'+"+
         "'#telephoneStageTimeline button')].every(button=>button.disabled)"),
         "spectators remain read-only after host jumps");
+    // A committed cursor may reach spectators before the presenter's
+    // finally() unlock runs. Wait for the actual host control fence.
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneStepPrev').disabled===false"+
+        " && document.getElementById('telephoneAutoplay').disabled===false"),
+        "timeline stage jump fully unlocks presenter before hotkeys",10000);
     const hotkeyStart=await backend(host,"/drawing/telephone","GET",
         null,tokens[0]);
     check(hotkeyStart.data.presentation.albumIndex===2 &&
