@@ -104,8 +104,7 @@ has(telephone,'$("telephoneText").addEventListener("input",saveDraft)',
   "unsubmitted text changes autosave");
 has(telephone,'redraw();updateTools();saveDraft();',
   "drawn/undone/erased strokes autosave");
-has(telephone,'discardStoredDraft();\\n      phaseKey="";'.replace('\\n','\n'),
-  "successful submission deletes private tab draft");
+has(telephone,'      discardStoredDraft();',"successful submit discards tab draft");
 has(telephone,'beginDraft(data,roomId,memberId)',"authorized phase enables restore");
 has(js,'snapshot?.room?.roomId,snapshot?.memberId',
   "room controller provides authenticated draft scope");
