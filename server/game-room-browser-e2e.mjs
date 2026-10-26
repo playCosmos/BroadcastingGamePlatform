@@ -305,11 +305,11 @@ async function launchTlsProxy(base,ws){
 }
 
 /** Real CDP touch events (not synthetic JS PointerEvents). */
-async function touchStroke(page,coordinates){
+async function touchStroke(page,coordinates,yRatio=0.5){
     const xs=[0.15,0.3,0.45,0.6,0.8];
     const touch=(ratio)=>[{
         x:Math.round(coordinates.x+coordinates.width*ratio),
-        y:Math.round(coordinates.y+coordinates.height*0.5),
+        y:Math.round(coordinates.y+coordinates.height*yRatio),
         id:1,radiusX:5,radiusY:5,force:0.65
     }];
     await cdp.send("Input.dispatchTouchEvent",{
@@ -321,6 +321,17 @@ async function touchStroke(page,coordinates){
     }
     await cdp.send("Input.dispatchTouchEvent",{
         type:"touchEnd",touchPoints:[]},page.sessionId);
+}
+async function cancelTouchStroke(page,coordinates,yRatio){
+    const at=ratio=>[{x:Math.round(coordinates.x+coordinates.width*ratio),
+        y:Math.round(coordinates.y+coordinates.height*yRatio),
+        id:1,radiusX:5,radiusY:5,force:0.65}];
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchStart",touchPoints:at(0.12)},page.sessionId);
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchMove",touchPoints:at(0.26)},page.sessionId);
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchCancel",touchPoints:[]},page.sessionId);
 }
 
 /**
@@ -806,6 +817,9 @@ async function telephoneBrowserAcceptance(base,coop){
                 await cdp.send("Emulation.setTouchEmulationEnabled",{
                     enabled:true,maxTouchPoints:1
                 },page.sessionId);
+                if(i===0)await cdp.send("Emulation.setDeviceMetricsOverride",{
+                    width:390,height:844,deviceScaleFactor:1,mobile:true
+                },page.sessionId);
                 const bounds=await cdp.eval(page,`(()=>{
                     const canvas=document.getElementById("telephoneCanvas");
                     canvas.scrollIntoView({block:"center"});
@@ -816,7 +830,66 @@ async function telephoneBrowserAcceptance(base,coop){
                 })()`);
                 check(bounds.width>100 && bounds.target==="telephoneCanvas",
                     "telephone canvas is real pointer input target");
-                await touchStroke(page,bounds);
+                const canvasImage="document.getElementById('telephoneCanvas').toDataURL()";
+                const before=await cdp.eval(page,canvasImage);
+                const row=0.25+0.15*stage;
+                if(i===0){
+                    check(await cdp.eval(page,
+                        "document.documentElement.scrollWidth<=innerWidth+2"),
+                        "telephone mobile palette does not overflow viewport");
+                    const color=stage%2===0?"#e5484d":"#3388ff";
+                    check(await cdp.eval(page,`(()=>{
+                        const swatch=document.querySelector(
+                            '#telephonePalette button[data-color=${JSON.stringify(color)}]');
+                        if(!swatch || swatch.disabled)return false;
+                        swatch.click();
+                        return swatch.getAttribute('aria-pressed')==='true' &&
+                            document.getElementById('telephoneColor').value===
+                                ${JSON.stringify(color)};
+                    })()`),"accessible telephone color palette changes pen");
+                    check(await cdp.eval(page,
+                        "document.getElementById('telephoneUndo').disabled"),
+                        "fresh phase has no undo history");
+                }
+                await touchStroke(page,bounds,i===0?row:0.5);
+                if(i===0){
+                    const ink=await cdp.eval(page,canvasImage);
+                    check(ink!==before,"touch draws a new local stroke");
+                    await click(page,"telephoneUndo");
+                    check(await cdp.eval(page,canvasImage)===before,
+                        "undo removes only current phase local ink");
+                    await click(page,"telephoneRedo");
+                    check(await cdp.eval(page,canvasImage)===ink,
+                        "redo restores exact canvas including inherited COOP art");
+                    await click(page,"telephoneClear");
+                    check(await cdp.eval(page,canvasImage)===before,
+                        "clear preserves inherited COOP canvas");
+                    await click(page,"telephoneUndo");
+                    check(await cdp.eval(page,canvasImage)===ink,
+                        "undo restores a cleared local overlay");
+                    const stable=await cdp.eval(page,canvasImage);
+                    await cancelTouchStroke(page,bounds,row);
+                    check(await cdp.eval(page,canvasImage)===stable,
+                        "pointer cancel discards unfinished stroke without ghosts");
+                    await click(page,"telephoneUndo");
+                    check(await cdp.eval(page,canvasImage)===before,
+                        "undo after pointer cancel reaches last committed state");
+                    await touchStroke(page,bounds,row);
+                    check(await cdp.eval(page,
+                        "document.getElementById('telephoneRedo').disabled"),
+                        "new local gesture invalidates redo history");
+                    if(coop && stage>0){
+                        const kept=await cdp.eval(page,canvasImage);
+                        await click(page,"telephoneEraser");
+                        await touchStroke(page,bounds,row);
+                        check(await cdp.eval(page,canvasImage)===before,
+                            "COOP eraser cannot remove inherited strokes");
+                        await click(page,"telephoneUndo");
+                        check(await cdp.eval(page,canvasImage)===kept,
+                            "undo recovers COOP local erased ink");
+                        await click(page,"telephoneEraser");
+                    }
+                }
                 await click(page,"telephoneDrawingDone");
             }else{
                 await cdp.eval(page,`(()=>{

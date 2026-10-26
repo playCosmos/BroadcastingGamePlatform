@@ -6,10 +6,45 @@
     activeStroke = null,pointer = null,erasingLocal=false;
   let penColor="#25374c",penWidth=6,eraser=false;
   let submitting = false,presenting=false,isPresenter=false;
+  const undoHistory=[],redoHistory=[];
+  const historyLimit=25;
+  let gestureBefore=null;
   let lastAutoWake="";
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
-  const context = draw.getContext("2d");
   function visible(id,yes){$(id).hidden=!yes;}
+  function canEdit(){
+    return Boolean(state.active && state.state!=="REVEAL" &&
+      state.taskKind==="DRAWING" && !state.mySubmitted && !submitting);
+  }
+  function redraw(){paint(draw,[...baseStrokes,...strokes]);}
+  function updateTools(){
+    const editable=canEdit(),idle=pointer===null;
+    for(const id of ["telephoneColor","telephoneWidth","telephoneEraser",
+      "telephoneClear","telephoneUndo","telephoneRedo","telephoneDrawingDone"])
+      $(id).disabled=!editable||!idle;
+    $("telephoneUndo").disabled ||= undoHistory.length===0;
+    $("telephoneRedo").disabled ||= redoHistory.length===0;
+    $("telephoneDrawingDone").disabled ||=
+      strokes.length===0 && state.mode!=="COOP";
+    $("telephoneEraser").setAttribute("aria-pressed",String(eraser));
+    for(const button of $("telephonePalette").querySelectorAll("button[data-color]")){
+      button.disabled=!editable||!idle;
+      button.setAttribute("aria-pressed",String(!eraser &&
+        button.dataset.color.toLowerCase()===penColor.toLowerCase()));
+    }
+  }
+  function remember(before){
+    if(before.length===strokes.length &&
+       before.every((item,i)=>item===strokes[i]))return;
+    undoHistory.push(before);
+    if(undoHistory.length>historyLimit)undoHistory.shift();
+    redoHistory.length=0;
+  }
+  function resetDraft(){
+    strokes=[];baseStrokes=[];undoHistory.length=0;redoHistory.length=0;
+    gestureBefore=null;activeStroke=null;pointer=null;erasingLocal=false;
+    paint(draw,[]);
+  }
   function paint(canvas,lines) {
     const ctx = canvas.getContext("2d");
     ctx.fillStyle = "#fff";ctx.fillRect(0,0,canvas.width,canvas.height);
@@ -95,11 +130,12 @@
     state=data||{active:false};request=send;refresh=onRefresh;
     isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
-    if(!data?.active)return;
+    if(!data?.active){
+      phaseKey="";resetDraft();updateTools();return;
+    }
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
-      phaseKey=key;strokes=[];baseStrokes=[];activeStroke=null;
-      pointer=null;erasingLocal=false;
+      phaseKey=key;resetDraft();
       $("telephoneText").value="";
       if(data.mode==="COOP" && data.previousKind==="DRAWING"){
         try{
@@ -147,6 +183,7 @@
       :"현재 단계에 참가하지 않는 관전자입니다. 결과 앨범을 기다려 주세요.";
     if(reveal)renderAlbums();
     updateTimer();
+    updateTools();
   }
   function updatePlaybackProgress(){
     if(!state.active||state.state!=="REVEAL")return;
@@ -184,70 +221,94 @@
             y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
   }
   function eraseOwnStroke(p){
-    // In cooperative mode the eraser can remove only strokes created
-    // in this browser's current stage. Previously submitted art is not
-    // part of this mutable array.
+    // Only the current author's unsubmitted overlay is mutable in COOP.
     const near=stroke=>(stroke.points||[]).some(q=>
       Math.hypot(p.x-q.x,p.y-q.y)<0.03);
     strokes=strokes.filter(stroke=>!near(stroke));
-    paint(draw,[...baseStrokes,...strokes]);
+    redraw();
   }
   draw.addEventListener("pointerdown",event=>{
-    if(state.taskKind!=="DRAWING"||state.mySubmitted||submitting||
-       pointer!==null||(strokes.length>=100 &&
-         !(eraser&&state.mode==="COOP")))return;
-    event.preventDefault();draw.setPointerCapture(event.pointerId);
+    if(!canEdit() || pointer!==null || event.isPrimary===false ||
+      (strokes.length>=100 && !(eraser&&state.mode==="COOP")))return;
+    event.preventDefault();
+    draw.setPointerCapture(event.pointerId);
+    gestureBefore=strokes.slice();
     pointer=event.pointerId;
     erasingLocal=eraser && state.mode==="COOP";
     if(erasingLocal){
       activeStroke=null;
       eraseOwnStroke(point(event));
-      return;
+    }else{
+      activeStroke={points:[point(event)],
+        color:eraser?"#ffffff":penColor,width:eraser?20:penWidth};
+      strokes.push(activeStroke);
+      redraw();
     }
-    activeStroke={points:[point(event)],
-      color:eraser?"#ffffff":penColor,width:eraser?20:penWidth};
-    strokes.push(activeStroke);
-    paint(draw,[...baseStrokes,...strokes]);
+    updateTools();
   });
   draw.addEventListener("pointermove",event=>{
-    if(event.pointerId!==pointer)return;
+    if(event.pointerId!==pointer || !canEdit())return;
     event.preventDefault();
     if(erasingLocal){eraseOwnStroke(point(event));return;}
     if(!activeStroke||activeStroke.points.length>=96)return;
     const p=point(event),last=activeStroke.points[activeStroke.points.length-1];
     if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)<0.001)return;
-    activeStroke.points.push(p);paint(draw,[...baseStrokes,...strokes]);
+    activeStroke.points.push(p);redraw();
   });
-  const stop=event=>{
+  function finishGesture(event,canceled=false){
     if(pointer!==event.pointerId)return;
-    event.preventDefault();pointer=null;activeStroke=null;erasingLocal=false;
-  };
-  draw.addEventListener("pointerup",stop);
-  draw.addEventListener("pointercancel",stop);
+    event.preventDefault();
+    if(canceled)strokes=gestureBefore||[];
+    else if(gestureBefore)remember(gestureBefore);
+    pointer=null;activeStroke=null;erasingLocal=false;gestureBefore=null;
+    redraw();updateTools();
+  }
+  draw.addEventListener("pointerup",event=>finishGesture(event));
+  draw.addEventListener("pointercancel",event=>finishGesture(event,true));
+  draw.addEventListener("lostpointercapture",event=>finishGesture(event,true));
+  function chooseColor(value){
+    if(!/^#[0-9a-fA-F]{6}$/.test(value))return;
+    penColor=value;eraser=false;
+    $("telephoneColor").value=value;
+    updateTools();
+  }
+  $("telephonePalette").addEventListener("click",event=>{
+    const button=event.target.closest("button[data-color]");
+    if(button && canEdit() && pointer===null)
+      chooseColor(button.dataset.color);
+  });
   $("telephoneColor").addEventListener("input",event=>{
-    if(/^#[0-9a-fA-F]{6}$/.test(event.target.value)){
-      penColor=event.target.value;eraser=false;
-      $("telephoneEraser").setAttribute("aria-pressed","false");
-    }
+    if(canEdit() && pointer===null)chooseColor(event.target.value);
   });
   $("telephoneWidth").addEventListener("change",event=>{
-    penWidth=Math.max(1,Math.min(24,Number(event.target.value)||6));
+    if(canEdit() && pointer===null)
+      penWidth=Math.max(1,Math.min(24,Number(event.target.value)||6));
   });
   $("telephoneEraser").addEventListener("click",()=>{
-    eraser=!eraser;
-    $("telephoneEraser").setAttribute("aria-pressed",String(eraser));
+    if(!canEdit() || pointer!==null)return;
+    eraser=!eraser;updateTools();
   });
   $("telephoneUndo").addEventListener("click",()=>{
-    if(state.mySubmitted||submitting||pointer!==null)return;
-    strokes.pop();paint(draw,[...baseStrokes,...strokes]);
+    if(!canEdit()||pointer!==null||!undoHistory.length)return;
+    redoHistory.push(strokes.slice());
+    strokes=undoHistory.pop();
+    redraw();updateTools();
+  });
+  $("telephoneRedo").addEventListener("click",()=>{
+    if(!canEdit()||pointer!==null||!redoHistory.length)return;
+    undoHistory.push(strokes.slice());
+    if(undoHistory.length>historyLimit)undoHistory.shift();
+    strokes=redoHistory.pop();
+    redraw();updateTools();
   });
   $("telephoneClear").addEventListener("click",()=>{
-    if(state.mySubmitted||submitting)return;
-    strokes=[];paint(draw,baseStrokes);
+    if(!canEdit()||pointer!==null||!strokes.length)return;
+    const before=strokes.slice();
+    strokes=[];remember(before);redraw();updateTools();
   });
   async function submit(body){
     if(submitting||!request)return;
-    submitting=true;
+    submitting=true;updateTools();
     try{
       state=await request("/drawing/telephone/submit","POST",{
         stage:state.stage,...body
@@ -256,7 +317,7 @@
       await refresh();
     }catch(error){
       $("notice").textContent=error.message||"제출 실패";
-    }finally{submitting=false;}
+    }finally{submitting=false;updateTools();}
   }
   $("telephoneTextForm").addEventListener("submit",event=>{
     event.preventDefault();
@@ -264,7 +325,8 @@
     if(input)submit({text:input});
   });
   $("telephoneDrawingDone").addEventListener("click",()=>{
-    if(pointer===null && (strokes.length || state.mode==="COOP"))
+    if(canEdit() && pointer===null &&
+       (strokes.length || state.mode==="COOP"))
       submit({strokes});
   });
   async function present(album,step){
