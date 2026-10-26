@@ -15,6 +15,8 @@
   let deadlineWakeInFlight=false,nextDeadlineWakeAt=0;
   let albumTimelineKey="",stageTimelineKey="";
   let serverClockEpoch=NaN,serverClockAt=0;
+  const DRAFT_KEY="gamecenter.telephone.private-draft.v1";
+  let draftScope="";
   function syncServerClock(data){
     const stamp=Date.parse(data?.serverNow);
     // Ignore duplicate or out-of-order WS/HTTP snapshots: a stale
@@ -60,6 +62,87 @@
     if(undoHistory.length>historyLimit)undoHistory.shift();
     redoHistory.length=0;
   }
+  function discardStoredDraft(){
+    try{sessionStorage.removeItem(DRAFT_KEY);}catch{/* storage unavailable */}
+    draftScope="";
+    $("telephoneDraftStatus").textContent="";
+    visible("telephoneDiscardDraft",false);
+  }
+  function validOwnStrokes(lines){
+    return Array.isArray(lines) && lines.length<=100 && lines.every(s=>
+      s && typeof s==="object" && !Array.isArray(s) &&
+      typeof s.color==="string" && /^#[0-9a-fA-F]{6}$/.test(s.color) &&
+      Number.isInteger(s.width) && s.width>=1 && s.width<=24 &&
+      Array.isArray(s.points) && s.points.length>0 &&
+      s.points.length<=96 && s.points.every(p=>
+        p && typeof p==="object" && Number.isFinite(p.x) &&
+        Number.isFinite(p.y) && p.x>=0 && p.x<=1 && p.y>=0 && p.y<=1));
+  }
+  function ownDraftScope(data,roomId,memberId){
+    if(!roomId || !memberId || !data.active || data.state!=="PLAYING" ||
+       data.mySubmitted || !["TEXT","DRAWING"].includes(data.taskKind))
+      return "";
+    return JSON.stringify([roomId,memberId,data.mode,data.stage,
+      data.stageStartedAt]);
+  }
+  function beginDraft(data,roomId,memberId){
+    const next=ownDraftScope(data,roomId,memberId);
+    if(!next){discardStoredDraft();return;}
+    if(next===draftScope)return;
+    draftScope=next;
+    $("telephoneDraftStatus").textContent="";
+    visible("telephoneDiscardDraft",false);
+    let saved=null;
+    try{
+      const raw=sessionStorage.getItem(DRAFT_KEY);
+      if(raw && raw.length<=900000)saved=JSON.parse(raw);
+      else if(raw)sessionStorage.removeItem(DRAFT_KEY);
+    }catch{/* browser may deny private storage */}
+    if(saved?.version===1 && saved.scope===next &&
+       saved.kind===data.taskKind &&
+       (saved.kind==="TEXT"
+         ?typeof saved.text==="string" && saved.text.length<=180
+         :validOwnStrokes(saved.strokes))){
+      if(saved.kind==="TEXT")$("telephoneText").value=saved.text;
+      else{strokes=saved.strokes;redraw();}
+      $("telephoneDraftStatus").textContent="이 탭에서 작성하던 내용을 복구했습니다.";
+      visible("telephoneDiscardDraft",true);
+    }else{
+      try{sessionStorage.removeItem(DRAFT_KEY);}catch{/* optional */}
+    }
+  }
+  function saveDraft(){
+    if(!draftScope || !state.active || state.mySubmitted || submitting ||
+       state.state!=="PLAYING")return;
+    const kind=state.taskKind;
+    const item=kind==="TEXT"
+      ?{version:1,scope:draftScope,kind,text:$("telephoneText").value.slice(0,180)}
+      :{version:1,scope:draftScope,kind,strokes};
+    if(kind!=="TEXT" && (kind!=="DRAWING" || !validOwnStrokes(strokes)))return;
+    if(kind==="TEXT" && !item.text || kind==="DRAWING" && !strokes.length){
+      try{sessionStorage.removeItem(DRAFT_KEY);}catch{/* optional */}
+      $("telephoneDraftStatus").textContent="";
+      visible("telephoneDiscardDraft",false);
+      return;
+    }
+    try{
+      const raw=JSON.stringify(item);
+      if(raw.length>900000)return;
+      sessionStorage.setItem(DRAFT_KEY,raw);
+      $("telephoneDraftStatus").textContent="작성 중인 내용을 이 탭에 임시 저장했습니다.";
+      visible("telephoneDiscardDraft",true);
+    }catch{
+      $("telephoneDraftStatus").textContent="이 브라우저에서는 임시 저장을 사용할 수 없습니다.";
+    }
+  }
+  $("telephoneDiscardDraft").addEventListener("click",()=>{
+    if(!draftScope || state.mySubmitted)return;
+    discardStoredDraft();
+    strokes=[];undoHistory.length=0;redoHistory.length=0;
+    $("telephoneText").value="";
+    redraw();updateTools();
+  });
+  $("telephoneText").addEventListener("input",saveDraft);
   function resetDraft(){
     strokes=[];baseStrokes=[];undoHistory.length=0;redoHistory.length=0;
     gestureBefore=null;activeStroke=null;pointer=null;erasingLocal=false;
@@ -376,12 +459,13 @@
       entries.append(card);
     }
   }
-  function render(data,send,onRefresh,host=false){
+  function render(data,send,onRefresh,host=false,roomId="",memberId=""){
     state=data||{active:false};request=send;refresh=onRefresh;
     isPresenter=Boolean(host);
     if(state.active)syncServerClock(state);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      discardStoredDraft();
       serverClockEpoch=NaN;serverClockAt=0;
       resetDeadline();
       setFocus(false);
@@ -407,6 +491,7 @@
       }
       paint(draw,baseStrokes);
     }
+    beginDraft(data,roomId,memberId);
     const reveal=data.state==="REVEAL";
     if(!reveal)setFocus(false);
     const drawing=data.taskKind==="DRAWING";
@@ -585,7 +670,7 @@
     if(canceled)strokes=gestureBefore||[];
     else if(gestureBefore)remember(gestureBefore);
     pointer=null;activeStroke=null;erasingLocal=false;gestureBefore=null;
-    redraw();updateTools();
+    redraw();updateTools();saveDraft();
   }
   draw.addEventListener("pointerup",event=>finishGesture(event));
   draw.addEventListener("pointercancel",event=>finishGesture(event,true));
@@ -616,19 +701,19 @@
     if(!canEdit()||pointer!==null||!undoHistory.length)return;
     redoHistory.push(strokes.slice());
     strokes=undoHistory.pop();
-    redraw();updateTools();
+    redraw();updateTools();saveDraft();
   });
   $("telephoneRedo").addEventListener("click",()=>{
     if(!canEdit()||pointer!==null||!redoHistory.length)return;
     undoHistory.push(strokes.slice());
     if(undoHistory.length>historyLimit)undoHistory.shift();
     strokes=redoHistory.pop();
-    redraw();updateTools();
+    redraw();updateTools();saveDraft();
   });
   $("telephoneClear").addEventListener("click",()=>{
     if(!canEdit()||pointer!==null||!strokes.length)return;
     const before=strokes.slice();
-    strokes=[];remember(before);redraw();updateTools();
+    strokes=[];remember(before);redraw();updateTools();saveDraft();
   });
   async function submit(body){
     if(submitting||!request)return;
@@ -637,6 +722,7 @@
       state=await request("/drawing/telephone/submit","POST",{
         stage:state.stage,...body
       });
+      discardStoredDraft();
       phaseKey="";
       await refresh();
     }catch(error){
