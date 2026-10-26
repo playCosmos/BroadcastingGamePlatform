@@ -195,7 +195,7 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
     </div>
   </section>
   <p id="telephoneWaiting" class="muted" hidden></p>
-  <section id="telephoneReveal" hidden>
+  <section id="telephoneReveal" tabindex="-1" hidden>
     <h3>모두의 이야기 앨범</h3>
     <p class="muted" id="telephonePresentationStatus" role="status"
       aria-live="polite">방장이 현재 공개 중인 앨범과 단계를 모든 참가자에게 표시합니다.</p>
@@ -204,6 +204,9 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
       <button type="button" id="telephoneFocusMode" class="secondary"
         aria-pressed="false" aria-label="앨범 집중 보기 전환">집중 보기</button>
       <span class="muted">각자 화면에서만 적용됩니다. Esc로 나갈 수 있습니다.</span>
+      <span id="telephoneShortcutHelp" class="muted" hidden>
+        방장 단축키: ←/→ 단계 · PageUp/PageDown 앨범 · Space 재생/일시정지
+      </span>
     </div>
     <div class="toolbar telephoneExportGroup">
       <button type="button" class="secondary" id="telephoneDownload">현재 앨범 이미지 저장 (PNG)</button>
