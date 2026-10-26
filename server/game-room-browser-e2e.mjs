@@ -1152,8 +1152,33 @@ async function telephoneBrowserAcceptance(base,coop){
                     if(coop && stage>0){
                         const kept=await cdp.eval(page,canvasImage);
                         await click(page,"telephoneEraser");
+                        await poll(async()=>await cdp.eval(page,
+                            "document.getElementById('telephoneEraser')"+
+                            ".getAttribute('aria-pressed')==='true'"),
+                            "COOP eraser is activated before drawing",4500);
                         await touchStroke(page,bounds,row);
-                        check(await cdp.eval(page,canvasImage)===before,
+                        const afterErase=await cdp.eval(page,canvasImage);
+                        if(afterErase!==before){
+                            const info=await cdp.eval(page,`(()=>{
+                                const raw=sessionStorage.getItem(
+                                    ${JSON.stringify(localDraftKey)});
+                                const record=raw?JSON.parse(raw):null;
+                                return {
+                                    drawing:!document.getElementById(
+                                        "telephoneDrawingArea").hidden,
+                                    eraser:document.getElementById(
+                                        "telephoneEraser").getAttribute("aria-pressed"),
+                                    disabled:document.getElementById(
+                                        "telephoneEraser").disabled,
+                                    ownSaved:record?.strokes?.length,
+                                    notice:document.getElementById("notice").textContent,
+                                    stage:document.getElementById("telephoneProgress").textContent
+                                };
+                            })()`);
+                            throw Error("COOP eraser must preserve inherited strokes"+
+                                " stage="+stage+" info="+JSON.stringify(info));
+                        }
+                        check(afterErase===before,
                             "COOP eraser cannot remove inherited strokes");
                         await click(page,"telephoneUndo");
                         check(await cdp.eval(page,canvasImage)===kept,
