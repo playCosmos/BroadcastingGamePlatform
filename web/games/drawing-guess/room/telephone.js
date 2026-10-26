@@ -388,7 +388,7 @@
   // Compose only existing normalized text/strokes; never load user URLs.
   function wrapPosterText(ctx,value,maxWidth){
     const result=[];
-    for(const line of String(value??"").split(/\\r?\\n/)){
+    for(const line of String(value??"").split(/\r?\n/)){
       let current="";
       for(const character of line){
         const next=current+character;
