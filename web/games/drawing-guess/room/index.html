@@ -51,6 +51,14 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
   body.telephoneFocus #telephonePlay{padding:12px}
   body.telephoneFocus .telephoneAlbumEntry{padding:10px}
 }
+.telephoneStageTime{margin:9px 0 14px;max-width:520px}
+.telephoneStageTime progress{display:block;width:100%;height:15px;accent-color:#58b7a7}
+.telephoneStageTime[data-urgency="last30"] progress{accent-color:#dfb65e}
+.telephoneStageTime[data-urgency="last10"] progress,
+.telephoneStageTime[data-urgency="expired"] progress{accent-color:#e16b6b}
+.telephoneStageTime #telephoneDeadline{margin:8px 0 0}
+.telephoneStageTime #telephoneTimeAlert{margin:5px 0 0;font-weight:600}
+@media(max-width:600px){.telephoneStageTime{max-width:100%}}
 </style>
 
 <script src="./telephone.js" defer></script>
@@ -157,7 +165,13 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
     <p class="muted" id="telephonePhase">각자 문장을 쓰고 그림과 설명을 번갈아 전달합니다.</p></div>
     <strong id="telephoneProgress" class="code"></strong>
   </div>
-  <p class="muted" id="telephoneDeadline" aria-live="polite"></p>
+  <div id="telephoneStageTime" class="telephoneStageTime" data-urgency="normal" hidden>
+    <label for="telephoneStageTimeProgress">현재 단계 남은 시간</label>
+    <progress id="telephoneStageTimeProgress" max="100" value="100"
+      aria-label="단계 남은 시간 진행률"></progress>
+    <p class="muted" id="telephoneDeadline" aria-live="off"></p>
+    <p id="telephoneTimeAlert" role="status" aria-live="polite"></p>
+  </div>
   <p class="muted" id="telephoneCoopGuide" hidden>이전 참가자의 그림은 유지됩니다. 내 차례에 추가한 획만 지우거나 실행취소할 수 있습니다.</p>
   <div id="telephonePrompt" class="telephonePrompt" hidden></div>
   <canvas id="telephoneIncoming" width="960" height="560" hidden
