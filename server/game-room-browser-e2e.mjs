@@ -911,6 +911,16 @@ async function telephoneBrowserAcceptance(base,coop){
         window.__timeAlertChanges=0;
         window.__timeAlertObserver=new MutationObserver(records=>{
             window.__timeAlertChanges+=records.length;
+            if(!window.__warningCapture &&
+                document.getElementById("telephoneTimeAlert").textContent===
+                    "마감 10초 전입니다."){
+                window.__warningCapture={
+                    progress:document.getElementById(
+                        "telephoneStageTimeProgress").value,
+                    urgency:document.getElementById(
+                        "telephoneStageTime").dataset.urgency
+                };
+            }
         });
         window.__timeAlertObserver.observe(
             document.getElementById("telephoneTimeAlert"),{childList:true});
@@ -942,34 +952,38 @@ async function telephoneBrowserAcceptance(base,coop){
         window.__nativePerfNow=performance.now.bind(performance);
         window.__perfShift=deadline-8000-
             Date.parse(${JSON.stringify(stageTiming.data.serverNow)});
+        window.__timeProgressObserver=new MutationObserver(()=>{
+            if(window.__expiredCapture!==undefined)return;
+            if(document.getElementById("telephoneStageTime").dataset.urgency===
+                "expired")
+                window.__expiredCapture=document.getElementById(
+                    "telephoneStageTimeProgress").value;
+        });
+        window.__timeProgressObserver.observe(
+            document.getElementById("telephoneStageTime"),{
+                attributes:true,attributeFilter:["data-urgency"]
+            });
         Object.defineProperty(performance,"now",{
             configurable:true,value:()=>
                 window.__nativePerfNow()+window.__perfShift
         });
         return true;
     })()`);
-    await poll(async()=>await cdp.eval(host,
-        "document.getElementById('telephoneTimeAlert').textContent"+
-        "==='마감 10초 전입니다.'"),
+    const warning=await poll(async()=>await cdp.eval(host,
+        "window.__warningCapture || null"),
         "monotonic-clock 10-second warning is surfaced once",4500);
-    const warning=await cdp.eval(host,`({
-        progress:document.getElementById("telephoneStageTimeProgress").value,
-        remaining:document.getElementById("telephoneDeadline").textContent,
-        urgency:document.getElementById("telephoneStageTime").dataset.urgency
-    })`);
     check(warning.progress>0 && warning.progress<20 &&
         warning.urgency==="last10",
         "server-aligned stage progress enters final-ten band");
     await nap(1150);
     check(await cdp.eval(host,"window.__timeAlertChanges===1"),
         "monotonic warning is announced only once across timer ticks");
-    await cdp.eval(host,"window.__perfShift+=15000;true");
-    await poll(async()=>await cdp.eval(host,
-        "document.getElementById('telephoneStageTime').dataset.urgency"+
-        "==='expired'"),
+    await cdp.eval(host,"window.__perfShift+=300000;true");
+    const expiredProgress=await poll(async()=>await cdp.eval(host,
+        "window.__expiredCapture===undefined ? null :"+
+        " {value:window.__expiredCapture}"),
         "expired monotonic clock asks for server reconciliation",4500);
-    check(await cdp.eval(host,
-        "document.getElementById('telephoneStageTimeProgress').value===0"),
+    check(expiredProgress.value===0,
         "expired server-aligned progress clamps to zero");
     const stillAuthoritative=await backend(host,"/drawing/telephone",
         "GET",null,tokens[0]);
@@ -980,6 +994,9 @@ async function telephoneBrowserAcceptance(base,coop){
         delete performance.now;
         Date.now=window.__deadlineRealNow;
         window.__timeAlertObserver.disconnect();
+        window.__timeProgressObserver.disconnect();
+        delete window.__expiredCapture;
+        delete window.__warningCapture;
         delete window.__deadlineRealNow;
         delete window.__nativePerfNow;
         delete window.__perfShift;
