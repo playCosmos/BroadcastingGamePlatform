@@ -208,6 +208,14 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
       <button type="button" class="primary" id="telephoneDrawingDone">그림 완료 · 전달</button>
     </div>
   </section>
+  <div id="telephoneDraftTools" class="toolbar telephoneDraftTools" hidden
+    role="group" aria-label="미제출 작성 내용 임시 저장">
+    <span id="telephoneDraftStatus" class="muted" role="status" aria-live="polite"></span>
+    <button type="button" id="telephoneDiscardDraft" class="secondary" hidden>
+      임시 저장 내용 버리기
+    </button>
+    <small class="muted">이 탭에만 임시 저장되며 단계 종료·제출·퇴장 시 삭제됩니다.</small>
+  </div>
   <p id="telephoneWaiting" class="muted" hidden></p>
   <section id="telephoneReveal" tabindex="-1" hidden>
     <h3>모두의 이야기 앨범</h3>

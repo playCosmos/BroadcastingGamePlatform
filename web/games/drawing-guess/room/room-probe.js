@@ -80,6 +80,37 @@ has(html,'id="telephoneAutoplay"',"host can play/pause album slides");
 has(html,'id="telephonePlaybackSpeed"',"host can select slide interval");
 has(html,'id="telephonePlaybackProgress"',"all participants see playback status");
 has(html,'id="telephoneStageTime"',"telephone stages show a timing region");
+has(html,'id="telephoneDraftTools"',"private draft recovery UI remains author-only");
+has(html,'id="telephoneDraftStatus"',"restored draft status is accessible");
+has(html,'id="telephoneDiscardDraft"',"author can explicitly discard a draft");
+has(telephone,'const DRAFT_KEY="gamecenter.telephone.private-draft.v1"',
+  "tab draft key is distinct from room bearer");
+has(telephone,'function ownDraftScope(data,roomId,memberId)',
+  "scope is exact room/member and server stage");
+has(telephone,'JSON.stringify([roomId,memberId,data.mode,data.stage,',
+  "old mode or deadline never restores another round");
+has(telephone,'data.mySubmitted || !["TEXT","DRAWING"].includes(data.taskKind)',
+  "submitted members and spectators cannot restore drafts");
+has(telephone,'function validOwnStrokes(lines)',"malformed or oversized saved strokes denied");
+has(telephone,'lines.length<=100',"draft stroke count matches server cap");
+has(telephone,'s.points.length<=96',"draft point cap matches server cap");
+has(telephone,'raw.length<=900000',"storage data has an explicit upper bound");
+has(telephone,'saved.scope===next',"recovery rejects different member or phase");
+has(telephone,'{version:1,scope:draftScope,kind,strokes}',
+  "drawing persists own overlay rather than inherited COOP base");
+has(telephone,'sessionStorage.setItem(DRAFT_KEY,raw)',"draft never crosses the network");
+has(telephone,'sessionStorage.removeItem(DRAFT_KEY)',"room and stage cleanup delete private draft");
+has(telephone,'$("telephoneText").addEventListener("input",saveDraft)',
+  "unsubmitted text changes autosave");
+has(telephone,'redraw();updateTools();saveDraft();',
+  "drawn/undone/erased strokes autosave");
+has(telephone,'      discardStoredDraft();',"successful submit discards tab draft");
+has(telephone,'beginDraft(data,roomId,memberId)',"authorized phase enables restore");
+has(js,'snapshot?.room?.roomId,snapshot?.memberId',
+  "room controller provides authenticated draft scope");
+no(telephone,'localStorage.setItem(DRAFT_KEY',"private drafts are never persisted across tabs");
+no(telephone,'request("/drawing/telephone/draft"',"draft recovery is entirely local");
+
 has(telephone,'function syncServerClock(data)',"clock samples come from authorized room snapshot");
 has(telephone,'Date.parse(data?.serverNow)',"clock aligns to server UTC timestamp");
 has(telephone,'stamp>serverClockEpoch',"stale snapshots cannot rewind clock");
@@ -216,7 +247,7 @@ no(telephone,'innerHTML',"telephone never renders untrusted input as HTML");
 
 has(server,'sharedDrawing.telephone().playback(',
   "playback controls use canonical authenticated API");
-has(js,'window.TelephoneView.render(telephone,request,refresh,isHost())',
+has(js,'window.TelephoneView.render(telephone,request,refresh,isHost(),',
   "presenter permission derives from authenticated host");
 has(server,'sharedDrawing.telephone().present(',
   "server controls canonical reveal cursor for all players");
