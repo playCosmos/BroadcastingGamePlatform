@@ -84,6 +84,24 @@ has(html,'id="telephoneRedo"',"telephone drawing has redo control");
 has(html,'id="telephoneDownload"',"completed gallery can download an album");
 has(html,'id="telephoneReplayTools"',"revealed picture has local replay controls");
 has(html,'id="telephoneTimeline"',"reveal contains synchronized timeline");
+has(html,'id="telephoneFocusMode"',"reveal has an opt-in focus control");
+has(html,'aria-label="앨범 집중 보기 전환"',"focus control announces its purpose");
+has(html,'aria-pressed="false"',"focus starts in accessible unpressed state");
+has(html,'body.telephoneFocus #room > .columns',"focus hides score, chat and lobby");
+has(html,'body.telephoneFocus #telephoneTimeline',"focus hides dense navigation");
+has(html,'body.telephoneFocus .telephoneExportGroup',"focus hides export controls");
+has(html,'body.telephoneFocus .telephoneAlbumEntry',"focus enlarges the shared slide");
+has(telephone,'function setFocus(enabled)',"focus mode is owned by local view");
+has(telephone,'document.body.classList.toggle("telephoneFocus",active)',
+  "focus does not change server room state");
+has(telephone,'state.state!=="REVEAL"))return',"private stages deny focus activation");
+has(telephone,'if(!reveal)setFocus(false)',"phase switch exits focus");
+has(telephone,'if(!data?.active){',"inactive room branch is present");
+has(telephone,'setFocus(false);',"leaving or changing phase exits focus");
+has(telephone,'event.key==="Escape"',"Escape restores standard room layout");
+has(telephone,'$("telephoneFocusMode").focus()',"Escape returns keyboard focus");
+no(telephone,'localStorage.setItem("telephoneFocus',"focus setting is not persisted");
+
 has(html,'id="telephoneAlbumTimeline"',"album markers exist");
 has(html,'id="telephoneStageTimeline"',"stage markers exist");
 has(html,'id="telephoneTimelineStatus"',"shared location status is accessible");

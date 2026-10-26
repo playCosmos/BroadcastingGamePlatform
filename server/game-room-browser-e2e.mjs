@@ -854,6 +854,11 @@ async function telephoneBrowserAcceptance(base,coop){
         "document.getElementById('telephoneReveal').hidden"),
         "private telephone submissions cannot show album export");
     await cdp.eval(host,
+        "document.getElementById('telephoneFocusMode').click();true");
+    check(await cdp.eval(host,
+        "!document.body.classList.contains('telephoneFocus')"),
+        "in-progress author cannot activate private drawing presentation");
+    await cdp.eval(host,
         "document.getElementById('telephoneDownload').click();true");
     check(await cdp.eval(host,
         "document.getElementById('telephoneDownloadStatus').textContent===''"),
@@ -1037,6 +1042,42 @@ async function telephoneBrowserAcceptance(base,coop){
         afterPoster.data.presentation.stepIndex===
         posterCursor.data.presentation.stepIndex,
         "spectator PNG export does not move host's authoritative reveal");
+    await cdp.send("Emulation.setDeviceMetricsOverride",{
+        width:390,height:844,deviceScaleFactor:1,mobile:true
+    },pages[3].sessionId);
+    await click(pages[3],"telephoneFocusMode");
+    const focus=await cdp.eval(pages[3],`(()=>{
+        const css=id=>getComputedStyle(document.querySelector(id)).display;
+        return {active:document.body.classList.contains("telephoneFocus"),
+          pressed:document.getElementById("telephoneFocusMode")
+            .getAttribute("aria-pressed"),
+          top:css(".top"),roomHead:css("#room > .roomhead"),
+          columns:css("#room > .columns"),
+          reveal:css("#telephoneReveal"),
+          title:document.getElementById("telephoneAlbumTitle").textContent,
+          overflow:document.documentElement.scrollWidth-innerWidth};
+    })()`);
+    check(focus.active && focus.pressed==="true" &&
+        focus.top==="none" && focus.roomHead==="none" &&
+        focus.columns==="none" && focus.reveal!=="none" &&
+        focus.title.startsWith("1/") && focus.overflow<=2,
+        "390px spectator focus hides unrelated room UI, retains stage, no overflow");
+    const focusCursor=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(focusCursor.data.presentation.revision===
+        afterPoster.data.presentation.revision,
+        "local spectator focus does not change authoritative reveal revision");
+    await cdp.eval(pages[3],
+        "window.dispatchEvent(new Event('online'));true");
+    await nap(450);
+    check(await cdp.eval(pages[3],
+        "document.body.classList.contains('telephoneFocus')"),
+        "same-stage foreground refresh preserves local focus mode");
+    await click(host,"telephoneFocusMode");
+    check(await cdp.eval(host,
+        "document.body.classList.contains('telephoneFocus')"+
+        " && document.getElementById('telephoneStepNext').disabled===false"),
+        "presenter can use normal server-owned navigation while focused");
     check(await cdp.eval(pages[3],
         "document.getElementById('telephoneStepNext').disabled"),
         "spectator slide controls cannot alter the host presentation");
@@ -1059,6 +1100,31 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
         "spectator follows host's newly presented slide");
+    check(await cdp.eval(pages[3],
+        "document.body.classList.contains('telephoneFocus')"+
+        " && !document.getElementById('telephoneReveal').hidden"),
+        "spectator focus follows authoritative host stage transition");
+    check(await cdp.eval(host,
+        "document.body.classList.contains('telephoneFocus')"+
+        " && document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "host focus keeps current shared stage visible");
+    await cdp.send("Input.dispatchKeyEvent",{
+        type:"keyDown",key:"Escape",code:"Escape",windowsVirtualKeyCode:27
+    },pages[3].sessionId);
+    await cdp.send("Input.dispatchKeyEvent",{
+        type:"keyUp",key:"Escape",code:"Escape",windowsVirtualKeyCode:27
+    },pages[3].sessionId);
+    await poll(async()=>await cdp.eval(pages[3],
+        "!document.body.classList.contains('telephoneFocus')"+
+        " && document.getElementById('telephoneFocusMode')"+
+        ".getAttribute('aria-pressed')==='false'"+
+        " && getComputedStyle(document.querySelector('#room > .columns'))"+
+        ".display!=='none'"),
+        "spectator Escape restores normal room and chat layout");
+    await click(host,"telephoneFocusMode");
+    check(await cdp.eval(host,
+        "!document.body.classList.contains('telephoneFocus')"),
+        "host can independently exit focused presentation");
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneReplayTools').hidden===false"+
         " && document.querySelector('#telephoneAlbumEntries canvas')!==null"),
