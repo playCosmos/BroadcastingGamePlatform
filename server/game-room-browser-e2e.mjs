@@ -1019,9 +1019,10 @@ async function telephoneBrowserAcceptance(base,coop){
                 state:server.data.state,status:server.status
             })+" exceptions="+JSON.stringify(cdp.exceptions.slice(-4)));
     }
-    check(await cdp.eval(host,
-        "document.getElementById('telephoneAutoplay').textContent==='자동 재생'"),
-        "real host UI switches back from pause to play control");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').textContent==='자동 재생'"+
+        " && document.getElementById('telephoneAutoplay').disabled===false"),
+        "real host UI switches back from pause to play control after POST settles");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
