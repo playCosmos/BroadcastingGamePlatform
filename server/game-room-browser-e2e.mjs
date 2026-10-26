@@ -1156,7 +1156,12 @@ async function telephoneBrowserAcceptance(base,coop){
                             "document.getElementById('telephoneEraser')"+
                             ".getAttribute('aria-pressed')==='true'"),
                             "COOP eraser is activated before drawing",4500);
-                        await touchStroke(page,bounds,row);
+                        const eraseBounds=await cdp.eval(page,`(()=>{
+                            const canvas=document.getElementById("telephoneCanvas");
+                            const r=canvas.getBoundingClientRect();
+                            return {x:r.x,y:r.y,width:r.width,height:r.height};
+                        })()`);
+                        await touchStroke(page,eraseBounds,row);
                         const afterErase=await cdp.eval(page,canvasImage);
                         if(afterErase!==before){
                             const info=await cdp.eval(page,`(()=>{
