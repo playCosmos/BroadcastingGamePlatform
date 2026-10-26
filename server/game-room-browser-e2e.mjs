@@ -993,7 +993,7 @@ async function telephoneBrowserAcceptance(base,coop){
         await poll(async()=>{
             const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
             return !x.data.playback.playing
-                && x.data.playback.nextAt===null
+                && x.data.playback.nextAt==null
                 && x.data.presentation.stepIndex>=1;
         },"host pause freezes the current authoritative slide");
     }catch(error){
