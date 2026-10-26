@@ -11,6 +11,7 @@
   let gestureBefore=null;
   let lastAutoWake="",exporting=false;
   let displayedFrame=null,replay=null;
+  let albumTimelineKey="",stageTimelineKey="";
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   function visible(id,yes){$(id).hidden=!yes;}
   function canEdit(){
@@ -157,6 +158,81 @@
     run.raf=requestAnimationFrame(step);
   }
   $("telephoneReplay").addEventListener("click",startReplay);
+  function clearTimeline(){
+    albumTimelineKey="";stageTimelineKey="";
+    $("telephoneAlbumTimeline").replaceChildren();
+    $("telephoneStageTimeline").replaceChildren();
+  }
+  // These markers show the server-owned cursor; only a room host may write it.
+  function renderTimeline(albums,album,playing){
+    const albumStrip=$("telephoneAlbumTimeline");
+    const stageStrip=$("telephoneStageTimeline");
+    const key=JSON.stringify(albums.map(a=>[a.originalAuthor,a.entries.length]));
+    if(key!==albumTimelineKey){
+      albumTimelineKey=key;
+      stageTimelineKey="";
+      albumStrip.replaceChildren();
+      albums.forEach((item,index)=>{
+        const button=document.createElement("button");
+        button.type="button";
+        button.className="secondary";
+        button.dataset.album=String(index);
+        button.textContent=(index+1)+" · "+item.originalAuthor;
+        button.setAttribute("aria-label","앨범 "+(index+1)+" · "+item.originalAuthor);
+        albumStrip.append(button);
+      });
+    }
+    const stageKey=albumIndex+":"+JSON.stringify(album.entries.map(e=>[
+      e.kind,e.author]));
+    if(stageKey!==stageTimelineKey){
+      stageTimelineKey=stageKey;
+      stageStrip.replaceChildren();
+      album.entries.forEach((entry,index)=>{
+        const button=document.createElement("button");
+        button.type="button";
+        button.className="secondary";
+        button.dataset.step=String(index);
+        button.textContent=(index+1)+"단계 · "+
+          (entry.kind==="DRAWING"?"그림":"문장");
+        button.setAttribute("aria-label",(index+1)+"단계 · "+
+          entry.author+"님의 "+(entry.kind==="DRAWING"?"그림":"문장"));
+        stageStrip.append(button);
+      });
+    }
+    const locked=!isPresenter||presenting||playing;
+    for(const button of albumStrip.querySelectorAll("button[data-album]")){
+      const active=Number(button.dataset.album)===albumIndex;
+      button.disabled=locked||active;
+      button.setAttribute("aria-current",active?"true":"false");
+    }
+    for(const button of stageStrip.querySelectorAll("button[data-step]")){
+      const active=Number(button.dataset.step)===entryIndex;
+      button.disabled=locked||active;
+      button.setAttribute("aria-current",active?"step":"false");
+    }
+    $("telephoneTimelineStatus").textContent=playing
+      ?"자동 재생 중 · 방장 수동 이동 잠금"
+      :isPresenter
+        ?"앨범 또는 단계를 선택하면 모든 참가자의 공개 위치가 변경됩니다."
+        :"방장이 선택한 공개 위치를 함께 보고 있습니다.";
+  }
+  $("telephoneAlbumTimeline").addEventListener("click",event=>{
+    const button=event.target.closest("button[data-album]");
+    if(!button||button.disabled||!isPresenter||presenting||
+       state.state!=="REVEAL"||state.playback?.playing)return;
+    const index=Number(button.dataset.album);
+    if(Number.isSafeInteger(index) && index>=0 &&
+       index<(state.albums?.length||0))present(index,0);
+  });
+  $("telephoneStageTimeline").addEventListener("click",event=>{
+    const button=event.target.closest("button[data-step]");
+    if(!button||button.disabled||!isPresenter||presenting||
+       state.state!=="REVEAL"||state.playback?.playing)return;
+    const step=Number(button.dataset.step);
+    if(Number.isSafeInteger(step) && step>=0 &&
+       step<(state.albums?.[albumIndex]?.entries.length||0))
+      present(albumIndex,step);
+  });
   function renderAlbums(){
     const albums=state.albums||[];
     if(!albums.length)return;
@@ -189,6 +265,7 @@
         :"방장이 공개 중인 앨범을 함께 보고 있습니다. 화면은 자동 동기화됩니다.";
     updatePlaybackProgress();
     $("telephoneStepLabel").textContent=(entryIndex+1)+"/"+album.entries.length+"단계";
+    renderTimeline(albums,album,playing);
     const entries=$("telephoneAlbumEntries");
     const entry=album.entries[entryIndex];
     visible("telephoneReplayTools",entry?.kind==="DRAWING");
@@ -231,6 +308,7 @@
     isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      clearTimeline();
       stopReplay();displayedFrame=null;
       visible("telephoneReplayTools",false);
       $("telephoneReplayStatus").textContent="";
@@ -240,6 +318,7 @@
     }
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
+      clearTimeline();
       stopReplay();displayedFrame=null;
       phaseKey=key;resetDraft();
       $("telephoneText").value="";
@@ -439,6 +518,7 @@
     if(!isPresenter || presenting || !request ||
        state.state!=="REVEAL" || !state.presentation)return;
     presenting=true;
+    renderAlbums();
     try{
       state=await request("/drawing/telephone/present","POST",{
         albumIndex:album,stepIndex:step,
@@ -458,6 +538,7 @@
     if(!isPresenter||presenting||!request||
        state.state!=="REVEAL"||!state.presentation)return;
     presenting=true;
+    renderAlbums();
     try{
       const execute=revision=>request("/drawing/telephone/playback","POST",{
         action,intervalSeconds:seconds,expectedRevision:revision
