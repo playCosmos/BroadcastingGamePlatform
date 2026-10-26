@@ -9,6 +9,12 @@
 .telephonePrompt{padding:18px;background:#142532;border:1px solid #35546a;border-radius:12px;margin:12px 0;font-size:17px;overflow-wrap:anywhere}
 .telephoneAlbumEntry{padding:14px;border:1px solid #344758;border-radius:10px;margin:10px 0}
 .telephoneAlbumEntry strong{display:block;margin-bottom:9px}
+.telephonePalette{display:flex;gap:9px;flex-wrap:wrap;align-items:center;margin:12px 0 6px}
+.telephonePalette button{width:44px;height:44px;min-width:44px;padding:0;
+  background:var(--swatch);border:2px solid #8399b2;border-radius:50%}
+.telephonePalette button[aria-pressed="true"]{outline:3px solid #f1f8ff;outline-offset:2px}
+.telephonePalette button:focus-visible{outline:3px solid #85ddea;outline-offset:3px}
+@media(pointer:coarse){.telephonePalette button{width:48px;height:48px;min-width:48px}}
 </style>
 
 <script src="./telephone.js" defer></script>
@@ -131,8 +137,20 @@
       <label>굵기 <select id="telephoneWidth"><option value="3">가늘게</option>
         <option value="6" selected>보통</option><option value="12">굵게</option></select></label>
       <button type="button" class="secondary" id="telephoneEraser">지우개</button>
-      <button type="button" class="secondary" id="telephoneUndo">실행취소</button>
+      <button type="button" class="secondary" id="telephoneUndo" disabled>실행취소</button>
+      <button type="button" class="secondary" id="telephoneRedo" disabled>다시 실행</button>
     </div>
+    <div id="telephonePalette" class="telephonePalette" role="group" aria-label="빠른 펜 색상">
+      <button type="button" data-color="#25374c" style="--swatch:#25374c" aria-label="진남색" aria-pressed="true"></button>
+      <button type="button" data-color="#1a1a1a" style="--swatch:#1a1a1a" aria-label="검정" aria-pressed="false"></button>
+      <button type="button" data-color="#e5484d" style="--swatch:#e5484d" aria-label="빨강" aria-pressed="false"></button>
+      <button type="button" data-color="#f4a340" style="--swatch:#f4a340" aria-label="주황" aria-pressed="false"></button>
+      <button type="button" data-color="#ffd43b" style="--swatch:#ffd43b" aria-label="노랑" aria-pressed="false"></button>
+      <button type="button" data-color="#2db47d" style="--swatch:#2db47d" aria-label="초록" aria-pressed="false"></button>
+      <button type="button" data-color="#3388ff" style="--swatch:#3388ff" aria-label="파랑" aria-pressed="false"></button>
+      <button type="button" data-color="#a76bff" style="--swatch:#a76bff" aria-label="보라" aria-pressed="false"></button>
+    </div>
+    <p class="muted">변경 사항은 제출 전까지 내 그림에만 적용됩니다. 이어 그리기에서는 이전 참가자의 획을 수정할 수 없습니다.</p>
     <canvas id="telephoneCanvas" width="960" height="560" class="telephoneCanvas"
       aria-label="내가 그리는 그림"></canvas>
     <div class="toolbar">
