@@ -24,6 +24,33 @@
 .telephoneTimeline button:disabled:not([aria-current="true"]):not([aria-current="step"])
   {opacity:.7}
 @media(pointer:coarse){.telephoneTimeline button{min-height:48px}}
+/* Focus is a local, reversible layout only; server-backed controls remain intact. */
+body.telephoneFocus{background:#090e17}
+body.telephoneFocus .top,
+body.telephoneFocus #notice,
+body.telephoneFocus #room > .roomhead,
+body.telephoneFocus #room > .columns,
+body.telephoneFocus #telephonePlay > .toolbar.spaced,
+body.telephoneFocus #telephoneRevealDescription,
+body.telephoneFocus #telephoneTimeline,
+body.telephoneFocus .telephoneExportGroup{display:none!important}
+body.telephoneFocus .shell{max-width:none;padding:clamp(10px,2vw,26px)}
+body.telephoneFocus #telephonePlay{margin:0 auto;max-width:1500px;
+  padding:clamp(12px,2vw,26px);background:#111b2a;box-shadow:none}
+body.telephoneFocus #telephoneReveal{max-width:1410px;margin:0 auto}
+body.telephoneFocus #telephoneAlbumEntries{width:100%;align-items:stretch}
+body.telephoneFocus .telephoneAlbumEntry{width:100%;margin:12px 0;
+  background:#182538;border-color:#506077}
+body.telephoneFocus .telephoneAlbumEntry canvas{width:100%;max-width:1200px;
+  height:auto;margin:10px auto}
+body.telephoneFocus .telephoneAlbumEntry p{font-size:clamp(1.5rem,3vw,2.6rem);
+  line-height:1.5;overflow-wrap:anywhere}
+body.telephoneFocus #telephoneAlbumTitle,
+body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
+@media(max-width:600px){
+  body.telephoneFocus #telephonePlay{padding:12px}
+  body.telephoneFocus .telephoneAlbumEntry{padding:10px}
+}
 </style>
 
 <script src="./telephone.js" defer></script>
@@ -173,7 +200,12 @@
     <p class="muted" id="telephonePresentationStatus" role="status"
       aria-live="polite">방장이 현재 공개 중인 앨범과 단계를 모든 참가자에게 표시합니다.</p>
     <p class="muted" id="telephoneRevealDescription">처음 문장이 다음 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.</p>
-    <div class="toolbar">
+    <div class="toolbar telephoneFocusControls">
+      <button type="button" id="telephoneFocusMode" class="secondary"
+        aria-pressed="false" aria-label="앨범 집중 보기 전환">집중 보기</button>
+      <span class="muted">각자 화면에서만 적용됩니다. Esc로 나갈 수 있습니다.</span>
+    </div>
+    <div class="toolbar telephoneExportGroup">
       <button type="button" class="secondary" id="telephoneDownload">현재 앨범 이미지 저장 (PNG)</button>
       <p class="muted" id="telephoneDownloadStatus" role="status" aria-live="polite"></p>
     </div>
