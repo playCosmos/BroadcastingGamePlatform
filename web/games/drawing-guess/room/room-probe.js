@@ -247,7 +247,7 @@ no(telephone,'innerHTML',"telephone never renders untrusted input as HTML");
 
 has(server,'sharedDrawing.telephone().playback(',
   "playback controls use canonical authenticated API");
-has(js,'window.TelephoneView.render(telephone,request,refresh,isHost())',
+has(js,'window.TelephoneView.render(telephone,request,refresh,isHost(),',
   "presenter permission derives from authenticated host");
 has(server,'sharedDrawing.telephone().present(',
   "server controls canonical reveal cursor for all players");
