@@ -376,6 +376,72 @@ public final class GameRoomDrawingR5HttpProbe {
                 +"\"expectedRevision\":1}",ta,null,"https://evil.example",null)
                 .statusCode()==403,
                 "cross-origin presenter requests remain CSRF protected");
+            String control=ROOT+"/drawing/telephone/playback";
+            String play="{\"action\":\"PLAY\",\"intervalSeconds\":3,"
+                +"\"expectedRevision\":1}";
+            check(request(client,base,control,"POST",play,
+                tb.token(),null,null,null).statusCode()==403,
+                "nonhost player cannot start automatic album playback");
+            check(request(client,base,control,"POST",play,
+                ts.token(),null,null,null).statusCode()==403,
+                "spectator cannot start automatic album playback");
+            check(request(client,base,control,"POST",play,
+                ta,null,"https://evil.example",null).statusCode()==403,
+                "playback mutation remains protected by same-origin validation");
+            check(request(client,base,control,"POST",
+                "{\"action\":\"PLAY\",\"intervalSeconds\":1,"
+                +"\"expectedRevision\":1}",ta,null,null,null)
+                .statusCode()==400,
+                "HTTP speed validation rejects excessively short duration");
+            var playing=request(client,base,control,"POST",play,
+                ta,null,null,null);
+            check(playing.statusCode()==200
+                && read(playing).getAsJsonObject("playback")
+                    .get("playing").getAsBoolean()
+                && read(playing).getAsJsonObject("presentation")
+                    .get("revision").getAsLong()==2,
+                "authenticated host starts versioned automatic reveal");
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                "{\"albumIndex\":1,\"stepIndex\":0,"
+                +"\"expectedRevision\":2}",ta,null,null,null)
+                .statusCode()==409,
+                "host cannot manually change a currently playing slideshow");
+            try(var connection=db.open();var stmt=connection.prepareStatement("""
+                UPDATE game_room_telephone_match SET reveal_next_at=?
+                WHERE room_id=?
+                """)){
+                stmt.setString(1,Instant.now().minusSeconds(1).toString());
+                stmt.setString(2,access.room(ta).roomId());
+                stmt.executeUpdate();
+            }
+            var autoRead=request(client,base,ROOT+"/drawing/telephone",
+                "GET",null,ts.token(),null,null,null);
+            check(autoRead.statusCode()==200
+                && read(autoRead).getAsJsonObject("presentation")
+                    .get("stepIndex").getAsInt()==2
+                && read(autoRead).getAsJsonObject("presentation")
+                    .get("revision").getAsLong()==3,
+                "spectator HTTP GET reconciles server-timed playback tick");
+            var eventsAfterTick=request(client,base,ROOT+"/events?since=0",
+                "GET",null,ts.token(),null,null,null);
+            check(eventsAfterTick.body().contains("telephone-reveal-3"),
+                "auto step produces replayable authenticated room WebSocket cue");
+            var paused=request(client,base,control,"POST",
+                "{\"action\":\"PAUSE\",\"intervalSeconds\":3,"
+                +"\"expectedRevision\":3}",ta,null,null,null);
+            check(paused.statusCode()==200
+                && !read(paused).getAsJsonObject("playback")
+                    .get("playing").getAsBoolean()
+                && read(paused).getAsJsonObject("presentation")
+                    .get("revision").getAsLong()==4,
+                "host pause commits currently displayed slide");
+            var slowed=request(client,base,control,"POST",
+                "{\"action\":\"SPEED\",\"intervalSeconds\":8,"
+                +"\"expectedRevision\":4}",ta,null,null,null);
+            check(slowed.statusCode()==200
+                && read(slowed).getAsJsonObject("playback")
+                    .get("intervalSeconds").getAsInt()==8,
+                "host changes interval while paused");
             check("POST_GAME".equals(access.room(ta).state().name()),
                 "telephone mode completes shared GameRoom lifecycle");
             System.out.println("GAME_ROOM_DRAWING_HTTP_R5_PASSED checks="+checks+

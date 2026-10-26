@@ -991,7 +991,23 @@ public final class GameClientHttpServer implements AutoCloseable {
             return;
         }
         if ("/drawing/telephone".equals(suffix) && "GET".equals(method)) {
-            try {sendJson(exchange,200,sharedDrawing.telephone().state(token));}
+            try {
+                var current=sharedDrawing.telephone().state(token);
+                // A server-clock auto tick was materialized by state(); any
+                // connected member may wake the room with the committed
+                // revision. The event carries no hidden writing/canvas data.
+                if(roomRealtime!=null && current.presentation()!=null
+                    && current.presentation().revision()>0) {
+                    try {
+                        roomRealtime.announceTelephonePlayback(
+                            token,current.presentation().revision());
+                    }catch(java.sql.SQLException | IllegalStateException ignored) {
+                        System.err.println(
+                            "[telephone] autoplay event deferred; REST remains authoritative");
+                    }
+                }
+                sendJson(exchange,200,current);
+            }
             catch(GameRoomAccessService.Forbidden denied) {
                 sendJson(exchange,403,Map.of("error","member unauthorized"));
             } catch(java.sql.SQLException failed) {
@@ -1093,6 +1109,31 @@ public final class GameClientHttpServer implements AutoCloseable {
                         }
                     }
                     sendJson(exchange,200,reveal);
+                }
+                case "telephone/playback" -> {
+                    var json=readYachtBody(exchange,Set.of(
+                        "action","intervalSeconds","expectedRevision"));
+                    if(!json.has("expectedRevision")
+                        || !json.get("expectedRevision").isJsonPrimitive()
+                        || !json.get("expectedRevision").getAsJsonPrimitive()
+                            .isNumber())
+                        throw new IllegalArgumentException(
+                            "numeric playback revision required");
+                    long expected=json.get("expectedRevision").getAsLong();
+                    var updated=sharedDrawing.telephone().playback(
+                        token,roomApiText(json,"action"),
+                        roomApiInt(json,"intervalSeconds"),expected);
+                    if(roomRealtime!=null && updated.presentation()!=null
+                        && updated.presentation().revision()>0) {
+                        try{
+                            roomRealtime.announceTelephonePresentation(
+                                token,updated.presentation().revision());
+                        }catch(java.sql.SQLException | IllegalStateException ignored) {
+                            System.err.println(
+                                "[telephone] playback event deferred; REST remains authoritative");
+                        }
+                    }
+                    sendJson(exchange,200,updated);
                 }
                 case "telephone/submit" -> {
                     var json=readTelephoneBody(exchange);
