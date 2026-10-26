@@ -1472,7 +1472,7 @@ async function telephoneBrowserAcceptance(base,coop){
     await waitHotkeyCursor(2,0,4,
         "host PageDown selects next album at stage one");
     await poll(async()=>await cdp.eval(pages[3],
-        "document.querySelector('#telephoneAlbumTimeline button[data-album=\\"2\\"]')"+
+        "document.querySelector('#telephoneAlbumTimeline button[data-album=\"2\"]')"+
         ".getAttribute('aria-current')==='true'"+
         " && document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"),
         "spectator follows host keyboard-driven album cursor");
