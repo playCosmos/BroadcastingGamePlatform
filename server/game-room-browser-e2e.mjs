@@ -885,6 +885,72 @@ async function telephoneBrowserAcceptance(base,coop){
     check(spectator.status===200 && !spectator.data.previousContent &&
         !spectator.data.taskKind && spectator.data.albums.length===0,
         "spectator sees neither prompt nor unrevealed album");
+    const stageTiming=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    await poll(async()=>await cdp.eval(host,
+        "!document.getElementById('telephoneStageTime').hidden"+
+        " && document.getElementById('telephoneStageTimeProgress').value>0"+
+        " && document.getElementById('telephoneDeadline').textContent"+
+        ".includes('단계 종료까지')"),
+        "live stage progress and countdown visible to unsubmitted author");
+    await poll(async()=>await cdp.eval(pages[3],
+        "!document.getElementById('telephoneStageTime').hidden"+
+        " && document.getElementById('telephoneTimeAlert').textContent===''"),
+        "spectator sees stage progress without an author-only warning");
+    // Shift ONLY this browser's wall clock; the server deadline remains real.
+    // A fake local expiry must never submit another player's private stage.
+    await cdp.eval(host,`(()=>{
+        const deadline=Date.parse(${JSON.stringify(stageTiming.data.stageStartedAt)})+
+            ${Number(stageTiming.data.seconds)}*1000;
+        window.__deadlineRealNow=Date.now;
+        window.__deadlineFakeNow=deadline-8000;
+        window.__timeAlertChanges=0;
+        window.__timeAlertObserver=new MutationObserver(records=>{
+            window.__timeAlertChanges+=records.length;
+        });
+        window.__timeAlertObserver.observe(
+            document.getElementById("telephoneTimeAlert"),{childList:true});
+        Date.now=()=>window.__deadlineFakeNow;
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneTimeAlert').textContent"+
+        "==='마감 10초 전입니다.'"),
+        "10-second warning is surfaced from server-snapshot deadline",4500);
+    const warning=await cdp.eval(host,`({
+        progress:document.getElementById("telephoneStageTimeProgress").value,
+        remaining:document.getElementById("telephoneDeadline").textContent,
+        urgency:document.getElementById("telephoneStageTime").dataset.urgency
+    })`);
+    check(warning.progress>0 && warning.progress<15 &&
+        warning.remaining.includes("8초") && warning.urgency==="last10",
+        "stage progress displays an 8-second warning without touching server time");
+    await nap(1450);
+    check(await cdp.eval(host,
+        "window.__timeAlertChanges===1"),
+        "warning is announced only once across repeated timer ticks");
+    await cdp.eval(host,
+        "window.__deadlineFakeNow+="+"15000;true");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneStageTime').dataset.urgency"+
+        "==='expired'"),
+        "expired local clock enters server-recheck status",4500);
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneStageTimeProgress').value===0"),
+        "expired progress clamps to zero without a negative meter");
+    const stillAuthoritative=await backend(host,"/drawing/telephone",
+        "GET",null,tokens[0]);
+    check(stillAuthoritative.data.stage===0 &&
+        stillAuthoritative.data.state!=="REVEAL",
+        "local expiry cannot advance authoritative telephone stage");
+    await cdp.eval(host,`(()=>{
+        Date.now=window.__deadlineRealNow;
+        window.__timeAlertObserver.disconnect();
+        delete window.__deadlineRealNow;
+        delete window.__deadlineFakeNow;
+        return true;
+    })()`);
+
     for(let stage=0;stage<3;stage++){
         const drawing=coop || stage===1;
         for(let i=0;i<3;i++){
@@ -992,6 +1058,12 @@ async function telephoneBrowserAcceptance(base,coop){
                 null,tokens[0]);
             return result.data.stage>stage||result.data.state==="REVEAL";
         },"telephone stage transition "+stage);
+        if(stage===0){
+            await poll(async()=>await cdp.eval(host,
+                "document.getElementById('telephoneTimeAlert').textContent===''"+
+                " && document.getElementById('telephoneStageTimeProgress').value>0"),
+                "new stage clears prior warning and resets progress");
+        }
         if(stage<2){
             const next=await backend(host,"/drawing/telephone","GET",
                 null,tokens[0]);
@@ -1019,6 +1091,10 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneReveal').hidden===false"),
         "real browser opens gallery stage navigator");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneStageTime').hidden"+
+        " && document.getElementById('telephoneTimeAlert').textContent===''"),
+        "revealed completed albums clear the private stage countdown");
     check(await cdp.eval(host,
         "document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
         "album shows one stage, not all results at once");
