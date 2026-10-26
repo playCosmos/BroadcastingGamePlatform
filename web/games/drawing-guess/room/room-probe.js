@@ -81,6 +81,17 @@ has(html,'id="telephonePlaybackSpeed"',"host can select slide interval");
 has(html,'id="telephonePlaybackProgress"',"all participants see playback status");
 has(html,'id="telephonePalette"',"telephone drawing has a preset color palette");
 has(html,'id="telephoneRedo"',"telephone drawing has redo control");
+has(html,'id="telephoneDownload"',"completed gallery can download an album");
+has(html,'id="telephoneDownloadStatus"',"album download has accessible status");
+has(telephone,'function composeAlbumPoster(album,index)',"export composes the full album");
+has(telephone,'album.entries.map((entry,i)',"poster includes all story stages");
+has(telephone,'incomingDrawing(card.entry.content,source)',"poster rasterizes validated drawing snapshots");
+has(telephone,'wrapPosterText(measuring,entry.content',"poster wraps caption text");
+has(telephone,'state.state!=="REVEAL"',"in-progress albums are not exportable");
+has(telephone,'poster.toBlob(value=>value?resolve(value)',"PNG encoded as a blob");
+has(telephone,'link.download="gamecenter-telephone-album-"',"download filename excludes user text");
+has(telephone,'URL.revokeObjectURL(url)',"temporary PNG resources released");
+
 has(html,'aria-label="빠른 펜 색상"',"color palette is accessible");
 has(telephone,'const undoHistory=[],redoHistory=[]',"local undo and redo history");
 has(telephone,'undoHistory.length>historyLimit',"bounded local edit memory");
