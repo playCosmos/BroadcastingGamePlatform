@@ -176,6 +176,14 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
   <div id="telephonePrompt" class="telephonePrompt" hidden></div>
   <canvas id="telephoneIncoming" width="960" height="560" hidden
     aria-label="앞 참가자가 그린 그림" class="telephoneCanvas"></canvas>
+  <div id="telephoneDraftTools" class="toolbar telephoneDraftTools" hidden
+    role="group" aria-label="미제출 작성 내용 임시 저장">
+    <span id="telephoneDraftStatus" class="muted" role="status" aria-live="polite"></span>
+    <button type="button" id="telephoneDiscardDraft" class="secondary" hidden>
+      임시 저장 내용 버리기
+    </button>
+    <small class="muted">이 탭에만 임시 저장되며 단계 종료·제출·퇴장 시 삭제됩니다.</small>
+  </div>
   <form id="telephoneTextForm" class="stack" hidden>
     <label>문장 또는 그림 설명<input id="telephoneText" maxlength="180" required
       autocomplete="off" placeholder="떠오르는 문장을 입력하세요"></label>
