@@ -960,6 +960,26 @@ async function telephoneBrowserAcceptance(base,coop){
                 `document.getElementById(${JSON.stringify(field)}).hidden===false`),
                 "telephone author "+i+" has correct stage "+stage,17000);
             if(drawing){
+                // The next stage can be visible while the preceding async
+                // submit/refresh is still settling. Wait for actual editable
+                // tools, not visibility alone, before injecting pointer input.
+                try{
+                    await poll(async()=>await cdp.eval(page,
+                        "[...document.querySelectorAll("+
+                        "'#telephonePalette button[data-color]')].some(b=>!b.disabled)"),
+                        "telephone drawing palette becomes editable "+stage+
+                        " member "+i,12000);
+                }catch(error){
+                    const details=await cdp.eval(page,`({
+                        phase:document.getElementById("telephonePhase").textContent,
+                        waiting:document.getElementById("telephoneWaiting").hidden,
+                        drawing:document.getElementById("telephoneDrawingArea").hidden,
+                        editable:!document.querySelector("#telephonePalette button").disabled,
+                        notice:document.getElementById("notice").textContent,
+                        progress:document.getElementById("telephoneProgress").textContent
+                    })`);
+                    throw Error(String(error)+" page="+JSON.stringify(details));
+                }
                 await cdp.send("Emulation.setTouchEmulationEnabled",{
                     enabled:true,maxTouchPoints:1
                 },page.sessionId);
