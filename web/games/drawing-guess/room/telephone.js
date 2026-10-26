@@ -11,6 +11,8 @@
   let gestureBefore=null;
   let lastAutoWake="",exporting=false;
   let displayedFrame=null,replay=null;
+  let deadlineKey="",deadlineAlert="",deadlineWakeAttempts=0;
+  let deadlineWakeInFlight=false,nextDeadlineWakeAt=0;
   let albumTimelineKey="",stageTimelineKey="";
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   function visible(id,yes){$(id).hidden=!yes;}
@@ -362,6 +364,7 @@
     isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      resetDeadline();
       setFocus(false);
       clearTimeline();
       stopReplay();displayedFrame=null;
@@ -447,14 +450,75 @@
       refresh().catch(()=>{});
     }
   }
+  function resetDeadline(){
+    deadlineKey="";deadlineAlert="";
+    deadlineWakeAttempts=0;deadlineWakeInFlight=false;
+    nextDeadlineWakeAt=0;
+    $("telephoneDeadline").textContent="";
+    $("telephoneTimeAlert").textContent="";
+    $("telephoneStageTimeProgress").value=100;
+    $("telephoneStageTime").dataset.urgency="normal";
+    visible("telephoneStageTime",false);
+  }
   function updateTimer(){
     updatePlaybackProgress();
-    if(!state.active||state.state==="REVEAL"){
-      $("telephoneDeadline").textContent="";return;
+    if(!state.active || state.state==="REVEAL"){
+      resetDeadline();
+      return;
     }
-    const until=Date.parse(state.stageStartedAt)+state.seconds*1000-Date.now();
-    $("telephoneDeadline").textContent="단계 종료까지 "+
-      Math.max(0,Math.ceil(until/1000))+"초 · 시간이 끝나면 자동 전달";
+    const duration=Number(state.seconds);
+    const started=Date.parse(state.stageStartedAt);
+    if(!Number.isFinite(duration) || duration<=0 ||
+       !Number.isFinite(started)){
+      resetDeadline();
+      return;
+    }
+    const key=String(state.stage)+":"+state.stageStartedAt+":"+duration;
+    if(key!==deadlineKey){
+      deadlineKey=key;
+      deadlineAlert="";
+      deadlineWakeAttempts=0;deadlineWakeInFlight=false;
+      nextDeadlineWakeAt=0;
+      $("telephoneTimeAlert").textContent="";
+    }
+    visible("telephoneStageTime",true);
+    const now=Date.now();
+    const until=started+duration*1000-now;
+    const remaining=Math.max(0,Math.ceil(until/1000));
+    const percent=Math.max(0,Math.min(100,until/(duration*1000)*100));
+    const progress=$("telephoneStageTimeProgress");
+    progress.value=percent;
+    const urgency=remaining===0?"expired":
+      remaining<=10?"last10":remaining<=30?"last30":"normal";
+    $("telephoneStageTime").dataset.urgency=urgency;
+    $("telephoneDeadline").textContent=remaining>0
+      ?"단계 종료까지 "+remaining+"초 · 시간이 끝나면 자동 전달"
+      :"단계 시간이 종료됐습니다 · 서버 상태 확인 중";
+    // Alert only the active unsubmitted author, and only when entering a
+    // threshold. The per-second countdown is deliberately not live.
+    const author=Boolean(!state.mySubmitted && state.taskKind);
+    if(author && urgency!=="normal" && urgency!==deadlineAlert){
+      deadlineAlert=urgency;
+      $("telephoneTimeAlert").textContent=urgency==="last30"
+        ?"마감 30초 전입니다."
+        :urgency==="last10"
+          ?"마감 10초 전입니다."
+          :"마감 시간이 지났습니다. 서버 상태를 확인하고 있습니다.";
+    }else if(!author){
+      $("telephoneTimeAlert").textContent="";
+    }
+    // Client clock is a wake-up hint, not an authority. Never fabricate
+    // a phase advance or submit the user's unsent draft on clock expiry.
+    if(remaining===0 && refresh && !deadlineWakeInFlight &&
+       deadlineWakeAttempts<3 && now>=nextDeadlineWakeAt){
+      deadlineWakeAttempts++;
+      nextDeadlineWakeAt=now+(deadlineWakeAttempts===1?3000:10000);
+      deadlineWakeInFlight=true;
+      const dueKey=deadlineKey;
+      Promise.resolve().then(()=>refresh()).catch(()=>{}).finally(()=>{
+        if(deadlineKey===dueKey)deadlineWakeInFlight=false;
+      });
+    }
   }
   function point(event){
     const rect=draw.getBoundingClientRect();
