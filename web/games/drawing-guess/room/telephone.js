@@ -87,6 +87,7 @@
   }
   function beginDraft(data,roomId,memberId){
     const next=ownDraftScope(data,roomId,memberId);
+    visible("telephoneDraftTools",Boolean(next));
     if(!next){discardStoredDraft();return;}
     if(next===draftScope)return;
     draftScope=next;
@@ -129,7 +130,8 @@
       const raw=JSON.stringify(item);
       if(raw.length>900000)return;
       sessionStorage.setItem(DRAFT_KEY,raw);
-      $("telephoneDraftStatus").textContent="작성 중인 내용을 이 탭에 임시 저장했습니다.";
+      if($("telephoneDraftStatus").textContent!=="작성 중인 내용을 이 탭에 임시 저장했습니다.")
+        $("telephoneDraftStatus").textContent="작성 중인 내용을 이 탭에 임시 저장했습니다.";
       visible("telephoneDiscardDraft",true);
     }catch{
       $("telephoneDraftStatus").textContent="이 브라우저에서는 임시 저장을 사용할 수 없습니다.";
@@ -465,6 +467,7 @@
     if(state.active)syncServerClock(state);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      visible("telephoneDraftTools",false);
       discardStoredDraft();
       serverClockEpoch=NaN;serverClockAt=0;
       resetDeadline();
