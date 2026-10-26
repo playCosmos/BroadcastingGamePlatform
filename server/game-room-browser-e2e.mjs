@@ -843,6 +843,14 @@ async function telephoneBrowserAcceptance(base,coop){
         "document.getElementById('telephonePlay').hidden===false"),
         "host sees telephone stage panel after rendering");
     check(await cdp.eval(host,
+        "document.getElementById('telephoneReplayTools').hidden"),
+        "replay is not available before revealing private drawings");
+    await cdp.eval(host,
+        "document.getElementById('telephoneReplay').click();true");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneReplayStatus').textContent===''"),
+        "forged pre-reveal replay has no effect");
+    check(await cdp.eval(host,
         "document.getElementById('telephoneReveal').hidden"),
         "private telephone submissions cannot show album export");
     await cdp.eval(host,
@@ -995,6 +1003,10 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneReveal').hidden===false"),
         "spectator has revealed gallery before presenter moves cursor");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneReplayTools').hidden==="+
+        String(!coop)),
+        "only drawing reveal frames expose animation control");
     const posterCursor=await backend(host,"/drawing/telephone","GET",
         null,tokens[0]);
     await captureTelephoneAlbumExport(pages[3],1,coop?1800:1000);
@@ -1029,6 +1041,55 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
         "spectator follows host's newly presented slide");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneReplayTools').hidden===false"+
+        " && document.querySelector('#telephoneAlbumEntries canvas')!==null"),
+        "spectator can replay the newly presented drawing");
+    const originalDrawing=await cdp.eval(pages[3],
+        "document.querySelector('#telephoneAlbumEntries canvas').toDataURL()");
+    const cursorBeforeReplay=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    await click(pages[3],"telephoneReplay");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneReplay').textContent==='재생 중지'"),
+        "drawing animation starts by explicit spectator opt-in");
+    check(await cdp.eval(pages[3],
+        "document.querySelector('#telephoneAlbumEntries canvas').toDataURL()")!==
+        originalDrawing,"replay begins with an empty frame instead of final art");
+    // A real foreground state fetch must not replace the spectator's
+    // replay canvas when the host has not changed the shared slide.
+    await cdp.eval(pages[3],`(()=>{
+        window.__replayCanvasRef=document.querySelector(
+            '#telephoneAlbumEntries canvas');
+        window.dispatchEvent(new Event('online'));return true;
+    })()`);
+    await nap(280);
+    check(await cdp.eval(pages[3],
+        "window.__replayCanvasRef===document.querySelector("+
+        "'#telephoneAlbumEntries canvas')"),
+        "periodic/foreground same-slide refresh preserves replay canvas identity");
+    await click(pages[3],"telephoneReplay");
+    check(await cdp.eval(pages[3],
+        "document.querySelector('#telephoneAlbumEntries canvas').toDataURL()")===
+        originalDrawing,"stopping playback restores exact canonical drawing");
+    await click(pages[3],"telephoneReplay");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneReplayStatus').textContent==="+
+        "'그림 재생이 완료됐습니다.'"),
+        "local stroke replay finishes without server state mutation",14000);
+    check(await cdp.eval(pages[3],
+        "document.querySelector('#telephoneAlbumEntries canvas').toDataURL()")===
+        originalDrawing,"completed animation restores pixel-identical final frame");
+    const cursorAfterReplay=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(cursorAfterReplay.data.presentation.revision===
+        cursorBeforeReplay.data.presentation.revision &&
+        cursorAfterReplay.data.presentation.albumIndex===
+        cursorBeforeReplay.data.presentation.albumIndex &&
+        cursorAfterReplay.data.presentation.stepIndex===
+        cursorBeforeReplay.data.presentation.stepIndex,
+        "spectator animation does not change shared host presentation");
+
     const shown=await backend(pages[1],"/drawing/telephone","GET",
         null,tokens[1]);
     check(shown.data.presentation.stepIndex===1
@@ -1060,6 +1121,13 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneAlbumTitle').textContent.startsWith('2/')"),
         "reconnected spectator follows subsequent host album change");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneReplayTools').hidden==="+
+        String(!coop)),
+        "new album shows replay only if first stage contains a drawing");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneReplayStatus').textContent===''"),
+        "album navigation clears prior local playback status");
     await captureTelephoneAlbumExport(pages[3],2,coop?1800:1000);
     const finalCursor=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
     check(finalCursor.data.presentation.albumIndex===1
