@@ -15,6 +15,15 @@
 .telephonePalette button[aria-pressed="true"]{outline:3px solid #f1f8ff;outline-offset:2px}
 .telephonePalette button:focus-visible{outline:3px solid #85ddea;outline-offset:3px}
 @media(pointer:coarse){.telephonePalette button{width:48px;height:48px;min-width:48px}}
+.telephoneTimeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 14px}
+.telephoneTimeline button{min-height:44px;border:1px solid #536d84;text-align:left;
+  max-width:100%;overflow-wrap:anywhere}
+.telephoneTimeline button[aria-current="true"],
+.telephoneTimeline button[aria-current="step"]{background:#75cdda;color:#122532;
+  border-color:#c6f3f8;opacity:1}
+.telephoneTimeline button:disabled:not([aria-current="true"]):not([aria-current="step"])
+  {opacity:.7}
+@media(pointer:coarse){.telephoneTimeline button{min-height:48px}}
 </style>
 
 <script src="./telephone.js" defer></script>
@@ -194,6 +203,15 @@
       <strong id="telephoneStepLabel" aria-live="polite">1단계</strong>
       <button type="button" id="telephoneStepNext" class="secondary">다음 단계 →</button>
     </div>
+    <section id="telephoneTimeline" aria-label="앨범 발표 타임라인">
+      <h4>앨범 선택</h4>
+      <div id="telephoneAlbumTimeline" class="telephoneTimeline" role="group"
+        aria-label="공유 중인 앨범"></div>
+      <h4>현재 앨범의 단계</h4>
+      <div id="telephoneStageTimeline" class="telephoneTimeline" role="group"
+        aria-label="공유 중인 단계"></div>
+      <p id="telephoneTimelineStatus" class="muted" aria-live="off"></p>
+    </section>
     <div id="telephoneReplayTools" class="toolbar" role="group"
       aria-label="현재 그림의 획 재생" hidden>
       <button type="button" id="telephoneReplay" class="secondary">그림 그리는 과정 보기</button>
