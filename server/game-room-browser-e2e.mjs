@@ -1003,6 +1003,24 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneReveal').hidden===false"),
         "spectator has revealed gallery before presenter moves cursor");
+    const firstTimeline=await cdp.eval(pages[3],`(()=>{
+        const albums=document.querySelectorAll(
+            '#telephoneAlbumTimeline button[data-album]');
+        const steps=document.querySelectorAll(
+            '#telephoneStageTimeline button[data-step]');
+        return {albums:albums.length,steps:steps.length,
+            album:albums[0]?.getAttribute('aria-current'),
+            step:steps[0]?.getAttribute('aria-current'),
+            readOnly:[...albums,...steps].every(b=>b.disabled)};
+    })()`);
+    check(firstTimeline.albums===3 && firstTimeline.steps===3 &&
+        firstTimeline.album==="true" && firstTimeline.step==="step" &&
+        firstTimeline.readOnly,
+        "spectator sees read-only three-album timeline with authoritative markers");
+    await poll(async()=>await cdp.eval(host,
+        "document.querySelectorAll('#telephoneAlbumTimeline button').length===3"+
+        " && document.querySelectorAll('#telephoneStageTimeline button').length===3"),
+        "host receives clickable album and stage marker strips");
     check(await cdp.eval(pages[3],
         "document.getElementById('telephoneReplayTools').hidden==="+
         String(!coop)),
@@ -1103,6 +1121,17 @@ async function telephoneBrowserAcceptance(base,coop){
     check((await userToken(pages[3],
         "gamecenter.drawing.room.member.v1"))===tokens[3],
         "reloaded spectator retains original game-room identity");
+    await cdp.eval(pages[3],`(()=>{
+        window.__timelineMarkerRef=document.querySelector(
+            '#telephoneAlbumTimeline button[data-album="0"]');
+        window.dispatchEvent(new Event('online'));
+        return true;
+    })()`);
+    await nap(320);
+    check(await cdp.eval(pages[3],
+        "window.__timelineMarkerRef===document.querySelector("+
+        "'#telephoneAlbumTimeline button[data-album=\\"0\\"]')"),
+        "same-slide refresh keeps timeline marker node identity");
     // The preceding step POST can render the new slide before its async
     // refresh/finally restores the host's navigation controls. Do not
     // interpret that legitimate in-flight guard as a failed click.
@@ -1188,6 +1217,10 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStepNext').disabled"),
         "manual navigation is locked while autoplay is running");
+    check(await cdp.eval(host,
+        "[...document.querySelectorAll('#telephoneAlbumTimeline button,'+"+
+        "'#telephoneStageTimeline button')].every(button=>button.disabled)"),
+        "host timeline controls are locked during authoritative autoplay");
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
         "server clock advances autonomous slide on spectator screen",13000);
@@ -1227,6 +1260,71 @@ async function telephoneBrowserAcceptance(base,coop){
         "document.getElementById('telephoneAutoplay').textContent==='자동 재생'"+
         " && document.getElementById('telephoneAutoplay').disabled===false"),
         "real host UI switches back from pause to play control after POST settles");
+    const beforeJump=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(!beforeJump.data.playback.playing,
+        "timeline jump starts only after authoritative playback pause");
+    check(await cdp.eval(host,
+        "document.querySelector('#telephoneAlbumTimeline button[data-album=\\"2\\"]')"+
+        ".disabled===false"),
+        "paused host may select a noncurrent album marker");
+    await cdp.eval(pages[3],`(()=>{
+        document.querySelector('#telephoneAlbumTimeline button[data-album="2"]')
+            .click();
+        document.querySelector('#telephoneStageTimeline button[data-step="2"]')
+            .click();
+        return true;
+    })()`);
+    const spectatorAttempt=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(spectatorAttempt.data.presentation.revision===
+        beforeJump.data.presentation.revision,
+        "disabled spectator timeline cannot issue presenter mutations");
+    await cdp.eval(host,`(()=>{
+        document.querySelector('#telephoneAlbumTimeline button[data-album="2"]')
+            .click();return true;
+    })()`);
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.presentation.albumIndex===2 &&
+            x.data.presentation.stepIndex===0 &&
+            x.data.presentation.revision===
+                beforeJump.data.presentation.revision+1;
+    },"host album timeline jump commits revision-fenced cursor");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.querySelector('#telephoneAlbumTimeline button[data-album=\\"2\\"]')"+
+        ".getAttribute('aria-current')==='true'"+
+        " && document.querySelector('#telephoneStageTimeline button[data-step=\\"0\\"]')"+
+        ".getAttribute('aria-current')==='step'"),
+        "spectator markers follow a nonadjacent album jump");
+    await poll(async()=>await cdp.eval(host,
+        "document.querySelector('#telephoneStageTimeline button[data-step=\\"2\\"]')"+
+        ".disabled===false"),
+        "album jump presenter transaction settles before stage jump");
+    await cdp.eval(host,`(()=>{
+        document.querySelector('#telephoneStageTimeline button[data-step="2"]')
+            .click();return true;
+    })()`);
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.presentation.albumIndex===2 &&
+            x.data.presentation.stepIndex===2 &&
+            x.data.presentation.revision===
+                beforeJump.data.presentation.revision+2;
+    },"host directly navigates to the selected stage with monotonic revision");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.querySelector('#telephoneStageTimeline button[data-step=\\"2\\"]')"+
+        ".getAttribute('aria-current')==='step'"+
+        " && document.getElementById('telephoneStepLabel').textContent.startsWith('3/')"),
+        "spectator receives host's nonadjacent stage selection");
+    await poll(async()=>await cdp.eval(pages[1],
+        "document.querySelector('#telephoneStageTimeline button[data-step=\\"2\\"]')"+
+        ".getAttribute('aria-current')==='step'"),
+        "active player also follows authoritative stage marker");
+    check(await cdp.eval(pages[3],
+        "[...document.querySelectorAll('#telephoneAlbumTimeline button,'+"+
+        "'#telephoneStageTimeline button')].every(button=>button.disabled)"),
+        "spectators remain read-only after host jumps");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
