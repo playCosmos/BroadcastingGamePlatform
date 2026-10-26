@@ -897,57 +897,92 @@ async function telephoneBrowserAcceptance(base,coop){
         "!document.getElementById('telephoneStageTime').hidden"+
         " && document.getElementById('telephoneTimeAlert').textContent===''"),
         "spectator sees stage progress without an author-only warning");
-    // Shift ONLY this browser's wall clock; the server deadline remains real.
-    // A fake local expiry must never submit another player's private stage.
+    check(Math.abs(Date.parse(stageTiming.data.serverNow)-Date.now())<10000,
+        "telephone view carries a fresh server UTC clock sample");
+    check(Math.abs(Date.parse(spectator.data.serverNow)-
+        Date.parse(stageTiming.data.serverNow))<10000,
+        "spectator shares clock metadata without unrevealed content");
+    const initialTimeProgress=await cdp.eval(host,
+        "document.getElementById('telephoneStageTimeProgress').value");
+    // Large wall-clock skew must NOT trigger a warning or premature stage
+    // refresh. Calibrated timers advance using monotonic elapsed time.
     await cdp.eval(host,`(()=>{
-        const deadline=Date.parse(${JSON.stringify(stageTiming.data.stageStartedAt)})+
-            ${Number(stageTiming.data.seconds)}*1000;
         window.__deadlineRealNow=Date.now;
-        window.__deadlineFakeNow=deadline-8000;
         window.__timeAlertChanges=0;
         window.__timeAlertObserver=new MutationObserver(records=>{
             window.__timeAlertChanges+=records.length;
         });
         window.__timeAlertObserver.observe(
             document.getElementById("telephoneTimeAlert"),{childList:true});
-        Date.now=()=>window.__deadlineFakeNow;
+        Date.now=()=>window.__deadlineRealNow()+7200000;
+        return true;
+    })()`);
+    await nap(1100);
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneTimeAlert').textContent===''"+
+        " && document.getElementById('telephoneStageTimeProgress').value>0"),
+        "two-hour-fast wall clock cannot force a last-ten warning or expiry");
+    await cdp.eval(host,
+        "Date.now=()=>window.__deadlineRealNow()-7200000;true");
+    await nap(1100);
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneTimeAlert').textContent===''"+
+        " && document.getElementById('telephoneStageTimeProgress').value>0"),
+        "two-hour-slow wall clock cannot rewind the server deadline");
+    const afterSkewProgress=await cdp.eval(host,
+        "document.getElementById('telephoneStageTimeProgress').value");
+    check(Math.abs(afterSkewProgress-initialTimeProgress)<15,
+        "stage countdown remains near server deadline after wall-clock jumps");
+    // Advance only monotonic time to exercise the existing R13m threshold
+    // logic; the underlying server and browser wall clock stay unchanged.
+    await cdp.eval(host,`(()=>{
+        Date.now=window.__deadlineRealNow;
+        const deadline=Date.parse(${JSON.stringify(stageTiming.data.stageStartedAt)})+
+            ${Number(stageTiming.data.seconds)}*1000;
+        window.__nativePerfNow=performance.now.bind(performance);
+        window.__perfShift=deadline-8000-
+            Date.parse(${JSON.stringify(stageTiming.data.serverNow)});
+        Object.defineProperty(performance,"now",{
+            configurable:true,value:()=>
+                window.__nativePerfNow()+window.__perfShift
+        });
         return true;
     })()`);
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneTimeAlert').textContent"+
         "==='마감 10초 전입니다.'"),
-        "10-second warning is surfaced from server-snapshot deadline",4500);
+        "monotonic-clock 10-second warning is surfaced once",4500);
     const warning=await cdp.eval(host,`({
         progress:document.getElementById("telephoneStageTimeProgress").value,
         remaining:document.getElementById("telephoneDeadline").textContent,
         urgency:document.getElementById("telephoneStageTime").dataset.urgency
     })`);
-    check(warning.progress>0 && warning.progress<15 &&
-        warning.remaining.includes("8초") && warning.urgency==="last10",
-        "stage progress displays an 8-second warning without touching server time");
-    await nap(1450);
-    check(await cdp.eval(host,
-        "window.__timeAlertChanges===1"),
-        "warning is announced only once across repeated timer ticks");
-    await cdp.eval(host,
-        "window.__deadlineFakeNow+="+"15000;true");
+    check(warning.progress>0 && warning.progress<20 &&
+        warning.urgency==="last10",
+        "server-aligned stage progress enters final-ten band");
+    await nap(1150);
+    check(await cdp.eval(host,"window.__timeAlertChanges===1"),
+        "monotonic warning is announced only once across timer ticks");
+    await cdp.eval(host,"window.__perfShift+=15000;true");
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStageTime').dataset.urgency"+
         "==='expired'"),
-        "expired local clock enters server-recheck status",4500);
+        "expired monotonic clock asks for server reconciliation",4500);
     check(await cdp.eval(host,
         "document.getElementById('telephoneStageTimeProgress').value===0"),
-        "expired progress clamps to zero without a negative meter");
+        "expired server-aligned progress clamps to zero");
     const stillAuthoritative=await backend(host,"/drawing/telephone",
         "GET",null,tokens[0]);
     check(stillAuthoritative.data.stage===0 &&
         stillAuthoritative.data.state!=="REVEAL",
-        "local expiry cannot advance authoritative telephone stage");
+        "synthetic elapsed time cannot advance authoritative server stage");
     await cdp.eval(host,`(()=>{
+        delete performance.now;
         Date.now=window.__deadlineRealNow;
         window.__timeAlertObserver.disconnect();
         delete window.__deadlineRealNow;
-        delete window.__deadlineFakeNow;
+        delete window.__nativePerfNow;
+        delete window.__perfShift;
         return true;
     })()`);
 
