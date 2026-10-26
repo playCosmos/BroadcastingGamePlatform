@@ -10,6 +10,7 @@
   const historyLimit=25;
   let gestureBefore=null;
   let lastAutoWake="",exporting=false;
+  let displayedFrame=null,replay=null;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   function visible(id,yes){$(id).hidden=!yes;}
   function canEdit(){
@@ -72,6 +73,90 @@
       paint(canvas,Array.isArray(lines)?lines:[]);
     }catch{paint(canvas,[]);}
   }
+  function stopReplay(restore=true){
+    if(!replay)return;
+    const stopped=replay;
+    replay=null;
+    cancelAnimationFrame(stopped.raf);
+    if(restore && stopped.canvas.isConnected)
+      incomingDrawing(stopped.raw,stopped.canvas);
+    $("telephoneReplay").textContent="그림 그리는 과정 보기";
+    $("telephoneReplayStatus").textContent="재생을 중지했습니다.";
+  }
+  function startReplay(){
+    if(!state.active || state.state!=="REVEAL" ||
+       !displayedFrame || displayedFrame.entry.kind!=="DRAWING")return;
+    if(replay){
+      stopReplay();
+      return;
+    }
+    const frame=displayedFrame;
+    const canvas=$("telephoneAlbumEntries").querySelector("canvas");
+    if(!canvas)return;
+    let parsed;
+    try{parsed=JSON.parse(frame.entry.content);}catch{return;}
+    if(!Array.isArray(parsed) || parsed.length>300)return;
+    const lines=[];
+    let units=0;
+    for(const stroke of parsed){
+      const pts=stroke?.points;
+      if(!Array.isArray(pts) || pts.length>96)return;
+      if(!pts.length)continue;
+      if(!pts.every(p=>p && Number.isFinite(p.x) &&
+        Number.isFinite(p.y) && p.x>=0 && p.x<=1 &&
+        p.y>=0 && p.y<=1))return;
+      lines.push({points:pts,color:stroke.color,width:stroke.width});
+      units+=pts.length;
+    }
+    if(!units){
+      $("telephoneReplayStatus").textContent="재생할 획이 없습니다.";
+      return;
+    }
+    const ctx=canvas.getContext("2d");
+    paint(canvas,[]);
+    const run={canvas,frame,raw:frame.entry.content,lines,units,
+      started:null,strokeIndex:0,pointIndex:0,completed:0,raf:0};
+    const duration=Math.max(3000,Math.min(9000,units*24));
+    replay=run;
+    $("telephoneReplay").textContent="재생 중지";
+    $("telephoneReplayStatus").textContent="그림의 획을 순서대로 재생하고 있습니다.";
+    function step(now){
+      if(replay!==run || displayedFrame!==frame ||
+         !canvas.isConnected)return;
+      if(run.started===null)run.started=now;
+      const target=Math.min(units,
+        Math.floor((now-run.started)/duration*units));
+      while(run.completed<target && run.strokeIndex<lines.length){
+        const stroke=lines[run.strokeIndex];
+        const p=stroke.points[run.pointIndex];
+        const prev=stroke.points[Math.max(0,run.pointIndex-1)];
+        ctx.strokeStyle=stroke.color;
+        ctx.lineWidth=stroke.width;
+        ctx.beginPath();
+        ctx.moveTo(prev.x*canvas.width,prev.y*canvas.height);
+        if(run.pointIndex===0)
+          ctx.lineTo(p.x*canvas.width+0.1,p.y*canvas.height+0.1);
+        else ctx.lineTo(p.x*canvas.width,p.y*canvas.height);
+        ctx.stroke();
+        run.pointIndex++;
+        run.completed++;
+        if(run.pointIndex===stroke.points.length){
+          run.strokeIndex++;
+          run.pointIndex=0;
+        }
+      }
+      if(run.completed<units){
+        run.raf=requestAnimationFrame(step);
+      }else{
+        replay=null;
+        incomingDrawing(run.raw,canvas);
+        $("telephoneReplay").textContent="다시 보기";
+        $("telephoneReplayStatus").textContent="그림 재생이 완료됐습니다.";
+      }
+    }
+    run.raf=requestAnimationFrame(step);
+  }
+  $("telephoneReplay").addEventListener("click",startReplay);
   function renderAlbums(){
     const albums=state.albums||[];
     if(!albums.length)return;
@@ -105,6 +190,20 @@
     updatePlaybackProgress();
     $("telephoneStepLabel").textContent=(entryIndex+1)+"/"+album.entries.length+"단계";
     const entries=$("telephoneAlbumEntries");
+    const entry=album.entries[entryIndex];
+    visible("telephoneReplayTools",entry?.kind==="DRAWING");
+    // HTTP polling and replayed WSS snapshots must not restart a viewer's
+    // local animation while the authoritative content is unchanged.
+    if(displayedFrame && displayedFrame.albumIndex===albumIndex &&
+       displayedFrame.entryIndex===entryIndex &&
+       displayedFrame.entry.kind===entry.kind &&
+       displayedFrame.entry.content===entry.content &&
+       displayedFrame.entry.author===entry.author &&
+       entries.children.length===1)return;
+    stopReplay(false);
+    displayedFrame={albumIndex,entryIndex,entry};
+    $("telephoneReplay").textContent="그림 그리는 과정 보기";
+    $("telephoneReplayStatus").textContent="";
     entries.replaceChildren();
     for(const entry of album.entries.slice(entryIndex,entryIndex+1)){
       const card=document.createElement("article");
@@ -132,12 +231,16 @@
     isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      stopReplay();displayedFrame=null;
+      visible("telephoneReplayTools",false);
+      $("telephoneReplayStatus").textContent="";
       phaseKey="";resetDraft();updateTools();
       $("telephoneDownloadStatus").textContent="";
       return;
     }
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
+      stopReplay();displayedFrame=null;
       phaseKey=key;resetDraft();
       $("telephoneText").value="";
       if(data.mode==="COOP" && data.previousKind==="DRAWING"){
