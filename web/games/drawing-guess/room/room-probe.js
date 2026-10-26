@@ -96,8 +96,8 @@ has(telephone,'document.body.classList.toggle("telephoneFocus",active)',
   "focus does not change server room state");
 has(telephone,'state.state!=="REVEAL"))return',"private stages deny focus activation");
 has(telephone,'if(!reveal)setFocus(false)',"phase switch exits focus");
-has(telephone,'if(!data?.active){\\n      setFocus(false);'.replace('\\n','\n'),
-  "leaving an active room exits focus");
+has(telephone,'if(!data?.active){',"inactive room branch is present");
+has(telephone,'setFocus(false);',"leaving or changing phase exits focus");
 has(telephone,'event.key==="Escape"',"Escape restores standard room layout");
 has(telephone,'$("telephoneFocusMode").focus()',"Escape returns keyboard focus");
 no(telephone,'localStorage.setItem("telephoneFocus',"focus setting is not persisted");
