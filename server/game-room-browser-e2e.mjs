@@ -322,6 +322,26 @@ async function touchStroke(page,coordinates,yRatio=0.5){
     await cdp.send("Input.dispatchTouchEvent",{
         type:"touchEnd",touchPoints:[]},page.sessionId);
 }
+async function touchTelephoneShape(page,coordinates){
+    const at=(x,y)=>[{
+        x:Math.round(coordinates.x+coordinates.width*x),
+        y:Math.round(coordinates.y+coordinates.height*y),
+        id:1,radiusX:5,radiusY:5,force:0.65
+    }];
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchStart",touchPoints:at(0.2,0.22)},page.sessionId);
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchMove",touchPoints:at(0.51,0.52)},page.sessionId);
+    await nap(50);
+    const preview=await cdp.eval(page,
+        "document.getElementById('telephoneCanvas').toDataURL()");
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchMove",touchPoints:at(0.78,0.75)},page.sessionId);
+    await nap(50);
+    await cdp.send("Input.dispatchTouchEvent",{
+        type:"touchEnd",touchPoints:[]},page.sessionId);
+    return preview;
+}
 async function cancelTouchStroke(page,coordinates,yRatio){
     const at=ratio=>[{x:Math.round(coordinates.x+coordinates.width*ratio),
         y:Math.round(coordinates.y+coordinates.height*yRatio),
@@ -1121,6 +1141,73 @@ async function telephoneBrowserAcceptance(base,coop){
                     check(await cdp.eval(page,
                         "document.getElementById('telephoneUndo').disabled"),
                         "fresh phase has no undo history");
+                    // R13p: each shape is one canonical stroke; while the
+                    // gesture is moving, preview pixels change without saving.
+                    for(const [tool,count] of [["LINE",2],["RECT",5],["ELLIPSE",65]]){
+                        const empty=await cdp.eval(page,canvasImage);
+                        check(await cdp.eval(page,`(()=>{
+                            const button=document.querySelector(
+                                '#telephoneShapeTools button[data-tool="${tool}"]');
+                            button.click();
+                            return button.getAttribute("aria-pressed")==="true" &&
+                                !button.disabled;
+                        })()`),"host selects author-only "+tool+" shape mode");
+                        const previousDraft=await cdp.eval(page,`sessionStorage.getItem(
+                            ${JSON.stringify(localDraftKey)})`);
+                        const freshBounds=await cdp.eval(page,`(()=>{
+                            const r=document.getElementById("telephoneCanvas")
+                                .getBoundingClientRect();
+                            return {x:r.x,y:r.y,width:r.width,height:r.height};
+                        })()`);
+                        const preview=await touchTelephoneShape(page,freshBounds);
+                        check(preview!==empty,
+                            tool+" gesture renders visible live shape preview");
+                        const saved=await cdp.eval(page,`(()=>{
+                            const raw=sessionStorage.getItem(
+                                ${JSON.stringify(localDraftKey)});
+                            return raw?JSON.parse(raw):null;
+                        })()`);
+                        const line=saved?.strokes?.at(-1);
+                        check(line?.points?.length===count &&
+                            line.points.every(p=>p.x>=0&&p.x<=1&&p.y>=0&&p.y<=1) &&
+                            line.color===(stage%2===0?"#e5484d":"#3388ff") &&
+                            line.width===6,
+                            tool+" commits one bounded canonical color/width stroke");
+                        check(await cdp.eval(page,canvasImage)!==empty,
+                            tool+" final pixels differ from starting canvas");
+                        await click(page,"telephoneUndo");
+                        check(await cdp.eval(page,canvasImage)===empty,
+                            tool+" one undo restores original COOP/blank canvas");
+                        await click(page,"telephoneRedo");
+                        check(await cdp.eval(page,canvasImage)!==empty,
+                            tool+" redo restores the geometric stroke");
+                        await click(page,"telephoneClear");
+                        check(await cdp.eval(page,canvasImage)===empty,
+                            tool+" clear leaves inherited COOP art intact");
+                        check(previousDraft===null || typeof previousDraft==="string",
+                            tool+" draft remains tab-only");
+                    }
+                    check(await cdp.eval(page,`(()=>{
+                        const button=document.querySelector(
+                            '#telephoneShapeTools button[data-tool="RECT"]');
+                        button.click();
+                        return button.getAttribute("aria-pressed")==="true";
+                    })()`),"select rectangle before canceled gesture");
+                    const cancelBefore=await cdp.eval(page,canvasImage);
+                    const cancelRect=await cdp.eval(page,`(()=>{
+                        const r=document.getElementById("telephoneCanvas")
+                            .getBoundingClientRect();
+                        return {x:r.x,y:r.y,width:r.width,height:r.height};
+                    })()`);
+                    await cancelTouchStroke(page,cancelRect,row);
+                    check(await cdp.eval(page,canvasImage)===cancelBefore,
+                        "canceled shape gesture leaves no ghost pixels");
+                    await cdp.eval(page,`document.querySelector(
+                        '#telephoneShapeTools button[data-tool="PEN"]').click();true`);
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=\\"PEN\\"]').getAttribute('aria-pressed')==='true'"),
+                        "freehand pen mode restored before legacy gestures");
                 }
                 await touchStroke(page,bounds,i===0?row:0.5);
                 if(i===0){
