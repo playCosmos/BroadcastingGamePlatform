@@ -66,6 +66,17 @@ ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*clearRoomBoundViews\(
 has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
 has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
+has(js,"function clearMembership()","common session cleanup routine");
+has(js,'secret="";snapshot=null;telephone={active:false}',"teardown rejects in-flight previous membership reads");
+has(js,"window.TelephoneView.render(telephone,null,null)","teardown wipes private phone draft");
+ok(/clearRoomBoundViews\(\);\s*sessionStorage\.removeItem\(STORAGE\)/.test(js),"teardown clears confidential lists and bearer");
+has(js,"chatSequence=-1;canvasSequence=0","teardown resets room and draw event cursors");
+has(js,"strokes.clear();redraw()","teardown clears legacy native canvas strokes");
+ok(/clearMembership\(\);\s*say\("룸에서 퇴장했습니다."\)/.test(js),"voluntary leave uses shared full cleanup");
+ok(/clearMembership\(\);\s*say\("방을 닫았습니다./.test(js),"host close uses shared full cleanup");
+has(js,"currentMembership(generation,credential) && roomBinding===roomId","member WSS callbacks pinned to original membership");
+has(js,"socket===canvasSocket && drawingBinding===code","drawing WSS callbacks pinned to original membership");
+has(js,"type:\"drawing.subscribe\",token:credential","drawing socket authenticates with captured token");
 has(js,"function clearRoomBoundViews()","clear chat and host labels across admission");
 has(js,"[\"chatList\",\"broadcastChannels\",\"streamerAssignments\",","private room labels are all cleared");
 has(js,"async function refreshChat(generation=membershipGeneration,","chat pins session generation");
@@ -378,7 +389,7 @@ has(server,'sharedDrawing.telephone().present(',
   "server controls canonical reveal cursor for all players");
 has(js,'data.type==="room.telephone.presentation"',
   "read-only room websocket listens for host reveal cues");
-has(js,'syncTelephoneReveal(data,roomId,secret)',
+has(js,'syncTelephoneReveal(data,roomId,credential)',
   "push reconciles against committed server snapshot");
 has(server,'roomRealtime.announceTelephonePresentation(',
   "HTTP presenter commit produces durable room event");
@@ -414,7 +425,7 @@ has(js,'flushPoints();drawingActive=false',"flush before stroke close");
 has(js,'sendQueue=sendQueue.then',"ordered HTTP canvas writes");
 has(js,'request("/drawing/canvas","POST",{event})',"each canvas write uses member HTTP ACL");
 has(js,'new WebSocket(url("drawingCode="',"read-only drawing stream");
-has(js,'type:"drawing.subscribe",token:secret',"Canvas stream authenticates member in first WS message");
+has(js,'type:"drawing.subscribe",token:credential',"Canvas stream authenticates member in first WS message");
 no(js,'drawerToken=',"never expose native drawing bearer");
 has(js,'new WebSocket(url("memberRoomId="',"member room socket");
 has(js,'type:"room.subscribe",token:credential',"member socket first frame authentication");
