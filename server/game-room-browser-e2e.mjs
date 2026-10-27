@@ -1206,7 +1206,7 @@ async function telephoneBrowserAcceptance(base,coop){
                         '#telephoneShapeTools button[data-tool="PEN"]').click();true`);
                     check(await cdp.eval(page,
                         "document.querySelector('#telephoneShapeTools '+"+
-                        "'button[data-tool=\\"PEN\\"]').getAttribute('aria-pressed')==='true'"),
+                        "'button[data-tool=\"PEN\"]').getAttribute('aria-pressed')==='true'"),
                         "freehand pen mode restored before legacy gestures");
                 }
                 await touchStroke(page,bounds,i===0?row:0.5);
