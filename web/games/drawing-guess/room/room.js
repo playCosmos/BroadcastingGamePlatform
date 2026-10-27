@@ -93,21 +93,31 @@
       });
   }
 
-  function invalidateSession(){
+  function clearMembership(){
+    // All exit paths must invalidate reads, WSS callbacks and private
+    // telephone authoring drafts before showing the public admission UI.
     membershipGeneration++;
-    const roomId=snapshot?.room?.roomId||"";
-    try{
-      localStorage.setItem(REVOKED,JSON.stringify({roomId,at:Date.now()}));
-    }catch{/* browser persistence may be disabled */}
-    secret="";
-    snapshot=null;telephone={active:false};
+    secret="";snapshot=null;telephone={active:false};
     window.TelephoneView.render(telephone,null,null);
     clearRoomBoundViews();
     sessionStorage.removeItem(STORAGE);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
     roomBinding="";drawingBinding="";
+    chatSequence=-1;canvasSequence=0;
+    drawingActive=false;strokeId="";lastPoint=null;
+    currentPointer=null;pendingPoints=[];
+    if(pointTimer!==null)clearTimeout(pointTimer);
+    pointTimer=null;
+    strokes.clear();redraw();
     show("room",false);show("admission",true);
+  }
+  function invalidateSession(){
+    const roomId=snapshot?.room?.roomId||"";
+    try{
+      localStorage.setItem(REVOKED,JSON.stringify({roomId,at:Date.now()}));
+    }catch{/* browser persistence may be disabled */}
+    clearMembership();
     say("참가 세션이 종료되었거나 강퇴되었습니다. 기존 세션으로는 다시 접속할 수 없습니다.",true);
   }
   function accept(secretValue){
@@ -449,25 +459,30 @@
       const socket=new WebSocket(url("memberRoomId="+encodeURIComponent(roomId)));
       memberSocket=socket;
       socket.addEventListener("open",()=>{
-        if(socket===memberSocket && secret && roomBinding===roomId)
+        if(socket===memberSocket &&
+           currentMembership(generation,credential) && roomBinding===roomId)
           socket.send(JSON.stringify({
             type:"room.subscribe",token:credential,afterSequence:chatSequence}));
       });
       socket.addEventListener("message",ev=>{
-        if(socket!==memberSocket || !secret)return;
+        if(socket!==memberSocket ||
+           !currentMembership(generation,credential) ||
+           roomBinding!==roomId)return;
         try {
           const data=JSON.parse(ev.data);
           if(typeof data.sequence==="number")chatSequence=Math.max(chatSequence,data.sequence);
           if(data.type==="room.chat.message"||data.type==="room.chat.deleted")
-            refreshChat().catch(()=>{});
+            refreshChat(generation,credential).catch(()=>{});
           if(data.type==="room.telephone.presentation")
-            syncTelephoneReveal(data,roomId,secret).catch(()=>{});
+            syncTelephoneReveal(data,roomId,credential).catch(()=>{});
         }catch{/* malformed wire message */}
       });
       socket.addEventListener("close",()=>{
-        if(secret&&socket===memberSocket&&roomBinding===roomId)
+        if(currentMembership(generation,credential) &&
+           socket===memberSocket && roomBinding===roomId)
           setTimeout(()=>{
-            if(secret&&socket===memberSocket&&roomBinding===roomId){
+            if(currentMembership(generation,credential) &&
+               socket===memberSocket && roomBinding===roomId){
               roomBinding="";refresh();
             }
           },1800);
@@ -480,17 +495,22 @@
         const socket=new WebSocket(url("drawingCode="+encodeURIComponent(code)));
         canvasSocket=socket;
         socket.addEventListener("open",()=>{
-          if(secret&&socket===canvasSocket&&drawingBinding===code)
-            socket.send(JSON.stringify({type:"drawing.subscribe",token:secret}));
+          if(currentMembership(generation,credential) &&
+             socket===canvasSocket && drawingBinding===code)
+            socket.send(JSON.stringify({type:"drawing.subscribe",token:credential}));
         });
         socket.addEventListener("message",ev=>{
-          if(socket!==canvasSocket || !secret)return;
+          if(socket!==canvasSocket ||
+             !currentMembership(generation,credential) ||
+             drawingBinding!==code)return;
           try{applyEvent(ev.data);}catch{/* invalid drawing event ignored */}
         });
         socket.addEventListener("close",()=>{
-          if(secret&&socket===canvasSocket&&drawingBinding===code)
+          if(currentMembership(generation,credential) &&
+             socket===canvasSocket && drawingBinding===code)
             setTimeout(()=>{
-              if(secret&&socket===canvasSocket&&drawingBinding===code){
+              if(currentMembership(generation,credential) &&
+                 socket===canvasSocket && drawingBinding===code){
                 drawingBinding="";refresh();
               }
             },1800);
@@ -705,21 +725,14 @@
   $("closeRoom").addEventListener("click",()=>operation(async()=>{
     if(!confirm("게임룸을 닫습니까? 모든 참가자의 연결과 초대권이 종료됩니다."))return;
     await request("/host/close","POST",{});
-    secret="";snapshot=null;
-    sessionStorage.removeItem(STORAGE);
-    memberSocket?.close();canvasSocket?.close();
-    memberSocket=null;canvasSocket=null;
-    roomBinding="";drawingBinding="";
-    show("room",false);show("admission",true);
+    clearMembership();
     say("방을 닫았습니다. 이 방의 초대권은 더 이상 사용할 수 없습니다.");
     await loadPublicRooms();
   }));
   $("leave").addEventListener("click",()=>operation(async()=>{
     if(!confirm("게임룸을 나가시겠습니까? 방장은 먼저 방장을 위임해야 합니다."))return;
     await request("/me/leave","POST",{});
-    secret="";sessionStorage.removeItem(STORAGE);
-    memberSocket?.close();canvasSocket?.close();
-    show("room",false);show("admission",true);
+    clearMembership();
     say("룸에서 퇴장했습니다.");
   }));
   const admissionHash=new URLSearchParams(location.hash.slice(1));
