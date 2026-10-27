@@ -92,6 +92,32 @@ has(telephone,'JSON.stringify([roomId,memberId,data.mode,data.stage,',
 has(telephone,'data.mySubmitted || !["TEXT","DRAWING"].includes(data.taskKind)',
   "submitted members and spectators cannot restore drafts");
 has(telephone,'function validOwnStrokes(lines)',"malformed or oversized saved strokes denied");
+has(telephone,'function validOwnHistory(value)',"all restored undo/redo snapshots are validated");
+has(telephone,'value.length<=historyLimit',"history stacks respect 25-gesture cap");
+has(telephone,'value.every(validOwnStrokes)',"each historic snapshot remains canonical");
+has(telephone,'function validBrush(saved)',"untrusted brush mode and fields are validated");
+has(telephone,'const modern=saved?.version===2 && saved.kind==="DRAWING"',
+  "v2 drawing drafts are separated from legacy v1 text/drawing");
+has(telephone,'const legacy=saved?.version===1',"legacy v1 drafts still recover");
+has(telephone,'undoHistory.push(...saved.undo)',"undo stack restored to same phase");
+has(telephone,'redoHistory.push(...saved.redo)',"redo stack restored to same phase");
+has(telephone,'$("telephoneColor").value=penColor',
+  "restored pen color is reflected in native control");
+has(telephone,'$("telephoneWidth").value=String(penWidth)',
+  "restored width is reflected in native control");
+has(telephone,'{version:2,scope:draftScope,kind,strokes,',
+  "own strokes and history are persisted in same tab-scoped record");
+has(telephone,'undo:undoHistory.slice(),redo:redoHistory.slice()',
+  "both undo and redo state are copied before serialization");
+has(telephone,'!item.undo.length && !item.redo.length',
+  "empty visible drawing with remaining redo state is retained");
+has(telephone,'while(raw.length>900000 && (item.undo?.length || item.redo?.length))',
+  "oversized history is trimmed under preexisting storage bound");
+has(telephone,'item.undo.shift()', "oldest undo is evicted first");
+has(telephone,'item.redo.shift()', "oldest redo is evicted first");
+has(telephone,'discardStoredDraft(false)',"explicit discard keeps author save scope active");
+has(telephone,'updateTools();saveDraft();',"brush and tool changes persist with draft");
+
 has(telephone,'lines.length<=100',"draft stroke count matches server cap");
 has(telephone,'s.points.length<=96',"draft point cap matches server cap");
 has(telephone,'raw.length<=900000',"storage data has an explicit upper bound");
