@@ -77,7 +77,7 @@ ok(/if\(!current\(\)\)return;\s*snapshot=nextSnapshot;telephone=nextTelephone;/.
   "only paired current responses publish authoritative room state");
 ok(/if\(!current\(\)\)return;\s*if\(e.status===403\)invalidateSession\(\)/.test(js),
   "stale 403 errors never invalidate a newly accepted token");
-has(js,'if(rerun){rerun=false;setTimeout(refresh,200)}',
+has(js,'if(rerun){rerun=false;setTimeout(refresh,200);}',
   "held old refresh hands the next session a future refresh");
 
 has(js,'const API="/api/v1/room-membership"',"member API exclusively");
