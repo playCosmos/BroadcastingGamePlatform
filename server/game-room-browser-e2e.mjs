@@ -818,6 +818,20 @@ async function sendTelephoneHotkey(page,key,options={}){
     },page.sessionId);
 }
 
+async function sendAuthorHotkey(page,key,{modifiers=0,repeat=false}={}){
+    const codes={b:66,l:76,r:82,o:79,e:69,z:90,y:89,
+        "1":49,"2":50,"3":51};
+    const code=/^[1-3]$/.test(key)?"Digit"+key:"Key"+key.toUpperCase();
+    const args={key,code,windowsVirtualKeyCode:codes[key],
+        modifiers,autoRepeat:repeat};
+    await cdp.send("Input.dispatchKeyEvent",{
+        type:"keyDown",...args
+    },page.sessionId);
+    await cdp.send("Input.dispatchKeyEvent",{
+        type:"keyUp",...args,autoRepeat:false
+    },page.sessionId);
+}
+
 async function telephoneBrowserAcceptance(base,coop){
     const pages=await Promise.all(Array.from({length:4},()=>cdp.page(
         base+"/games/drawing-guess/room/")));
@@ -905,6 +919,9 @@ async function telephoneBrowserAcceptance(base,coop){
     check(spectator.status===200 && !spectator.data.previousContent &&
         !spectator.data.taskKind && spectator.data.albums.length===0,
         "spectator sees neither prompt nor unrevealed album");
+    check(await cdp.eval(pages[3],
+        "[...document.querySelectorAll('#telephoneShapeTools button')].every(b=>b.disabled)"),
+        "spectators cannot use private drawing modes or author hotkeys");
     const stageTiming=await backend(host,"/drawing/telephone","GET",
         null,tokens[0]);
     await poll(async()=>await cdp.eval(host,
@@ -1141,6 +1158,59 @@ async function telephoneBrowserAcceptance(base,coop){
                     check(await cdp.eval(page,
                         "document.getElementById('telephoneUndo').disabled"),
                         "fresh phase has no undo history");
+                    // R13q keys only respond when actual canvas has focus.
+                    await cdp.eval(page,`(()=>{
+                        document.getElementById("telephoneWidth").focus();
+                        return true;
+                    })()`);
+                    await sendAuthorHotkey(page,"l");
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=PEN]').getAttribute('aria-pressed')==='true'"),
+                        "keyboard tool input outside canvas focus is ignored");
+                    await cdp.eval(page,`(()=>{
+                        document.getElementById("telephoneCanvas").focus();
+                        return document.activeElement.id==="telephoneCanvas";
+                    })()`);
+                    await sendAuthorHotkey(page,"l");
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=LINE]').getAttribute('aria-pressed')==='true'"),
+                        "focused author L selects line tool");
+                    await sendAuthorHotkey(page,"o",{modifiers:1});
+                    await sendAuthorHotkey(page,"r",{repeat:true});
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=LINE]').getAttribute('aria-pressed')==='true'"),
+                        "browser modifier and auto-repeat cannot switch drawing tools");
+                    await sendAuthorHotkey(page,"r");
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=RECT]').getAttribute('aria-pressed')==='true'"),
+                        "focused author R selects rectangle");
+                    await sendAuthorHotkey(page,"o");
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=ELLIPSE]').getAttribute('aria-pressed')==='true'"),
+                        "focused author O selects ellipse");
+                    await sendAuthorHotkey(page,"e");
+                    check(await cdp.eval(page,
+                        "document.getElementById('telephoneEraser').getAttribute('aria-pressed')==='true'"),
+                        "focused author E enables eraser");
+                    await sendAuthorHotkey(page,"b");
+                    check(await cdp.eval(page,
+                        "document.querySelector('#telephoneShapeTools '+"+
+                        "'button[data-tool=PEN]').getAttribute('aria-pressed')==='true'"+
+                        " && document.getElementById('telephoneEraser')"+
+                        ".getAttribute('aria-pressed')==='false'"),
+                        "focused author B returns to pen and leaves eraser");
+                    for(const [key,width] of [["1","3"],["3","12"],["2","6"]]){
+                        await sendAuthorHotkey(page,key);
+                        check(await cdp.eval(page,
+                            "document.getElementById('telephoneWidth').value==="+
+                            JSON.stringify(width)),
+                            "number "+key+" selects existing brush width "+width);
+                    }
                     // R13p: each shape is one canonical stroke; while the
                     // gesture is moving, preview pixels change without saving.
                     for(const [tool,count] of [["LINE",2],["RECT",5],["ELLIPSE",65]]){
@@ -1175,10 +1245,16 @@ async function telephoneBrowserAcceptance(base,coop){
                             tool+" commits one bounded canonical color/width stroke");
                         check(await cdp.eval(page,canvasImage)!==empty,
                             tool+" final pixels differ from starting canvas");
-                        await click(page,"telephoneUndo");
+                        if(tool==="LINE")
+                            await sendAuthorHotkey(page,"z",{modifiers:2});
+                        else await click(page,"telephoneUndo");
                         check(await cdp.eval(page,canvasImage)===empty,
                             tool+" one undo restores original COOP/blank canvas");
-                        await click(page,"telephoneRedo");
+                        if(tool==="LINE")
+                            await sendAuthorHotkey(page,"z",{modifiers:10});
+                        else if(tool==="RECT")
+                            await sendAuthorHotkey(page,"y",{modifiers:2});
+                        else await click(page,"telephoneRedo");
                         check(await cdp.eval(page,canvasImage)!==empty,
                             tool+" redo restores the geometric stroke");
                         await click(page,"telephoneClear");
