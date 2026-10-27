@@ -385,7 +385,8 @@ has(server,'roomRealtime.announceTelephonePresentation(',
 has(js,'mode:coop?"COOP":"NORMAL"',"explicit authoritative telephone mode chosen by host");
 has(html,'id="telephoneReveal"',"album reveal panel exists");
 has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
-has(js,'request("/drawing/telephone")',"telephone state follows member authentication");
+has(js,'const nextTelephone=await request(',
+  "telephone state follows pinned member authentication");
 has(server,'sharedDrawing.telephone().submit(',"server accepts separate private telephone submissions");
 has(js,'"/drawing/streamers/assign"',"host mapping endpoint is member-authenticated");
 has(js,'await refreshStreamerAssignments()',"approved channel roster refresh");
