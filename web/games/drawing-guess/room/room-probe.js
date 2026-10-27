@@ -417,7 +417,7 @@ has(js,'new WebSocket(url("drawingCode="',"read-only drawing stream");
 has(js,'type:"drawing.subscribe",token:secret',"Canvas stream authenticates member in first WS message");
 no(js,'drawerToken=',"never expose native drawing bearer");
 has(js,'new WebSocket(url("memberRoomId="',"member room socket");
-has(js,'type:"room.subscribe",token:secret',"member socket first frame authentication");
+has(js,'type:"room.subscribe",token:credential',"member socket first frame authentication");
 no(js,'?drawerToken=',"no native bearer URL query");
 has(js,'request("/drawing/my-prompt")',"private prompt retrieved over scoped member API");
 has(js,'textContent="나의 정답: "+privatePrompt.answer',"private word not inserted as HTML");
