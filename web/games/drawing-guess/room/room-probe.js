@@ -120,10 +120,11 @@ has(telephone,'updateTools();saveDraft();',"brush and tool changes persist with 
 
 has(telephone,'lines.length<=100',"draft stroke count matches server cap");
 has(telephone,'s.points.length<=96',"draft point cap matches server cap");
-has(telephone,'raw.length<=900000',"storage data has an explicit upper bound");
+has(telephone,'if(raw.length>900000)throw Error("private draft exceeds storage bound")',
+  "storage data has an explicit upper bound");
 has(telephone,'saved.scope===next',"recovery rejects different member or phase");
-has(telephone,'{version:1,scope:draftScope,kind,strokes}',
-  "drawing persists own overlay rather than inherited COOP base");
+has(telephone,'{version:2,scope:draftScope,kind,strokes,',
+  "drawing v2 persists own overlay rather than inherited COOP base");
 has(telephone,'sessionStorage.setItem(DRAFT_KEY,raw)',"draft never crosses the network");
 has(telephone,'sessionStorage.removeItem(DRAFT_KEY)',"room and stage cleanup delete private draft");
 has(telephone,'$("telephoneText").addEventListener("input",saveDraft)',
