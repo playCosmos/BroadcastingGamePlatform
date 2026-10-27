@@ -61,10 +61,25 @@ has(js,'credentials:"same-origin"',"same-origin session mode");
 has(js,'cache:"no-store"',"game requests not cached");
 has(js,'let membershipGeneration=0',"session generation tracks replacing room tokens");
 has(js,'membershipGeneration++;',"admission and revocation bump generation");
-ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*sessionStorage\.setItem\(STORAGE,secretValue\)/.test(js),
+ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*clearRoomBoundViews\(\);\s*sessionStorage\.setItem\(STORAGE,secretValue\)/.test(js),
   "joining a new room clears the old member view immediately");
 has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
+has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
+has(js,"function clearRoomBoundViews()","clear chat and host labels across admission");
+has(js,"[\"chatList\",\"broadcastChannels\",\"streamerAssignments\",","private room labels are all cleared");
+has(js,"async function refreshChat(generation=membershipGeneration,","chat pins session generation");
+has(js,"request(\"/chat?after=-1\",\"GET\",null,credential)","chat uses immutable bearer");
+has(js,"async function refreshChannels(generation=membershipGeneration,","host channel reads scoped");
+has(js,"request(\"/drawing/channels\",\"GET\",null,credential)","channel GET pins bearer");
+has(js,"async function refreshStreamerAssignments(generation=membershipGeneration,","streamer metadata scoped");
+has(js,"\"/drawing/streamers\",\"GET\",null,credential","streamer GET uses same bearer");
+has(js,"await socketConnections(generation,credential)","socket startup scoped");
+has(js,"await refreshChat(generation,credential)","main room refresh pins chat");
+has(js,"await refreshChannels(generation,credential)","main room refresh pins channels");
+has(js,"await refreshStreamerAssignments(generation,credential)","main room refresh pins streamers");
+has(js,"const latest=await request(\"/drawing/telephone\",\"GET\",null,credential)","WSS cue pins telephone token");
+has(js,"if(!currentMembership(generation,credential))return;","stale read cannot mutate current room");
 has(js,'const current=()=>generation===membershipGeneration',
   "late responses cannot commit across membership replacement");
 has(js,'const nextSnapshot=await request("/drawing","GET",null,credential)',
@@ -370,7 +385,8 @@ has(server,'roomRealtime.announceTelephonePresentation(',
 has(js,'mode:coop?"COOP":"NORMAL"',"explicit authoritative telephone mode chosen by host");
 has(html,'id="telephoneReveal"',"album reveal panel exists");
 has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
-has(js,'request("/drawing/telephone")',"telephone state follows member authentication");
+has(js,'const nextTelephone=await request(',
+  "telephone state follows pinned member authentication");
 has(server,'sharedDrawing.telephone().submit(',"server accepts separate private telephone submissions");
 has(js,'"/drawing/streamers/assign"',"host mapping endpoint is member-authenticated");
 has(js,'await refreshStreamerAssignments()',"approved channel roster refresh");
@@ -401,7 +417,7 @@ has(js,'new WebSocket(url("drawingCode="',"read-only drawing stream");
 has(js,'type:"drawing.subscribe",token:secret',"Canvas stream authenticates member in first WS message");
 no(js,'drawerToken=',"never expose native drawing bearer");
 has(js,'new WebSocket(url("memberRoomId="',"member room socket");
-has(js,'type:"room.subscribe",token:secret',"member socket first frame authentication");
+has(js,'type:"room.subscribe",token:credential',"member socket first frame authentication");
 no(js,'?drawerToken=',"no native bearer URL query");
 has(js,'request("/drawing/my-prompt")',"private prompt retrieved over scoped member API");
 has(js,'textContent="나의 정답: "+privatePrompt.answer',"private word not inserted as HTML");

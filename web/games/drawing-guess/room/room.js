@@ -37,6 +37,14 @@
   let currentPointer=null,pendingPoints=[],pointTimer=null;
   let refreshBusy=false,rerun=false,busy=false,roundWordId="";
   let membershipGeneration=0;
+  const currentMembership=(generation,credential)=>
+    generation===membershipGeneration && credential===secret;
+  function clearRoomBoundViews(){
+    for(const id of ["chatList","broadcastChannels","streamerAssignments",
+      "streamerChannel","streamerMember"]){
+      $(id).replaceChildren();
+    }
+  }
   const ctx=$("canvas").getContext("2d");
   const strokes=new Map();
 
@@ -94,6 +102,7 @@
     secret="";
     snapshot=null;telephone={active:false};
     window.TelephoneView.render(telephone,null,null);
+    clearRoomBoundViews();
     sessionStorage.removeItem(STORAGE);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
@@ -105,6 +114,7 @@
     membershipGeneration++;
     secret=secretValue;
     snapshot=null;
+    clearRoomBoundViews();
     sessionStorage.setItem(STORAGE,secretValue);
     try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
     roomBinding="";drawingBinding="";telephone={active:false};
@@ -306,9 +316,12 @@
   });
   redraw();
 
-  async function refreshChannels(){
-    if(!secret || !isHost())return;
-    const channels=(await request("/drawing/channels")).channels;
+  async function refreshChannels(generation=membershipGeneration,
+      credential=secret){
+    if(!credential || !currentMembership(generation,credential) ||
+       !isHost())return;
+    const channels=(await request("/drawing/channels","GET",null,credential)).channels;
+    if(!currentMembership(generation,credential) || !isHost())return;
     const list=$("broadcastChannels");
     list.replaceChildren();
     for(const channel of channels){
@@ -330,10 +343,16 @@
       list.append(li);
     }
   }
-  async function refreshStreamerAssignments(){
-    if(!secret || !isHost())return;
-    const assignments=(await request("/drawing/streamers")).assignments;
-    const channels=(await request("/drawing/channels")).channels;
+  async function refreshStreamerAssignments(generation=membershipGeneration,
+      credential=secret){
+    if(!credential || !currentMembership(generation,credential) ||
+       !isHost())return;
+    const assignments=(await request(
+      "/drawing/streamers","GET",null,credential)).assignments;
+    if(!currentMembership(generation,credential) || !isHost())return;
+    const channels=(await request(
+      "/drawing/channels","GET",null,credential)).channels;
+    if(!currentMembership(generation,credential) || !isHost())return;
     const select=$("streamerChannel");
     select.replaceChildren();
     const memberSelect=$("streamerMember");
@@ -368,9 +387,11 @@
     }
     $("streamerAssignForm").querySelector("button").disabled=!channels.length;
   }
-  async function refreshChat(){
-    if(!secret)return;
-    const data=await request("/chat?after=-1");
+  async function refreshChat(generation=membershipGeneration,
+      credential=secret){
+    if(!credential || !currentMembership(generation,credential))return;
+    const data=await request("/chat?after=-1","GET",null,credential);
+    if(!currentMembership(generation,credential))return;
     const list=$("chatList");list.replaceChildren();
     data.messages.forEach(m=>{
       const li=document.createElement("li");
@@ -396,7 +417,7 @@
     if(!Number.isSafeInteger(version) || version<=
       (telephone.presentation?.revision??-1))return;
     try{
-      const latest=await request("/drawing/telephone");
+      const latest=await request("/drawing/telephone","GET",null,credential);
       if(!secret || secret!==credential || roomBinding!==roomId ||
         !snapshot || snapshot.room.roomId!==roomId)return;
       if(latest.state!=="REVEAL" || !latest.presentation ||
@@ -411,12 +432,16 @@
     }
   }
 
-  async function socketConnections(){
-    if(!secret || !snapshot)return;
+  async function socketConnections(generation=membershipGeneration,
+      credential=secret){
+    if(!credential || !snapshot ||
+       !currentMembership(generation,credential))return;
     if(!wsBase){
       const config=await fetch("/api/client/config",{cache:"no-store"}).then(x=>x.json());
+      if(!currentMembership(generation,credential))return;
       wsBase=config.websocketUrl;
     }
+    if(!currentMembership(generation,credential))return;
     const url=key=>wsBase+(wsBase.includes("?")?"&":"?")+key;
     const roomId=snapshot.room.roomId;
     if(roomId!==roomBinding){
@@ -426,7 +451,7 @@
       socket.addEventListener("open",()=>{
         if(socket===memberSocket && secret && roomBinding===roomId)
           socket.send(JSON.stringify({
-            type:"room.subscribe",token:secret,afterSequence:chatSequence}));
+            type:"room.subscribe",token:credential,afterSequence:chatSequence}));
       });
       socket.addEventListener("message",ev=>{
         if(socket!==memberSocket || !secret)return;
@@ -492,14 +517,14 @@
       render();
       window.TelephoneView.render(telephone,request,refresh,isHost(),
         snapshot?.room?.roomId,snapshot?.memberId);
-      await socketConnections();
+      await socketConnections(generation,credential);
       if(!current())return;
-      await refreshChat();
+      await refreshChat(generation,credential);
       if(!current())return;
       if(isHost()){
-        await refreshChannels();
+        await refreshChannels(generation,credential);
         if(!current())return;
-        await refreshStreamerAssignments();
+        await refreshStreamerAssignments(generation,credential);
       }
     }catch(e){
       // An old member's revoked 403 must never invalidate a newer member.
