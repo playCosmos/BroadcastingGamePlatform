@@ -211,6 +211,12 @@
     strokes=[];baseStrokes=[];undoHistory.length=0;redoHistory.length=0;
     gestureBefore=null;activeStroke=null;pointer=null;erasingLocal=false;
     shapeOrigin=null;
+    // Tool preferences belong to the current unsubmitted stage only.
+    // A same-stage reload restores these from v2; a fresh stage starts clean.
+    drawTool="PEN";eraser=false;
+    penColor="#25374c";penWidth=6;
+    $("telephoneColor").value=penColor;
+    $("telephoneWidth").value=String(penWidth);
     paint(draw,[]);
   }
   function paint(canvas,lines) {
