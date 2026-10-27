@@ -2098,9 +2098,19 @@ async function telephoneBrowserAcceptance(base,coop){
         window.__fencedFetch=realFetch;
         window.__oldMemberRefreshPaused=false;
         window.__oldMemberRelease=null;
+        window.__oldChatHeld=false;
+        window.__oldChatRelease=null;
         window.fetch=(url,options={})=>{
             const path=typeof url==="string"?url:url?.url;
             const header=options.headers?.Authorization||"";
+            if(path==="/api/v1/room-membership/chat?after=-1" &&
+                header===${JSON.stringify("Bearer "+oldToken)} &&
+                !window.__oldChatHeld){
+                window.__oldChatHeld=true;
+                return new Promise(resolve=>{
+                    window.__oldChatRelease=resolve;
+                });
+            }
             if(path==="/api/v1/room-membership/drawing" &&
                 header===${JSON.stringify("Bearer "+oldToken)} &&
                 !window.__oldMemberRefreshPaused){
@@ -2113,6 +2123,17 @@ async function telephoneBrowserAcceptance(base,coop){
         };
         return true;
     })()`);
+    // A true old-room WebSocket chat event starts an independent asynchronous
+    // room-A chat read. Hold it while the browser adopts room B.
+    const oldChatPosted=await backend(host,"/chat","POST",{
+        messageId:"r13t-old-chat-"+Date.now().toString(36),
+        text:"Private old-room chat must never appear in new room"
+    },tokens[0]);
+    check(oldChatPosted.status===201,
+        "original room chat posts before session replacement");
+    await poll(async()=>await cdp.eval(switcher,
+        "window.__oldChatHeld===true"),
+        "old-room WebSocket triggers an independently pending chat GET",12000);
     await cdp.eval(switcher,"window.dispatchEvent(new Event('online'));true");
     await poll(async()=>await cdp.eval(switcher,
         "window.__oldMemberRefreshPaused===true"),
@@ -2153,11 +2174,38 @@ async function telephoneBrowserAcceptance(base,coop){
     check(await cdp.eval(switcher,
         "!document.getElementById('admission').hidden===false"),
         "stale request cannot send replacement host back to admission UI");
+    await poll(async()=>await cdp.eval(switcher,
+        "document.getElementById('roomName').textContent===" +
+        "'Session switch isolation'"+
+        " && document.getElementById('chatList').children.length===0"),
+        "new hosted room reconciles its empty chat before old response release");
+    await cdp.eval(switcher,`(()=>{
+        const old=window.__oldChatRelease;
+        if(!old)throw Error("old chat response not held");
+        old(new Response(JSON.stringify({
+            messages:[{
+                displayName:"Previous room member",
+                text:"Private old-room chat must never appear in new room",
+                deleted:false
+            }]
+        }),{status:200,headers:{"Content-Type":"application/json"}}));
+        window.__oldChatRelease=null;
+        return true;
+    })()`);
+    await nap(280);
+    check(await cdp.eval(switcher,
+        "document.getElementById('chatList').children.length===0"),
+        "late old-room chat payload cannot overwrite the new room UI");
+    check(await userToken(switcher,
+        "gamecenter.drawing.room.member.v1")===newToken,
+        "delayed auxiliary response cannot replace new hosted membership");
     await cdp.eval(switcher,`(()=>{
         window.fetch=window.__fencedFetch;
         delete window.__fencedFetch;
         delete window.__oldMemberRelease;
         delete window.__oldMemberRefreshPaused;
+        delete window.__oldChatHeld;
+        delete window.__oldChatRelease;
         return true;
     })()`);
 }
