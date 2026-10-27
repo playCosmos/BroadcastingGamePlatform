@@ -15,6 +15,12 @@
 .telephonePalette button[aria-pressed="true"]{outline:3px solid #f1f8ff;outline-offset:2px}
 .telephonePalette button:focus-visible{outline:3px solid #85ddea;outline-offset:3px}
 @media(pointer:coarse){.telephonePalette button{width:48px;height:48px;min-width:48px}}
+.telephoneShapeTools{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}
+.telephoneShapeTools button{min-height:44px;min-width:67px}
+.telephoneShapeTools button[aria-pressed="true"]{
+  background:#75cdda;color:#122532;border:1px solid #c6f3f8
+}
+@media(pointer:coarse){.telephoneShapeTools button{min-height:48px}}
 .telephoneTimeline{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 14px}
 .telephoneTimeline button{min-height:44px;border:1px solid #536d84;text-align:left;
   max-width:100%;overflow-wrap:anywhere}
@@ -190,6 +196,14 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
       <button type="button" class="secondary" id="telephoneUndo" disabled>실행취소</button>
       <button type="button" class="secondary" id="telephoneRedo" disabled>다시 실행</button>
     </div>
+    <div id="telephoneShapeTools" class="telephoneShapeTools" role="group"
+      aria-label="그리기 방식">
+      <button type="button" class="secondary" data-tool="PEN" aria-pressed="true">자유 그리기</button>
+      <button type="button" class="secondary" data-tool="LINE" aria-pressed="false">직선</button>
+      <button type="button" class="secondary" data-tool="RECT" aria-pressed="false">사각형</button>
+      <button type="button" class="secondary" data-tool="ELLIPSE" aria-pressed="false">타원</button>
+    </div>
+    <p id="telephoneToolHelp" class="muted">펜: 드래그하여 자유롭게 그립니다.</p>
     <div id="telephonePalette" class="telephonePalette" role="group" aria-label="빠른 펜 색상">
       <button type="button" data-color="#25374c" style="--swatch:#25374c" aria-label="진남색" aria-pressed="true"></button>
       <button type="button" data-color="#1a1a1a" style="--swatch:#1a1a1a" aria-label="검정" aria-pressed="false"></button>
