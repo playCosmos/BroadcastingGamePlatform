@@ -61,7 +61,7 @@ has(js,'credentials:"same-origin"',"same-origin session mode");
 has(js,'cache:"no-store"',"game requests not cached");
 has(js,'let membershipGeneration=0',"session generation tracks replacing room tokens");
 has(js,'membershipGeneration++;',"admission and revocation bump generation");
-has(js,'snapshot=null;\\n    sessionStorage.setItem(STORAGE,secretValue);'.replace('\\n','\n'),
+ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*sessionStorage\.setItem\(STORAGE,secretValue\)/.test(js),
   "joining a new room clears the old member view immediately");
 has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
@@ -71,11 +71,11 @@ has(js,'const nextSnapshot=await request("/drawing","GET",null,credential)',
   "first member GET is pinned to the starting token");
 has(js,'"/drawing/telephone","GET",null,credential',
   "telephone GET is pinned to the same initial bearer");
-has(js,'if(!current())return;\\n      const nextTelephone'.replace('\\n','\n'),
+ok(/if\(!current\(\)\)return;\s*const nextTelephone/.test(js),
   "stale first response cannot trigger another request");
-has(js,'if(!current())return;\\n      snapshot=nextSnapshot;telephone=nextTelephone;'.replace('\\n','\n'),
+ok(/if\(!current\(\)\)return;\s*snapshot=nextSnapshot;telephone=nextTelephone;/.test(js),
   "only paired current responses publish authoritative room state");
-has(js,'if(!current())return;\\n      if(e.status===403)invalidateSession()'.replace('\\n','\n'),
+ok(/if\(!current\(\)\)return;\s*if\(e.status===403\)invalidateSession\(\)/.test(js),
   "stale 403 errors never invalidate a newly accepted token");
 has(js,'if(rerun){rerun=false;setTimeout(refresh,200)}',
   "held old refresh hands the next session a future refresh");
