@@ -147,6 +147,34 @@ no(telephone,'"/drawing/telephone/advance"',"browser cannot advance server stage
 
 has(html,'id="telephonePalette"',"telephone drawing has a preset color palette");
 has(html,'id="telephoneShapeTools"',"four mutually exclusive drawing mode controls");
+has(html,'id="telephoneKeyboardHelp"',"canvas shortcuts have visible instructions");
+has(html,'tabindex="0" aria-label="내가 그리는 그림" aria-describedby="telephoneKeyboardHelp"',
+  "private drawing canvas is keyboard focusable with accessible help");
+has(html,'.telephoneCanvas:focus-visible',"keyboard focus ring visible on canvas");
+has(telephone,'draw.addEventListener("keydown",event=>{',
+  "author shortcuts are local to the canvas, not document global");
+has(telephone,'event.target!==draw || !canEdit() || pointer!==null',
+  "waiting, submitted, spectator and live stroke cannot use shortcuts");
+has(telephone,'event.repeat || event.isComposing || event.altKey || event.metaKey',
+  "repeat, IME and browser modifier shortcuts are preserved");
+has(telephone,'if(event.shiftKey)return;', "shifted plain characters are ignored");
+has(telephone,'const redo=(key==="z" && event.shiftKey)',
+  "ctrl shift z uses redo");
+has(telephone,'(key==="y" && !event.shiftKey)',
+  "ctrl y uses redo");
+has(telephone,'const undo=key==="z" && !event.shiftKey',
+  "ctrl z uses existing undo");
+has(telephone,'button.click();',"author shortcuts delegate to existing tools");
+has(telephone,'const commands={b:"PEN",l:"LINE",r:"RECT",o:"ELLIPSE"}',
+  "authoring keys select current canonical shapes");
+has(telephone,'if(key==="e"){',"eraser keyboard shortcut");
+has(telephone,'const widths={"1":"3","2":"6","3":"12"}',
+  "numeric width shortcuts map to supported brush sizes");
+has(telephone,'select.dispatchEvent(new Event("change",{bubbles:true}))',
+  "width shortcut follows existing width-change handler");
+has(telephone,'draw.focus({preventScroll:true})',
+  "drawing pointer interaction prepares canvas hotkeys without scrolling");
+
 has(html,'data-tool="PEN" aria-pressed="true"',"freehand is initial selected tool");
 has(html,'data-tool="LINE" aria-pressed="false"',"line tool accessible");
 has(html,'data-tool="RECT" aria-pressed="false"',"rectangle tool accessible");
