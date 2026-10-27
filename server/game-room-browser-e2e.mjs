@@ -2213,11 +2213,11 @@ async function telephoneBrowserAcceptance(base,coop){
     // without marking the browser as kicked. It may host again immediately.
     await cdp.eval(switcher,`(()=>{
         const list=document.getElementById("chatList");
-        list.append(document.createElement("li")).textContent="old room chat";
+        list.appendChild(document.createElement("li")).textContent="old room chat";
         document.getElementById("broadcastChannels")
-            .append(document.createElement("li")).textContent="old host channels";
+            .appendChild(document.createElement("li")).textContent="old host channels";
         document.getElementById("streamerAssignments")
-            .append(document.createElement("li")).textContent="old host mapping";
+            .appendChild(document.createElement("li")).textContent="old host mapping";
         sessionStorage.setItem("gamecenter.telephone.private-draft.v1",
             JSON.stringify({kind:"TEXT",text:"unfinished private input"}));
         return true;
