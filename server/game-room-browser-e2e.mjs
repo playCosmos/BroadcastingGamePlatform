@@ -2208,6 +2208,106 @@ async function telephoneBrowserAcceptance(base,coop){
         delete window.__oldChatRelease;
         return true;
     })()`);
+
+    // R13u: a confirmed voluntary host close clears *all* room state,
+    // without marking the browser as kicked. It may host again immediately.
+    await cdp.eval(switcher,`(()=>{
+        const list=document.getElementById("chatList");
+        list.append(document.createElement("li")).textContent="old room chat";
+        document.getElementById("broadcastChannels")
+            .append(document.createElement("li")).textContent="old host channels";
+        document.getElementById("streamerAssignments")
+            .append(document.createElement("li")).textContent="old host mapping";
+        sessionStorage.setItem("gamecenter.telephone.private-draft.v1",
+            JSON.stringify({kind:"TEXT",text:"unfinished private input"}));
+        return true;
+    })()`);
+    await click(switcher,"closeRoom",true);
+    await poll(async()=>await cdp.eval(switcher,`(()=>{
+        return !document.getElementById("admission").hidden &&
+            document.getElementById("room").hidden &&
+            sessionStorage.getItem("gamecenter.drawing.room.member.v1")===null &&
+            sessionStorage.getItem("gamecenter.telephone.private-draft.v1")===null &&
+            document.getElementById("chatList").children.length===0 &&
+            document.getElementById("broadcastChannels").children.length===0 &&
+            document.getElementById("streamerAssignments").children.length===0 &&
+            localStorage.getItem("gamecenter.drawing.room.revoked.v1")===null;
+    })()`),"voluntary host close clears full session without kicked marker");
+    check(await backend(switcher,"/me","GET",null,newToken).then(x=>x.status)
+        !==200,"closed hosted membership is no longer accepted");
+    await fill(switcher,"createForm",{
+        name:"Hosted again after close",
+        displayName:"New voluntary host",
+        maxPlayers:2,maxRoomMembers:4
+    });
+    const reopenedToken=await poll(async()=>{
+        const token=await userToken(switcher,"gamecenter.drawing.room.member.v1");
+        return token && token!==newToken?token:null;
+    },"host can start a fresh member session after voluntary close");
+    await poll(async()=>await cdp.eval(switcher,
+        "document.getElementById('roomName').textContent===" +
+        "'Hosted again after close'"),
+        "fresh room displays after previous host close");
+
+    // A non-host voluntary leave while its authenticated GET is pending
+    // must also wipe local private drafts and ignore the delayed revoked 403.
+    const leavingPage=pages[2],leavingToken=tokens[2];
+    await cdp.eval(leavingPage,`(()=>{
+        const fetchOriginal=window.fetch.bind(window);
+        window.__leaveOriginalFetch=fetchOriginal;
+        window.__leaveHeld=false;
+        window.__leaveResolve=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            const header=options.headers?.Authorization||"";
+            if(path==="/api/v1/room-membership/drawing" &&
+                header===${JSON.stringify("Bearer "+leavingToken)} &&
+                !window.__leaveHeld){
+                window.__leaveHeld=true;
+                return new Promise(resolve=>{window.__leaveResolve=resolve;});
+            }
+            return fetchOriginal(url,options);
+        };
+        sessionStorage.setItem("gamecenter.telephone.private-draft.v1",
+            JSON.stringify({kind:"TEXT",text:"unfinished old participant draft"}));
+        return true;
+    })()`);
+    await cdp.eval(leavingPage,
+        "window.dispatchEvent(new Event('online'));true");
+    await poll(async()=>await cdp.eval(leavingPage,
+        "window.__leaveHeld===true"),
+        "previous member GET can remain pending during voluntary leave");
+    await click(leavingPage,"leave",true);
+    await poll(async()=>await cdp.eval(leavingPage,`(()=>{
+        return !document.getElementById("admission").hidden &&
+            document.getElementById("room").hidden &&
+            sessionStorage.getItem("gamecenter.drawing.room.member.v1")===null &&
+            sessionStorage.getItem("gamecenter.telephone.private-draft.v1")===null &&
+            document.getElementById("chatList").children.length===0 &&
+            document.getElementById("telephoneDraftTools").hidden;
+    })()`),"voluntary leave clears member identity and private authoring");
+    await cdp.eval(leavingPage,`(()=>{
+        const release=window.__leaveResolve;
+        if(!release)throw Error("old leave GET was not held");
+        release(new Response(JSON.stringify({error:"outdated room member"}),{
+            status:403,headers:{"Content-Type":"application/json"}
+        }));
+        window.__leaveResolve=null;
+        return true;
+    })()`);
+    await nap(300);
+    check(await cdp.eval(leavingPage,`(()=>{
+        return !document.getElementById("admission").hidden &&
+            sessionStorage.getItem("gamecenter.drawing.room.member.v1")===null &&
+            localStorage.getItem("gamecenter.drawing.room.revoked.v1")===null;
+    })()`),"delayed old 403 after voluntary leave cannot report a forced kick");
+    await cdp.eval(leavingPage,`(()=>{
+        window.fetch=window.__leaveOriginalFetch;
+        delete window.__leaveOriginalFetch;
+        delete window.__leaveHeld;
+        delete window.__leaveResolve;
+        return true;
+    })()`);
 }
 
 async function run(){
