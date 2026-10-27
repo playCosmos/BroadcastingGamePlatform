@@ -78,9 +78,9 @@
     if(undoHistory.length>historyLimit)undoHistory.shift();
     redoHistory.length=0;
   }
-  function discardStoredDraft(){
+  function discardStoredDraft(clearScope=true){
     try{sessionStorage.removeItem(DRAFT_KEY);}catch{/* storage unavailable */}
-    draftScope="";
+    if(clearScope)draftScope="";
     $("telephoneDraftStatus").textContent="";
     visible("telephoneDiscardDraft",false);
   }
@@ -93,6 +93,18 @@
       s.points.length<=96 && s.points.every(p=>
         p && typeof p==="object" && Number.isFinite(p.x) &&
         Number.isFinite(p.y) && p.x>=0 && p.x<=1 && p.y>=0 && p.y<=1));
+  }
+  function validOwnHistory(value){
+    return Array.isArray(value) && value.length<=historyLimit &&
+      value.every(validOwnStrokes);
+  }
+  function validBrush(saved){
+    return ["PEN","LINE","RECT","ELLIPSE"].includes(saved.tool) &&
+      typeof saved.color==="string" &&
+      /^#[0-9a-fA-F]{6}$/.test(saved.color) &&
+      Number.isInteger(saved.width) && saved.width>=1 && saved.width<=24 &&
+      typeof saved.eraser==="boolean" &&
+      (!saved.eraser || saved.tool==="PEN");
   }
   function ownDraftScope(data,roomId,memberId){
     if(!roomId || !memberId || !data.active || data.state!=="PLAYING" ||
@@ -115,13 +127,32 @@
       if(raw && raw.length<=900000)saved=JSON.parse(raw);
       else if(raw)sessionStorage.removeItem(DRAFT_KEY);
     }catch{/* browser may deny private storage */}
-    if(saved?.version===1 && saved.scope===next &&
+    const legacy=saved?.version===1;
+    const modern=saved?.version===2 && saved.kind==="DRAWING";
+    if((legacy || modern) && saved.scope===next &&
        saved.kind===data.taskKind &&
        (saved.kind==="TEXT"
-         ?typeof saved.text==="string" && saved.text.length<=180
-         :validOwnStrokes(saved.strokes))){
-      if(saved.kind==="TEXT")$("telephoneText").value=saved.text;
-      else{strokes=saved.strokes;redraw();}
+         ?legacy && typeof saved.text==="string" && saved.text.length<=180
+         :validOwnStrokes(saved.strokes) &&
+           (legacy || validOwnHistory(saved.undo) &&
+             validOwnHistory(saved.redo) && validBrush(saved)))){
+      if(saved.kind==="TEXT"){
+        $("telephoneText").value=saved.text;
+      }else{
+        strokes=saved.strokes;
+        if(modern){
+          undoHistory.push(...saved.undo);
+          redoHistory.push(...saved.redo);
+          drawTool=saved.tool;
+          penColor=saved.color;
+          penWidth=saved.width;
+          eraser=saved.eraser;
+          $("telephoneColor").value=penColor;
+          $("telephoneWidth").value=String(penWidth);
+        }
+        redraw();
+        updateTools();
+      }
       $("telephoneDraftStatus").textContent="이 탭에서 작성하던 내용을 복구했습니다.";
       visible("telephoneDiscardDraft",true);
     }else{
@@ -134,28 +165,43 @@
     const kind=state.taskKind;
     const item=kind==="TEXT"
       ?{version:1,scope:draftScope,kind,text:$("telephoneText").value.slice(0,180)}
-      :{version:1,scope:draftScope,kind,strokes};
-    if(kind!=="TEXT" && (kind!=="DRAWING" || !validOwnStrokes(strokes)))return;
-    if(kind==="TEXT" && !item.text || kind==="DRAWING" && !strokes.length){
+      :{version:2,scope:draftScope,kind,strokes,
+        undo:undoHistory.slice(),redo:redoHistory.slice(),
+        tool:drawTool,color:penColor,width:penWidth,eraser};
+    if(kind!=="TEXT" && (kind!=="DRAWING" ||
+       !validOwnStrokes(strokes) || !validOwnHistory(item.undo) ||
+       !validOwnHistory(item.redo) || !validBrush(item)))return;
+    if(kind==="TEXT" && !item.text ||
+       kind==="DRAWING" && !strokes.length &&
+         !item.undo.length && !item.redo.length){
       try{sessionStorage.removeItem(DRAFT_KEY);}catch{/* optional */}
       $("telephoneDraftStatus").textContent="";
       visible("telephoneDiscardDraft",false);
       return;
     }
     try{
-      const raw=JSON.stringify(item);
-      if(raw.length>900000)return;
+      // Oldest history is disposable. The current artwork is not. The
+      // remaining newest undo/redo entries keep their original stack order.
+      let raw=JSON.stringify(item);
+      while(raw.length>900000 && (item.undo?.length || item.redo?.length)){
+        if(item.undo.length>=item.redo.length && item.undo.length)
+          item.undo.shift();
+        else item.redo.shift();
+        raw=JSON.stringify(item);
+      }
+      if(raw.length>900000)throw Error("private draft exceeds storage bound");
       sessionStorage.setItem(DRAFT_KEY,raw);
       if($("telephoneDraftStatus").textContent!=="작성 중인 내용을 이 탭에 임시 저장했습니다.")
         $("telephoneDraftStatus").textContent="작성 중인 내용을 이 탭에 임시 저장했습니다.";
       visible("telephoneDiscardDraft",true);
     }catch{
+      try{sessionStorage.removeItem(DRAFT_KEY);}catch{/* optional */}
       $("telephoneDraftStatus").textContent="이 브라우저에서는 임시 저장을 사용할 수 없습니다.";
     }
   }
   $("telephoneDiscardDraft").addEventListener("click",()=>{
     if(!draftScope || state.mySubmitted)return;
-    discardStoredDraft();
+    discardStoredDraft(false);
     strokes=[];undoHistory.length=0;redoHistory.length=0;
     $("telephoneText").value="";
     redraw();updateTools();
@@ -676,7 +722,7 @@
     if(!["PEN","LINE","RECT","ELLIPSE"].includes(next))return;
     drawTool=next;
     eraser=false;
-    updateTools();
+    updateTools();saveDraft();
   });
   // Private authoring shortcuts are deliberately scoped to canvas focus.
   // Do not capture document-level input, text/chat edits or presenter keys.
@@ -785,7 +831,7 @@
     if(!/^#[0-9a-fA-F]{6}$/.test(value))return;
     penColor=value;eraser=false;
     $("telephoneColor").value=value;
-    updateTools();
+    updateTools();saveDraft();
   }
   $("telephonePalette").addEventListener("click",event=>{
     const button=event.target.closest("button[data-color]");
@@ -798,12 +844,13 @@
   $("telephoneWidth").addEventListener("change",event=>{
     if(canEdit() && pointer===null)
       penWidth=Math.max(1,Math.min(24,Number(event.target.value)||6));
+    saveDraft();
   });
   $("telephoneEraser").addEventListener("click",()=>{
     if(!canEdit() || pointer!==null)return;
     eraser=!eraser;
     if(eraser)drawTool="PEN";
-    updateTools();
+    updateTools();saveDraft();
   });
   $("telephoneUndo").addEventListener("click",()=>{
     if(!canEdit()||pointer!==null||!undoHistory.length)return;
