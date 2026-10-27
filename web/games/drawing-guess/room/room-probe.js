@@ -59,6 +59,27 @@ has(js,'sessionStorage.removeItem(STORAGE)',"revoked bearer removed from tab");
 has(js,'headers.Authorization="Bearer "+credential',"member scoped bearer");
 has(js,'credentials:"same-origin"',"same-origin session mode");
 has(js,'cache:"no-store"',"game requests not cached");
+has(js,'let membershipGeneration=0',"session generation tracks replacing room tokens");
+has(js,'membershipGeneration++;',"admission and revocation bump generation");
+has(js,'snapshot=null;\\n    sessionStorage.setItem(STORAGE,secretValue);'.replace('\\n','\n'),
+  "joining a new room clears the old member view immediately");
+has(js,'const generation=membershipGeneration,credential=secret',
+  "room refresh captures one immutable token and session generation");
+has(js,'const current=()=>generation===membershipGeneration',
+  "late responses cannot commit across membership replacement");
+has(js,'const nextSnapshot=await request("/drawing","GET",null,credential)',
+  "first member GET is pinned to the starting token");
+has(js,'"/drawing/telephone","GET",null,credential',
+  "telephone GET is pinned to the same initial bearer");
+has(js,'if(!current())return;\\n      const nextTelephone'.replace('\\n','\n'),
+  "stale first response cannot trigger another request");
+has(js,'if(!current())return;\\n      snapshot=nextSnapshot;telephone=nextTelephone;'.replace('\\n','\n'),
+  "only paired current responses publish authoritative room state");
+has(js,'if(!current())return;\\n      if(e.status===403)invalidateSession()'.replace('\\n','\n'),
+  "stale 403 errors never invalidate a newly accepted token");
+has(js,'if(rerun){rerun=false;setTimeout(refresh,200)}',
+  "held old refresh hands the next session a future refresh");
+
 has(js,'const API="/api/v1/room-membership"',"member API exclusively");
 for(const path of [
   '"/public/hosted"','"/public/join"','"/public/rooms?gameId=drawing_guess"',
