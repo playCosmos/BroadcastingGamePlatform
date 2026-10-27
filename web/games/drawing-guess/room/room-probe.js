@@ -61,7 +61,7 @@ has(js,'credentials:"same-origin"',"same-origin session mode");
 has(js,'cache:"no-store"',"game requests not cached");
 has(js,'let membershipGeneration=0',"session generation tracks replacing room tokens");
 has(js,'membershipGeneration++;',"admission and revocation bump generation");
-ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*sessionStorage\.setItem\(STORAGE,secretValue\)/.test(js),
+ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*clearRoomBoundViews\(\);\s*sessionStorage\.setItem\(STORAGE,secretValue\)/.test(js),
   "joining a new room clears the old member view immediately");
 has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
