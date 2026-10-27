@@ -17,6 +17,7 @@
 @media(pointer:coarse){.telephonePalette button{width:48px;height:48px;min-width:48px}}
 .telephoneShapeTools{display:flex;flex-wrap:wrap;gap:7px;margin:8px 0}
 .telephoneShapeTools button{min-height:44px;min-width:67px}
+.telephoneCanvas:focus-visible{outline:3px solid #75cdda;outline-offset:3px}
 .telephoneShapeTools button[aria-pressed="true"]{
   background:#75cdda;color:#122532;border:1px solid #c6f3f8
 }
@@ -204,6 +205,10 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
       <button type="button" class="secondary" data-tool="ELLIPSE" aria-pressed="false">타원</button>
     </div>
     <p id="telephoneToolHelp" class="muted">펜: 드래그하여 자유롭게 그립니다.</p>
+    <p id="telephoneKeyboardHelp" class="muted">
+      그림판에 포커스한 뒤 B 펜 · L 직선 · R 사각형 · O 타원 · E 지우개 ·
+      1/2/3 굵기 · Ctrl+Z 실행취소 · Ctrl+Shift+Z 또는 Ctrl+Y 다시 실행
+    </p>
     <div id="telephonePalette" class="telephonePalette" role="group" aria-label="빠른 펜 색상">
       <button type="button" data-color="#25374c" style="--swatch:#25374c" aria-label="진남색" aria-pressed="true"></button>
       <button type="button" data-color="#1a1a1a" style="--swatch:#1a1a1a" aria-label="검정" aria-pressed="false"></button>
@@ -216,7 +221,7 @@ body.telephoneFocus #telephoneStepLabel{font-size:clamp(1rem,2vw,1.5rem)}
     </div>
     <p class="muted">변경 사항은 제출 전까지 내 그림에만 적용됩니다. 이어 그리기에서는 이전 참가자의 획을 수정할 수 없습니다.</p>
     <canvas id="telephoneCanvas" width="960" height="560" class="telephoneCanvas"
-      aria-label="내가 그리는 그림"></canvas>
+      tabindex="0" aria-label="내가 그리는 그림" aria-describedby="telephoneKeyboardHelp"></canvas>
     <div class="toolbar">
       <button type="button" class="secondary" id="telephoneClear">전체 지우기</button>
       <button type="button" class="primary" id="telephoneDrawingDone">그림 완료 · 전달</button>
