@@ -1319,12 +1319,36 @@ async function telephoneBrowserAcceptance(base,coop){
                             "document.getElementById('telephoneEraser')"+
                             ".getAttribute('aria-pressed')==='true'"),
                             "COOP eraser is activated before drawing",4500);
-                        const eraseBounds=await cdp.eval(page,`(()=>{
+                        // The canvas can shift after autosave/tool controls.
+                        // Erase at the actual authored normalized point,
+                        // not stale screen coordinates from the pen gesture.
+                        const erasePoint=await cdp.eval(page,`(()=>{
+                            const raw=sessionStorage.getItem(
+                                ${JSON.stringify(localDraftKey)});
+                            const own=raw?JSON.parse(raw)?.strokes?.at(-1):null;
+                            const p=own?.points?.at(0);
                             const canvas=document.getElementById("telephoneCanvas");
+                            canvas.scrollIntoView({block:"center"});
                             const r=canvas.getBoundingClientRect();
-                            return {x:r.x,y:r.y,width:r.width,height:r.height};
+                            if(!p)throw Error("no own stroke available for eraser");
+                            const x=Math.round(r.left+r.width*p.x);
+                            const y=Math.round(r.top+r.height*p.y);
+                            return {x,y,
+                                target:document.elementFromPoint(x,y)?.id,
+                                authored:p};
                         })()`);
-                        await touchStroke(page,eraseBounds,row);
+                        check(erasePoint.target==="telephoneCanvas",
+                            "eraser is aimed at an authored in-canvas point");
+                        await cdp.send("Input.dispatchTouchEvent",{
+                            type:"touchStart",touchPoints:[{
+                                x:erasePoint.x,y:erasePoint.y,id:1,
+                                radiusX:5,radiusY:5,force:0.65
+                            }]
+                        },page.sessionId);
+                        await nap(60);
+                        await cdp.send("Input.dispatchTouchEvent",{
+                            type:"touchEnd",touchPoints:[]
+                        },page.sessionId);
                         const afterErase=await cdp.eval(page,canvasImage);
                         if(afterErase!==before){
                             const info=await cdp.eval(page,`(()=>{
