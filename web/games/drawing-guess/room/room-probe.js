@@ -65,6 +65,21 @@ ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*sessionStorage\.setIt
   "joining a new room clears the old member view immediately");
 has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
+has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
+has(js,"function clearRoomBoundViews()","clear chat and host labels across admission");
+has(js,"[\"chatList\",\"broadcastChannels\",\"streamerAssignments\",","private room labels are all cleared");
+has(js,"async function refreshChat(generation=membershipGeneration,","chat pins session generation");
+has(js,"request(\"/chat?after=-1\",\"GET\",null,credential)","chat uses immutable bearer");
+has(js,"async function refreshChannels(generation=membershipGeneration,","host channel reads scoped");
+has(js,"request(\"/drawing/channels\",\"GET\",null,credential)","channel GET pins bearer");
+has(js,"async function refreshStreamerAssignments(generation=membershipGeneration,","streamer metadata scoped");
+has(js,"\"/drawing/streamers\",\"GET\",null,credential","streamer GET uses same bearer");
+has(js,"await socketConnections(generation,credential)","socket startup scoped");
+has(js,"await refreshChat(generation,credential)","main room refresh pins chat");
+has(js,"await refreshChannels(generation,credential)","main room refresh pins channels");
+has(js,"await refreshStreamerAssignments(generation,credential)","main room refresh pins streamers");
+has(js,"const latest=await request(\"/drawing/telephone\",\"GET\",null,credential)","WSS cue pins telephone token");
+has(js,"if(!currentMembership(generation,credential))return;","stale read cannot mutate current room");
 has(js,'const current=()=>generation===membershipGeneration',
   "late responses cannot commit across membership replacement");
 has(js,'const nextSnapshot=await request("/drawing","GET",null,credential)',
