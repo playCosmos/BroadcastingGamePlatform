@@ -105,6 +105,11 @@ has(telephone,'$("telephoneColor").value=penColor',
   "restored pen color is reflected in native control");
 has(telephone,'$("telephoneWidth").value=String(penWidth)',
   "restored width is reflected in native control");
+has(telephone,'drawTool="PEN";eraser=false;',
+  "new stage starts with freehand and no eraser from previous player");
+has(telephone,'penColor="#25374c";penWidth=6;',
+  "new stage resets pen settings before scoped restore");
+
 has(telephone,'{version:2,scope:draftScope,kind,strokes,',
   "own strokes and history are persisted in same tab-scoped record");
 has(telephone,'undo:undoHistory.slice(),redo:redoHistory.slice()',
