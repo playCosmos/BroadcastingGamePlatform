@@ -2575,14 +2575,21 @@ async function telephoneBrowserAcceptance(base,coop){
         return true;
     })()`);
     await nap(350);
-    check(await cdp.eval(host,`(()=>{
-        return document.getElementById("roomName").textContent===
-            "Hosted again after close" &&
-            document.getElementById("telephonePlay").hidden &&
-            document.getElementById("telephoneReveal").hidden &&
-            document.getElementById("notice").textContent===
-                "new session untouched by old presenter";
-    })()`),"stale successful presentation cannot revive an old album or notice");
+    const oldPresenterResult=await cdp.eval(host,`(()=>{
+        return {
+          room:document.getElementById("roomName").textContent,
+          playHidden:document.getElementById("telephonePlay").hidden,
+          galleryHidden:document.getElementById("telephoneReveal").hidden,
+          albumEntries:document.getElementById("telephoneAlbumEntries").children.length,
+          notice:document.getElementById("notice").textContent
+        };
+    })()`);
+    check(oldPresenterResult.room==="Hosted again after close" &&
+        oldPresenterResult.playHidden && oldPresenterResult.galleryHidden &&
+        oldPresenterResult.albumEntries===0 &&
+        oldPresenterResult.notice==="new session untouched by old presenter",
+        "old presenter cannot revive another room's album: "+
+            JSON.stringify(oldPresenterResult));
     check(await userToken(host,"gamecenter.drawing.room.member.v1")===
         secondPresenterToken,
         "stale gallery action retains newer authenticated membership");
