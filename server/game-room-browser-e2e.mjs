@@ -3227,6 +3227,161 @@ async function yachtSessionFenceAcceptance(base){
     });
 }
 
+// R14c: guest/spectator lifecycle using the production endpoints and
+// real browser sessions, independently of earlier synthetic HTTP races.
+async function commonRoomLifecycleAcceptance(base,game){
+    const drawing=game==="drawing_guess";
+    const path=drawing?"/games/drawing-guess/room/":"/games/yacht/";
+    const memberKey=drawing?"gamecenter.drawing.room.member.v1":
+        "gamecenter.yacht.member-session.v1";
+    const createId=drawing?"createForm":"createRoom";
+    const joinId=drawing?"publicJoinForm":"publicJoinRoom";
+    const titleId=drawing?"roomName":"roomTitle";
+    const rosterId=drawing?"members":"roster";
+    const chatId=drawing?"chatList":"chatMessages";
+    const gameId=drawing?"room":"game";
+    const leaveId=drawing?"leave":"leaveRoom";
+    const displayName=drawing?"R14c Drawing":"R14c Yacht";
+    const hostName=displayName+" host";
+    const guestName=displayName+" spectator";
+    const host=await cdp.page(base+path),guest=await cdp.page(base+path);
+    await fill(host,createId,{
+        name:displayName+" public lifecycle",displayName:hostName,
+        maxPlayers:2,maxRoomMembers:3
+    });
+    const code=await poll(async()=>{
+        const text=await getRoom(host,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(text)?text:null;
+    },game+" lifecycle host creates public room");
+    const hostToken=await poll(async()=>await userToken(host,memberKey),
+        game+" host has isolated bearer");
+    await fill(guest,joinId,{roomCode:code,displayName:guestName,
+        seatRole:"SPECTATOR"});
+    const guestToken=await poll(async()=>await userToken(guest,memberKey),
+        game+" anonymous spectator admitted");
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById("+JSON.stringify(titleId)+").textContent==="+
+        JSON.stringify(displayName+" public lifecycle")),
+        game+" spectator renders correct public room");
+    const guestMe=await backend(guest,"/me","GET",null,guestToken);
+    const hostMe=await backend(host,"/me","GET",null,hostToken);
+    check(guestMe.status===200 && guestMe.data.seatRole==="SPECTATOR",
+        game+" member API preserves anonymous spectator role");
+    check(hostMe.status===200 &&
+        hostMe.data.room.memberCount===2 &&
+        hostMe.data.room.playerCount===1 &&
+        hostMe.data.room.maxRoomMembers===3,
+        game+" room capacity includes host and spectator while player count differs");
+    check(guestToken!==hostToken,game+" host and guest use separate bearer");
+    check(await cdp.eval(guest,drawing?
+        "document.getElementById('closeRoom').hidden && "+
+        "document.getElementById('inviteBox').hidden":
+        "document.getElementById('closeRoom').hidden && "+
+        "document.getElementById('inviteControls').hidden && "+
+        "document.getElementById('ready').hidden"),
+        game+" spectator has no host tools or player readiness");
+    const forbidden=await backend(guest,"/host/kick","POST",{
+        memberId:hostMe.data.memberId
+    },guestToken);
+    check(forbidden.status===403,
+        game+" spectator cannot kick host using raw API");
+    const hostMessage=game+" host-to-spectator chat";
+    await waitRoomIdle(host,gameId);
+    await fill(host,"chatForm",{text:hostMessage});
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById("+JSON.stringify(chatId)+").textContent.includes("+
+        JSON.stringify(hostMessage)+")"),
+        game+" spectator receives genuine host chat");
+    const guestMessage=game+" spectator-to-host chat";
+    await waitRoomIdle(guest,gameId);
+    await fill(guest,"chatForm",{text:guestMessage});
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById("+JSON.stringify(chatId)+").textContent.includes("+
+        JSON.stringify(guestMessage)+")"),
+        game+" spectator sends genuine authenticated chat");
+    // Browser navigation is a real page reload; sessionStorage must
+    // survive, and replayed chat must return to the same room.
+    await cdp.navigate(guest,base+path);
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById("+JSON.stringify(titleId)+").textContent==="+
+        JSON.stringify(displayName+" public lifecycle")),
+        game+" spectator reconnects after page reload");
+    check(await userToken(guest,memberKey)===guestToken,
+        game+" reconnect retains original member bearer");
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById("+JSON.stringify(chatId)+").textContent.includes("+
+        JSON.stringify(hostMessage)+")"),
+        game+" spectator replay includes previously sent chat");
+    await cdp.eval(guest,`(()=>{
+        window.dispatchEvent(new Event("online"));
+        document.dispatchEvent(new Event("visibilitychange"));
+        return true;
+    })()`);
+    check(await userToken(guest,memberKey)===guestToken,
+        game+" foreground reconciliation does not rotate member bearer");
+    // Host kick is server-authoritative; old bearer must remain revoked
+    // even if the browser retains the previous sessionStorage entry.
+    const kicked=await backend(host,"/host/kick","POST",{
+        memberId:guestMe.data.memberId
+    },hostToken);
+    check(kicked.status===200,game+" host kicks spectator using live API");
+    await poll(async()=>await cdp.eval(guest,
+        "!sessionStorage.getItem("+JSON.stringify(memberKey)+") && "+
+        "!document.getElementById("+JSON.stringify(drawing?"admission":"admission")+").hidden"),
+        game+" kicked spectator returns to anonymous admission");
+    const oldTokenStatus=await backend(guest,"/me","GET",null,guestToken);
+    check(oldTokenStatus.status===403,
+        game+" kicked bearer is not reusable after reconnect");
+    check(await cdp.eval(guest,drawing?
+        "document.getElementById('chatList').children.length===0 && "+
+        "document.getElementById('inviteOutput').textContent===''":
+        "document.getElementById('chatMessages').children.length===0 && "+
+        "document.getElementById('inviteLink').textContent===''"),
+        game+" kicked client does not display previous room chat or private invite");
+    await fill(guest,joinId,{roomCode:code,
+        displayName:displayName+" new anonymous identity",
+        seatRole:"SPECTATOR"});
+    const replacement=await poll(async()=>{
+        const token=await userToken(guest,memberKey);
+        return token && token!==guestToken?token:null;
+    },game+" replacement anonymous identity joins same public room");
+    const replacementMe=await backend(guest,"/me","GET",null,replacement);
+    check(replacementMe.status===200 &&
+        replacementMe.data.seatRole==="SPECTATOR" &&
+        replacementMe.data.memberId!==guestMe.data.memberId,
+        game+" replacement identity does not resurrect kicked membership");
+    await waitRoomIdle(guest,gameId);
+    await click(guest,leaveId,true);
+    await poll(async()=>await cdp.eval(guest,
+        "!sessionStorage.getItem("+JSON.stringify(memberKey)+") && "+
+        "!document.getElementById('admission').hidden"),
+        game+" voluntary leave revokes current browser membership");
+    check((await backend(guest,"/me","GET",null,replacement)).status===403,
+        game+" voluntary leave makes replacement bearer unusable");
+    await poll(async()=>await cdp.eval(host,
+        "!document.getElementById("+JSON.stringify(rosterId)+").textContent.includes("+
+        JSON.stringify(displayName+" new anonymous identity")+")"),
+        game+" host roster removes departed spectator");
+    await waitRoomIdle(host,gameId);
+    await click(host,"closeRoom",true);
+    await poll(async()=>await cdp.eval(host,
+        "!document.getElementById('admission').hidden && "+
+        "!sessionStorage.getItem("+JSON.stringify(memberKey)+")"),
+        game+" host close ends host membership");
+    check((await backend(host,"/me","GET",null,hostToken)).status===403,
+        game+" closed-room host bearer is invalid");
+    const listing=await backend(host,"/public/rooms?gameId="+game);
+    check(listing.status===200 &&
+        listing.data.rooms.every(x=>x.roomCode!==code),
+        game+" closed game room removed from public listing");
+    const closedAttempt=await backend(guest,"/public/join","POST",{
+        gameId:game,roomCode:code,displayName:"Late spectator",
+        seatRole:"SPECTATOR"
+    });
+    check(closedAttempt.status!==200 && closedAttempt.status!==201,
+        game+" closed room rejects a new anonymous spectator");
+}
+
 async function run(){
     const {base,ws}=await launchServer();
     await launchChrome();
@@ -3406,6 +3561,16 @@ async function run(){
         "R13z fixture shutdown before Yacht session fence");
     const yachtFixture=await launchServer();
     await yachtSessionFenceAcceptance(yachtFixture.base);
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "R14a fixture shutdown before lifecycle acceptance");
+    const drawingLifecycleFixture=await launchServer();
+    await commonRoomLifecycleAcceptance(drawingLifecycleFixture.base,"drawing_guess");
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "R14c Drawing lifecycle fixture shutdown");
+    const yachtLifecycleFixture=await launchServer();
+    await commonRoomLifecycleAcceptance(yachtLifecycleFixture.base,"yacht");
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
