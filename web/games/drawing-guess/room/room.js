@@ -41,9 +41,27 @@
     generation===membershipGeneration && credential===secret;
   function clearRoomBoundViews(){
     for(const id of ["chatList","broadcastChannels","streamerAssignments",
-      "streamerChannel","streamerMember"]){
+      "streamerChannel","streamerMember","members","scoreboard"]){
       $(id).replaceChildren();
     }
+    // A new member must never see the prior room's private prompt, invite
+    // or host labels while the first authenticated refresh is in flight.
+    for(const id of ["roomCode","roomPhase","roomCapacity","operatorRoomIdValue",
+      "roundHeading","roundDetails","canvasHelp","drawerWord","inviteOutput"]){
+      $(id).textContent="";
+    }
+    $("roomName").textContent="게임룸 정보를 불러오는 중...";
+    for(const id of ["drawerWord","copyInvite","operatorRoomId","closeRoom",
+      "lobby","play","hostSettings","inviteBox","broadcastSettings",
+      "streamerAssignBox"]){
+      show(id,false);
+    }
+    // Unsent prompt, guess, chat and operator-grant text are private to
+    // the former room, even when a replacement room later shows these forms.
+    for(const id of ["promptForm","guessForm","chatForm","broadcastForm"]){
+      $(id).reset();
+    }
+    roundWordId="";
   }
   const ctx=$("canvas").getContext("2d");
   const strokes=new Map();
@@ -238,13 +256,18 @@
       roundWordId="";
       show("drawerWord",false);
     }else if(round?.roundId!==roundWordId){
-      loadPrompt(round.roundId).catch(e=>say(e.message,true));
+      const generation=membershipGeneration,credential=secret;
+      loadPrompt(round.roundId,generation,credential).catch(e=>{
+        if(currentMembership(generation,credential))say(e.message,true);
+      });
     }
   }
 
-  async function loadPrompt(roundId){
-    const privatePrompt=await request("/drawing/my-prompt");
-    if(!snapshot?.canDraw || snapshot.game?.activeRound?.roundId!==roundId)return;
+  async function loadPrompt(roundId,generation,credential){
+    if(!currentMembership(generation,credential))return;
+    const privatePrompt=await request("/drawing/my-prompt","GET",null,credential);
+    if(!currentMembership(generation,credential) ||
+       !snapshot?.canDraw || snapshot.game?.activeRound?.roundId!==roundId)return;
     $("drawerWord").textContent="나의 정답: "+privatePrompt.answer;
     show("drawerWord",true);
     roundWordId=roundId;
