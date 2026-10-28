@@ -17,7 +17,11 @@
   let held = [false, false, false, false, false];
   let memberSocket = null, gameSocket = null, websocketUrl = "";
   let lastMemberSequence = -1, configuredRoom = "", configuredYacht = "";
-  let busy = false, running = false, refreshRequested = false;
+  let busy = false, admissionBusy = false, running = false;
+  let refreshRequested = false, runningGeneration = -1;
+  let membershipGeneration = 0, publicRoomsEpoch = 0;
+  const currentMembership = (generation, credential) =>
+    generation === membershipGeneration && credential === token;
   // Command IDs are idempotency keys, NOT authentication secrets.
   // randomUUID is unavailable on non-secure remote LAN HTTP origins.
   function newCommandId(prefix) {
@@ -57,39 +61,93 @@
     return result;
   }
 
-  function saveSession(secret) {
-    token = secret;
-    sessionStorage.setItem(STORE, secret);
+  function resetMemberViews() {
+    for (const id of ["roster","standings","dice","scoreGrid","chatMessages"]) {
+      $(id).replaceChildren();
+    }
+    for (const id of ["roomTitle","roomCode","roomState","roomPopulation",
+      "playerPopulation","lobbyHint","turnHeadline","turnDetail","inviteLink"]) {
+      text(id,"");
+    }
+    for (const id of ["closeRoom","lobby","playfield","inviteControls","copyInvite"]) {
+      visible(id,false);
+    }
+    $("chatForm").reset();
+    held = [false,false,false,false,false];
+  }
+  function invalidatePublicRooms() {
+    publicRoomsEpoch++;
+    $("publicRooms").replaceChildren();
+  }
+  function detachOldSession() {
+    membershipGeneration++;
+    busy = false;admissionBusy = false;running = false;
+    runningGeneration = -1;refreshRequested = false;
+    $("game").removeAttribute("aria-busy");
+    state = null;
+    resetMemberViews();
+    invalidatePublicRooms();
     lastMemberSequence = -1;
-    configuredRoom = "";
-    configuredYacht = "";
-    [memberSocket, gameSocket].forEach(ws => ws?.close());
+    configuredRoom = "";configuredYacht = "";
+    memberSocket?.close();gameSocket?.close();
     memberSocket = gameSocket = null;
-    visible("admission", false);
-    visible("game", true);
+  }
+  function clearSession() {
+    detachOldSession();
+    token = "";
+    sessionStorage.removeItem(STORE);
+    visible("game",false);visible("admission",true);
+    // Rebuild the directory for all exit paths; failures must not replace
+    // an explicit kick / close / leave notice.
+    loadPublicRooms().catch(()=>{});
+  }
+  function saveSession(secret) {
+    detachOldSession();
+    token = secret;
+    sessionStorage.setItem(STORE,secret);
+    visible("admission",false);visible("game",true);
   }
 
-  async function operation(callback) {
-    if (busy) return;
-    busy = true;
-    $("game").setAttribute("aria-busy","true");
-    try { await callback(); }
-    catch (error) { notice(error.message || "요청에 실패했습니다.", true); }
-    finally {
-      busy = false;
-      $("game").removeAttribute("aria-busy");
+  async function operation(callback,{admission=false}={}) {
+    if (admission ? admissionBusy : busy) return;
+    const generation=membershipGeneration,credential=token;
+    const current=()=>currentMembership(generation,credential);
+    const send=(path,method="GET",body=null)=>request(path,method,body,credential);
+    if(admission) admissionBusy=true;
+    else {
+      busy=true;
+      $("game").setAttribute("aria-busy","true");
+    }
+    try {
+      if(current())await callback({send,current,generation,credential});
+    } catch(error) {
+      if(current())notice(error.message||"요청에 실패했습니다.",true);
+    } finally {
+      if(!current())return;
+      if(admission)admissionBusy=false;
+      else {
+        busy=false;
+        $("game").removeAttribute("aria-busy");
+      }
     }
   }
 
   async function loadPublicRooms() {
-    const listing=await request("/public/rooms?gameId=yacht","GET",null,"");
+    const epoch=++publicRoomsEpoch;
+    let listing;
+    try { listing=await request("/public/rooms?gameId=yacht","GET",null,""); }
+    catch(error) {
+      if(epoch===publicRoomsEpoch)throw error;
+      return false;
+    }
+    if(epoch!==publicRoomsEpoch)return false;
     const list=$("publicRooms");
     list.replaceChildren();
     if(!listing.rooms.length) {
       const li=document.createElement("li");
       li.textContent="현재 공개방이 없습니다.";
       list.append(li);
-      return;
+      return true;
     }
     for(const room of listing.rooms) {
       const li=document.createElement("li");
@@ -110,12 +168,13 @@
       });
       li.append(label,button);list.append(li);
     }
+    return true;
   }
 
   async function createRoom(event) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    await operation(async () => {
+    await operation(async ({current}) => {
       const maxPlayers = Number(form.get("maxPlayers"));
       const maxRoomMembers = Number(form.get("maxRoomMembers"));
       if (maxRoomMembers < maxPlayers)
@@ -125,42 +184,45 @@
         hostSeat: form.has("hostPlays") ? "PLAYER" : "SPECTATOR",
         maxPlayers, maxRoomMembers
       }, "");
+      if(!current())return;
       saveSession(result.token);
       notice("공개방이 생성됐습니다. 방 코드를 공유해 참가시킬 수 있습니다.");
       await refresh();
-    });
+    },{admission:true});
   }
 
   async function joinRoom(event) {
     event.preventDefault();
     const data = new FormData(event.currentTarget);
-    await operation(async () => {
+    await operation(async ({current}) => {
       const result = await request("/join", "POST", {
         invitation: String(data.get("invitation") || "").trim(),
         displayName: data.get("displayName")
       }, "");
+      if(!current())return;
       saveSession(result.token);
       history.replaceState(null, "", location.pathname);
       notice("게임룸에 입장했습니다.");
       await refresh();
-    });
+    },{admission:true});
   }
 
   async function joinPublicRoom(event) {
     event.preventDefault();
     const form=new FormData(event.currentTarget);
-    await operation(async()=>{
+    await operation(async({current})=>{
       const joined=await request("/public/join","POST",{
         gameId:"yacht",
         roomCode:String(form.get("roomCode")||"").trim().toUpperCase(),
         displayName:form.get("displayName"),
         seatRole:form.get("seatRole")
       },"");
+      if(!current())return;
       saveSession(joined.token);
       history.replaceState(null,"",location.pathname);
       notice("공개방에 입장했습니다.");
       await refresh();
-    });
+    },{admission:true});
   }
 
   function renderRoom(room) {
