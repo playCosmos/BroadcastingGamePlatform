@@ -166,8 +166,8 @@ for(const id of ["promptForm","guessForm","chatForm","broadcastForm"]){
 has(memberViewReset,'$(id).reset();',"session reset clears unsent form values");
 has(js,'loadPrompt(round.roundId,generation,credential).catch(e=>{',
   "drawer prompt retrieval binds initiating member identity");
-has(js,'if(currentMembership(generation,credential))say(e.message,true);',
-  "old prompt failure cannot overwrite a replacement member notice");
+ok(/loadPrompt\(round\.roundId,generation,credential\)\.catch\(e=>\{\s*if\(currentMembership\(generation,credential\) &&\s*snapshot\?\.canDraw && snapshot\.game\?\.activeRound\?\.roundId===round\.roundId\)\s*say\(e\.message,true\);/.test(js),
+  "old member or earlier round prompt failures never overwrite current notice");
 has(js,'async function loadPrompt(roundId,generation,credential)',
   "private word retrieval pins member identity");
 ok(/const privatePrompt=await request\("\/drawing\/my-prompt","GET",null,credential\);\s*if\(!currentMembership\(generation,credential\) \|\|/.test(js),
