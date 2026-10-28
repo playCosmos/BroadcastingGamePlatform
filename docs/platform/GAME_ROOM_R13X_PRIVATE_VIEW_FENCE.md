@@ -17,7 +17,8 @@ membership changed.
 
 - `clearRoomBoundViews()`, used on both admission and teardown, clears the
   prior room's private drawer word, invitation text, host identifier, roster,
-  scoreboard and labels, hides the previous privileged/game panels and resets
+  scoreboard and labels, clears unsent prompt/guess/chat/broadcast-grant form
+  fields, hides the previous privileged/game panels and resets
   `roundWordId`. During admission the heading communicates that authoritative
   room data is loading, rather than displaying a previous room.
 - `loadPrompt()` accepts the immutable generation and bearer captured when
