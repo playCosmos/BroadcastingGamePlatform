@@ -199,6 +199,11 @@ has(telephone,"const identity=data?.active","telephone session identity changes 
 has(telephone,"JSON.stringify([roomId,memberId,data.mode,data.state,","author and phase are part of action identity");
 has(telephone,"data.stage,data.stageStartedAt])","stage-start identity prevents old-stage action result");
 has(telephone,"if(identity!==actionIdentity){","normal same-phase refresh does not cancel submitted actions");
+has(telephone,'const key=identity;',"drawing phase identity includes the room and member");
+has(telephone,'visible("telephoneReveal",false);',"inactive room hides previous gallery");
+has(telephone,'$("telephoneAlbumEntries").replaceChildren();',
+  "room switch clears old revealed album contents from DOM");
+
 has(telephone,"actionIdentity=identity;actionEpoch++;","room and stage transitions invalidate old actions");
 has(telephone,"submitting=false;presenting=false;","new member's controls do not stay locked by an old request");
 has(telephone,"const actionCurrent=(epoch,send)=>","action continuation checks binding");
