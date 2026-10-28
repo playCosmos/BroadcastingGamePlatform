@@ -548,6 +548,15 @@
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
       visible("telephoneDraftTools",false);
+      visible("telephoneReveal",false);
+      visible("telephoneTextForm",false);
+      visible("telephoneDrawingArea",false);
+      visible("telephoneWaiting",false);
+      visible("telephonePrompt",false);
+      visible("telephoneIncoming",false);
+      $("telephonePrompt").textContent="";
+      $("telephoneText").value="";
+      $("telephoneAlbumEntries").replaceChildren();
       discardStoredDraft();
       serverClockEpoch=NaN;serverClockAt=0;
       resetDeadline();
@@ -560,10 +569,13 @@
       $("telephoneDownloadStatus").textContent="";
       return;
     }
-    const key=data.state+":"+data.stage;
+    // This is a per-member/per-room stage, not just a stage number.
+    // Switching to an unrelated room at stage 0 must never reuse old ink.
+    const key=identity;
     if(key!==phaseKey){
       clearTimeline();
       stopReplay();displayedFrame=null;
+      $("telephoneAlbumEntries").replaceChildren();
       phaseKey=key;resetDraft();
       $("telephoneText").value="";
       if(data.mode==="COOP" && data.previousKind==="DRAWING"){
