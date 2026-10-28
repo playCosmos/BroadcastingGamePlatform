@@ -2932,6 +2932,180 @@ async function publicDirectoryResponseAcceptance(base,{codeA}){
         "'공개방 목록을 새로고침했습니다.'"),
         "R13z directory can refresh again after stale operation finishes");
 }
+// R14a: Yacht old read and host mutation can complete after joining a
+// different room in the same tab. The old bearer must never revoke the new
+// member, restore a host invite or leave stale busy/private UI behind.
+async function yachtSessionFenceAcceptance(base){
+    const host=await cdp.page(base+"/games/yacht/");
+    const other=await cdp.page(base+"/games/yacht/");
+    await fill(host,"createRoom",{
+        name:"R14a original Yacht room",displayName:"R14a old host",
+        maxPlayers:2,maxRoomMembers:4
+    });
+    const oldToken=await poll(async()=>await userToken(host,
+        "gamecenter.yacht.member-session.v1"),"Yacht R14a original member admitted");
+    const codeA=await poll(async()=>{
+        const value=await getRoom(host,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(value)?value:null;
+    },"Yacht R14a old room visible");
+    await waitRoomIdle(host,"game");
+    await fill(other,"createRoom",{
+        name:"R14a target Yacht room",displayName:"R14a second host",
+        maxPlayers:2,maxRoomMembers:4
+    });
+    const codeB=await poll(async()=>{
+        const value=await getRoom(other,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(value)?value:null;
+    },"Yacht R14a independent room visible");
+    check(codeA!==codeB,"Yacht R14a has two independent hosted rooms");
+    await cdp.eval(host,`(()=>{
+        const original=window.fetch.bind(window);
+        const oldBearer=${JSON.stringify("Bearer "+oldToken)};
+        window.__r14aOriginal=original;
+        window.__r14aReadHeld=false;
+        window.__r14aInviteHeld=false;
+        window.__r14aReadRelease=null;
+        window.__r14aInviteRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/yacht" &&
+               options.method==="GET" &&
+               options.headers?.Authorization===oldBearer &&
+               !window.__r14aReadHeld){
+                window.__r14aReadHeld=true;
+                return new Promise(resolve=>{window.__r14aReadRelease=resolve;});
+            }
+            if(path==="/api/v1/room-membership/host/invite" &&
+               options.headers?.Authorization===oldBearer &&
+               !window.__r14aInviteHeld){
+                window.__r14aInviteHeld=true;
+                return new Promise(resolve=>{window.__r14aInviteRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        window.dispatchEvent(new Event("online"));
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(host,"window.__r14aReadHeld===true"),
+        "Yacht old authenticated refresh held before next room admission");
+    await click(host,"newInvite");
+    await poll(async()=>await cdp.eval(host,"window.__r14aInviteHeld===true"),
+        "Yacht old host invite POST held before another admission");
+    await fill(host,"publicJoinRoom",{
+        roomCode:codeB,displayName:"R14a replaced Yacht spectator",
+        seatRole:"SPECTATOR"
+    });
+    const newToken=await poll(async()=>{
+        const value=await userToken(host,"gamecenter.yacht.member-session.v1");
+        return value && value!==oldToken?value:null;
+    },"Yacht admission bypasses held old host mutation and refresh");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('roomTitle').textContent==='R14a target Yacht room'"),
+        "Yacht new membership renders while old requests are blocked");
+    check(await cdp.eval(host,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("inviteLink").textContent==="" && $("copyInvite").hidden &&
+            $("game").getAttribute("aria-busy")!=="true" &&
+            $("roster").textContent.includes("R14a replaced Yacht spectator");
+    })()`),"Yacht old invitation and member operation lock cleared on admission");
+    await cdp.eval(host,`(()=>{
+        document.getElementById("notice").textContent="R14a new membership persists";
+        window.__r14aReadRelease(new Response(JSON.stringify({error:"old revoked"}),{
+            status:403,headers:{"Content-Type":"application/json"}
+        }));
+        window.__r14aInviteRelease(new Response(JSON.stringify({
+            token:"R14a-previous-room-only-private-invitation"
+        }),{status:201,headers:{"Content-Type":"application/json"}}));
+        return true;
+    })()`);
+    await nap(350);
+    const late=await cdp.eval(host,`(()=>{
+        const $=id=>document.getElementById(id);
+        return {
+            room:$("roomTitle").textContent,invite:$("inviteLink").textContent,
+            copyHidden:$("copyInvite").hidden,
+            gameHidden:$("game").hidden,
+            notice:$("notice").textContent,
+            busy:$("game").getAttribute("aria-busy")
+        };
+    })()`);
+    check(late.room==="R14a target Yacht room" &&
+        late.invite==="" && late.copyHidden && !late.gameHidden &&
+        late.notice==="R14a new membership persists" && late.busy!=="true",
+        "Yacht old 403/invite cannot revoke new room or leak host UI: "+
+        JSON.stringify(late));
+    check((await userToken(host,"gamecenter.yacht.member-session.v1"))===newToken,
+        "Yacht delayed old read retains new bearer");
+    await cdp.eval(host,`(()=>{
+        window.fetch=window.__r14aOriginal;
+        delete window.__r14aOriginal;
+        return true;
+    })()`);
+    // The old room-B chat response is held while this tab enters room A.
+    await cdp.eval(host,`(()=>{
+        const original=window.fetch.bind(window);
+        const oldBearer=${JSON.stringify("Bearer "+newToken)};
+        window.__r14aChatOriginal=original;
+        window.__r14aChatHeld=false;
+        window.__r14aChatRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/chat" &&
+               options.method==="POST" &&
+               options.headers?.Authorization===oldBearer &&
+               !window.__r14aChatHeld){
+                window.__r14aChatHeld=true;
+                return new Promise(resolve=>{window.__r14aChatRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    await fill(host,"chatForm",{text:"Yacht old unsent session chat"});
+    await poll(async()=>await cdp.eval(host,"window.__r14aChatHeld===true"),
+        "Yacht old member chat POST held");
+    await fill(host,"publicJoinRoom",{
+        roomCode:codeA,displayName:"R14a returned Yacht spectator",
+        seatRole:"SPECTATOR"
+    });
+    const tokenC=await poll(async()=>{
+        const value=await userToken(host,"gamecenter.yacht.member-session.v1");
+        return value && value!==newToken?value:null;
+    },"Yacht new membership accepted while previous chat POST is pending");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('roomTitle').textContent===" +
+        "'R14a original Yacht room'"),"Yacht returning member reconciles");
+    await cdp.eval(host,`(()=>{
+        document.getElementById("chatForm").elements.text.value=
+            "R14a new room chat draft";
+        document.getElementById("notice").textContent="R14a current chat preserved";
+        window.__r14aChatRelease(new Response(JSON.stringify({
+            messageId:"old-chat"
+        }),{status:201,headers:{"Content-Type":"application/json"}}));
+        return true;
+    })()`);
+    await nap(350);
+    check(await cdp.eval(host,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("chatForm").elements.text.value==="R14a new room chat draft" &&
+            $("notice").textContent==="R14a current chat preserved" &&
+            $("game").getAttribute("aria-busy")!=="true" &&
+            !$("chatMessages").textContent.includes("Yacht old unsent session chat");
+    })()`),"old Yacht chat response cannot wipe new draft or overwrite notice");
+    check(await userToken(host,"gamecenter.yacht.member-session.v1")===tokenC,
+        "Yacht previous chat response retains current membership");
+    await cdp.eval(host,`(()=>{
+        window.fetch=window.__r14aChatOriginal;
+        delete window.__r14aChatOriginal;
+        return true;
+    })()`);
+    await fill(host,"chatForm",{text:"Yacht current chat after stale response"});
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('chatMessages').textContent.includes("+
+        "'Yacht current chat after stale response')"),
+        "Yacht replacement member sends a real chat after stale response");
+}
+
 async function run(){
     const {base,ws}=await launchServer();
     await launchChrome();
@@ -3106,6 +3280,11 @@ async function run(){
     const actionFixture=await launchServer();
     const actionRooms=await memberActionSessionAcceptance(actionFixture.base);
     await publicDirectoryResponseAcceptance(actionFixture.base,actionRooms);
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "R13z fixture shutdown before Yacht session fence");
+    const yachtFixture=await launchServer();
+    await yachtSessionFenceAcceptance(yachtFixture.base);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
