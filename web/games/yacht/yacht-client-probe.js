@@ -38,11 +38,11 @@ check(js.includes("label.textContent=room.roomName"),
   "public room data rendered as safe textContent");
 check(js.includes('visible("closeRoom",host && room.state!=="PLAYING")'),
   "only host can close when not playing");
-check(js.includes('request("/host/close","POST",{})'),
-  "host closes with scoped member bearer");
+check(js.includes('send("/host/close","POST",{})'),
+  "host closes with immutable member bearer");
 check(js.includes('Authorization = "Bearer " + secret'),
   "all member API commands must send bearer scope");
-check(js.includes("sessionStorage.setItem(STORE, secret)")
+check(/sessionStorage\.setItem\(STORE,\s*secret\)/.test(js)
   && !js.includes("localStorage.setItem"),
   "store session credentials per-browser-session, not permanently");
 check(js.includes('new URLSearchParams(location.hash.slice(1))'),
@@ -62,5 +62,49 @@ check(js.includes("setInterval") && js.includes("refresh"),
   "backstop refresh after WS loss");
 check(css.includes("@media(max-width:880px)"),
   "independent UI should fit narrow/mobile viewports");
+// R14a: Yacht private data and authenticated operations cannot cross sessions.
+for (const clause of [
+  "let membershipGeneration = 0, publicRoomsEpoch = 0;",
+  "function detachOldSession()",
+  "function clearSession()",
+  "function resetMemberViews()",
+  "const currentMembership = (generation, credential) =>",
+  "const generation=membershipGeneration,credential=token;",
+  "const send=(path,method=\"GET\",body=null)=>request(path,method,body,credential);",
+  "if(!current())return;",
+  "if(!currentMembership(generation,credential))return;",
+  "const epoch=++publicRoomsEpoch;",
+  "if(epoch!==publicRoomsEpoch)return false;",
+  "if(epoch===publicRoomsEpoch)throw error;",
+  "const next=await request(\"/yacht\",\"GET\",null,credential);",
+  "const page=await request(\"/chat?after=-1\",\"GET\",null,credential);",
+  "const next=await send(\"/yacht/\"+action,\"POST\",",
+  "type:\"room.subscribe\",token:credential,afterSequence:lastMemberSequence",
+  "if(!current())return;\n      state=next;",
+  'for (const id of ["roster","standings","dice","scoreGrid","chatMessages"])',
+  'text("inviteLink",link);',
+  'input.value="";',
+]) {
+  check(js.includes(clause),"Yacht session fence missing: "+clause);
+}
+check((js.match(/\},\{admission:true\}\);/g)||[]).length===3,
+  "create, invitation join and public join independently admit while old member POST pending");
+check((js.match(/saveSession\((?:result|joined)\.token\)/g)||[]).length===3,
+  "all three admission paths enter through shared session teardown");
+for(const path of ["/me/ready","/me/seat","/yacht/start","/host/invite",
+  "/chat","/host/close","/me/leave"]) {
+  check(js.includes('send("'+path+'","POST"'),
+    "member POST pins bearer: "+path);
+  check(!js.includes('request("'+path+'","POST"'),
+    "member POST never reads mutable global token: "+path);
+}
+check(/await send\("/chat","POST",[\s\S]*?if\(!current\(\)\)return;\s*input\.value="";/.test(js),
+  "late previous chat POST cannot clear new chat input");
+check(/await send\("/host\/invite","POST",[\s\S]*?if\(!current\(\)\)return;\s*const link=/.test(js),
+  "old invite never populates new member UI");
+check(/await send\("/me\/leave","POST",\{\}\);\s*if\(!current\(\)\)return;\s*clearSession\(\);/.test(js),
+  "old leave response never clears a new authenticated session");
+check(js.includes("if(!current())return;\n      running=false;runningGeneration=-1;"),
+  "old read finally cannot unlock a new refresh");
 console.log("YACHT_R4_CLIENT_PASSED checks=" + checks
   + " independent=true token=per-tab role=member chat=safe");
