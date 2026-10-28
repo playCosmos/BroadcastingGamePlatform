@@ -66,6 +66,34 @@ ok(/function accept\(secretValue\)[\s\S]*?snapshot=null;\s*clearRoomBoundViews\(
 has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
 has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
+
+has(js,"let membershipGeneration=0,publicRoomsEpoch=0;",
+  "public directory owns a separate latest-response epoch");
+has(js,"function invalidatePublicRooms(){",
+  "admission and teardown can revoke pending public listings");
+has(js,"publicRoomsEpoch++;",
+  "replacing the public directory invalidates prior requests");
+has(js,'$("publicRooms").replaceChildren();',
+  "switch clears previous directory content immediately");
+has(js,"const epoch=++publicRoomsEpoch;",
+  "each public list request supersedes any earlier request");
+has(js,"if(epoch!==publicRoomsEpoch)return false;",
+  "older successful public list responses are discarded before DOM writes");
+has(js,"if(epoch===publicRoomsEpoch)throw e;",
+  "older directory failures are silently discarded");
+ok((js.match(/invalidatePublicRooms\(\);/g)||[]).length===2,
+  "both accepting and clearing membership fence former directory reads");
+has(js,"loadPublicRooms().catch(()=>{});",
+  "every member exit refreshes the public admission directory without stale notices");
+has(js,"const updated=await loadPublicRooms();",
+  "manual directory refresh records whether its response remains authoritative");
+has(js,'if(current() && updated)say("공개방 목록을 새로고침했습니다.");',
+  "superseded directory refresh cannot show a stale success notice");
+has(js,"if(!secret && membershipGeneration===generation)",
+  "initial public list errors cannot replace a new room notice");
+ok(/loadPrompt\(round\.roundId,generation,credential\)\.catch\(e=>\{[\s\S]*?snapshot\?\.canDraw && snapshot\.game\?\.activeRound\?\.roundId===round\.roundId/.test(js),
+  "private prompt errors fenced to original round, not merely original member");
+
 has(js,"function clearMembership()","common session cleanup routine");
 
 has(js,'function operation(action,{admission=false}={})',
