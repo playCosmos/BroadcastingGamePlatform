@@ -78,7 +78,7 @@ has(js,'if(current())return action({send,current,generation,credential});',
   "old queued operations cannot begin on a replacement member");
 has(js,'if(current())say(e.message||"요청 실패",true);',
   "stale operation errors do not replace another member notice");
-has(js,'if(!current())return;\n      if(admission)admissionBusy=false;',
+ok(/if\(!current\(\)\)return;\s*if\(admission\)admissionBusy=false;/.test(js),
   "old operation finally cannot unlock a newer session");
 has(js,'function releaseMemberOperations()',
   "membership switch releases old room and admission action locks");
