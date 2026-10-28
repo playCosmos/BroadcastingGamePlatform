@@ -93,6 +93,16 @@
       });
   }
 
+  function resetNativeCanvas(){
+    drawingActive=false;strokeId="";lastPoint=null;
+    currentPointer=null;pendingPoints=[];
+    if(pointTimer!==null)clearTimeout(pointTimer);
+    pointTimer=null;
+    // Detach the new session from any old pending POST. The old promise
+    // chain is fenced by membership generation before/after its awaits.
+    sendQueue=Promise.resolve();
+    strokes.clear();canvasSequence=0;redraw();
+  }
   function clearMembership(){
     // All exit paths must invalidate reads, WSS callbacks and private
     // telephone authoring drafts before showing the public admission UI.
@@ -104,12 +114,8 @@
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
     roomBinding="";drawingBinding="";
-    chatSequence=-1;canvasSequence=0;
-    drawingActive=false;strokeId="";lastPoint=null;
-    currentPointer=null;pendingPoints=[];
-    if(pointTimer!==null)clearTimeout(pointTimer);
-    pointTimer=null;
-    strokes.clear();redraw();
+    chatSequence=-1;
+    resetNativeCanvas();
     show("room",false);show("admission",true);
   }
   function invalidateSession(){
@@ -131,7 +137,8 @@
     window.TelephoneView.render(telephone,null,null);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
-    chatSequence=-1;canvasSequence=0;
+    chatSequence=-1;
+    resetNativeCanvas();
     show("admission",false);show("room",true);
   }
   function user(){
@@ -279,10 +286,19 @@
     redraw();
   }
   function drawCommand(event) {
+    const generation=membershipGeneration,credential=secret;
+    if(!credential)return;
     sendQueue=sendQueue.then(async()=>{
-      const result=await request("/drawing/canvas","POST",{event});
+      // A command queued by room A may execute after room B is accepted.
+      if(!currentMembership(generation,credential))return;
+      const result=await request("/drawing/canvas","POST",{event},credential);
+      // An in-flight response from room A must not paint room B.
+      if(!currentMembership(generation,credential))return;
       applyEvent(result.json);
-    }).catch(e=>say(e.message||"그림 전송에 실패했습니다.",true));
+    }).catch(e=>{
+      if(currentMembership(generation,credential))
+        say(e.message||"그림 전송에 실패했습니다.",true);
+    });
   }
   // Batch high-frequency pointer samples to reduce HTTP requests while
   // preserving the ordered, authenticated server-authoritative event stream.
