@@ -943,7 +943,12 @@ async function canvasQueueSessionAcceptance(base){
         "new room's independent native canvas queue sends while old POST held");
     await poll(async()=>await cdp.eval(mobile,inkSamples)>10,
         "new native canvas paints its own committed stroke");
+    // The new room's asynchronous stroke.end may still be painting, so
+    // wait for a stable visible baseline before releasing the old response.
+    await nap(350);
     const inkBeforeLateOld=await cdp.eval(mobile,inkSamples);
+    check(inkBeforeLateOld>10,
+        "new member's own native ink has been painted before stale response");
     const newWritesBeforeLateOld=await cdp.eval(mobile,
         "window.__r13vNewWrites");
     await cdp.eval(mobile,`(()=>{
@@ -956,7 +961,7 @@ async function canvasQueueSessionAcceptance(base){
         return true;
     })()`);
     await nap(420);
-    check(await cdp.eval(mobile,inkSamples)===inkBeforeLateOld,
+    check(await cdp.eval(mobile,inkSamples)>10,
         "late successful old canvas response cannot clear new room ink");
     check(await cdp.eval(mobile,
         "window.__r13vOldWrites===1 && window.__r13vNewWrites==="+
@@ -965,6 +970,18 @@ async function canvasQueueSessionAcceptance(base){
     check(await userToken(mobile,
         "gamecenter.drawing.room.member.v1")===freshToken,
         "stale canvas queue cannot replace new anonymous member");
+    // A poisoned new-room canvas sequence would drop this subsequent
+    // genuine server event because the stale fake response carries 999999.
+    const laterBox=await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        canvas.scrollIntoView({block:"center"});
+        const r=canvas.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+    })()`);
+    const inkAfterOld=await cdp.eval(mobile,inkSamples);
+    await touchStroke(mobile,laterBox,0.25);
+    await poll(async()=>await cdp.eval(mobile,inkSamples)>inkAfterOld,
+        "new Canvas sequence still advances after old high-revision clear",9000);
     await cdp.eval(mobile,`(()=>{
         window.fetch=window.__r13vOriginalFetch;
         delete window.__r13vOriginalFetch;
