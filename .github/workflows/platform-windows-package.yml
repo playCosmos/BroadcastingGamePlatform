@@ -15,6 +15,7 @@ on:
       - "docs/**"
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
+      - ".github/workflows/release.yml"
   pull_request:
     # These patterns cover current and future staged GameRoom/Yacht bases.
     # GitHub evaluates pull_request.branches against the PR BASE branch.
@@ -52,6 +53,10 @@ jobs:
       - name: Check PowerShell scripts
         shell: pwsh
         run: ./server/check-powershell.ps1
+
+      - name: Check workflow integration release gates
+        shell: pwsh
+        run: ./server/check-integration-workflows.ps1
 
       - name: Prepare browser physics assets
         shell: pwsh
