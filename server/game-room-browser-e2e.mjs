@@ -794,6 +794,129 @@ async function mobileWssAcceptance(base,ws){
     const noOverflow=await cdp.eval(mobile,
         "document.documentElement.scrollWidth<=window.innerWidth+2");
     check(noOverflow,"real 390px mobile Drawing UI has no horizontal overflow");
+
+    // R13v native canvas queue: hold the actual first old-room canvas POST
+    // while more stroke events are queued. Admit room B in the same mobile
+    // browser; new-room drawing must not be blocked by old-room networking.
+    await cdp.eval(mobile,`(()=>{
+        const original=window.fetch.bind(window);
+        const oldBearer=${JSON.stringify("Bearer "+mobileToken)};
+        window.__r13vOriginalFetch=original;
+        window.__r13vHeld=false;
+        window.__r13vRelease=null;
+        window.__r13vOldWrites=0;
+        window.__r13vNewWrites=0;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/drawing/canvas"){
+                const bearer=options.headers?.Authorization||"";
+                if(bearer===oldBearer){
+                    window.__r13vOldWrites++;
+                    if(!window.__r13vHeld){
+                        window.__r13vHeld=true;
+                        return new Promise(resolve=>{
+                            window.__r13vRelease=resolve;
+                        });
+                    }
+                }else window.__r13vNewWrites++;
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    const oldBox=await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        canvas.scrollIntoView({block:"center"});
+        const r=canvas.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+    })()`);
+    await touchStroke(mobile,oldBox,0.47);
+    await poll(async()=>await cdp.eval(mobile,
+        "window.__r13vHeld===true"),"old native canvas POST held on network");
+    check(await cdp.eval(mobile,"window.__r13vOldWrites===1"),
+        "old canvas queue contains at least one event behind a held POST");
+    await waitRoomIdle(mobile,"room");
+    await fill(mobile,"createForm",{
+        name:"Native queue replacement room",displayName:"Fresh Canvas Host",
+        maxPlayers:1,maxRoomMembers:3
+    });
+    const freshToken=await poll(async()=>{
+        const token=await userToken(mobile,
+            "gamecenter.drawing.room.member.v1");
+        return token && token!==mobileToken?token:null;
+    },"same tab accepts independent member while legacy POST held");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('roomName').textContent===" +
+        "'Native queue replacement room'"),
+        "new session renders while earlier canvas send queue remains blocked");
+    check(await cdp.eval(mobile,
+        "window.__r13vOldWrites===1 && window.__r13vNewWrites===0"),
+        "old pending events do not cross into new room on admit");
+    await waitRoomIdle(mobile,"room");
+    await click(mobile,"ready");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('ready').textContent.includes('취소')"),
+        "new mobile host may become ready despite an old pending POST");
+    await waitRoomIdle(mobile,"room");
+    await cdp.eval(mobile,`(()=>{
+        document.getElementById("mode").value="STREAMER_DRAWER";
+        document.getElementById("rounds").value="1";
+        document.getElementById("duration").value="180";
+        return true;
+    })()`);
+    await click(mobile,"start");
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('promptForm').hidden"),
+        "new room can start a real native drawing round independently");
+    await waitRoomIdle(mobile,"room");
+    await fill(mobile,"promptForm",{answer:"fresh",accepted:""});
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('clearCanvas').hidden"),
+        "fresh member is authorized to draw on new room's native canvas");
+    await waitRoomIdle(mobile,"room");
+    const freshBox=await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        canvas.scrollIntoView({block:"center"});
+        const r=canvas.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+    })()`);
+    await touchStroke(mobile,freshBox,0.61);
+    await poll(async()=>await cdp.eval(mobile,
+        "window.__r13vNewWrites>=3"),
+        "new room's independent native canvas queue sends while old POST held");
+    await poll(async()=>await cdp.eval(mobile,inkSamples)>10,
+        "new native canvas paints its own committed stroke");
+    const inkBeforeLateOld=await cdp.eval(mobile,inkSamples);
+    const newWritesBeforeLateOld=await cdp.eval(mobile,
+        "window.__r13vNewWrites");
+    await cdp.eval(mobile,`(()=>{
+        const release=window.__r13vRelease;
+        if(!release)throw Error("missing held old canvas request");
+        release(new Response(JSON.stringify({
+            json:{sequence:999999,type:"canvas.clear",payload:{}}
+        }),{status:200,headers:{"Content-Type":"application/json"}}));
+        window.__r13vRelease=null;
+        return true;
+    })()`);
+    await nap(420);
+    check(await cdp.eval(mobile,inkSamples)===inkBeforeLateOld,
+        "late successful old canvas response cannot clear new room ink");
+    check(await cdp.eval(mobile,
+        "window.__r13vOldWrites===1 && window.__r13vNewWrites==="+
+        String(newWritesBeforeLateOld)),
+        "old queued strokes never POST with new room's membership bearer");
+    check(await userToken(mobile,
+        "gamecenter.drawing.room.member.v1")===freshToken,
+        "stale canvas queue cannot replace new anonymous member");
+    await cdp.eval(mobile,`(()=>{
+        window.fetch=window.__r13vOriginalFetch;
+        delete window.__r13vOriginalFetch;
+        delete window.__r13vRelease;
+        delete window.__r13vHeld;
+        delete window.__r13vOldWrites;
+        delete window.__r13vNewWrites;
+        return true;
+    })()`);
 }
 
 /**
