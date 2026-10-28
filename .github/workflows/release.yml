@@ -25,6 +25,13 @@ jobs:
       - name: Validate release version
         shell: pwsh
         run: |
+          # Publish only from main or a deliberate release branch; staged
+          # GameRoom and Yacht Draft PR refs must never produce a release.
+          $releaseRef = "${{ github.ref }}"
+          if ($releaseRef -ne "refs/heads/main" -and
+              $releaseRef -notmatch '^refs/heads/release/[A-Za-z0-9._/-]+$') {
+            throw "release must use main or release/*: $releaseRef"
+          }
           $version = "${{ inputs.version }}".Trim()
           if ($version -notmatch '^\d+\.\d+\.\d+(?:[-+][0-9A-Za-z.-]+)?$') {
             throw "invalid release version: $version"
@@ -75,6 +82,10 @@ jobs:
         working-directory: server
         shell: pwsh
         run: ./run-regression-probes.ps1
+
+      - name: Real GameRoom Chrome Edge browser E2E
+        shell: pwsh
+        run: ./server/smoke-game-room-browser.ps1
 
       - name: Build Windows x64 app
         working-directory: server

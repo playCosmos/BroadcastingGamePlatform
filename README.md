@@ -2,7 +2,7 @@
 
 방송 채팅/후원 이벤트를 게임 모듈에 연결하는 방송용 게임 플랫폼입니다.
 
-현재 구현 게임은 **Board**와 **Drawing Guess**이며, 두 번째 계획 게임으로 **Yacht**를 Yahtzee 계열 규칙으로 준비합니다. 방송 도구로 **Viewer Draw**의 Random/Number Draw가 구현되어 있습니다. 기존 Roulette/Lotto/Ticket 제품 전체는 이 저장소로 이전하지 않습니다.
+현재 통합 개발 브랜치에는 **Board**, **Drawing Guess**, **Yacht**가 있으며, Yacht는 Yahtzee 계열 규칙의 **공통 게임룸 R4 독립 멀티플레이 Beta**를 제공합니다. GameRoom 단계별 변경은 아직 Draft PR 체인에 있으며 `main` 릴리스에 반영된 것으로 간주하지 않습니다. 방송 도구로 **Viewer Draw**의 Random/Number Draw가 구현되어 있습니다. 기존 Roulette/Lotto/Ticket 제품 전체는 이 저장소로 이전하지 않습니다.
 
 ## 1차 목표
 
@@ -23,7 +23,7 @@
 - Provider: SOOP (현재)
 - Provider: CHZZK (추후)
 - Game Module: Board (현재)
-- Game Module: Yacht (Y0 순수 점수 엔진 구현 중, Yahtzee 계열; 플레이 기능 미제공)
+- Game Module: Yacht (Y0~Y2 엔진/API + 공통 GameRoom R4 멀티플레이 Beta; `/games/yacht/` 익명 플레이/관전/룸 채팅 가능, Y4~Y6 후속)
 - Game Module: Drawing Guess (Classic Guess D0~D6 구현)
 - Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw 구현)
 - 추가 게임/방송 도구: 독립 모듈로 확장
@@ -36,6 +36,9 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 
 ## 현재 웹 흐름
 
+- GameRoom 공통: 로그인 없이 공개방 생성·방 코드/초대 토큰 입장, 플레이어와 관전자 구분, 방장/참가자/관전자를 합한 방 정원, 룸 채팅
+- Yacht Beta: `/games/yacht/` (공통 게임룸 기반 독립 플레이 클라이언트)
+- Drawing Guess 공통 게임룸: `/games/drawing-guess/room/` (출제자 순환·협동 Telephone·관전)
 - Board: `/admin/games/board/` → 룸 운영 → `/games/board/`
 - Drawing Guess: `/admin/games/drawing-guess/` → `room.html?roomId=...` → 고정 OBS URL `/games/drawing-guess/?roomId=XXXXXX`
 - Viewer Draw: `/admin/tools/viewer-draw/` → 공개 결과 Overlay
@@ -55,7 +58,8 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - Board: AVAILABLE
 - Viewer Draw: Core + Number Draw + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
-- Yacht: Y0 SCORING 검증 완료 · Y1 DOMAIN/PERSISTENCE CI 검증 완료 · Y2 ROOM/API 구현 중 (Y3~Y6 PLANNED, 플레이 불가)
+- Yacht: Y0 점수 · Y1 영속화 · Y2 API 검증, 공통 R4 멀티플레이 Beta 플레이 가능(통합 Draft 브랜치). Y4 OBS·Y5 방송 입력·Y6 종합 안정화는 후속
+- 공통 GameRoom: R1~R14c 통합 브랜치 구현·자동 검증 완료(아직 Draft PR 미병합); 브라우저 입장·채팅·관전·강퇴·복구·퇴장·폐쇄 회귀 검사 포함
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: SOOP IMPLEMENTED / PROVIDER EXPANSION PENDING
 - Viewer Draw Finish Slow Motion/Podium + Goldberg Machine: PLANNED
