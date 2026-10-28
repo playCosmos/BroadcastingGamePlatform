@@ -863,11 +863,17 @@ async function canvasQueueSessionAcceptance(base){
         window.__r13vRelease=null;
         window.__r13vOldWrites=0;
         window.__r13vNewWrites=0;
+        window.__r13vOldStrokeIds=new Set();
+        window.__r13vCrossRoomWrites=[];
         window.fetch=(url,options={})=>{
             const path=typeof url==="string"?url:url?.url;
             if(path==="/api/v1/room-membership/drawing/canvas"){
                 const bearer=options.headers?.Authorization||"";
+                const evt=JSON.parse(options.body||"{}").event;
+                const strokeId=evt?.payload?.strokeId||
+                    evt?.payload?.stroke?.strokeId||"";
                 if(bearer===oldBearer){
+                    if(strokeId)window.__r13vOldStrokeIds.add(strokeId);
                     window.__r13vOldWrites++;
                     if(!window.__r13vHeld){
                         window.__r13vHeld=true;
@@ -875,7 +881,11 @@ async function canvasQueueSessionAcceptance(base){
                             window.__r13vRelease=resolve;
                         });
                     }
-                }else window.__r13vNewWrites++;
+                }else{
+                    window.__r13vNewWrites++;
+                    if(strokeId && window.__r13vOldStrokeIds.has(strokeId))
+                        window.__r13vCrossRoomWrites.push(evt.type);
+                }
             }
             return original(url,options);
         };
@@ -949,8 +959,6 @@ async function canvasQueueSessionAcceptance(base){
     const inkBeforeLateOld=await cdp.eval(mobile,inkSamples);
     check(inkBeforeLateOld>10,
         "new member's own native ink has been painted before stale response");
-    const newWritesBeforeLateOld=await cdp.eval(mobile,
-        "window.__r13vNewWrites");
     await cdp.eval(mobile,`(()=>{
         const release=window.__r13vRelease;
         if(!release)throw Error("missing held old canvas request");
@@ -964,9 +972,9 @@ async function canvasQueueSessionAcceptance(base){
     check(await cdp.eval(mobile,inkSamples)>10,
         "late successful old canvas response cannot clear new room ink");
     check(await cdp.eval(mobile,
-        "window.__r13vOldWrites===1 && window.__r13vNewWrites==="+
-        String(newWritesBeforeLateOld)),
-        "old queued strokes never POST with new room's membership bearer");
+        "window.__r13vOldWrites===1 && "+
+        "window.__r13vCrossRoomWrites.length===0"),
+        "old stroke IDs never POST with replacement room bearer");
     check(await userToken(mobile,
         "gamecenter.drawing.room.member.v1")===freshToken,
         "stale canvas queue cannot replace new anonymous member");
@@ -989,6 +997,8 @@ async function canvasQueueSessionAcceptance(base){
         delete window.__r13vHeld;
         delete window.__r13vOldWrites;
         delete window.__r13vNewWrites;
+        delete window.__r13vOldStrokeIds;
+        delete window.__r13vCrossRoomWrites;
         return true;
     })()`);
 }
