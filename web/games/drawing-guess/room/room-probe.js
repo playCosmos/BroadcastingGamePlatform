@@ -432,7 +432,7 @@ has(js,'pendingPoints.length>=96',"bounded batch under 128 point ceiling");
 has(js,'setTimeout(flushPoints,34)',"sample packet throttling");
 has(js,'flushPoints();drawingActive=false',"flush before stroke close");
 has(js,'sendQueue=sendQueue.then',"ordered HTTP canvas writes");
-has(js,'request("/drawing/canvas","POST",{event})',"each canvas write uses member HTTP ACL");
+has(js,'request("/drawing/canvas","POST",{event},credential)',"each canvas write uses member HTTP ACL");
 has(js,'new WebSocket(url("drawingCode="',"read-only drawing stream");
 has(js,'type:"drawing.subscribe",token:credential',"Canvas stream authenticates member in first WS message");
 no(js,'drawerToken=',"never expose native drawing bearer");
