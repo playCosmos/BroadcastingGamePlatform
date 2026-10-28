@@ -99,9 +99,9 @@ ok((js.match(/\},\{admission:true\}\);/g)||[]).length===3,
   "all three admission commands bypass old member's pending busy lock");
 has(js,'const submittedText=field.value;',"guess body captured before await");
 has(js,'const text=field.value;',"chat body captured before await");
-has(js,'if(!current())return;\n      field.value="";await refreshChat(generation,credential);',
+ok(/if\(!current\(\)\)return;\s*field\.value="";await refreshChat\(generation,credential\);/.test(js),
   "old chat completion cannot erase new room input");
-has(js,'if(!current())return;\n    clearMembership();',
+ok(/if\(!current\(\)\)return;\s*clearMembership\(\);/.test(js),
   "old close or leave cannot teardown newer membership");
 has(js,"function resetNativeCanvas()","shared legacy canvas state reset");
 has(js,"sendQueue=Promise.resolve();","detach new-room queue from in-flight previous POST");
