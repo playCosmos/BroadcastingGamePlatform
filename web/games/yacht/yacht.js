@@ -500,69 +500,78 @@
   $("createRoom").addEventListener("submit", createRoom);
   $("joinRoom").addEventListener("submit", joinRoom);
   $("publicJoinRoom").addEventListener("submit", joinPublicRoom);
-  $("refreshPublicRooms").addEventListener("click",()=>operation(async()=>{
-    await loadPublicRooms();notice("공개방 목록을 새로고침했습니다.");
+  $("refreshPublicRooms").addEventListener("click",async()=>{
+    const generation=membershipGeneration,credential=token;
+    try {
+      const updated=await loadPublicRooms();
+      if(updated && currentMembership(generation,credential))
+        notice("공개방 목록을 새로고침했습니다.");
+    }catch(error){
+      if(currentMembership(generation,credential))
+        notice(error.message||"공개방 목록 조회 실패",true);
+    }
+  });
+  $("ready").addEventListener("click",()=>operation(async({send,current})=>{
+    const me=state.room.members.find(m=>m.memberId===state.memberId);
+    await send("/me/ready","POST",{ready:!me.ready});
+    if(!current())return;
+    notice("준비 상태를 변경했습니다.");await refresh();
   }));
-  $("ready").addEventListener("click", () => operation(async () => {
-    const me = state.room.members.find(m => m.memberId === state.memberId);
-    await request("/me/ready","POST",{ready:!me.ready});
-    notice("준비 상태를 변경했습니다."); await refresh();
+  $("changeSeat").addEventListener("click",()=>operation(async({send,current})=>{
+    const me=state.room.members.find(m=>m.memberId===state.memberId);
+    await send("/me/seat","POST",{
+      seatRole:me.seatRole==="PLAYER"?"SPECTATOR":"PLAYER"});
+    if(!current())return;
+    notice("참가 역할을 변경했습니다.");await refresh();
   }));
-  $("changeSeat").addEventListener("click", () => operation(async () => {
-    const me = state.room.members.find(m => m.memberId === state.memberId);
-    await request("/me/seat","POST",{
-      seatRole:me.seatRole === "PLAYER" ? "SPECTATOR" : "PLAYER"});
-    notice("참가 역할을 변경했습니다."); await refresh();
+  $("start").addEventListener("click",()=>operation(async({send,current})=>{
+    const next=await send("/yacht/start","POST",{});
+    if(!current())return;
+    state=next;
+    notice("경기가 시작됐습니다.");render();await refresh();
   }));
-  $("start").addEventListener("click", () => operation(async () => {
-    state = await request("/yacht/start","POST",{});
-    notice("경기가 시작됐습니다."); render(); await refresh();
-  }));
-  $("roll").addEventListener("click", () => command("roll",{}));
-  $("applyHolds").addEventListener("click", () => command("hold",{held:held.slice()}));
-  $("newInvite").addEventListener("click", () => operation(async () => {
-    const result = await request("/host/invite","POST",{
+  $("roll").addEventListener("click",()=>command("roll",{}));
+  $("applyHolds").addEventListener("click",()=>command("hold",{held:held.slice()}));
+  $("newInvite").addEventListener("click",()=>operation(async({send,current})=>{
+    const result=await send("/host/invite","POST",{
       seatRole:$("inviteRole").value,
       maxUses:Number($("inviteUses").value),expiresInSeconds:3600
     });
-    const link=location.origin + location.pathname + "#invite=" + encodeURIComponent(result.token);
+    if(!current())return;
+    const link=location.origin+location.pathname+"#invite="+encodeURIComponent(result.token);
     text("inviteLink",link);
-    $("copyInvite").hidden = false;
+    visible("copyInvite",true);
     notice("초대권이 발급됐습니다. 링크를 참가자에게 공유하세요.");
   }));
-  $("copyInvite").addEventListener("click",() => operation(async () => {
-    await navigator.clipboard.writeText($("inviteLink").textContent);
-    notice("초대 링크를 복사했습니다.");
+  $("copyInvite").addEventListener("click",()=>operation(async({current})=>{
+    const link=$("inviteLink").textContent;
+    await navigator.clipboard.writeText(link);
+    if(current())notice("초대 링크를 복사했습니다.");
   }));
-  $("chatForm").addEventListener("submit",event => {
+  $("chatForm").addEventListener("submit",event=>{
     event.preventDefault();
     const input=event.currentTarget.elements.text;
-    operation(async () => {
+    operation(async({send,current,generation,credential})=>{
       const content=input.value.trim();
-      if (!content) return;
-      await request("/chat","POST",{messageId:newCommandId("chat-"),text:content});
+      if(!content)return;
+      await send("/chat","POST",{messageId:newCommandId("chat-"),text:content});
+      if(!current())return;
       input.value="";
-      await refreshChat();
+      await refreshChat(generation,credential);
     });
   });
-  $("closeRoom").addEventListener("click",()=>operation(async()=>{
+  $("closeRoom").addEventListener("click",()=>operation(async({send,current})=>{
     if(!confirm("게임룸을 닫습니까? 모든 참가자 연결과 초대권이 종료됩니다."))return;
-    await request("/host/close","POST",{});
-    token="";state=null;
-    sessionStorage.removeItem(STORE);
-    memberSocket?.close();gameSocket?.close();
-    memberSocket=gameSocket=null;
-    configuredRoom="";configuredYacht="";
-    visible("game",false);visible("admission",true);
+    await send("/host/close","POST",{});
+    if(!current())return;
+    clearSession();
     notice("방을 닫았습니다.");
-    await loadPublicRooms();
   }));
-  $("leaveRoom").addEventListener("click", () => operation(async () => {
-    if (!confirm("게임룸에서 퇴장합니까? 방장은 먼저 다른 참가자에게 방장을 위임해야 합니다.")) return;
-    await request("/me/leave","POST",{});
-    token = ""; sessionStorage.removeItem(STORE);
-    memberSocket?.close(); gameSocket?.close();
-    visible("game",false); visible("admission",true);
+  $("leaveRoom").addEventListener("click",()=>operation(async({send,current})=>{
+    if(!confirm("게임룸에서 퇴장합니까? 방장은 먼저 다른 참가자에게 방장을 위임해야 합니다."))return;
+    await send("/me/leave","POST",{});
+    if(!current())return;
+    clearSession();
     notice("게임룸에서 퇴장했습니다.");
   }));
 
@@ -572,7 +581,13 @@
   const roomCode=fragment.get("room");
   if(roomCode)$("publicJoinRoom").elements.roomCode.value=roomCode;
   if (token) { visible("admission",false); visible("game",true); refresh(); }
-  if(!token)loadPublicRooms().catch(e=>notice(e.message,true));
+  if(!token){
+    const generation=membershipGeneration;
+    loadPublicRooms().catch(error=>{
+      if(!token && generation===membershipGeneration)
+        notice(error.message||"공개방 목록 조회 실패",true);
+    });
+  }
   // Timer throttling in background tabs cannot be used as a reconnect clock.
   // A foreground/online/pageshow recovery reconciles the same member token.
   function resumeSession() {
