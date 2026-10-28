@@ -98,11 +98,11 @@ for(const path of ["/me/ready","/me/seat","/yacht/start","/host/invite",
   check(!js.includes('request("'+path+'","POST"'),
     "member POST never reads mutable global token: "+path);
 }
-check(/await send\("/chat","POST",[\s\S]*?if\(!current\(\)\)return;\s*input\.value="";/.test(js),
+check(/await send\("\/chat","POST",[\s\S]*?if\(!current\(\)\)return;\s*input\.value="";/.test(js),
   "late previous chat POST cannot clear new chat input");
-check(/await send\("/host\/invite","POST",[\s\S]*?if\(!current\(\)\)return;\s*const link=/.test(js),
+check(/await send\("\/host\/invite","POST",[\s\S]*?if\(!current\(\)\)return;\s*const link=/.test(js),
   "old invite never populates new member UI");
-check(/await send\("/me\/leave","POST",\{\}\);\s*if\(!current\(\)\)return;\s*clearSession\(\);/.test(js),
+check(/await send\("\/me\/leave","POST",\{\}\);\s*if\(!current\(\)\)return;\s*clearSession\(\);/.test(js),
   "old leave response never clears a new authenticated session");
 check(js.includes("if(!current())return;\n      running=false;runningGeneration=-1;"),
   "old read finally cannot unlock a new refresh");
