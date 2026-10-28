@@ -2575,6 +2575,14 @@ async function telephoneBrowserAcceptance(base,coop){
         document.getElementById("inviteOutput").textContent=
             "https://old-room.invalid/#invite=old-secret";
         document.getElementById("copyInvite").hidden=false;
+        document.getElementById("promptForm").elements.answer.value=
+            "old private pending answer";
+        document.getElementById("guessForm").elements.text.value=
+            "old private pending guess";
+        document.getElementById("chatForm").elements.text.value=
+            "old private unsent message";
+        document.getElementById("broadcastForm").elements.grant.value=
+            "old private operator grant";
         return true;
     })()`);
     await fill(host,"publicJoinForm",{
@@ -2595,6 +2603,10 @@ async function telephoneBrowserAcceptance(base,coop){
             $("inviteOutput").textContent==="" && $("copyInvite").hidden &&
             $("operatorRoomId").hidden && $("roomCode").textContent==="" &&
             $("members").children.length===0 &&
+            $("promptForm").elements.answer.value==="" &&
+            $("guessForm").elements.text.value==="" &&
+            $("chatForm").elements.text.value==="" &&
+            $("broadcastForm").elements.grant.value==="" &&
             $("roomName").textContent==="게임룸 정보를 불러오는 중...";
     })()`),"old prompt, invitation and host labels clear before the new GET");
     await cdp.eval(host,`(()=>{
