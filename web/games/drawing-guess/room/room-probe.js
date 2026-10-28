@@ -87,6 +87,23 @@ has(js,"currentMembership(generation,credential) && roomBinding===roomId","membe
 has(js,"socket===canvasSocket && drawingBinding===code","drawing WSS callbacks pinned to original membership");
 has(js,"type:\"drawing.subscribe\",token:credential","drawing socket authenticates with captured token");
 has(js,"function clearRoomBoundViews()","clear chat and host labels across admission");
+const memberViewReset=js.slice(js.indexOf("function clearRoomBoundViews()"),
+  js.indexOf("const ctx="));
+for(const id of ["members","scoreboard","roomCode","roomPhase",
+  "roomCapacity","operatorRoomIdValue","roundHeading","roundDetails",
+  "drawerWord","inviteOutput","copyInvite","lobby","play"]){
+  has(memberViewReset,'"'+id+'"',"session teardown clears or hides "+id);
+}
+has(memberViewReset,'show(id,false);',"private and privileged views hidden before refresh");
+has(memberViewReset,'roundWordId="";',"native private answer round cursor reset");
+has(js,'loadPrompt(round.roundId,generation,credential).catch(e=>{',
+  "drawer prompt retrieval binds initiating member identity");
+has(js,'if(currentMembership(generation,credential))say(e.message,true);',
+  "old prompt failure cannot overwrite a replacement member notice");
+has(js,'async function loadPrompt(roundId,generation,credential)',
+  "private word retrieval pins member identity");
+ok(/const privatePrompt=await request\("\/drawing\/my-prompt","GET",null,credential\);\s*if\(!currentMembership\(generation,credential\) \|\|/.test(js),
+  "private word response is fenced before it reaches the visible DOM");
 has(js,"[\"chatList\",\"broadcastChannels\",\"streamerAssignments\",","private room labels are all cleared");
 has(js,"async function refreshChat(generation=membershipGeneration,","chat pins session generation");
 has(js,"request(\"/chat?after=-1\",\"GET\",null,credential)","chat uses immutable bearer");
@@ -468,7 +485,7 @@ no(js,'drawerToken=',"never expose native drawing bearer");
 has(js,'new WebSocket(url("memberRoomId="',"member room socket");
 has(js,'type:"room.subscribe",token:credential',"member socket first frame authentication");
 no(js,'?drawerToken=',"no native bearer URL query");
-has(js,'request("/drawing/my-prompt")',"private prompt retrieved over scoped member API");
+has(js,'request("/drawing/my-prompt","GET",null,credential)',"private prompt uses initiating member credential");
 has(js,'textContent="나의 정답: "+privatePrompt.answer',"private word not inserted as HTML");
 has(js,'show("drawerWord",false)',"secret cleared when role is lost");
 has(js,'request("/drawing/guess","POST",{text:field.value})',"guess input distinct from room chat");
