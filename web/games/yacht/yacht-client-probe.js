@@ -80,7 +80,6 @@ for (const clause of [
   "const page=await request(\"/chat?after=-1\",\"GET\",null,credential);",
   "const next=await send(\"/yacht/\"+action,\"POST\",",
   "type:\"room.subscribe\",token:credential,afterSequence:lastMemberSequence",
-  "if(!current())return;\n      state=next;",
   'for (const id of ["roster","standings","dice","scoreGrid","chatMessages"])',
   'text("inviteLink",link);',
   'input.value="";',
@@ -104,7 +103,9 @@ check(/await send\("\/host\/invite","POST",[\s\S]*?if\(!current\(\)\)return;\s*c
   "old invite never populates new member UI");
 check(/await send\("\/me\/leave","POST",\{\}\);\s*if\(!current\(\)\)return;\s*clearSession\(\);/.test(js),
   "old leave response never clears a new authenticated session");
-check(js.includes("if(!current())return;\n      running=false;runningGeneration=-1;"),
+check(/if\(!current\(\)\)return;\s*state=next;/.test(js),
+  "old member state commits only after ownership check");
+check(/if\(!current\(\)\)return;\s*running=false;runningGeneration=-1;/.test(js),
   "old read finally cannot unlock a new refresh");
 console.log("YACHT_R4_CLIENT_PASSED checks=" + checks
   + " independent=true token=per-tab role=member chat=safe");
