@@ -7,7 +7,7 @@ $Release = Get-Content (Join-Path $RepoRoot ".github/workflows/release.yml") -Ra
 # This is a static contract: the release workflow is manual and MUST NOT
 # actually publish a GitHub Release from the ordinary CI.
 foreach ($branch in @("feature/common-game-room-*", "feature/yacht-y*")) {
-    if (($Package.Split([string[]]@($branch), [StringSplitOptions]::None)).Count -ne 3) {
+    if ([regex]::Matches($Package, [regex]::Escape($branch)).Count -ne 2) {
         throw "R14d: package workflow must include $branch in push and PR base filters"
     }
 }
