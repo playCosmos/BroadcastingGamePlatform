@@ -2912,8 +2912,8 @@ async function publicDirectoryResponseAcceptance(base,{codeA}){
             document.getElementById("notice").textContent==="룸에서 퇴장했습니다." &&
             !document.getElementById("admission").hidden;
     })()`),"late old successful list cannot overwrite new directory or notice");
-    check((await backend(page,"/me","GET",null,member)).status===200,
-        "old directory response cannot mutate a valid previous server member");
+    check((await backend(page,"/me","GET",null,member)).status!==200,
+        "old directory response cannot resurrect a departed member token");
     await cdp.eval(page,`(()=>{
         window.fetch=window.__r13zOriginal;
         delete window.__r13zOriginal;
