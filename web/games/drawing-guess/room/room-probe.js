@@ -209,9 +209,9 @@ has(telephone,"const execute=revision=>send(\"/drawing/telephone/playback\",\"PO
 has(telephone,"const fresh=await send(\"/drawing/telephone\");","409 playback uses captured author credential");
 has(telephone,"if(actionCurrent(epoch,send))","old finally or error cannot unlock new actions");
 has(telephone,"discardStoredDraft();","private draft delete only after validated submit");
-ok(/const next=await send\("/drawing/telephone/submit"[\s\S]*?if\(!actionCurrent\(epoch,send\)\)return;\s*state=next;\s*discardStoredDraft\(\)/.test(telephone),
+ok(telephone.includes('if(!actionCurrent(epoch,send))return;\n      state=next;\n      discardStoredDraft();'.replaceAll('\\n','\n')),
   "old successful submission cannot delete new room's unsent draft");
-ok(/const fresh=await send\("/drawing/telephone"\);\s*if\(!actionCurrent\(epoch,send\)\)return;/.test(telephone),
+ok(telephone.includes('const fresh=await send("/drawing/telephone");\n        if(!actionCurrent(epoch,send))return;'.replaceAll('\\n','\n')),
   "old 409 cannot retry playback across a changed member");
 has(js,'snapshot?.room?.roomId,snapshot?.memberId',
   "room controller provides authenticated draft scope");
