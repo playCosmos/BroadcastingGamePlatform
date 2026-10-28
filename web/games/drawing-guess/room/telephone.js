@@ -16,6 +16,7 @@
   let deadlineWakeInFlight=false,nextDeadlineWakeAt=0;
   let albumTimelineKey="",stageTimelineKey="";
   let serverClockEpoch=NaN,serverClockAt=0;
+  let actionEpoch=0,actionIdentity="";
   const DRAFT_KEY="gamecenter.telephone.private-draft.v1";
   let draftScope="";
   function syncServerClock(data){
@@ -531,12 +532,31 @@
     }
   }
   function render(data,send,onRefresh,host=false,roomId="",memberId=""){
+    // A request initiated in another room/author stage must not commit into
+    // this view. Ordinary refreshes in the same stage preserve the epoch.
+    const identity=data?.active
+      ?JSON.stringify([roomId,memberId,data.mode,data.state,
+        data.stage,data.stageStartedAt])
+      :"";
+    if(identity!==actionIdentity){
+      actionIdentity=identity;actionEpoch++;
+      submitting=false;presenting=false;
+    }
     state=data||{active:false};request=send;refresh=onRefresh;
     isPresenter=Boolean(host);
     if(state.active)syncServerClock(state);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
       visible("telephoneDraftTools",false);
+      visible("telephoneReveal",false);
+      visible("telephoneTextForm",false);
+      visible("telephoneDrawingArea",false);
+      visible("telephoneWaiting",false);
+      visible("telephonePrompt",false);
+      visible("telephoneIncoming",false);
+      $("telephonePrompt").textContent="";
+      $("telephoneText").value="";
+      $("telephoneAlbumEntries").replaceChildren();
       discardStoredDraft();
       serverClockEpoch=NaN;serverClockAt=0;
       resetDeadline();
@@ -549,10 +569,13 @@
       $("telephoneDownloadStatus").textContent="";
       return;
     }
-    const key=data.state+":"+data.stage;
+    // This is a per-member/per-room stage, not just a stage number.
+    // Switching to an unrelated room at stage 0 must never reuse old ink.
+    const key=identity;
     if(key!==phaseKey){
       clearTimeline();
       stopReplay();displayedFrame=null;
+      $("telephoneAlbumEntries").replaceChildren();
       phaseKey=key;resetDraft();
       $("telephoneText").value="";
       if(data.mode==="COOP" && data.previousKind==="DRAWING"){
@@ -876,19 +899,29 @@
     const before=strokes.slice();
     strokes=[];remember(before);redraw();updateTools();saveDraft();
   });
+  const actionCurrent=(epoch,send)=>
+    epoch===actionEpoch && send===request;
   async function submit(body){
     if(submitting||!request)return;
+    const epoch=actionEpoch,send=request,onRefresh=refresh,stage=state.stage;
     submitting=true;updateTools();
     try{
-      state=await request("/drawing/telephone/submit","POST",{
-        stage:state.stage,...body
+      const next=await send("/drawing/telephone/submit","POST",{
+        stage,...body
       });
+      if(!actionCurrent(epoch,send))return;
+      state=next;
       discardStoredDraft();
       phaseKey="";
-      await refresh();
+      if(onRefresh)await onRefresh();
     }catch(error){
-      $("notice").textContent=error.message||"제출 실패";
-    }finally{submitting=false;updateTools();}
+      if(actionCurrent(epoch,send))
+        $("notice").textContent=error.message||"제출 실패";
+    }finally{
+      if(actionCurrent(epoch,send)){
+        submitting=false;updateTools();
+      }
+    }
   }
   $("telephoneTextForm").addEventListener("submit",event=>{
     event.preventDefault();
@@ -903,54 +936,67 @@
   async function present(album,step){
     if(!isPresenter || presenting || !request ||
        state.state!=="REVEAL" || !state.presentation)return;
+    const epoch=actionEpoch,send=request,onRefresh=refresh;
+    const revision=state.presentation.revision;
     presenting=true;
     renderAlbums();
     try{
-      state=await request("/drawing/telephone/present","POST",{
-        albumIndex:album,stepIndex:step,
-        expectedRevision:state.presentation.revision
+      const next=await send("/drawing/telephone/present","POST",{
+        albumIndex:album,stepIndex:step,expectedRevision:revision
       });
+      if(!actionCurrent(epoch,send))return;
+      state=next;
       renderAlbums();
-      if(refresh)await refresh();
+      if(onRefresh)await onRefresh();
     }catch(error){
+      if(!actionCurrent(epoch,send))return;
       $("notice").textContent=error.message||"공개 화면 전환 실패";
-      if(refresh)await refresh();
+      if(onRefresh)await onRefresh();
     }finally{
-      presenting=false;
-      if(state.state==="REVEAL")renderAlbums();
+      if(actionCurrent(epoch,send)){
+        presenting=false;
+        if(state.state==="REVEAL")renderAlbums();
+      }
     }
   }
   async function playback(action,seconds){
     if(!isPresenter||presenting||!request||
        state.state!=="REVEAL"||!state.presentation)return;
+    const epoch=actionEpoch,send=request,onRefresh=refresh;
+    const originalRevision=state.presentation.revision;
     presenting=true;
     renderAlbums();
     try{
-      const execute=revision=>request("/drawing/telephone/playback","POST",{
+      const execute=revision=>send("/drawing/telephone/playback","POST",{
         action,intervalSeconds:seconds,expectedRevision:revision
       });
       let next;
       try{
-        next=await execute(state.presentation.revision);
+        next=await execute(originalRevision);
       }catch(error){
+        if(!actionCurrent(epoch,send))return;
         // A timer tick may commit between clicking Pause and this POST.
-        // Retry only safe host intents after refreshing the authoritative
-        // cursor, never using a stale browser-selected album position.
+        // Only safe host intents may retry with the live server revision.
         if(error.status!==409 || !["PAUSE","SPEED"].includes(action))
           throw error;
-        const fresh=await request("/drawing/telephone");
+        const fresh=await send("/drawing/telephone");
+        if(!actionCurrent(epoch,send))return;
         if(fresh.state!=="REVEAL" || !fresh.presentation)throw error;
         next=await execute(fresh.presentation.revision);
       }
+      if(!actionCurrent(epoch,send))return;
       state=next;
       renderAlbums();
-      if(refresh)await refresh();
+      if(onRefresh)await onRefresh();
     }catch(error){
+      if(!actionCurrent(epoch,send))return;
       $("notice").textContent=error.message||"자동 재생 변경 실패";
-      if(refresh)await refresh();
+      if(onRefresh)await onRefresh();
     }finally{
-      presenting=false;
-      if(state.state==="REVEAL")renderAlbums();
+      if(actionCurrent(epoch,send)){
+        presenting=false;
+        if(state.state==="REVEAL")renderAlbums();
+      }
     }
   }
 

@@ -2505,6 +2505,101 @@ async function telephoneBrowserAcceptance(base,coop){
         delete window.__leaveResolve;
         return true;
     })()`);
+
+    // R13w: the old gallery presenter POST resolves AFTER this same tab
+    // accepts a separate spectator membership in a different hosted room.
+    // No stale album state, notice or action lock may leak across the handoff.
+    await poll(async()=>await cdp.eval(host,
+        "!document.getElementById('telephoneReveal').hidden"),
+        "old gallery presenter available for session-switch race");
+    const oldPresenterToken=tokens[0];
+    await cdp.eval(host,`(()=>{
+        const original=window.fetch.bind(window);
+        const credential=${JSON.stringify("Bearer "+oldPresenterToken)};
+        window.__r13wOriginal=original;
+        window.__r13wHeld=false;
+        window.__r13wRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/drawing/telephone/present" &&
+               options.headers?.Authorization===credential &&
+               !window.__r13wHeld){
+                window.__r13wHeld=true;
+                return new Promise(resolve=>{window.__r13wRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    const navigation=await cdp.eval(host,`(()=>{
+        for(const id of ["telephoneStepNext","telephoneStepPrev",
+                         "telephoneAlbumNext","telephoneAlbumPrev"]){
+            const button=document.getElementById(id);
+            if(button && !button.disabled && !button.hidden)return id;
+        }
+        return "";
+    })()`);
+    check(Boolean(navigation),
+        "original host has an authorized gallery presentation action");
+    await click(host,navigation);
+    await poll(async()=>await cdp.eval(host,
+        "window.__r13wHeld===true"),
+        "actual old-host presenter POST held before room replacement");
+    const nextRoomCode=await getRoom(switcher,"#roomCode");
+    check(/^[A-HJ-NP-Z2-9]{6}$/.test(nextRoomCode),
+        "independent target hosted room remains available");
+    await fill(host,"publicJoinForm",{
+        roomCode:nextRoomCode,displayName:"Former gallery presenter",
+        seatRole:"SPECTATOR"
+    });
+    const secondPresenterToken=await poll(async()=>{
+        const next=await userToken(host,
+            "gamecenter.drawing.room.member.v1");
+        return next && next!==oldPresenterToken?next:null;
+    },"presenter tab accepts independent spectator membership");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('roomName').textContent===" +
+        "'Hosted again after close'"+
+        " && document.getElementById('telephonePlay').hidden"),
+        "new waiting room hides previous gallery and its presenter controls");
+    await cdp.eval(host,`(()=>{
+        document.getElementById("notice").textContent=
+            "new session untouched by old presenter";
+        const release=window.__r13wRelease;
+        if(!release)throw Error("old gallery request was not held");
+        release(new Response(JSON.stringify({
+            active:true,state:"REVEAL",mode:"NORMAL",
+            albums:[],presentation:{revision:999999}
+        }),{status:200,headers:{"Content-Type":"application/json"}}));
+        window.__r13wRelease=null;
+        return true;
+    })()`);
+    await nap(350);
+    const oldPresenterResult=await cdp.eval(host,`(()=>{
+        return {
+          room:document.getElementById("roomName").textContent,
+          playHidden:document.getElementById("telephonePlay").hidden,
+          galleryHidden:document.getElementById("telephoneReveal").hidden,
+          albumEntries:document.getElementById("telephoneAlbumEntries").children.length,
+          notice:document.getElementById("notice").textContent
+        };
+    })()`);
+    check(oldPresenterResult.room==="Hosted again after close" &&
+        oldPresenterResult.playHidden && oldPresenterResult.galleryHidden &&
+        oldPresenterResult.albumEntries===0 &&
+        oldPresenterResult.notice==="new session untouched by old presenter",
+        "old presenter cannot revive another room's album: "+
+            JSON.stringify(oldPresenterResult));
+    check(await userToken(host,"gamecenter.drawing.room.member.v1")===
+        secondPresenterToken,
+        "stale gallery action retains newer authenticated membership");
+    await cdp.eval(host,`(()=>{
+        window.fetch=window.__r13wOriginal;
+        delete window.__r13wOriginal;
+        delete window.__r13wHeld;
+        delete window.__r13wRelease;
+        return true;
+    })()`);
 }
 
 async function run(){
