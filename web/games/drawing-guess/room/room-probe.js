@@ -67,6 +67,15 @@ has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
 has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
 has(js,"function clearMembership()","common session cleanup routine");
+has(js,"function resetNativeCanvas()","shared legacy canvas state reset");
+has(js,"sendQueue=Promise.resolve();","detach new-room queue from in-flight previous POST");
+has(js,"strokes.clear();canvasSequence=0;redraw();","clear stale native ink and sequence on membership switch");
+has(js,"chatSequence=-1;\\n    resetNativeCanvas();","teardown resets native canvas and command queue");
+has(js,"resetNativeCanvas();\\n    show(\"admission\",false);show(\"room\",true);","new admission starts with a clear native canvas");
+has(js,"const generation=membershipGeneration,credential=secret;","native canvas enqueue captures immutable member");
+has(js,"if(!currentMembership(generation,credential))return;","stale queued and returned commands ignored");
+has(js,"request(\"/drawing/canvas\",\"POST\",{event},credential)","canvas mutations pin to enqueue-time token");
+has(js,"if(currentMembership(generation,credential))\\n        say(e.message","old canvas HTTP error cannot overwrite new member notice");
 has(js,'secret="";snapshot=null;telephone={active:false}',"teardown rejects in-flight previous membership reads");
 has(js,"window.TelephoneView.render(telephone,null,null)","teardown wipes private phone draft");
 ok(/clearRoomBoundViews\(\);\s*sessionStorage\.removeItem\(STORAGE\)/.test(js),"teardown clears confidential lists and bearer");
