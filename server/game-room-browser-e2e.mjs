@@ -795,6 +795,63 @@ async function mobileWssAcceptance(base,ws){
         "document.documentElement.scrollWidth<=window.innerWidth+2");
     check(noOverflow,"real 390px mobile Drawing UI has no horizontal overflow");
 
+
+}
+
+// Isolated real-server fixture: the public hosted-room quota in the main
+// Drawing/Yacht test cannot determine whether the queue fence works.
+async function canvasQueueSessionAcceptance(base){
+    const mobile=await cdp.page(base+"/games/drawing-guess/room/");
+    await cdp.send("Emulation.setDeviceMetricsOverride",{
+        width:390,height:844,deviceScaleFactor:1,mobile:true
+    },mobile.sessionId);
+    await cdp.send("Emulation.setTouchEmulationEnabled",{
+        enabled:true,maxTouchPoints:2
+    },mobile.sessionId);
+    await fill(mobile,"createForm",{
+        name:"Original queued drawing room",displayName:"Queue Host",
+        maxPlayers:1,maxRoomMembers:3
+    });
+    const mobileToken=await poll(async()=>await userToken(mobile,
+        "gamecenter.drawing.room.member.v1"),
+        "native Canvas host receives first room member token");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('roomName').textContent===" +
+        "'Original queued drawing room'"),"first Canvas host room visible");
+    await waitRoomIdle(mobile,"room");
+    await click(mobile,"ready");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('ready').textContent.includes('취소')"),
+        "first native Canvas host is ready");
+    await waitRoomIdle(mobile,"room");
+    await cdp.eval(mobile,`(()=>{
+        document.getElementById("mode").value="STREAMER_DRAWER";
+        document.getElementById("rounds").value="1";
+        document.getElementById("duration").value="180";
+        return true;
+    })()`);
+    await click(mobile,"start");
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('promptForm').hidden"),
+        "first native Canvas host starts drawing mode");
+    await waitRoomIdle(mobile,"room");
+    await fill(mobile,"promptForm",{answer:"original",accepted:""});
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('clearCanvas').hidden"),
+        "first native Canvas author is editable");
+    await waitRoomIdle(mobile,"room");
+    const inkSamples=`(()=>{
+        const c=document.getElementById("canvas");
+        const rgba=c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+        let count=0;
+        for(let y=12;y<c.height-12;y+=3){
+            for(let x=12;x<c.width-12;x+=3){
+                const i=(y*c.width+x)*4;
+                if(rgba[i]<130 && rgba[i+1]<130 && rgba[i+2]<130)count++;
+            }
+        }
+        return count;
+    })()`;
     // R13v native canvas queue: hold the actual first old-room canvas POST
     // while more stroke events are queued. Admit room B in the same mobile
     // browser; new-room drawing must not be blocked by old-room networking.
@@ -2581,6 +2638,13 @@ async function run(){
     check(viewport.scroll<=viewport.client+2,
         "Yacht mobile viewport has no horizontal overflow: "+JSON.stringify(viewport));
     await mobileWssAcceptance(base,ws);
+    // Isolate two sequential anonymous hosted rooms used for the canvas
+    // queue race from the Drawing/Yacht fixture's per-IP creation quota.
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "mobile/yacht fixture shutdown");
+    const queueFixture=await launchServer();
+    await canvasQueueSessionAcceptance(queueFixture.base);
     // The production server deliberately limits public room creation per IP.
     // Each complete telephone scenario gets a fresh fixture; otherwise the
     // earlier Drawing/Yacht/browser cases consume its anonymous host quota.
