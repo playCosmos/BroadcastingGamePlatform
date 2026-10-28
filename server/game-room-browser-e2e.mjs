@@ -2548,6 +2548,35 @@ async function telephoneBrowserAcceptance(base,coop){
     const nextRoomCode=await getRoom(switcher,"#roomCode");
     check(/^[A-HJ-NP-Z2-9]{6}$/.test(nextRoomCode),
         "independent target hosted room remains available");
+    // R13x: pause the incoming room read; the previous room's private
+    // prompt and invitation must disappear before the new room resolves.
+    await cdp.eval(host,`(()=>{
+        const forwarded=window.fetch.bind(window);
+        const previousBearer=${JSON.stringify("Bearer "+oldPresenterToken)};
+        window.__r13xForwarded=forwarded;
+        window.__r13xDrawingHeld=false;
+        window.__r13xDrawingRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            const bearer=options.headers?.Authorization||"";
+            if(path==="/api/v1/room-membership/drawing" && bearer &&
+               bearer!==previousBearer && !window.__r13xDrawingHeld){
+                window.__r13xDrawingHeld=true;
+                return new Promise((resolve,reject)=>{
+                    window.__r13xDrawingRelease=()=>
+                        forwarded(url,options).then(resolve,reject);
+                });
+            }
+            return forwarded(url,options);
+        };
+        document.getElementById("drawerWord").textContent=
+            "PRIVATE OLD ROOM ANSWER";
+        document.getElementById("drawerWord").hidden=false;
+        document.getElementById("inviteOutput").textContent=
+            "https://old-room.invalid/#invite=old-secret";
+        document.getElementById("copyInvite").hidden=false;
+        return true;
+    })()`);
     await fill(host,"publicJoinForm",{
         roomCode:nextRoomCode,displayName:"Former gallery presenter",
         seatRole:"SPECTATOR"
@@ -2557,6 +2586,27 @@ async function telephoneBrowserAcceptance(base,coop){
             "gamecenter.drawing.room.member.v1");
         return next && next!==oldPresenterToken?next:null;
     },"presenter tab accepts independent spectator membership");
+    await poll(async()=>await cdp.eval(host,
+        "window.__r13xDrawingHeld===true"),
+        "replacement room initial drawing GET held for private-view teardown");
+    check(await cdp.eval(host,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("drawerWord").hidden && $("drawerWord").textContent==="" &&
+            $("inviteOutput").textContent==="" && $("copyInvite").hidden &&
+            $("operatorRoomId").hidden && $("roomCode").textContent==="" &&
+            $("members").children.length===0 &&
+            $("roomName").textContent==="게임룸 정보를 불러오는 중...";
+    })()`),"old prompt, invitation and host labels clear before the new GET");
+    await cdp.eval(host,`(()=>{
+        const release=window.__r13xDrawingRelease;
+        if(!release)throw Error("replacement drawing GET was not held");
+        window.fetch=window.__r13xForwarded;
+        release();
+        delete window.__r13xForwarded;
+        delete window.__r13xDrawingRelease;
+        delete window.__r13xDrawingHeld;
+        return true;
+    })()`);
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('roomName').textContent===" +
         "'Hosted again after close'"+
