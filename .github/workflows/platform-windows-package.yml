@@ -3,7 +3,7 @@ name: Broadcasting Game Platform Windows Package
 on:
   workflow_dispatch:
   push:
-    branches: [main]
+    branches: [main, feature/common-game-room-r13x-private-room-view-fence]
     paths:
       - "server/**"
       - "web/**"
