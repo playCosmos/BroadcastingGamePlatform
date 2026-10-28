@@ -56,6 +56,11 @@
       "streamerAssignBox"]){
       show(id,false);
     }
+    // Unsent prompt, guess, chat and operator-grant text are private to
+    // the former room, even when a replacement room later shows these forms.
+    for(const id of ["promptForm","guessForm","chatForm","broadcastForm"]){
+      $(id).reset();
+    }
     roundWordId="";
   }
   const ctx=$("canvas").getContext("2d");
