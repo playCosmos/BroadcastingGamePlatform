@@ -35,7 +35,7 @@
   let roomBinding="",drawingBinding="",chatSequence=-1,canvasSequence=0;
   let drawingActive=false,strokeId="",lastPoint=null,sendQueue=Promise.resolve();
   let currentPointer=null,pendingPoints=[],pointTimer=null;
-  let refreshBusy=false,rerun=false,busy=false,roundWordId="";
+  let refreshBusy=false,rerun=false,busy=false,admissionBusy=false,roundWordId="";
   let membershipGeneration=0;
   const currentMembership=(generation,credential)=>
     generation===membershipGeneration && credential===secret;
@@ -98,17 +98,35 @@
     }
   }
 
-  function operation(action){
-    if(busy)return;
-    busy=true;
-    // Show assistive technology that a room mutation is still in flight.
-    // Subsequent commands must not race the preceding server write.
-    $("room").setAttribute("aria-busy","true");
-    Promise.resolve().then(action).catch(e=>say(e.message||"요청 실패",true))
-      .finally(()=>{
+  function operation(action,{admission=false}={}){
+    // Admission must remain possible while an old room's member POST hangs.
+    // Ordinary commands are serialized only within the current membership.
+    if(admission?admissionBusy:busy)return;
+    const generation=membershipGeneration,credential=secret;
+    const current=()=>currentMembership(generation,credential);
+    const send=(path,method="GET",body=null)=>request(path,method,body,credential);
+    if(admission)admissionBusy=true;
+    else {
+      busy=true;
+      $("room").setAttribute("aria-busy","true");
+    }
+    Promise.resolve().then(()=>{
+      if(current())return action({send,current,generation,credential});
+    }).catch(e=>{
+      if(current())say(e.message||"요청 실패",true);
+    }).finally(()=>{
+      // Old operations must never unlock or report errors on a new session.
+      if(!current())return;
+      if(admission)admissionBusy=false;
+      else{
         busy=false;
         $("room").removeAttribute("aria-busy");
-      });
+      }
+    });
+  }
+  function releaseMemberOperations(){
+    busy=false;admissionBusy=false;
+    $("room").removeAttribute("aria-busy");
   }
 
   function resetNativeCanvas(){
@@ -125,6 +143,7 @@
     // All exit paths must invalidate reads, WSS callbacks and private
     // telephone authoring drafts before showing the public admission UI.
     membershipGeneration++;
+    releaseMemberOperations();
     secret="";snapshot=null;telephone={active:false};
     window.TelephoneView.render(telephone,null,null);
     clearRoomBoundViews();
@@ -146,6 +165,7 @@
   }
   function accept(secretValue){
     membershipGeneration++;
+    releaseMemberOperations();
     secret=secretValue;
     snapshot=null;
     clearRoomBoundViews();
@@ -380,9 +400,10 @@
       name.textContent=channel.provider+" · "+channel.channelId;
       remove.type="button";remove.className="secondary";
       remove.textContent="연결 해제";
-      remove.addEventListener("click",()=>operation(async()=>{
-        await request("/drawing/channels/remove","POST",channel);
-        await refreshChannels();
+      remove.addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+        await send("/drawing/channels/remove","POST",channel);
+        if(!current())return;
+        await refreshChannels(generation,credential);
       }));
       li.append(name,remove);list.append(li);
     }
@@ -600,7 +621,7 @@
   $("createForm").addEventListener("submit",event=>{
     event.preventDefault();
     const form=new FormData(event.currentTarget);
-    operation(async()=>{
+    operation(async({send,current,generation,credential})=>{
       const maxPlayers=Number(form.get("maxPlayers"));
       const maxRoomMembers=Number(form.get("maxRoomMembers"));
       if(maxRoomMembers<maxPlayers)
@@ -610,112 +631,132 @@
         displayName:form.get("displayName"),
         hostSeat:form.has("hostPlays")?"PLAYER":"SPECTATOR",
         maxPlayers,maxRoomMembers},"");
+      if(!current())return;
       accept(room.token);say("방 생성 완료. 참가자에게 초대 링크를 공유하세요.");
       await refresh();
-    });
+    },{admission:true});
   });
   $("publicJoinForm").addEventListener("submit",event=>{
     event.preventDefault();
     const form=new FormData(event.currentTarget);
-    operation(async()=>{
+    operation(async({send,current,generation,credential})=>{
       const code=String(form.get("roomCode")||"").trim().toUpperCase();
       const member=await request("/public/join","POST",{
         gameId:"drawing_guess",roomCode:code,
         displayName:form.get("displayName"),
         seatRole:form.get("seatRole")},"");
+      if(!current())return;
       accept(member.token);
       history.replaceState(null,"",location.pathname);
       say("공개방에 입장했습니다.");await refresh();
-    });
+    },{admission:true});
   });
   $("refreshPublicRooms").addEventListener("click",()=>operation(
-    async()=>{await loadPublicRooms();say("공개방 목록을 새로고침했습니다.");}
+    async({current})=>{
+      await loadPublicRooms();
+      if(current())say("공개방 목록을 새로고침했습니다.");
+    }
   ));
   $("joinForm").addEventListener("submit",event=>{
     event.preventDefault();
     const form=new FormData(event.currentTarget);
-    operation(async()=>{
+    operation(async({send,current,generation,credential})=>{
       const member=await request("/join","POST",{
         invitation:String(form.get("invitation")).trim(),
         displayName:form.get("displayName")},"");
+      if(!current())return;
       accept(member.token);
       history.replaceState(null,"",location.pathname);
       say("게임룸에 입장했습니다.");await refresh();
-    });
+    },{admission:true});
   });
-  $("ready").addEventListener("click",()=>operation(async()=>{
-    await request("/me/ready","POST",{ready:!user()?.ready});
+  $("ready").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+    await send("/me/ready","POST",{ready:!user()?.ready});
+    if(!current())return;
     await refresh();
   }));
-  $("seat").addEventListener("click",()=>operation(async()=>{
-    await request("/me/seat","POST",{
+  $("seat").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+    await send("/me/seat","POST",{
       seatRole:user()?.seatRole==="PLAYER"?"SPECTATOR":"PLAYER"});
+    if(!current())return;
     await refresh();
   }));
   $("copyOperatorRoomId").addEventListener("click",async()=>{
     if(!isHost() || !snapshot?.room?.roomId)return;
+    const generation=membershipGeneration,credential=secret;
+    const roomId=snapshot.room.roomId;
     try {
-      await navigator.clipboard.writeText(snapshot.room.roomId);
-      say("운영자 승인용 게임룸 ID를 복사했습니다.");
+      await navigator.clipboard.writeText(roomId);
+      if(currentMembership(generation,credential))
+        say("운영자 승인용 게임룸 ID를 복사했습니다.");
     } catch {
-      say("자동 복사를 사용할 수 없습니다. 표시된 게임룸 ID를 직접 복사하세요.");
+      if(currentMembership(generation,credential))
+        say("자동 복사를 사용할 수 없습니다. 표시된 게임룸 ID를 직접 복사하세요.");
     }
   });
   $("broadcastForm").addEventListener("submit",event=>{
     event.preventDefault();
     const submitted=event.currentTarget;
     const form=new FormData(submitted);
-    operation(async()=>{
-      await request("/drawing/channels/add","POST",{
+    operation(async({send,current,generation,credential})=>{
+      await send("/drawing/channels/add","POST",{
         provider:form.get("provider"),channelId:String(form.get("channelId")).trim(),
         grant:String(form.get("grant")||"").trim()
       });
+      if(!current())return;
       submitted.elements.channelId.value="";
       submitted.elements.grant.value="";
-      await refreshChannels();
-      say("방송 채널을 등록했습니다. 서버에서 수신 중인 채팅만 반영됩니다.");
+      await refreshChannels(generation,credential);
+      if(current())say("방송 채널을 등록했습니다. 서버에서 수신 중인 채팅만 반영됩니다.");
     });
   });
   $("streamerAssignForm").addEventListener("submit",event=>{
     event.preventDefault();
-    operation(async()=>{
+    operation(async({send,current,generation,credential})=>{
       const [provider,channelId]=String($("streamerChannel").value).split("|");
-      await request("/drawing/streamers/assign","POST",{
+      await send("/drawing/streamers/assign","POST",{
         provider,channelId,memberId:$("streamerMember").value
       });
-      await refreshStreamerAssignments();
-      say("출제자 배정을 저장했습니다.");
+      if(!current())return;
+      await refreshStreamerAssignments(generation,credential);
+      if(current())say("출제자 배정을 저장했습니다.");
     });
   });
-  $("start").addEventListener("click",()=>operation(async()=>{
+  $("start").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
     if($("mode").value==="TELEPHONE_CHAIN" ||
        $("mode").value==="TELEPHONE_COOP"){
       const coop=$("mode").value==="TELEPHONE_COOP";
-      telephone=await request("/drawing/telephone/start","POST",{
+      const result=await send("/drawing/telephone/start","POST",{
         durationSeconds:Number($("duration").value),
         mode:coop?"COOP":"NORMAL"
       });
+      if(!current())return;
+      telephone=result;
       say(coop?"협동 이어 그리기가 시작됐습니다. 모두 첫 그림을 그리세요.":
         "전화 그림이 시작됐습니다. 모두 첫 문장을 작성하세요.");
       await refresh();return;
     }
     const rotateStreamers=$("mode").value==="STREAMER_ROTATION";
-    snapshot=await request("/drawing/start","POST",{
+    const result=await send("/drawing/start","POST",{
       mode:rotateStreamers?"ROTATING_DRAWER":$("mode").value,
       rounds:Number($("rounds").value),
       durationSeconds:Number($("duration").value),
       streamerRotation:rotateStreamers});
+    if(!current())return;
+    snapshot=result;
     say("경기가 시작됐습니다.");render();await refresh();
   }));
   $("promptForm").addEventListener("submit",event=>{
     event.preventDefault();
     const submitted=event.currentTarget;
     const form=new FormData(submitted);
-    operation(async()=>{
+    operation(async({send,current,generation,credential})=>{
       const accepted=String(form.get("accepted")||"")
         .split(",").map(x=>x.trim()).filter(Boolean).slice(0,20);
-      snapshot=await request("/drawing/round","POST",{
+      const result=await send("/drawing/round","POST",{
         promptId:id("r5word-"),answer:form.get("answer"),acceptedAnswers:accepted});
+      if(!current())return;
+      snapshot=result;
       submitted.reset();
       say("라운드가 시작됐습니다.");render();await refresh();
     });
@@ -723,54 +764,66 @@
   $("guessForm").addEventListener("submit",event=>{
     event.preventDefault();
     const field=event.currentTarget.elements.text;
-    operation(async()=>{
-      const result=await request("/drawing/guess","POST",{text:field.value});
+    operation(async({send,current,generation,credential})=>{
+      const submittedText=field.value;
+      const result=await send("/drawing/guess","POST",{text:submittedText});
+      if(!current())return;
       say(result.status==="CORRECT"?"정답! "+result.guesserScore+"점":
         result.status==="WRONG"?"틀렸습니다. 다시 시도하세요.":
         "제출 결과: "+result.status);
       field.value="";await refresh();
     });
   });
-  $("completeRound").addEventListener("click",()=>operation(async()=>{
-    snapshot=await request("/drawing/complete-round","POST",{});
+  $("completeRound").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+    const result=await send("/drawing/complete-round","POST",{});
+    if(!current())return;
+    snapshot=result;
     say("라운드를 완료했습니다.");render();await refresh();
   }));
-  $("finishMatch").addEventListener("click",()=>operation(async()=>{
-    snapshot=await request("/drawing/finish","POST",{});
+  $("finishMatch").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+    const result=await send("/drawing/finish","POST",{});
+    if(!current())return;
+    snapshot=result;
     say("경기가 종료됐습니다.");render();await refresh();
   }));
-  $("invite").addEventListener("click",()=>operation(async()=>{
-    const grant=await request("/host/invite","POST",{
+  $("invite").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+    const grant=await send("/host/invite","POST",{
       seatRole:$("inviteRole").value,maxUses:Number($("inviteUses").value),
       expiresInSeconds:3600});
+    if(!current())return;
     $("inviteOutput").textContent=location.origin+location.pathname+
       "#invite="+encodeURIComponent(grant.token);
     show("copyInvite",true);
     say("초대 링크를 만들었습니다.");
   }));
-  $("copyInvite").addEventListener("click",()=>operation(async()=>{
-    await navigator.clipboard.writeText($("inviteOutput").textContent);
-    say("초대 링크를 복사했습니다.");
+  $("copyInvite").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
+    const link=$("inviteOutput").textContent;
+    await navigator.clipboard.writeText(link);
+    if(current())say("초대 링크를 복사했습니다.");
   }));
   $("chatForm").addEventListener("submit",event=>{
     event.preventDefault();
     const field=event.currentTarget.elements.text;
-    operation(async()=>{
-      if(!field.value.trim())return;
-      await request("/chat","POST",{messageId:id("roomchat-"),text:field.value});
-      field.value="";await refreshChat();
+    operation(async({send,current,generation,credential})=>{
+      const text=field.value;
+      if(!text.trim())return;
+      await send("/chat","POST",{messageId:id("roomchat-"),text});
+      if(!current())return;
+      field.value="";await refreshChat(generation,credential);
     });
   });
-  $("closeRoom").addEventListener("click",()=>operation(async()=>{
+  $("closeRoom").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
     if(!confirm("게임룸을 닫습니까? 모든 참가자의 연결과 초대권이 종료됩니다."))return;
-    await request("/host/close","POST",{});
+    await send("/host/close","POST",{});
+    if(!current())return;
     clearMembership();
     say("방을 닫았습니다. 이 방의 초대권은 더 이상 사용할 수 없습니다.");
     await loadPublicRooms();
   }));
-  $("leave").addEventListener("click",()=>operation(async()=>{
+  $("leave").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
     if(!confirm("게임룸을 나가시겠습니까? 방장은 먼저 방장을 위임해야 합니다."))return;
-    await request("/me/leave","POST",{});
+    await send("/me/leave","POST",{});
+    if(!current())return;
     clearMembership();
     say("룸에서 퇴장했습니다.");
   }));
