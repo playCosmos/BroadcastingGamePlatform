@@ -359,138 +359,142 @@
   }
 
   async function refresh() {
-    if (!token || running) { refreshRequested = true; return; }
-    running = true;
+    if (!token) return;
+    const generation=membershipGeneration,credential=token;
+    if (running && runningGeneration===generation) {
+      refreshRequested=true;
+      return;
+    }
+    running=true;runningGeneration=generation;
+    const current=()=>currentMembership(generation,credential);
     try {
-      state = await request("/yacht");
+      const next=await request("/yacht","GET",null,credential);
+      if(!current())return;
+      state=next;
       if (state.yacht?.match?.held
-          && (!state.currentPlayer || state.yacht.match.rolls === 0))
-        held = state.yacht.match.held.slice();
+          && (!state.currentPlayer || state.yacht.match.rolls===0))
+        held=state.yacht.match.held.slice();
       render();
-      await connectSockets();
-      await refreshChat();
+      await connectSockets(generation,credential);
+      if(!current())return;
+      await refreshChat(generation,credential);
     } catch(error) {
-      if (error.status === 401 || error.status === 403) {
-        token = "";
-        sessionStorage.removeItem(STORE);
-        memberSocket?.close();
-        gameSocket?.close();
-        memberSocket = gameSocket = null;
-        visible("admission", true);
-        visible("game", false);
-        notice("룸 회원 세션이 만료되거나 취소됐습니다. 다시 초대받아 입장하세요.", true);
-      } else {
-        notice(error.message || "룸 정보를 가져올 수 없습니다.", true);
-      }
+      if(!current())return;
+      if(error.status===401 || error.status===403) {
+        clearSession();
+        notice("룸 회원 세션이 만료되거나 취소됐습니다. 다시 초대받아 입장하세요.",true);
+      } else notice(error.message||"룸 정보를 가져올 수 없습니다.",true);
     } finally {
-      running = false;
-      if (refreshRequested) {
-        refreshRequested = false;
-        setTimeout(refresh, 100);
+      if(!current())return;
+      running=false;runningGeneration=-1;
+      if(refreshRequested) {
+        refreshRequested=false;
+        setTimeout(()=>{if(current())refresh();},100);
       }
     }
   }
 
-  async function command(action, args) {
-    await operation(async () => {
-      if (!state?.yacht) throw new Error("게임이 시작되지 않았습니다.");
-      const expectedVersion = state.yacht.match.version;
-      const commandId = newCommandId("y4-");
-      state = await request("/yacht/" + action, "POST",
-        { commandId, expectedVersion, ...args });
-      if (state.yacht?.match?.held) held = state.yacht.match.held.slice();
-      render(); notice(action + " 명령이 적용됐습니다.");
+  async function command(action,args) {
+    await operation(async ({send,current})=>{
+      if(!state?.yacht)throw new Error("게임이 시작되지 않았습니다.");
+      const expectedVersion=state.yacht.match.version;
+      const commandId=newCommandId("y4-");
+      const next=await send("/yacht/"+action,"POST",
+        {commandId,expectedVersion,...args});
+      if(!current())return;
+      state=next;
+      if(state.yacht?.match?.held)held=state.yacht.match.held.slice();
+      render();notice(action+" 명령이 적용됐습니다.");
       await refresh();
     });
   }
 
-  async function refreshChat() {
-    if (!token) return;
-    const page = await request("/chat?after=-1");
-    const list = $("chatMessages");
+  async function refreshChat(generation=membershipGeneration,credential=token) {
+    if(!credential || !currentMembership(generation,credential))return;
+    const page=await request("/chat?after=-1","GET",null,credential);
+    if(!currentMembership(generation,credential))return;
+    const list=$("chatMessages");
     list.replaceChildren();
-    page.messages.forEach(m => {
-      const li = document.createElement("li");
-      if (m.deleted) {
-        li.textContent = "삭제된 메시지";
-      } else {
-        const name = document.createElement("b");
-        name.textContent = m.displayName + " · ";
-        const body = document.createElement("span");
-        body.textContent = m.text;
+    page.messages.forEach(m=>{
+      const li=document.createElement("li");
+      if(m.deleted)li.textContent="삭제된 메시지";
+      else {
+        const name=document.createElement("b");
+        name.textContent=m.displayName+" · ";
+        const body=document.createElement("span");
+        body.textContent=m.text;
         li.append(name,body);
       }
       list.append(li);
     });
-    list.scrollTop = list.scrollHeight;
+    list.scrollTop=list.scrollHeight;
   }
 
-  async function connectSockets() {
-    if (!state || !token) return;
+  async function connectSockets(generation=membershipGeneration,credential=token) {
+    if(!state || !credential || !currentMembership(generation,credential))return;
     try {
-      if (!websocketUrl) {
-        const config = await fetch("/api/client/config", {cache:"no-store"}).then(r=>r.json());
-        websocketUrl = config.websocketUrl;
+      if(!websocketUrl) {
+        const config=await fetch("/api/client/config",{cache:"no-store"})
+          .then(r=>r.json());
+        if(!currentMembership(generation,credential))return;
+        websocketUrl=config.websocketUrl;
       }
-      const roomId = state.room.roomId;
-      if (configuredRoom !== roomId) {
+      if(!currentMembership(generation,credential) || !state)return;
+      const roomId=state.room.roomId;
+      if(configuredRoom!==roomId) {
         memberSocket?.close();
-        configuredRoom = roomId;
-        const socket = new WebSocket(websocketUrl
-          + (websocketUrl.includes("?") ? "&" : "?")
-          + "memberRoomId=" + encodeURIComponent(roomId));
-        memberSocket = socket;
-        socket.addEventListener("open", () => {
-          if (socket === memberSocket && token && configuredRoom === roomId)
-            socket.send(JSON.stringify({
-              type: "room.subscribe",token,afterSequence:lastMemberSequence
-            }));
+        configuredRoom=roomId;
+        const socket=new WebSocket(websocketUrl
+          +(websocketUrl.includes("?")?"&":"?")
+          +"memberRoomId="+encodeURIComponent(roomId));
+        memberSocket=socket;
+        const owns=()=>currentMembership(generation,credential)
+          && socket===memberSocket && configuredRoom===roomId;
+        socket.addEventListener("open",()=>{
+          if(owns())socket.send(JSON.stringify({
+            type:"room.subscribe",token:credential,afterSequence:lastMemberSequence
+          }));
         });
-        socket.addEventListener("message", event => {
-          if (socket !== memberSocket || !token) return;
+        socket.addEventListener("message",event=>{
+          if(!owns())return;
           try {
-            const data = JSON.parse(event.data);
-            if (data.sequence != null)
-              lastMemberSequence = Math.max(lastMemberSequence, Number(data.sequence));
-            if (data.type === "room.chat.message" || data.type === "room.chat.deleted")
-              refreshChat().catch(() => {});
-            if (data.type === "room.snapshot" || data.type === "room.member.joined"
-              || data.type === "room.member.readyChanged")
+            const data=JSON.parse(event.data);
+            if(data.sequence!=null)
+              lastMemberSequence=Math.max(lastMemberSequence,Number(data.sequence));
+            if(data.type==="room.chat.message" || data.type==="room.chat.deleted")
+              refreshChat(generation,credential).catch(()=>{});
+            if(data.type==="room.snapshot" || data.type==="room.member.joined"
+              || data.type==="room.member.readyChanged")
               refresh();
-          } catch { /* invalid network event ignored */ }
+          } catch { /* ignore invalid network data */ }
         });
-        socket.addEventListener("close", () => {
-          if (token && socket === memberSocket && configuredRoom === roomId)
-            setTimeout(() => {
-              if (token && socket === memberSocket && configuredRoom === roomId) {
-                configuredRoom = ""; refresh();
-              }
-            }, 1800);
+        socket.addEventListener("close",()=>{
+          if(owns())setTimeout(()=>{
+            if(owns()){configuredRoom="";refresh();}
+          },1800);
         });
       }
-      const yachtCode = state.yacht?.roomCode || "";
-      if (configuredYacht !== yachtCode) {
+      const yachtCode=state.yacht?.roomCode||"";
+      if(configuredYacht!==yachtCode) {
         gameSocket?.close();
-        configuredYacht = yachtCode;
-        if (yachtCode) {
-          const socket = new WebSocket(websocketUrl
-            + (websocketUrl.includes("?") ? "&" : "?")
-            + "yachtCode=" + encodeURIComponent(yachtCode));
-          gameSocket = socket;
-          socket.addEventListener("message", () => {
-            if (token && socket === gameSocket) refresh();
-          });
-          socket.addEventListener("close", () => {
-            if (token && socket === gameSocket && configuredYacht === yachtCode)
-              setTimeout(() => {
-                if (token && socket === gameSocket && configuredYacht === yachtCode) {
-                  configuredYacht = ""; refresh();
-                }
-              }, 1800);
+        configuredYacht=yachtCode;
+        gameSocket=null;
+        if(yachtCode) {
+          const socket=new WebSocket(websocketUrl
+            +(websocketUrl.includes("?")?"&":"?")
+            +"yachtCode="+encodeURIComponent(yachtCode));
+          gameSocket=socket;
+          const owns=()=>currentMembership(generation,credential)
+            && socket===gameSocket && configuredYacht===yachtCode;
+          socket.addEventListener("message",()=>{if(owns())refresh();});
+          socket.addEventListener("close",()=>{
+            if(owns())setTimeout(()=>{
+              if(owns()){configuredYacht="";refresh();}
+            },1800);
           });
         }
       }
-    } catch { /* polling remains authoritative if WS unavailable */ }
+    } catch {/* polling remains authoritative if WS unavailable */}
   }
 
   $("createRoom").addEventListener("submit", createRoom);
