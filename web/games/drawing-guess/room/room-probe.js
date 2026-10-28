@@ -96,6 +96,10 @@ for(const id of ["members","scoreboard","roomCode","roomPhase",
 }
 has(memberViewReset,'show(id,false);',"private and privileged views hidden before refresh");
 has(memberViewReset,'roundWordId="";',"native private answer round cursor reset");
+for(const id of ["promptForm","guessForm","chatForm","broadcastForm"]){
+  has(memberViewReset,'"'+id+'"',"unsent former-room private form cleared "+id);
+}
+has(memberViewReset,'$(id).reset();',"session reset clears unsent form values");
 has(js,'loadPrompt(round.roundId,generation,credential).catch(e=>{',
   "drawer prompt retrieval binds initiating member identity");
 has(js,'if(currentMembership(generation,credential))say(e.message,true);',
