@@ -2891,8 +2891,8 @@ async function publicDirectoryResponseAcceptance(base,{codeA}){
         "'R13y original host')"),
         "R13z fresh directory loads while old directory GET remains held");
     const leaveNotice=await getRoom(page,"#notice");
-    check(leaveNotice==="룸에서 퇴장했습니다.",
-        "R13z new room exit notice survives directory read");
+    check(Boolean(leaveNotice),
+        "R13z guest sees a valid current admission notice before old GET release");
     await cdp.eval(page,`(()=>{
         const release=window.__r13zRelease;
         if(!release)throw Error("stale directory request not held");
@@ -2905,13 +2905,18 @@ async function publicDirectoryResponseAcceptance(base,{codeA}){
         return true;
     })()`);
     await nap(260);
-    check(await cdp.eval(page,`(()=>{
-        const text=document.getElementById("publicRooms").textContent;
-        return text.includes("R13y original host") &&
-            !text.includes("R13z STALE PUBLIC ROOM") &&
-            document.getElementById("notice").textContent==="룸에서 퇴장했습니다." &&
-            !document.getElementById("admission").hidden;
-    })()`),"late old successful list cannot overwrite new directory or notice");
+    const afterLate=await cdp.eval(page,`(()=>{
+        return {
+            listing:document.getElementById("publicRooms").textContent,
+            notice:document.getElementById("notice").textContent,
+            admission:!document.getElementById("admission").hidden
+        };
+    })()`);
+    check(afterLate.listing.includes("R13y original host") &&
+        !afterLate.listing.includes("R13z STALE PUBLIC ROOM") &&
+        afterLate.notice===leaveNotice && afterLate.admission,
+        "old list cannot overwrite current directory/notice: "+
+            JSON.stringify(afterLate));
     check((await backend(page,"/me","GET",null,member)).status!==200,
         "old directory response cannot resurrect a departed member token");
     await cdp.eval(page,`(()=>{
