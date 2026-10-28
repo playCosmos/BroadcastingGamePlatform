@@ -67,6 +67,42 @@ has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
 has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
 has(js,"function clearMembership()","common session cleanup routine");
+
+has(js,'function operation(action,{admission=false}={})',
+  "member and admission operation scopes are explicit");
+has(js,'const generation=membershipGeneration,credential=secret;',
+  "operation pins initiating membership generation and bearer");
+has(js,'const send=(path,method="GET",body=null)=>request(path,method,body,credential)',
+  "member actions use pinned bearer rather than mutable session global");
+has(js,'if(current())return action({send,current,generation,credential});',
+  "old queued operations cannot begin on a replacement member");
+has(js,'if(current())say(e.message||"요청 실패",true);',
+  "stale operation errors do not replace another member notice");
+ok(/if\(!current\(\)\)return;\s*if\(admission\)admissionBusy=false;/.test(js),
+  "old operation finally cannot unlock a newer session");
+has(js,'function releaseMemberOperations()',
+  "membership switch releases old room and admission action locks");
+ok((js.match(/membershipGeneration\+\+;\s*releaseMemberOperations\(\);/g)||[]).length===2,
+  "both accepting and clearing membership release stale locks");
+for(const path of ["/me/ready","/me/seat","/drawing/channels/remove",
+  "/drawing/channels/add","/drawing/streamers/assign",
+  "/drawing/telephone/start","/drawing/start","/drawing/round",
+  "/drawing/guess","/drawing/complete-round","/drawing/finish",
+  "/host/invite","/chat","/host/close","/me/leave"]){
+  has(js,'send("'+path+'","POST"',"pinned bearer for action "+path);
+  no(js,'request("'+path+'","POST"',"unfenced mutable bearer for "+path);
+}
+for(const path of ["/public/hosted","/public/join","/join"]){
+  has(js,'request("'+path+'","POST"',"admission is unauthenticated "+path);
+}
+ok((js.match(/\},\{admission:true\}\);/g)||[]).length===3,
+  "all three admission commands bypass old member's pending busy lock");
+has(js,'const submittedText=field.value;',"guess body captured before await");
+has(js,'const text=field.value;',"chat body captured before await");
+ok(/if\(!current\(\)\)return;\s*field\.value="";await refreshChat\(generation,credential\);/.test(js),
+  "old chat completion cannot erase new room input");
+ok(/if\(!current\(\)\)return;\s*clearMembership\(\);/.test(js),
+  "old close or leave cannot teardown newer membership");
 has(js,"function resetNativeCanvas()","shared legacy canvas state reset");
 has(js,"sendQueue=Promise.resolve();","detach new-room queue from in-flight previous POST");
 has(js,"strokes.clear();canvasSequence=0;redraw();","clear stale native ink and sequence on membership switch");
@@ -454,15 +490,15 @@ has(server,'roomRealtime.announceTelephonePresentation(',
   "HTTP presenter commit produces durable room event");
 has(js,'mode:coop?"COOP":"NORMAL"',"explicit authoritative telephone mode chosen by host");
 has(html,'id="telephoneReveal"',"album reveal panel exists");
-has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
+has(js,'send("/drawing/telephone/start"',"telephone start uses captured membership bearer");
 has(js,'const nextTelephone=await request(',
   "telephone state follows pinned member authentication");
 has(server,'sharedDrawing.telephone().submit(',"server accepts separate private telephone submissions");
 has(js,'"/drawing/streamers/assign"',"host mapping endpoint is member-authenticated");
-has(js,'await refreshStreamerAssignments()',"approved channel roster refresh");
+has(js,'await refreshStreamerAssignments(generation,credential)',"approved channel roster refresh pinned to same member");
 has(js,'roomCode:code',"room admission uses typed public code");
 has(js,'show("closeRoom",isHost() && room.state!=="PLAYING")',"host cannot close an active match in UI");
-has(js,'request("/host/close","POST",{})',"host close uses member-scoped HTTP");
+has(js,'send("/host/close","POST",{})',"host close uses captured membership bearer");
 has(js,'seatRole:form.get("seatRole")',"guest controls own player/spectator seat");
 has(js,'details.textContent=room.roomName',"directory room name rendered as safe text");
 has(js,'await loadPublicRooms()',"user can reload public directory");
@@ -492,8 +528,8 @@ no(js,'?drawerToken=',"no native bearer URL query");
 has(js,'request("/drawing/my-prompt","GET",null,credential)',"private prompt uses initiating member credential");
 has(js,'textContent="나의 정답: "+privatePrompt.answer',"private word not inserted as HTML");
 has(js,'show("drawerWord",false)',"secret cleared when role is lost");
-has(js,'request("/drawing/guess","POST",{text:field.value})',"guess input distinct from room chat");
-has(js,'request("/chat","POST",{messageId:',"chat never forwarded to guess service");
+has(js,'send("/drawing/guess","POST",{text:submittedText})',"guess input distinct from room chat");
+has(js,'send("/chat","POST",{messageId:',"chat never forwarded to guess service");
 has(js,'"#invite="+encodeURIComponent(grant.token)',"invites remain URL fragment only");
 has(js,'history.replaceState(null,"",location.pathname)',"remove used invitation fragment");
 has(js,'if(secret)refresh();',"read-only periodic reconnect fallback");
