@@ -2839,6 +2839,93 @@ async function memberActionSessionAcceptance(base){
         "document.getElementById('chatList').textContent.includes("+
         "'new member chat after stale POST')"),
         "replacement member can send real chat after old action finishes");
+    return {codeA,codeB};
+}
+
+// R13z: a directory response begun in the public lobby cannot overwrite
+// a later listing after joining and leaving an independent room.
+async function publicDirectoryResponseAcceptance(base,{codeA}){
+    const page=await cdp.page(base+"/games/drawing-guess/room/");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('publicRooms').textContent.includes("+
+        "'R13y original host')"),"R13z initial public directory visible");
+    await cdp.eval(page,`(()=>{
+        const original=window.fetch.bind(window);
+        window.__r13zOriginal=original;
+        window.__r13zHeld=false;
+        window.__r13zRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/public/rooms?gameId=drawing_guess"
+                && !window.__r13zHeld){
+                window.__r13zHeld=true;
+                return new Promise(resolve=>{window.__r13zRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    await click(page,"refreshPublicRooms");
+    await poll(async()=>await cdp.eval(page,"window.__r13zHeld===true"),
+        "R13z public listing HTTP GET held before joining room");
+    await fill(page,"publicJoinForm",{
+        roomCode:codeA,displayName:"R13z directory switch guest",
+        seatRole:"SPECTATOR"
+    });
+    const member=await poll(async()=>await userToken(page,
+        "gamecenter.drawing.room.member.v1"),
+        "R13z public admission succeeds despite pending directory GET");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('roomName').textContent===" +
+        "'R13y original host'"),"R13z joined room renders");
+    check(await cdp.eval(page,
+        "document.getElementById('publicRooms').children.length===0"),
+        "joining clears former public directory before old GET returns");
+    await click(page,"leave",true);
+    await poll(async()=>await cdp.eval(page,
+        "!document.getElementById('admission').hidden && "+
+        "sessionStorage.getItem('gamecenter.drawing.room.member.v1')===null"),
+        "R13z guest leaves room and returns to public admission");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('publicRooms').textContent.includes("+
+        "'R13y original host')"),
+        "R13z fresh directory loads while old directory GET remains held");
+    const leaveNotice=await getRoom(page,"#notice");
+    check(leaveNotice==="룸에서 퇴장했습니다.",
+        "R13z new room exit notice survives directory read");
+    await cdp.eval(page,`(()=>{
+        const release=window.__r13zRelease;
+        if(!release)throw Error("stale directory request not held");
+        release(new Response(JSON.stringify({rooms:[{
+            roomName:"R13z STALE PUBLIC ROOM",
+            roomCode:"ABCDEF",state:"OPEN_LOBBY",
+            memberCount:1,maxRoomMembers:4,playerCount:1,maxPlayers:2
+        }]}),{status:200,headers:{"Content-Type":"application/json"}}));
+        window.__r13zRelease=null;
+        return true;
+    })()`);
+    await nap(260);
+    check(await cdp.eval(page,`(()=>{
+        const text=document.getElementById("publicRooms").textContent;
+        return text.includes("R13y original host") &&
+            !text.includes("R13z STALE PUBLIC ROOM") &&
+            document.getElementById("notice").textContent==="룸에서 퇴장했습니다." &&
+            !document.getElementById("admission").hidden;
+    })()`),"late old successful list cannot overwrite new directory or notice");
+    check((await backend(page,"/me","GET",null,member)).status===200,
+        "old directory response cannot mutate a valid previous server member");
+    await cdp.eval(page,`(()=>{
+        window.fetch=window.__r13zOriginal;
+        delete window.__r13zOriginal;
+        delete window.__r13zHeld;
+        delete window.__r13zRelease;
+        return true;
+    })()`);
+    await click(page,"refreshPublicRooms");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('notice').textContent===" +
+        "'공개방 목록을 새로고침했습니다.'"),
+        "R13z directory can refresh again after stale operation finishes");
 }
 async function run(){
     const {base,ws}=await launchServer();
@@ -3012,7 +3099,8 @@ async function run(){
     await poll(()=>server.exitCode!==null || server.signalCode!==null,
         "coop fixture shutdown");
     const actionFixture=await launchServer();
-    await memberActionSessionAcceptance(actionFixture.base);
+    const actionRooms=await memberActionSessionAcceptance(actionFixture.base);
+    await publicDirectoryResponseAcceptance(actionFixture.base,actionRooms);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
