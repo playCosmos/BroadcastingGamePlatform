@@ -794,6 +794,203 @@ async function mobileWssAcceptance(base,ws){
     const noOverflow=await cdp.eval(mobile,
         "document.documentElement.scrollWidth<=window.innerWidth+2");
     check(noOverflow,"real 390px mobile Drawing UI has no horizontal overflow");
+
+
+}
+
+// Isolated real-server fixture: the public hosted-room quota in the main
+// Drawing/Yacht test cannot determine whether the queue fence works.
+async function canvasQueueSessionAcceptance(base){
+    const mobile=await cdp.page(base+"/games/drawing-guess/room/");
+    await cdp.send("Emulation.setDeviceMetricsOverride",{
+        width:390,height:844,deviceScaleFactor:1,mobile:true
+    },mobile.sessionId);
+    await cdp.send("Emulation.setTouchEmulationEnabled",{
+        enabled:true,maxTouchPoints:2
+    },mobile.sessionId);
+    await fill(mobile,"createForm",{
+        name:"Original queued drawing room",displayName:"Queue Host",
+        maxPlayers:1,maxRoomMembers:3
+    });
+    const mobileToken=await poll(async()=>await userToken(mobile,
+        "gamecenter.drawing.room.member.v1"),
+        "native Canvas host receives first room member token");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('roomName').textContent===" +
+        "'Original queued drawing room'"),"first Canvas host room visible");
+    await waitRoomIdle(mobile,"room");
+    await click(mobile,"ready");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('ready').textContent.includes('취소')"),
+        "first native Canvas host is ready");
+    await waitRoomIdle(mobile,"room");
+    await cdp.eval(mobile,`(()=>{
+        document.getElementById("mode").value="STREAMER_DRAWER";
+        document.getElementById("rounds").value="1";
+        document.getElementById("duration").value="180";
+        return true;
+    })()`);
+    await click(mobile,"start");
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('promptForm').hidden"),
+        "first native Canvas host starts drawing mode");
+    await waitRoomIdle(mobile,"room");
+    await fill(mobile,"promptForm",{answer:"original",accepted:""});
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('clearCanvas').hidden"),
+        "first native Canvas author is editable");
+    await waitRoomIdle(mobile,"room");
+    const inkSamples=`(()=>{
+        const c=document.getElementById("canvas");
+        const rgba=c.getContext("2d").getImageData(0,0,c.width,c.height).data;
+        let count=0;
+        for(let y=12;y<c.height-12;y+=3){
+            for(let x=12;x<c.width-12;x+=3){
+                const i=(y*c.width+x)*4;
+                if(rgba[i]<130 && rgba[i+1]<130 && rgba[i+2]<130)count++;
+            }
+        }
+        return count;
+    })()`;
+    // R13v native canvas queue: hold the actual first old-room canvas POST
+    // while more stroke events are queued. Admit room B in the same mobile
+    // browser; new-room drawing must not be blocked by old-room networking.
+    await cdp.eval(mobile,`(()=>{
+        const original=window.fetch.bind(window);
+        const oldBearer=${JSON.stringify("Bearer "+mobileToken)};
+        window.__r13vOriginalFetch=original;
+        window.__r13vHeld=false;
+        window.__r13vRelease=null;
+        window.__r13vOldWrites=0;
+        window.__r13vNewWrites=0;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/drawing/canvas"){
+                const bearer=options.headers?.Authorization||"";
+                if(bearer===oldBearer){
+                    window.__r13vOldWrites++;
+                    if(!window.__r13vHeld){
+                        window.__r13vHeld=true;
+                        return new Promise(resolve=>{
+                            window.__r13vRelease=resolve;
+                        });
+                    }
+                }else window.__r13vNewWrites++;
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    const oldBox=await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        canvas.scrollIntoView({block:"center"});
+        const r=canvas.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+    })()`);
+    await touchStroke(mobile,oldBox,0.47);
+    await poll(async()=>await cdp.eval(mobile,
+        "window.__r13vHeld===true"),"old native canvas POST held on network");
+    check(await cdp.eval(mobile,"window.__r13vOldWrites===1"),
+        "old canvas queue contains at least one event behind a held POST");
+    await waitRoomIdle(mobile,"room");
+    await fill(mobile,"createForm",{
+        name:"Native queue replacement room",displayName:"Fresh Canvas Host",
+        maxPlayers:1,maxRoomMembers:3
+    });
+    const freshToken=await poll(async()=>{
+        const token=await userToken(mobile,
+            "gamecenter.drawing.room.member.v1");
+        return token && token!==mobileToken?token:null;
+    },"same tab accepts independent member while legacy POST held");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('roomName').textContent===" +
+        "'Native queue replacement room'"),
+        "new session renders while earlier canvas send queue remains blocked");
+    check(await cdp.eval(mobile,
+        "window.__r13vOldWrites===1 && window.__r13vNewWrites===0"),
+        "old pending events do not cross into new room on admit");
+    await waitRoomIdle(mobile,"room");
+    await click(mobile,"ready");
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('ready').textContent.includes('취소')"),
+        "new mobile host may become ready despite an old pending POST");
+    await waitRoomIdle(mobile,"room");
+    await cdp.eval(mobile,`(()=>{
+        document.getElementById("mode").value="STREAMER_DRAWER";
+        document.getElementById("rounds").value="1";
+        document.getElementById("duration").value="180";
+        return true;
+    })()`);
+    await click(mobile,"start");
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('promptForm').hidden"),
+        "new room can start a real native drawing round independently");
+    await waitRoomIdle(mobile,"room");
+    await fill(mobile,"promptForm",{answer:"fresh",accepted:""});
+    await poll(async()=>await cdp.eval(mobile,
+        "!document.getElementById('clearCanvas').hidden"),
+        "fresh member is authorized to draw on new room's native canvas");
+    await waitRoomIdle(mobile,"room");
+    const freshBox=await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        canvas.scrollIntoView({block:"center"});
+        const r=canvas.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+    })()`);
+    await touchStroke(mobile,freshBox,0.61);
+    await poll(async()=>await cdp.eval(mobile,
+        "window.__r13vNewWrites>=3"),
+        "new room's independent native canvas queue sends while old POST held");
+    await poll(async()=>await cdp.eval(mobile,inkSamples)>10,
+        "new native canvas paints its own committed stroke");
+    // The new room's asynchronous stroke.end may still be painting, so
+    // wait for a stable visible baseline before releasing the old response.
+    await nap(350);
+    const inkBeforeLateOld=await cdp.eval(mobile,inkSamples);
+    check(inkBeforeLateOld>10,
+        "new member's own native ink has been painted before stale response");
+    const newWritesBeforeLateOld=await cdp.eval(mobile,
+        "window.__r13vNewWrites");
+    await cdp.eval(mobile,`(()=>{
+        const release=window.__r13vRelease;
+        if(!release)throw Error("missing held old canvas request");
+        release(new Response(JSON.stringify({
+            json:{sequence:999999,type:"canvas.clear",payload:{}}
+        }),{status:200,headers:{"Content-Type":"application/json"}}));
+        window.__r13vRelease=null;
+        return true;
+    })()`);
+    await nap(420);
+    check(await cdp.eval(mobile,inkSamples)>10,
+        "late successful old canvas response cannot clear new room ink");
+    check(await cdp.eval(mobile,
+        "window.__r13vOldWrites===1 && window.__r13vNewWrites==="+
+        String(newWritesBeforeLateOld)),
+        "old queued strokes never POST with new room's membership bearer");
+    check(await userToken(mobile,
+        "gamecenter.drawing.room.member.v1")===freshToken,
+        "stale canvas queue cannot replace new anonymous member");
+    // A poisoned new-room canvas sequence would drop this subsequent
+    // genuine server event because the stale fake response carries 999999.
+    const laterBox=await cdp.eval(mobile,`(()=>{
+        const canvas=document.getElementById("canvas");
+        canvas.scrollIntoView({block:"center"});
+        const r=canvas.getBoundingClientRect();
+        return {x:r.x,y:r.y,width:r.width,height:r.height};
+    })()`);
+    const inkAfterOld=await cdp.eval(mobile,inkSamples);
+    await touchStroke(mobile,laterBox,0.25);
+    await poll(async()=>await cdp.eval(mobile,inkSamples)>inkAfterOld,
+        "new Canvas sequence still advances after old high-revision clear",9000);
+    await cdp.eval(mobile,`(()=>{
+        window.fetch=window.__r13vOriginalFetch;
+        delete window.__r13vOriginalFetch;
+        delete window.__r13vRelease;
+        delete window.__r13vHeld;
+        delete window.__r13vOldWrites;
+        delete window.__r13vNewWrites;
+        return true;
+    })()`);
 }
 
 /**
@@ -2458,6 +2655,13 @@ async function run(){
     check(viewport.scroll<=viewport.client+2,
         "Yacht mobile viewport has no horizontal overflow: "+JSON.stringify(viewport));
     await mobileWssAcceptance(base,ws);
+    // Isolate two sequential anonymous hosted rooms used for the canvas
+    // queue race from the Drawing/Yacht fixture's per-IP creation quota.
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "mobile/yacht fixture shutdown");
+    const queueFixture=await launchServer();
+    await canvasQueueSessionAcceptance(queueFixture.base);
     // The production server deliberately limits public room creation per IP.
     // Each complete telephone scenario gets a fresh fixture; otherwise the
     // earlier Drawing/Yacht/browser cases consume its anonymous host quota.
