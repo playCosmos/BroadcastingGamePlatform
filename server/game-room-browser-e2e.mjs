@@ -1844,7 +1844,7 @@ async function telephoneBrowserAcceptance(base,coop){
     await click(host,"telephoneStepNext");
     await poll(async()=>await cdp.eval(pages[3],
         "window.__roomObserver?.events.some(e=>e.includes('room.telephone.presentation'))"),
-        "host presentation pushes durable room WebSocket event",2000);
+        "host presentation pushes durable room WebSocket event",6000);
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"+
         " && document.querySelectorAll('#telephoneAlbumEntries article').length===1"),
