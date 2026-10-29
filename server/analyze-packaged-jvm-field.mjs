@@ -57,6 +57,12 @@ function analyze(records,minDurationSeconds=86400){
             !/^\d{4}-\d{2}-\d{2}T/.test(s.observedUtc||"")||
             !Number.isFinite(Date.parse(s.observedUtc)))
             fail("invalid, reordered or missing time-series record "+i);
+        // The PowerShell observer waits for each exact scheduled interval.
+        // Merely increasing timestamps could otherwise hide early/missing
+        // samples and inflate the apparent observation density.
+        const scheduled=Math.min(h.durationSeconds,i*h.intervalSeconds);
+        if(s.elapsedSeconds<scheduled-0.1)
+            fail("resource snapshot occurred before its scheduled interval");
         const utc=Date.parse(s.observedUtc);
         if(previousUtc!==null && utc<previousUtc-10000)
             fail("wall clock moved backwards beyond ten seconds");
