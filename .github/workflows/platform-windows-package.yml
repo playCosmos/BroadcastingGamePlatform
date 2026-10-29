@@ -181,6 +181,10 @@ jobs:
             throw "packaged platform server probe failed: $($probe.ExitCode)"
           }
 
+      - name: R14e packaged GameRoom startup and crash-restart
+        shell: pwsh
+        run: ./server/smoke-packaged-game-room-restart.ps1
+
       - name: Upload Windows package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
