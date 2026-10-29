@@ -1,3 +1,7 @@
+param(
+    [ValidateSet("Crash","Graceful")]
+    [string]$StopMode = "Crash"
+)
 $ErrorActionPreference = "Stop"
 
 # Exercise the shipped EXE, not just a Java self-check.
@@ -27,6 +31,10 @@ function StartFixture([string]$ExePath, [string]$FixtureRoot, [string]$ConfigPat
     $start.UseShellExecute = $false
     $start.CreateNoWindow = $true
     $start.Environment["BROADCASTING_GAME_PLATFORM_HOME"] = $FixtureRoot
+    if ($StopMode -eq "Graceful") {
+        $start.Environment["CI"] = "true"
+        $start.Environment["BGP_CI_GRACEFUL_EXIT_REQUEST"] = Join-Path $FixtureRoot "r14h-ci-exit.request"
+    }
     return [System.Diagnostics.Process]::Start($start)
 }
 function AwaitApi([System.Diagnostics.Process]$Process, [string]$Uri) {
@@ -53,6 +61,27 @@ function StopFixture([System.Diagnostics.Process]$Process) {
     }
 }
 
+function RequestGracefulStop([System.Diagnostics.Process]$Process, [string]$FixtureRoot, [int[]]$Ports) {
+    $request = Join-Path $FixtureRoot "r14h-ci-exit.request"
+    Check (-not (Test-Path $request)) "graceful request must not be present before startup"
+    Set-Content -Path $request -Value "ci-graceful-stop" -Encoding ascii
+    Check ($Process.WaitForExit(15000)) "graceful packaged exit timed out"
+    Check ($Process.ExitCode -eq 0) "graceful packaged exit must return code zero"
+    $logs = @(Get-ChildItem (Join-Path $FixtureRoot "logs") -Filter "broadcasting-game-platform-*.log" -Force -File |
+        Sort-Object LastWriteTimeUtc -Descending)
+    Check ($logs.Count -gt 0) "graceful exit must leave a server log"
+    $text = Get-Content $logs[0].FullName -Raw -Encoding utf8
+    Check ($text.Contains("[platform-server] shutdown complete")) "shutdown completed all service close steps"
+    Check ($text.Contains("[platform-server] CI graceful exit requested")) "CI requested the same exit callback as tray menu"
+    Remove-Item $request -Force
+    foreach ($port in $Ports) {
+        $listener = [Net.Sockets.TcpListener]::new([Net.IPAddress]::Loopback, $port)
+        try { $listener.Start() }
+        catch { throw "R14h listener port not released after graceful exit: $port" }
+        finally { $listener.Stop() }
+    }
+    $Process.Dispose()
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -102,7 +131,12 @@ try {
     $posted = Invoke-RestMethod -Method Post -Uri "$api/chat" -Headers $headers -ContentType "application/json" -Body $chatBody -TimeoutSec 10
     Check ($posted.messageId -eq $messageId) "chat was persisted before restart"
     $Checks++
-    StopFixture $Process
+    if ($StopMode -eq "Graceful") {
+        RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
+        $Checks += 5
+    } else {
+        StopFixture $Process
+    }
     $Process = $null
     $databasePath = Join-Path $FixtureRoot "data/packaged-r14e.sqlite"
     Check (Test-Path $databasePath) "packaged server created SQLite database"
@@ -121,7 +155,14 @@ try {
     $Checks++
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
-    Write-Host "GAME_ROOM_R14E_PACKAGED_RESTART_PASSED checks=$Checks"
+    if ($StopMode -eq "Graceful") {
+        RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
+        $Process = $null
+        $Checks += 5
+        Write-Host "GAME_ROOM_R14H_PACKAGED_GRACEFUL_EXIT_PASSED checks=$Checks shutdowns=2 ports=3"
+    } else {
+        Write-Host "GAME_ROOM_R14E_PACKAGED_RESTART_PASSED checks=$Checks"
+    }
 } finally {
     StopFixture $Process
     if (Test-Path $FixtureRoot) {
