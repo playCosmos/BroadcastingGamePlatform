@@ -19,7 +19,7 @@ for(const raw of process.argv.slice(2)){
     const i=raw.indexOf("=");
     if(!raw.startsWith("--")||i<3)throw Error("expected --key=value arguments");
     const name=raw.slice(2,i),value=raw.slice(i+1);
-    if(!["base","room-id","rounds","interval-ms","timeout-ms","report"].includes(name)
+    if(!["base","wss","room-id","rounds","interval-ms","timeout-ms","report"].includes(name)
         ||args.has(name)||!value)throw Error("invalid or duplicate option --"+name);
     args.set(name,value);
 }
@@ -58,7 +58,7 @@ async function jsonGet(path,authenticate=true){
     try {
         const response=await fetch(new URL(path,base),{
             headers:authenticate?{"Authorization":"Bearer "+token}:{},
-            cache:"no-store",signal:controller.signal
+            cache:"no-store",redirect:"error",signal:controller.signal
         });
         if(response.status!==200)
             throw Error("read-only member REST "+path+" status="+response.status);
@@ -142,8 +142,15 @@ async function main(){
         throw Error("public /api/client/config does not advertise secure WSS");
     // Use exactly the server-advertised endpoint, preserving proxy prefixes;
     // the room UUID alone is added to its query, never a bearer.
-    if(new URL(advertised.toString().replace(/^wss:/,"https:")).origin!==base.origin)
-        throw Error("advertised WSS origin differs from HTTPS origin; configure public endpoint explicitly before probing");
+    const expected=args.get("wss");
+    if(expected){
+        const intended=new URL(expected);
+        if(intended.protocol!=="wss:"||intended.username||intended.password
+            ||intended.search||intended.hash||intended.toString()!==advertised.toString())
+            throw Error("public WSS URL must match explicitly trusted --wss= URL");
+    }else if(new URL(advertised.toString().replace(/^wss:/,"https:")).origin!==base.origin){
+        throw Error("WSS origin differs from HTTPS; explicitly approve the advertised endpoint with --wss=...");
+    }
     const websocketUrl=new URL(advertised);
     websocketUrl.searchParams.set("memberRoomId",roomId);
     const me=await jsonGet("/api/v1/room-membership/me");
