@@ -605,9 +605,23 @@ async function mobileWssAcceptance(base,ws){
         "document.getElementById('operatorRoomId').hidden"),
         "spectator is not offered host operator grant workflow");
     await startMemberObserver(viewer,state.data.room.roomId,viewerToken,tls.ws);
-    await poll(async()=>await cdp.eval(viewer,
-        "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
-        "WSS upgrade and authenticated room replay through TLS proxy");
+    try {
+        await poll(async()=>await cdp.eval(viewer,
+            "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
+            "WSS upgrade and authenticated room replay through TLS proxy",25000);
+    } catch (error) {
+        // A missed event and a closed WSS are different failures. Capture
+        // only non-secret transport state; never log member bearer tokens.
+        const observer=await cdp.eval(viewer,`(()=>{
+            const o=window.__roomObserver;
+            return {readyState:o?.ws?.readyState ?? -1,
+                closeCode:o?.code ?? -1,
+                eventCount:o?.events?.length ?? 0};
+        })()`);
+        throw Error(String(error)+"; observer="+JSON.stringify(observer)+
+            "; tlsUpgrades="+activeUpgrades("memberRoomId="+
+                state.data.room.roomId).length);
+    }
 
     // R12c: a guest host cannot claim a broadcast simply by typing its ID.
     // The real test server has no operator-provisioned SOOP streamer.
