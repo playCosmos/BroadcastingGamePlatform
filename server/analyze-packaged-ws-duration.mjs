@@ -78,7 +78,10 @@ function analyze(data){
             elapsed=sample.elapsedMs;
             cpu=sample.counters.cpuMs;
         }
-        check(samples.at(-1).elapsedMs>=launch.durationMs*0.85&&
+        // The PowerShell watchdog starts BEFORE its Node client is running
+        // and captures the final JVM sample AFTER that client exits. A
+        // shorter trace cannot demonstrate it covered the entire workload.
+        check(samples.at(-1).elapsedMs>=launch.durationMs&&
             samples.at(-1).elapsedMs<=launch.durationMs+15000,
             "samples do not cover spectator workload duration");
         const metric=k=>samples.map(x=>x.counters[k]);
