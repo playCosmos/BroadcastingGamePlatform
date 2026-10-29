@@ -81,12 +81,15 @@ try {
     $config | ConvertTo-Json -Depth 10 | Set-Content -Path $configPath -Encoding utf8
     $api = "http://127.0.0.1:$clientPort/api/v1/room-membership"
     $listing = "$api/public/rooms?gameId=yacht"
+    # The real GameRoom HTTP boundary rejects cross-origin state-changing
+    # requests; mimic the browser's same-origin Origin header, not bypass ACL.
+    $originHeaders = @{ Origin = "http://127.0.0.1:$clientPort" }
     $Process = StartFixture $Exe $FixtureRoot $configPath
     $initial = AwaitApi $Process $listing
     Check ($null -ne $initial -and ($initial.PSObject.Properties.Name -contains "rooms")) "first startup responds with public directory"
     $Checks++
     $body = @{gameId="yacht";name="R14e packaged persistent room";displayName="R14e host";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=4} | ConvertTo-Json -Compress
-    $hosted = Invoke-RestMethod -Method Post -Uri "$api/public/hosted" -ContentType "application/json" -Body $body -TimeoutSec 10
+    $hosted = Invoke-RestMethod -Method Post -Uri "$api/public/hosted" -Headers $originHeaders -ContentType "application/json" -Body $body -TimeoutSec 10
     Check (-not [string]::IsNullOrEmpty($hosted.token)) "real anonymous host bearer issued"
     $Checks++
     $token = [string]$hosted.token
@@ -95,7 +98,7 @@ try {
     $Checks++
     $messageId = "r14ePackagedMessage1"
     $chatBody = @{messageId=$messageId;text="R14e durable chat"} | ConvertTo-Json -Compress
-    $headers = @{ Authorization = "Bearer $token" }
+    $headers = @{ Authorization = "Bearer $token"; Origin = "http://127.0.0.1:$clientPort" }
     $posted = Invoke-RestMethod -Method Post -Uri "$api/chat" -Headers $headers -ContentType "application/json" -Body $chatBody -TimeoutSec 10
     Check ($posted.messageId -eq $messageId) "chat was persisted before restart"
     $Checks++
