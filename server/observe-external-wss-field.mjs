@@ -59,6 +59,7 @@ let started=performance.now();
 const summaryTimes=[];
 let failureTotal=0;
 let completed=0;
+let memberIds=[];
 const maxError=()=>new Error("network, authentication, TLS, or room scope failure");
 const percentile=(numbers,p)=>numbers.length?
     Math.round([...numbers].sort((a,b)=>a-b)[Math.ceil(numbers.length*p)-1]*100)/100:null;
@@ -75,7 +76,10 @@ async function getJson(path,token){
     }finally{clearTimeout(timer);}
 }
 function validateMember(me){
-    if(me?.room?.roomId!==roomId)throw maxError();
+    if(me?.room?.roomId!==roomId||
+        !/^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/i.test(
+            me?.memberId||""))throw maxError();
+    return me.memberId;
 }
 function openSnapshot(endpoint,token){
     return new Promise((resolve,reject)=>{
@@ -139,9 +143,9 @@ function closeSocket(ws){
 }
 async function executeRound(endpoint,round){
     const memberResults=await Promise.allSettled(
-        tokens.map(async token=>{
+        tokens.map(async (token,index)=>{
             const me=await getJson("/api/v1/room-membership/me",token);
-            validateMember(me);
+            if(validateMember(me)!==memberIds[index])throw maxError();
             return token;
         })
     );
@@ -200,16 +204,18 @@ async function main(){
     endpoint.searchParams.set("memberRoomId",roomId);
     // Verify each identity once before writing a report: accidental room
     // credentials must not lead to a convincing-looking long-run trace.
-    await Promise.all(tokens.map(async token=>
+    memberIds=await Promise.all(tokens.map(async token=>
         validateMember(await getJson("/api/v1/room-membership/me",token))));
+    if(new Set(memberIds).size!==clients)
+        bad("test bearers must belong to distinct room members");
     // The reported observation starts AFTER TLS/config/member preflight.
     // Do not credit onboarding time toward the claimed field duration.
     started=performance.now();
     await writeFile(reportPath,JSON.stringify({
         kind:"start",schemaVersion:1,
-        source:"external-https-wss-readonly",
+        source:"external-https-wss-probe",
         durationSeconds,intervalSeconds,timeoutMs,
-        clients,expectedRounds,tlsVerified:true,readOnly:true
+        clients,expectedRounds,tlsVerified:true,noExplicitWriteRequests:true
     })+"\n",{encoding:"utf8",flag:"wx"});
     for(let round=1;round<=expectedRounds;round++){
         const target=Math.min(durationSeconds,(round-1)*intervalSeconds);
@@ -228,7 +234,7 @@ async function main(){
     await appendFile(reportPath,JSON.stringify({
         kind:"complete",rounds:completed,
         durationSeconds:Math.round(duration*1000)/1000,
-        failures:failureTotal,tlsVerified:true,readOnly:true
+        failures:failureTotal,tlsVerified:true,noExplicitWriteRequests:true
     })+"\n","utf8");
     console.log("GAME_ROOM_R14P_EXTERNAL_WSS_FIELD_COMPLETED"+
         " rounds="+completed+" clients="+clients+
