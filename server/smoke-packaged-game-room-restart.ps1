@@ -32,7 +32,7 @@ if ($WsSpectators -gt 0) {
     }
     $outputs = @($WsReportPath,$LoadReportPath,$TelemetryPath) |
         ForEach-Object { [IO.Path]::GetFullPath($_) }
-    Check ($outputs.Count -eq @($outputs | Select-Object -Unique).Count) "R14m report files must be distinct"
+    if ($outputs.Count -ne @($outputs | Select-Object -Unique).Count) { throw "R14m report files must be distinct" }
     if (Test-Path -LiteralPath $WsReportPath) {
         throw "R14m fan-out report already exists"
     }
