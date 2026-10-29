@@ -17,7 +17,8 @@ function exactKeys(obj,keys) {
 }
 const rootFields=[
     "kind","schemaVersion","process","stopMode","samples",
-    "verifiedRestarts","verifiedGracefulExits","portsReleased","roomRecovered"
+    "verifiedRestarts","verifiedGracefulExits","portsReleased","roomRecovered",
+    "listenerOwnerVerified","jvmModuleVerified"
 ];
 const sampleFields=[
     "launch","phase","workingSetBytes","privateBytes",
@@ -29,10 +30,11 @@ const phases=[
 function analyze(report) {
     check(exactKeys(report,rootFields),"unexpected/missing report field (no personal data allowed)");
     check(report.kind==="packaged-process-telemetry"&&
-        report.schemaVersion===1&&report.process==="packaged-windows-exe"&&
+        report.schemaVersion===2&&report.process==="packaged-windows-listener-jvm"&&
         report.stopMode==="Graceful","unrecognized provenance or schema");
     check(report.verifiedRestarts===1&&report.verifiedGracefulExits===2&&
-        report.portsReleased===true&&report.roomRecovered===true,
+        report.portsReleased===true&&report.roomRecovered===true&&
+        report.listenerOwnerVerified===true&&report.jvmModuleVerified===true,
         "restart/room recovery/two graceful exits/port release not verified");
     check(Array.isArray(report.samples)&&report.samples.length===4,
         "four live-process samples required");
@@ -77,11 +79,12 @@ function analyze(report) {
     });
     return {
         kind:"packaged-process-telemetry-summary",
-        schemaVersion:1,source:"packaged-windows-exe",
+        schemaVersion:2,source:"packaged-windows-listener-jvm",
         verifiedRestarts:1,verifiedGracefulExits:2,
         portsReleased:true,roomRecovered:true,
+        listenerOwnerVerified:true,jvmModuleVerified:true,
         launches:[makeLaunch(0),makeLaunch(2)],
-        interpretation:"Two short Windows EXE lifecycle observations only; "+
+        interpretation:"Two short Windows packaged listener-JVM lifecycle observations only; "+
             "they are not a memory/handle/thread leak assessment or a 24-hour workload."
     };
 }
@@ -91,14 +94,15 @@ function selfTest() {
         privateBytes:40000000+launch*500,threadCount:17,handleCount:123,cpuMs
     });
     const original={
-        kind:"packaged-process-telemetry",schemaVersion:1,
-        process:"packaged-windows-exe",stopMode:"Graceful",
+        kind:"packaged-process-telemetry",schemaVersion:2,
+        process:"packaged-windows-listener-jvm",stopMode:"Graceful",
         samples:[
             sample(1,"ready",50),sample(1,"afterChat",75),
             sample(2,"ready",60),sample(2,"afterReplay",85)
         ],
         verifiedRestarts:1,verifiedGracefulExits:2,
-        portsReleased:true,roomRecovered:true
+        portsReleased:true,roomRecovered:true,
+        listenerOwnerVerified:true,jvmModuleVerified:true
     };
     check(analyze(original).launches[1].delta.cpuMs===25,
         "valid fixture aggregates incorrect");
@@ -113,7 +117,10 @@ function selfTest() {
         x=>x.verifiedGracefulExits=1,
         x=>x.portsReleased=false,
         x=>x.roomRecovered=false,
-        x=>x.schemaVersion=2
+        x=>x.listenerOwnerVerified=false,
+        x=>x.jvmModuleVerified=false,
+        x=>x.process="packaged-windows-exe",
+        x=>x.schemaVersion=1
     ];
     for(const mutation of mutations) {
         const bad=structuredClone(original);
