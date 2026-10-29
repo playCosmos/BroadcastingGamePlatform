@@ -335,7 +335,7 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
         return "r14g-"+game+"-"+phase+"-"+round;
     }
     private static int freePort() throws Exception {
-        try(var socket=new ServerSocket(0))return socket.getLocalPort();
+        try(var socket=new ServerSocket(0)) { return socket.getLocalPort(); }
     }
     private static long usedHeap() {
         var runtime=Runtime.getRuntime();
