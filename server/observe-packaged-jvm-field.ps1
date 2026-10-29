@@ -83,6 +83,7 @@ function WriteRecord([IO.StreamWriter]$writer,[object]$value) {
 # ports, credentials, chat content, IPs or other machine-identifying details.
 $initial = ReadListenerJvm
 $initialPid = $initial.Id
+$initialStarted = [long]$initial.StartTime.ToUniversalTime().Ticks
 $initial.Dispose()
 $stream = [IO.File]::Open($path,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::Read)
 $writer = [IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
@@ -106,7 +107,8 @@ try {
         }
         $jvm = ReadListenerJvm
         try {
-            Require ($jvm.Id -eq $initialPid) "packaged JVM identity changed during observation"
+            Require (($jvm.Id -eq $initialPid) -and
+                ([long]$jvm.StartTime.ToUniversalTime().Ticks -eq $initialStarted)) "packaged JVM identity changed during observation"
             $counters = ReadCounters $jvm
         } finally { $jvm.Dispose() }
         WriteRecord $writer ([ordered]@{
