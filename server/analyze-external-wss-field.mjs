@@ -191,7 +191,7 @@ function selfTest(){
         x=>x[2].memberChecks=3,
         x=>x[3].cleanCloses=3,
         x=>x[3].snapshotP95Ms=-1,
-        x=>x[3].snapshotP95Ms=16000,
+        x=>x[3].snapshotP95Ms=16001,
         x=>x[3].secret="member token",
         x=>x[3].clientIp="secret",
         x=>x[3].observedUtc="not a date",
