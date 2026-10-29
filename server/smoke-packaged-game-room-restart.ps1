@@ -1,8 +1,11 @@
 param(
     [ValidateSet("Crash","Graceful")]
-    [string]$StopMode = "Crash"
+    [string]$StopMode = "Crash",
+    [string]$TelemetryPath = ""
 )
 $ErrorActionPreference = "Stop"
+if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
+if ($TelemetryPath -and (Test-Path -LiteralPath $TelemetryPath)) { throw "R14k telemetry output already exists" }
 
 # Exercise the shipped EXE, not just a Java self-check.
 # All database, log and configuration paths are disposable and localhost-only.
@@ -82,6 +85,45 @@ function RequestGracefulStop([System.Diagnostics.Process]$Process, [string]$Fixt
     }
     $Process.Dispose()
 }
+
+# R14k: real packaged Windows EXE process counters only, not the isolated
+# R14j JVM. Do not record PIDs, bearer tokens, room IDs, IPs or chat.
+$script:TelemetrySamples = [System.Collections.Generic.List[object]]::new()
+function RecordProcessSample([System.Diagnostics.Process]$Process, [int]$Launch, [string]$Phase) {
+    if ([string]::IsNullOrWhiteSpace($TelemetryPath)) { return }
+    Check (-not $Process.HasExited) "R14k process exited before resource sampling"
+    $Process.Refresh()
+    $script:TelemetrySamples.Add([ordered]@{
+        launch = $Launch
+        phase = $Phase
+        workingSetBytes = [long]$Process.WorkingSet64
+        privateBytes = [long]$Process.PrivateMemorySize64
+        threadCount = [int]$Process.Threads.Count
+        handleCount = [int]$Process.HandleCount
+        cpuMs = [Math]::Round($Process.TotalProcessorTime.TotalMilliseconds, 2)
+    })
+}
+function WriteProcessTelemetry {
+    if ([string]::IsNullOrWhiteSpace($TelemetryPath)) { return }
+    Check ($script:TelemetrySamples.Count -eq 4) "R14k expected four live EXE resource samples"
+    $report = [ordered]@{
+        kind = "packaged-process-telemetry"
+        schemaVersion = 1
+        process = "packaged-windows-exe"
+        stopMode = "Graceful"
+        samples = @($script:TelemetrySamples.ToArray())
+        verifiedRestarts = 1
+        verifiedGracefulExits = 2
+        portsReleased = $true
+        roomRecovered = $true
+    }
+    $stream = [IO.File]::Open($TelemetryPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
+        try { $writer.WriteLine(($report | ConvertTo-Json -Depth 8 -Compress)) }
+        finally { $writer.Dispose() }
+    } finally { $stream.Dispose() }
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -117,6 +159,7 @@ try {
     $initial = AwaitApi $Process $listing
     Check ($null -ne $initial -and ($initial.PSObject.Properties.Name -contains "rooms")) "first startup responds with public directory"
     $Checks++
+    RecordProcessSample $Process 1 "ready"
     $body = @{gameId="yacht";name="R14e packaged persistent room";displayName="R14e host";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=4} | ConvertTo-Json -Compress
     $hosted = Invoke-RestMethod -Method Post -Uri "$api/public/hosted" -Headers $originHeaders -ContentType "application/json" -Body $body -TimeoutSec 10
     Check (-not [string]::IsNullOrEmpty($hosted.token)) "real anonymous host bearer issued"
@@ -131,6 +174,7 @@ try {
     $posted = Invoke-RestMethod -Method Post -Uri "$api/chat" -Headers $headers -ContentType "application/json" -Body $chatBody -TimeoutSec 10
     Check ($posted.messageId -eq $messageId) "chat was persisted before restart"
     $Checks++
+    RecordProcessSample $Process 1 "afterChat"
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -147,18 +191,21 @@ try {
     $after = AwaitApi $Process $listing
     Check (@($after.rooms | Where-Object { $_.roomCode -eq $code }).Count -eq 1) "hosted public room survived hard-stop restart"
     $Checks++
+    RecordProcessSample $Process 2 "ready"
     $me = Invoke-RestMethod -Method Get -Uri "$api/me" -Headers $headers -TimeoutSec 10
     Check ($me.room.roomCode -eq $code) "original member session survives restart"
     $Checks++
     $messages = Invoke-RestMethod -Method Get -Uri "$api/chat?after=-1" -Headers $headers -TimeoutSec 10
     Check (@($messages.messages | Where-Object { $_.messageId -eq $messageId }).Count -eq 1) "durable room chat survives restart"
     $Checks++
+    RecordProcessSample $Process 2 "afterReplay"
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Process = $null
         $Checks += 5
+        WriteProcessTelemetry
         Write-Host "GAME_ROOM_R14H_PACKAGED_GRACEFUL_EXIT_PASSED checks=$Checks shutdowns=2 ports=3"
     } else {
         Write-Host "GAME_ROOM_R14E_PACKAGED_RESTART_PASSED checks=$Checks"
