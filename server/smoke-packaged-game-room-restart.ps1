@@ -83,7 +83,7 @@ try {
     $listing = "$api/public/rooms?gameId=yacht"
     $Process = StartFixture $Exe $FixtureRoot $configPath
     $initial = AwaitApi $Process $listing
-    Check ($null -ne $initial.rooms) "first startup responds with public directory"
+    Check ($null -ne $initial -and ($initial.PSObject.Properties.Name -contains "rooms")) "first startup responds with public directory"
     $Checks++
     $body = @{gameId="yacht";name="R14e packaged persistent room";displayName="R14e host";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=4} | ConvertTo-Json -Compress
     $hosted = Invoke-RestMethod -Method Post -Uri "$api/public/hosted" -ContentType "application/json" -Body $body -TimeoutSec 10
