@@ -87,8 +87,8 @@ foreach ($text in @($Package, $Release)) {
     if (-not $text.Contains($processTelemetry) -or
         -not $text.Contains("smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath") -or
         -not $text.Contains("node ./analyze-packaged-process-telemetry.mjs --self-test") -or
-        -not $text.Contains("--input=$report") -or
-        -not $text.Contains("--summary=$summary")) {
+        -not $text.Contains('--input=$report') -or
+        -not $text.Contains('--summary=$summary')) {
         throw "R14k: both workflows must sample and validate the real packaged Windows EXE"
     }
 }
