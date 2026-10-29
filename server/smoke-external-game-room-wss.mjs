@@ -52,12 +52,12 @@ const until=()=>performance.now()+timeoutMs;
 let completed=0,peakRss=0,peakHeap=0;
 const durations=[];
 
-async function jsonGet(path){
+async function jsonGet(path,authenticate=true){
     const controller=new AbortController();
     const timer=setTimeout(()=>controller.abort(),timeoutMs);
     try {
         const response=await fetch(new URL(path,base),{
-            headers:{"Authorization":"Bearer "+token},
+            headers:authenticate?{"Authorization":"Bearer "+token}:{},
             cache:"no-store",signal:controller.signal
         });
         if(response.status!==200)
@@ -135,14 +135,14 @@ async function metric(record){
     await appendFile(reportPath,JSON.stringify(record)+"\n","utf8");
 }
 async function main(){
-    const config=await jsonGet("/api/client/config");
+    const config=await jsonGet("/api/client/config",false);
     const advertised=new URL(config.websocketUrl||"");
     if(advertised.protocol!=="wss:"||advertised.username||advertised.password
         ||advertised.search||advertised.hash)
         throw Error("public /api/client/config does not advertise secure WSS");
     // Use exactly the server-advertised endpoint, preserving proxy prefixes;
     // the room UUID alone is added to its query, never a bearer.
-    if(advertised.origin!==base.origin)
+    if(new URL(advertised.toString().replace(/^wss:/,"https:")).origin!==base.origin)
         throw Error("advertised WSS origin differs from HTTPS origin; configure public endpoint explicitly before probing");
     const websocketUrl=new URL(advertised);
     websocketUrl.searchParams.set("memberRoomId",roomId);
@@ -195,8 +195,7 @@ async function main(){
         peakRssBytes:peakRss,peakHeapUsedBytes:peakHeap,
         timestamp:new Date().toISOString()};
     await metric(final);
-    console.log("GAME_ROOM_R14I_EXTERNAL_WSS_PASSED checks="+
-        (completed*4+3)+" rounds="+completed+
+    console.log("GAME_ROOM_R14I_EXTERNAL_WSS_PASSED rounds="+completed+
         " tls=verified writes=0 p95SnapshotMs="+final.p95SnapshotMs+
         " peakRssBytes="+peakRss);
 }
