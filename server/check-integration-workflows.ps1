@@ -30,8 +30,9 @@ $processTelemetry = "- name: R14k validate packaged EXE resource samples"
 $packagedLoad = "- name: R14l verify packaged JVM HTTP SQLite soak (48 rounds)"
 $packagedWs = "- name: R14m verify real packaged spectator WebSocket fanout"
 $duration = "- name: R14n verify packaged Windows listener-JVM duration trend"
+$fieldContract = "- name: R14o verify external field duration analyzer contract"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -45,7 +46,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($packagedLoad) -and
            $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($packagedWs) -and
            $Release.IndexOf($packagedWs) -lt $Release.IndexOf($duration) -and
-           $Release.IndexOf($duration) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($duration) -lt $Release.IndexOf($fieldContract) -and
+           $Release.IndexOf($fieldContract) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -171,4 +173,21 @@ if (-not $Package.Contains("Upload R14n packaged JVM duration metrics") -or
     -not $Package.Contains("game-room-r14n-summary.json")) {
     throw "R14n: bounded nonsecret JVM duration observations must be inspectable"
 }
-Write-Host "[workflow] R14n packaged JVM duration trend acceptance guards verified"
+# R14o validates the separate full-duration field analyzer and PowerShell
+# syntax. Hosted CI must NEVER launch 24-hour data collection or publish a
+# field certificate without genuine human-run Windows evidence.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($fieldContract) -or
+        -not $text.Contains("node --check ./analyze-packaged-jvm-field.mjs") -or
+        -not $text.Contains("node ./analyze-packaged-jvm-field.mjs --self-test") -or
+        $text.Contains("observe-packaged-jvm-field.ps1 -AppRoot")) {
+        throw "R14o: validate only the field analyzer in CI; never launch a field soak"
+    }
+}
+if (-not ($Package.IndexOf($duration) -lt $Package.IndexOf($fieldContract) -and
+           $Package.IndexOf($fieldContract) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($duration) -lt $Release.IndexOf($fieldContract) -and
+           $Release.IndexOf($fieldContract) -lt $Release.IndexOf($publish))) {
+    throw "R14o: field analyzer contract must pass before distributing packages"
+}
+Write-Host "[workflow] R14o separate field duration analyzer and no-overnight-CI contract verified"
