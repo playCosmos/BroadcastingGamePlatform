@@ -55,7 +55,7 @@ if(base.protocol!=="https:"||base.username||base.password||
 const root=base.origin;
 const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const expectedRounds=Math.ceil(durationSeconds/intervalSeconds)+1;
-const started=performance.now();
+let started=performance.now();
 const summaryTimes=[];
 let failureTotal=0;
 let completed=0;
@@ -202,6 +202,9 @@ async function main(){
     // credentials must not lead to a convincing-looking long-run trace.
     await Promise.all(tokens.map(async token=>
         validateMember(await getJson("/api/v1/room-membership/me",token))));
+    // The reported observation starts AFTER TLS/config/member preflight.
+    // Do not credit onboarding time toward the claimed field duration.
+    started=performance.now();
     await writeFile(reportPath,JSON.stringify({
         kind:"start",schemaVersion:1,
         source:"external-https-wss-readonly",
