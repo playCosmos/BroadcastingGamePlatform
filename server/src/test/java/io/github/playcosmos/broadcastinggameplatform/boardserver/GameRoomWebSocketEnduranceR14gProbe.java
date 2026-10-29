@@ -1,5 +1,9 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
+import com.google.gson.JsonObject;
+import java.io.BufferedWriter;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.StandardOpenOption;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomModels.SeatRole;
@@ -93,10 +97,16 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
 
     public static void main(String[] args) throws Exception {
         int rounds=DEFAULT_ROUNDS;
+        Path reportPath=null;
         for(String arg:args) {
-            if(!arg.startsWith("--rounds="))
-                throw new IllegalArgumentException("expected --rounds=N");
-            rounds=Integer.parseInt(arg.substring("--rounds=".length()));
+            if(arg.startsWith("--rounds=")) {
+                rounds=Integer.parseInt(arg.substring("--rounds=".length()));
+            } else if(arg.startsWith("--report=")) {
+                if(reportPath!=null)throw new IllegalArgumentException("duplicate --report");
+                reportPath=Path.of(arg.substring("--report=".length()))
+                    .toAbsolutePath().normalize();
+            } else throw new IllegalArgumentException(
+                "expected --rounds=N or --report=path");
         }
         if(rounds<2||rounds>MAX_ROUNDS)
             throw new IllegalArgumentException("rounds must be 2.."+MAX_ROUNDS);
@@ -106,7 +116,22 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
         long heapBefore=usedHeap();
         long started=System.nanoTime();
         Services services=null;
+        // CREATE_NEW prevents accidental clobbering of an earlier result.
+        // Reports contain aggregate diagnostics only, never room IDs or tokens.
+        BufferedWriter report=reportPath==null ? null : Files.newBufferedWriter(
+            reportPath,StandardCharsets.UTF_8,
+            StandardOpenOption.CREATE_NEW,StandardOpenOption.WRITE);
         try(var http=HttpClient.newHttpClient()) {
+            if(report!=null) {
+                var start=new JsonObject();
+                start.addProperty("kind","start");
+                start.addProperty("schemaVersion",1);
+                start.addProperty("rounds",rounds);
+                start.addProperty("spectators",12);
+                start.addProperty("games",2);
+                start.addProperty("process","isolated-java-fixture");
+                appendReport(report,start);
+            }
             var database=new BoardGameDatabase(root.resolve("room.sqlite"));
             database.initialize();
             services=start(database,port);
@@ -164,6 +189,7 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
                     rooms.get(i).game()+" replay after process-component restart");
 
             for(int round=1;round<=rounds;round++) {
+                long roundStarted=System.nanoTime();
                 long liveSeq=round*2L+1;
                 long offlineSeq=liveSeq+1;
                 for(int i=0;i<rooms.size();i++) {
@@ -188,6 +214,8 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
                         messageId(rooms.get(i).game(),"missed",round),
                         offlineSeq,
                         rooms.get(i).game()+" replay round "+round);
+                if(report!=null)recordRound(report,round,
+                    (System.nanoTime()-roundStarted)/1_000_000.0,services.socket());
                 if(round==1||round%10==0||round==rounds)
                     System.out.println("[r14g-soak] round="+round+"/"+rounds
                         +" sockets="+services.socket().connectedClients()
@@ -219,6 +247,15 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
             services=null;
             awaitPortRelease(port);
             require(true,"restarted listener released its port after soak");
+            if(report!=null) {
+                var completed=new JsonObject();
+                completed.addProperty("kind","complete");
+                completed.addProperty("rounds",rounds);
+                completed.addProperty("checks",checks);
+                completed.addProperty("elapsedMs",(System.nanoTime()-started)/1_000_000);
+                completed.addProperty("listenerReleased",true);
+                appendReport(report,completed);
+            }
             System.out.println("GAME_ROOM_R14G_ENDURANCE_PASSED checks="+checks
                 +" rounds="+rounds+" games=2 spectators=12"
                 +" heapBeforeBytes="+heapBefore+" heapAfterBytes="+usedHeap()
@@ -236,8 +273,42 @@ public final class GameRoomWebSocketEnduranceR14gProbe {
                     try{Files.deleteIfExists(p);}
                     catch(Exception ignored){}
                 });
+            } finally {
+                if(report!=null)report.close();
             }
         }
+    }
+
+    private static void appendReport(BufferedWriter writer,JsonObject record)
+        throws Exception {
+        writer.write(record.toString());
+        writer.newLine();
+        writer.flush();
+    }
+    private static void recordRound(BufferedWriter writer,int round,
+        double durationMs,BoardGameWebSocketServer socket) throws Exception {
+        var threads=ManagementFactory.getThreadMXBean();
+        var memory=ManagementFactory.getMemoryMXBean();
+        long gcCount=0,gcTime=0;
+        for(var collector:ManagementFactory.getGarbageCollectorMXBeans()) {
+            if(collector.getCollectionCount()>=0)
+                gcCount+=collector.getCollectionCount();
+            if(collector.getCollectionTime()>=0)
+                gcTime+=collector.getCollectionTime();
+        }
+        var sample=new JsonObject();
+        sample.addProperty("kind","sample");
+        sample.addProperty("round",round);
+        sample.addProperty("elapsedRoundMs",durationMs);
+        sample.addProperty("heapUsedBytes",memory.getHeapMemoryUsage().getUsed());
+        sample.addProperty("heapCommittedBytes",memory.getHeapMemoryUsage().getCommitted());
+        sample.addProperty("nonHeapUsedBytes",memory.getNonHeapMemoryUsage().getUsed());
+        sample.addProperty("threadCount",threads.getThreadCount());
+        sample.addProperty("peakThreadCount",threads.getPeakThreadCount());
+        sample.addProperty("gcCount",gcCount);
+        sample.addProperty("gcTimeMs",gcTime);
+        sample.addProperty("connectedSockets",socket.connectedClients());
+        appendReport(writer,sample);
     }
 
     private static Services start(BoardGameDatabase database,int port)
