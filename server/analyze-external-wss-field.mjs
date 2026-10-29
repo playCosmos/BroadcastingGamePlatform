@@ -15,11 +15,11 @@ const exact=(value,keys)=>value!==null&&typeof value==="object"&&
     !Array.isArray(value)&&
     Object.keys(value).sort().join(",")===keys.slice().sort().join(",");
 const head=["kind","schemaVersion","source","durationSeconds","intervalSeconds",
-    "timeoutMs","clients","expectedRounds","tlsVerified","readOnly"];
+    "timeoutMs","clients","expectedRounds","tlsVerified","noExplicitWriteRequests"];
 const rowKeys=["kind","round","elapsedSeconds","observedUtc","clients",
     "memberChecks","snapshots","cleanCloses","memberFailures",
     "snapshotFailures","closeFailures","snapshotP50Ms","snapshotP95Ms"];
-const endKeys=["kind","rounds","durationSeconds","failures","tlsVerified","readOnly"];
+const endKeys=["kind","rounds","durationSeconds","failures","tlsVerified","noExplicitWriteRequests"];
 function parse(content){
     const lines=content.trimEnd().split(/\r?\n/);
     assert(lines.length>0&&lines.every(l=>l.trim()!==""),
@@ -34,8 +34,8 @@ function analyze(records,minDuration=86400){
         "start, rounds and completion footer required");
     const h=records[0],end=records.at(-1);
     assert(exact(h,head)&&h.kind==="start"&&h.schemaVersion===1&&
-        h.source==="external-https-wss-readonly"&&
-        h.tlsVerified===true&&h.readOnly===true&&
+        h.source==="external-https-wss-probe"&&
+        h.tlsVerified===true&&h.noExplicitWriteRequests===true&&
         integer(h.durationSeconds,60)&&h.durationSeconds<=259200&&
         h.durationSeconds>=minDuration&&
         integer(h.intervalSeconds,10)&&h.intervalSeconds<=3600&&
@@ -47,7 +47,7 @@ function analyze(records,minDuration=86400){
     assert(h.expectedRounds===count&&records.length===count+2,
         "missing, duplicated or extra field rounds");
     assert(exact(end,endKeys)&&end.kind==="complete"&&end.rounds===count&&
-        end.readOnly===true&&end.tlsVerified===true&&
+        end.noExplicitWriteRequests===true&&end.tlsVerified===true&&
         finite(end.durationSeconds)&&end.durationSeconds>=h.durationSeconds&&
         integer(end.failures),"missing full-duration trusted completion footer");
     let previous=-1,prevTime=null,totalMember=0,totalSnapshots=0,totalCloses=0;
@@ -126,7 +126,7 @@ function analyze(records,minDuration=86400){
         [...latencies].sort((a,b)=>a-b)[Math.ceil(latencies.length*.95)-1]:null;
     return {
         kind:"external-wss-field-summary",schemaVersion:1,
-        source:"external-https-wss-readonly",clients:h.clients,
+        source:"external-https-wss-probe",clients:h.clients,
         durationSeconds:h.durationSeconds,observedDurationSeconds:end.durationSeconds,
         intervalSeconds:h.intervalSeconds,expectedRounds:count,
         completedRounds:count,
@@ -134,8 +134,8 @@ function analyze(records,minDuration=86400){
         memberChecks:totalMember,authenticatedSnapshots:totalSnapshots,
         cleanCloses:totalCloses,
         memberFailures,snapshotFailures,closeFailures,totalFailures,
-        fullDurationObserved:true,tlsVerified:true,readOnly:true,
-        allReadOnlyChecksPassed:totalFailures===0,
+        fullDurationObserved:true,tlsVerified:true,noExplicitWriteRequests:true,
+        allProbeChecksPassed:totalFailures===0,
         roundP95SnapshotMs:p95,
         maxGapSeconds:Math.round(maxGap*1000)/1000,
         hourly:[...buckets.values()],
@@ -149,9 +149,9 @@ function fixture(durationSeconds=120,intervalSeconds=20){
     const clients=4,count=Math.ceil(durationSeconds/intervalSeconds)+1;
     const t=Date.parse("2026-01-01T00:00:00.000Z");
     const rows=[{kind:"start",schemaVersion:1,
-        source:"external-https-wss-readonly",durationSeconds,
+        source:"external-https-wss-probe",durationSeconds,
         intervalSeconds,timeoutMs:15000,clients,expectedRounds:count,
-        tlsVerified:true,readOnly:true}];
+        tlsVerified:true,noExplicitWriteRequests:true}];
     for(let i=0;i<count;i++){
         const elapsed=Math.min(durationSeconds,i*intervalSeconds);
         rows.push({
@@ -164,11 +164,11 @@ function fixture(durationSeconds=120,intervalSeconds=20){
     }
     rows.push({kind:"complete",rounds:count,
         durationSeconds:durationSeconds+1,failures:0,
-        tlsVerified:true,readOnly:true});
+        tlsVerified:true,noExplicitWriteRequests:true});
     return rows;
 }
 function selfTest(){
-    assert(analyze(fixture(),60).allReadOnlyChecksPassed,
+    assert(analyze(fixture(),60).allProbeChecksPassed,
         "valid short synthetic fixture");
     const full=fixture(86400,3600);
     assert(analyze(full).completedRounds===25,
@@ -179,7 +179,7 @@ function selfTest(){
     failed[2].cleanCloses=3;
     failed.at(-1).failures=1;
     assert(analyze(failed,60).totalFailures===1&&
-        !analyze(failed,60).allReadOnlyChecksPassed,
+        !analyze(failed,60).allProbeChecksPassed,
         "real errors must be reported, not silently accepted as uptime");
     const mutations=[
         x=>x.pop(),
@@ -187,7 +187,7 @@ function selfTest(){
         x=>x.splice(2,0,structuredClone(x[2])),
         x=>x[0].source="localhost",
         x=>x[0].tlsVerified=false,
-        x=>x[0].readOnly=false,
+        x=>x[0].noExplicitWriteRequests=false,
         x=>x[0].clients=13,
         x=>x[0].intervalSeconds=2,
         x=>x[0].expectedRounds=2,
@@ -251,7 +251,7 @@ async function main(){
     console.log("GAME_ROOM_R14P_WSS_FIELD_REPORT_VALID"+
         " rounds="+summary.completedRounds+" clients="+summary.clients+
         " failures="+summary.totalFailures+
-        " allChecksPassed="+summary.allReadOnlyChecksPassed);
+        " allChecksPassed="+summary.allProbeChecksPassed);
 }
 try{await main();}
 catch(error){console.error(String(error?.message||error));process.exitCode=1;}
