@@ -61,6 +61,13 @@ function analyze(records,minDuration=86400){
             row.elapsedSeconds>previous&&row.elapsedSeconds>=scheduled-0.1&&
             row.elapsedSeconds<=end.durationSeconds+2,
             "wrong round count/order/scheduled elapsed time");
+        // Every scheduled poll must also stay close to its intended time.
+        // Without this cap an entire 24-hour trace could be shifted late
+        // while preserving ordering and a fabricated complete footer.
+        const maxLateness=Math.max(2*h.intervalSeconds,
+            3*h.timeoutMs/1000+30);
+        assert(row.elapsedSeconds<=scheduled+maxLateness,
+            "external field observation missed its scheduled window");
         assert(typeof row.observedUtc==="string"&&
             /^\d{4}-\d{2}-\d{2}T/.test(row.observedUtc)&&
             Number.isFinite(Date.parse(row.observedUtc)),
@@ -187,6 +194,8 @@ function selfTest(){
         x=>x[2].round=1,
         x=>x[3].elapsedSeconds=20,
         x=>x[3].elapsedSeconds=150,
+        x=>{for(let i=1;i<x.length-1;i++)x[i].elapsedSeconds+=100;
+            x.at(-1).durationSeconds+=100;},
         x=>x[2].snapshotFailures=1,
         x=>x[2].memberChecks=3,
         x=>x[3].cleanCloses=3,
