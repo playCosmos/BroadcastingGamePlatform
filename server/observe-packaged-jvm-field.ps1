@@ -23,7 +23,7 @@ if ($ListenerPorts.Count -ne 3 -or @($ListenerPorts | Select-Object -Unique).Cou
 if ($IntervalSeconds -ge $DurationSeconds) {
     throw "R14o interval must be shorter than duration"
 }
-$root = [IO.Path]::GetFullPath($AppRoot).TrimEnd('\','/') + [IO.Path]::DirectorySeparatorChar
+$root = [IO.Path]::GetFullPath($AppRoot).TrimEnd([char[]]@('\','/')) + [IO.Path]::DirectorySeparatorChar
 $exe = Join-Path $root "BroadcastingGamePlatformServer.exe"
 if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
     throw "R14o requires the actual installed/extracted Windows app-image root"
