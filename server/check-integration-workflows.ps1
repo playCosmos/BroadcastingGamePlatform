@@ -26,8 +26,9 @@ $packaged = "- name: R14e packaged GameRoom startup and crash-restart"
 $extended = "- name: R14h extended WebSocket endurance (24 rounds)"
 $graceful = "- name: R14h packaged GameRoom graceful exit and restart"
 $telemetry = "- name: R14j validate and summarize soak metrics"
+$processTelemetry = "- name: R14k validate packaged EXE resource samples"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -37,7 +38,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($extended) -lt $Release.IndexOf($telemetry) -and
            $Release.IndexOf($telemetry) -lt $Release.IndexOf($packaged) -and
            $Release.IndexOf($packaged) -lt $Release.IndexOf($graceful) -and
-           $Release.IndexOf($graceful) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($graceful) -lt $Release.IndexOf($processTelemetry) -and
+           $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -79,4 +81,25 @@ if (-not $Package.Contains("Upload R14j soak metrics") -or
     -not $Package.Contains("game-room-r14j-summary.json")) {
     throw "R14j: sanitized measurements must be retained for inspection"
 }
-Write-Host "[workflow] R14j release gates, isolated telemetry and packaged restart verified"
+# R14k: do not silently replace real packaged-process sampling with the
+# earlier disposable-JVM R14j metrics. Validate BOTH separate trust domains.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($processTelemetry) -or
+        -not $text.Contains("smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath") -or
+        -not $text.Contains("node ./analyze-packaged-process-telemetry.mjs --self-test") -or
+        -not $text.Contains('--input=$report') -or
+        -not $text.Contains('--summary=$summary')) {
+        throw "R14k: both workflows must sample and validate the real packaged Windows EXE"
+    }
+}
+if (-not ($Package.IndexOf($graceful) -lt $Package.IndexOf($processTelemetry) -and
+           $Package.IndexOf($processTelemetry) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($graceful) -lt $Release.IndexOf($processTelemetry) -and
+           $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($publish))) {
+    throw "R14k: packaged EXE telemetry must be validated before distribution"
+}
+if (-not $Package.Contains("Upload R14k packaged EXE metrics") -or
+    -not $Package.Contains("game-room-r14k-summary.json")) {
+    throw "R14k: sanitized packaged EXE measurements must remain inspectable"
+}
+Write-Host "[workflow] R14k separate JVM/packaged EXE telemetry and pre-release gates verified"
