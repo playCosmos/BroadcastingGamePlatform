@@ -25,6 +25,10 @@ From the `server` directory after Maven has built the probe test classes and cop
 - CI runs a bounded six-round test, not a continuously monitored 24-hour endurance test. Metrics across independent CI runners cannot establish a leak trend. A manual long-duration soak requires clear baseline, host telemetry, threshold, and final report.
 - Existing room capacity/anonymous guest policy remains unchanged; no browser fingerprint, forced account, host approval or bypass of per-remote WebSocket connection limits is introduced.
 
+## R14g browser CI stability investigation
+
+During parallel independent Windows CI runs, the first R14g PR build completed the new Java transport probes but the pre-existing **TLS proxy WSS authenticated snapshot** acceptance timed out at its original 15-second limit. The matching push CI completed that same test successfully. This is not sufficient to classify the issue as an application authorization defect. The acceptance remains mandatory; its wait is now bounded at 25 seconds and a failure records only non-secret observer state (readyState, close code, event count and upgrade count) to distinguish delayed handshakes from rejected credentials. No production WebSocket behavior is modified.
+
 ## Validation gates
 
 - New R14g probe passes in the same regression suite as R14f transport (93), R14e migration (47) and R14e spectator (270).
