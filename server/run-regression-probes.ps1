@@ -72,6 +72,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomHistoricalUpgradeR14eProbe",
     "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomSpectatorSoakR14eProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomWebSocketSoakR14fProbe",
+    "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomWebSocketEnduranceR14gProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.BoardGameWebSocketRateProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.BoardServerConfigPersistenceProbe"
 )
