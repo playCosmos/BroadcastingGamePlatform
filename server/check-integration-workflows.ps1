@@ -27,8 +27,9 @@ $extended = "- name: R14h extended WebSocket endurance (24 rounds)"
 $graceful = "- name: R14h packaged GameRoom graceful exit and restart"
 $telemetry = "- name: R14j validate and summarize soak metrics"
 $processTelemetry = "- name: R14k validate packaged EXE resource samples"
+$packagedLoad = "- name: R14l verify packaged JVM HTTP SQLite soak (48 rounds)"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -39,7 +40,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($telemetry) -lt $Release.IndexOf($packaged) -and
            $Release.IndexOf($packaged) -lt $Release.IndexOf($graceful) -and
            $Release.IndexOf($graceful) -lt $Release.IndexOf($processTelemetry) -and
-           $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($packagedLoad) -and
+           $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -102,4 +104,25 @@ if (-not $Package.Contains("Upload R14k packaged EXE metrics") -or
     -not $Package.Contains("game-room-r14k-summary.json")) {
     throw "R14k: sanitized packaged EXE measurements must remain inspectable"
 }
-Write-Host "[workflow] R14k separate JVM/packaged EXE telemetry and pre-release gates verified"
+# R14l: the real Windows packaged listener JVM must perform the bounded
+# HTTP and SQLite chat workload across both startup and restart lifecycles.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($packagedLoad) -or
+        -not $text.Contains("-LoadRounds 24 -LoadReportPath") -or
+        -not $text.Contains("node ./analyze-packaged-http-soak.mjs --self-test") -or
+        -not $text.Contains("node ./analyze-packaged-http-soak.mjs") -or
+        -not $text.Contains("--min-rounds=24")) {
+        throw "R14l: both workflows must validate packaged HTTP/SQLite workload before distribution"
+    }
+}
+if (-not ($Package.IndexOf($processTelemetry) -lt $Package.IndexOf($packagedLoad) -and
+           $Package.IndexOf($packagedLoad) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($packagedLoad) -and
+           $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($publish))) {
+    throw "R14l: package and release cannot skip the packaged HTTP workload gate"
+}
+if (-not $Package.Contains("Upload R14l packaged HTTP soak metrics") -or
+    -not $Package.Contains("game-room-r14l-summary.json")) {
+    throw "R14l: sanitized workload metrics must remain inspectable"
+}
+Write-Host "[workflow] R14l packaged JVM sequential HTTP/SQLite soak and release gates verified"
