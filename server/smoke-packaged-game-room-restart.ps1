@@ -4,7 +4,10 @@ param(
     [string]$TelemetryPath = "",
     [ValidateRange(0,10000)]
     [int]$LoadRounds = 0,
-    [string]$LoadReportPath = ""
+    [string]$LoadReportPath = "",
+    [ValidateSet(0,12)]
+    [int]$WsSpectators = 0,
+    [string]$WsReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -21,6 +24,20 @@ if ($LoadRounds -gt 0) {
     }
 } elseif ($LoadReportPath) {
     throw "R14l report path requires LoadRounds"
+}
+if ($WsSpectators -gt 0) {
+    if ($StopMode -ne "Graceful" -or $LoadRounds -lt 2 -or
+        [string]::IsNullOrWhiteSpace($WsReportPath)) {
+        throw "R14m fan-out requires graceful R14l packaged load and a distinct new report"
+    }
+    $outputs = @($WsReportPath,$LoadReportPath,$TelemetryPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    Check ($outputs.Count -eq @($outputs | Select-Object -Unique).Count) "R14m report files must be distinct"
+    if (Test-Path -LiteralPath $WsReportPath) {
+        throw "R14m fan-out report already exists"
+    }
+} elseif ($WsReportPath) {
+    throw "R14m report path requires 12 spectators"
 }
 
 # Exercise the shipped EXE, not just a Java self-check.
@@ -273,6 +290,96 @@ function WriteLoadTelemetry {
         finally { $writer.Dispose() }
     } finally { $stream.Dispose() }
 }
+
+# R14m: create independent, genuine spectator identities and socket sessions
+# against the actual packaged Java listener. The Node child receives the
+# temporary host credential only through inherited environment, never args.
+# Node's per-launch scratch output is inside the disposable fixture root.
+$script:WsRunRecords = [System.Collections.Generic.List[object]]::new()
+function MeasurePackagedJvm([System.Diagnostics.Process]$Launcher, [int[]]$Ports) {
+    $jvm = ResolveListenerJvm $Launcher $Ports
+    try {
+        return [ordered]@{
+            workingSetBytes = [long]$jvm.WorkingSet64
+            privateBytes = [long]$jvm.PrivateMemorySize64
+            threadCount = [int]$jvm.Threads.Count
+            handleCount = [int]$jvm.HandleCount
+            cpuMs = [Math]::Round($jvm.TotalProcessorTime.TotalMilliseconds, 2)
+        }
+    } finally { $jvm.Dispose() }
+}
+function RunPackagedWsFanout(
+    [System.Diagnostics.Process]$Launcher, [int]$Launch,
+    [string]$HostToken, [string]$RoomCode, [string]$RoomId,
+    [string]$Root, [int[]]$Ports
+) {
+    if ($WsSpectators -eq 0) { return }
+    Check (-not $Launcher.HasExited) "R14m packaged listener exited"
+    $start = MeasurePackagedJvm $Launcher $Ports
+    $scratch = Join-Path $Root ("r14m-ws-" + $Launch + ".json")
+    $keys = @(
+        "BGP_R14M_LAUNCH","BGP_R14M_SPECTATORS","BGP_R14M_HTTP_PORT",
+        "BGP_R14M_WS_PORT","BGP_R14M_ROOM_CODE","BGP_R14M_ROOM_ID",
+        "BGP_R14M_HOST_TOKEN"
+    )
+    try {
+        $env:BGP_R14M_LAUNCH = [string]$Launch
+        $env:BGP_R14M_SPECTATORS = [string]$WsSpectators
+        $env:BGP_R14M_HTTP_PORT = [string]$Ports[2]
+        $env:BGP_R14M_WS_PORT = [string]$Ports[1]
+        $env:BGP_R14M_ROOM_CODE = $RoomCode
+        $env:BGP_R14M_ROOM_ID = $RoomId
+        $env:BGP_R14M_HOST_TOKEN = $HostToken
+        node (Join-Path $ServerRoot "smoke-packaged-websocket-fanout.mjs") "--report=$scratch"
+        Check ($LASTEXITCODE -eq 0) "R14m real packaged WS fanout failed"
+    } finally {
+        foreach ($key in $keys) {
+            Remove-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+        }
+    }
+    $client = Get-Content -LiteralPath $scratch -Raw -Encoding utf8 | ConvertFrom-Json
+    Check ($client.kind -eq "packaged-ws-client" -and
+        $client.launch -eq $Launch -and
+        $client.spectators -eq $WsSpectators) "R14m client report not completed"
+    $end = MeasurePackagedJvm $Launcher $Ports
+    $script:WsRunRecords.Add([ordered]@{
+        launch = $Launch
+        spectators = [int]$client.spectators
+        joined = [int]$client.joined
+        handshakes = [int]$client.handshakes
+        snapshots = [int]$client.snapshots
+        liveEvents = [int]$client.liveEvents
+        replayEvents = [int]$client.replayEvents
+        cleanCloses = [int]$client.cleanCloses
+        liveSequenceBeforeReplay = [bool]$client.liveSequenceBeforeReplay
+        elapsedMs = [double]$client.elapsedMs
+        before = $start
+        after = $end
+    })
+}
+function WriteWsFanoutReport {
+    if ($WsSpectators -eq 0) { return }
+    Check ($script:WsRunRecords.Count -eq 2) "R14m two packaged JVM socket lifecycles required"
+    $result = [ordered]@{
+        kind = "packaged-ws-fanout"
+        schemaVersion = 1
+        source = "packaged-windows-listener-jvm"
+        spectatorsPerLaunch = $WsSpectators
+        verifiedRestarts = 1
+        verifiedGracefulExits = 2
+        listenerOwnerVerified = $true
+        jvmModuleVerified = $true
+        portsReleased = $true
+        roomRecovered = $true
+        launches = @($script:WsRunRecords.ToArray())
+    }
+    $stream = [IO.File]::Open($WsReportPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
+        try { $writer.WriteLine(($result | ConvertTo-Json -Depth 9 -Compress)) }
+        finally { $writer.Dispose() }
+    } finally { $stream.Dispose() }
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -309,12 +416,14 @@ try {
     Check ($null -ne $initial -and ($initial.PSObject.Properties.Name -contains "rooms")) "first startup responds with public directory"
     $Checks++
     RecordProcessSample $Process 1 "ready" @($adminPort,$wsPort,$clientPort)
-    $body = @{gameId="yacht";name="R14e packaged persistent room";displayName="R14e host";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=4} | ConvertTo-Json -Compress
+    $roomCapacity = if ($WsSpectators -gt 0) { 26 } else { 4 }
+    $body = @{gameId="yacht";name="R14e packaged persistent room";displayName="R14e host";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=$roomCapacity} | ConvertTo-Json -Compress
     $hosted = Invoke-RestMethod -Method Post -Uri "$api/public/hosted" -Headers $originHeaders -ContentType "application/json" -Body $body -TimeoutSec 10
     Check (-not [string]::IsNullOrEmpty($hosted.token)) "real anonymous host bearer issued"
     $Checks++
     $token = [string]$hosted.token
     $code = [string]$hosted.room.roomCode
+    $roomId = [string]$hosted.room.roomId
     Check ($code.Length -eq 6) "real hosted room code"
     $Checks++
     $messageId = "r14ePackagedMessage1"
@@ -325,6 +434,7 @@ try {
     $Checks++
     RecordProcessSample $Process 1 "afterChat" @($adminPort,$wsPort,$clientPort)
     RunPackagedHttpLoad $Process 1 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
+    RunPackagedWsFanout $Process 1 $token $code $roomId $FixtureRoot @($adminPort,$wsPort,$clientPort)
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -350,6 +460,7 @@ try {
     $Checks++
     RecordProcessSample $Process 2 "afterReplay" @($adminPort,$wsPort,$clientPort)
     RunPackagedHttpLoad $Process 2 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
+    RunPackagedWsFanout $Process 2 $token $code $roomId $FixtureRoot @($adminPort,$wsPort,$clientPort)
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -358,6 +469,8 @@ try {
         $Checks += 5
         WriteProcessTelemetry
         WriteLoadTelemetry
+        WriteWsFanoutReport
+        if ($WsSpectators -gt 0) { Write-Host "GAME_ROOM_R14M_PACKAGED_WS_FANOUT_PASSED launches=2 spectators=12 liveEvents=24 replayEvents=24" }
         if ($LoadRounds -gt 0) { Write-Host "GAME_ROOM_R14L_PACKAGED_HTTP_SOAK_PASSED roundsPerLaunch=$LoadRounds restarts=1 gracefulExits=2" }
         Write-Host "GAME_ROOM_R14H_PACKAGED_GRACEFUL_EXIT_PASSED checks=$Checks shutdowns=2 ports=3"
     } else {
