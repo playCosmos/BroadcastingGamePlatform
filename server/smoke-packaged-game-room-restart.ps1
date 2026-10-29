@@ -86,30 +86,87 @@ function RequestGracefulStop([System.Diagnostics.Process]$Process, [string]$Fixt
     $Process.Dispose()
 }
 
-# R14k: real packaged Windows EXE process counters only, not the isolated
-# R14j JVM. Do not record PIDs, bearer tokens, room IDs, IPs or chat.
+# R14k: measure the actual packaged JVM that OWNS all three live listeners.
+# The .exe returned by Process.Start may be a lightweight jpackage launcher
+# with a separate JVM child. Never equate the launcher with the server runtime.
+# Process IDs, command lines, addresses and the disposable port numbers are
+# used only within CI validation; none appear in saved telemetry.
+function ResolveListenerJvm([System.Diagnostics.Process]$Launcher, [int[]]$Ports) {
+    Check (-not $Launcher.HasExited) "R14k packaged launcher exited before observation"
+    $owners = @()
+    foreach ($port in $Ports) {
+        $socket = @(Get-NetTCPConnection -LocalPort $port -State Listen -ErrorAction Stop |
+            Where-Object { $_.LocalAddress -eq "127.0.0.1" })
+        Check ($socket.Count -eq 1) "R14k expected one localhost listener per configured port"
+        $owners += [int]$socket[0].OwningProcess
+    }
+    $pids = @($owners | Select-Object -Unique)
+    Check ($pids.Count -eq 1 -and $pids[0] -gt 0) "R14k listeners must share one JVM process"
+    $ownerPid = [int]$pids[0]
+
+    # Windows reports the owning PID, not necessarily Process.Start's PID.
+    # Accept only the original launcher or a proven descendant, and ensure
+    # the listener executable belongs to the packaged application image.
+    $currentPid = $ownerPid
+    $isDescendant = $false
+    for ($depth = 0; $depth -lt 16 -and $currentPid -gt 0; $depth++) {
+        if ($currentPid -eq $Launcher.Id) {
+            $isDescendant = $true
+            break
+        }
+        $node = Get-CimInstance Win32_Process -Filter "ProcessId = $currentPid" -ErrorAction Stop
+        Check ($null -ne $node) "R14k listener process lineage disappeared"
+        $parentPid = [int]$node.ParentProcessId
+        Check ($parentPid -ne $currentPid) "R14k cyclic process ancestry"
+        $currentPid = $parentPid
+    }
+    Check $isDescendant "R14k listener owner is unrelated to packaged launcher"
+    $info = Get-CimInstance Win32_Process -Filter "ProcessId = $ownerPid" -ErrorAction Stop
+    Check ($null -ne $info -and -not [string]::IsNullOrWhiteSpace($info.ExecutablePath)) "R14k listener executable not found"
+    $imagePath = [IO.Path]::GetFullPath([string]$info.ExecutablePath)
+    $packagePrefix = [IO.Path]::GetFullPath($AppRoot).TrimEnd('\') + '\'
+    Check ($imagePath.StartsWith($packagePrefix, [StringComparison]::OrdinalIgnoreCase)) "R14k listener runs outside packaged app image"
+
+    $runtime = [System.Diagnostics.Process]::GetProcessById($ownerPid)
+    try {
+        $jvm = @($runtime.Modules | Where-Object { $_.ModuleName -ieq "jvm.dll" })
+        Check ($jvm.Count -gt 0) "R14k listener owner did not load bundled JVM"
+        $runtime.Refresh()
+        return $runtime
+    } catch {
+        $runtime.Dispose()
+        throw
+    }
+}
+
 $script:TelemetrySamples = [System.Collections.Generic.List[object]]::new()
-function RecordProcessSample([System.Diagnostics.Process]$Process, [int]$Launch, [string]$Phase) {
+function RecordProcessSample([System.Diagnostics.Process]$Process, [int]$Launch, [string]$Phase, [int[]]$Ports) {
     if ([string]::IsNullOrWhiteSpace($TelemetryPath)) { return }
     Check (-not $Process.HasExited) "R14k process exited before resource sampling"
-    $Process.Refresh()
-    $script:TelemetrySamples.Add([ordered]@{
-        launch = $Launch
-        phase = $Phase
-        workingSetBytes = [long]$Process.WorkingSet64
-        privateBytes = [long]$Process.PrivateMemorySize64
-        threadCount = [int]$Process.Threads.Count
-        handleCount = [int]$Process.HandleCount
-        cpuMs = [Math]::Round($Process.TotalProcessorTime.TotalMilliseconds, 2)
-    })
+    $runtime = ResolveListenerJvm $Process $Ports
+    try {
+        $script:TelemetrySamples.Add([ordered]@{
+            launch = $Launch
+            phase = $Phase
+            workingSetBytes = [long]$runtime.WorkingSet64
+            privateBytes = [long]$runtime.PrivateMemorySize64
+            threadCount = [int]$runtime.Threads.Count
+            handleCount = [int]$runtime.HandleCount
+            cpuMs = [Math]::Round($runtime.TotalProcessorTime.TotalMilliseconds, 2)
+        })
+    } finally {
+        $runtime.Dispose()
+    }
 }
 function WriteProcessTelemetry {
     if ([string]::IsNullOrWhiteSpace($TelemetryPath)) { return }
     Check ($script:TelemetrySamples.Count -eq 4) "R14k expected four live EXE resource samples"
     $report = [ordered]@{
         kind = "packaged-process-telemetry"
-        schemaVersion = 1
-        process = "packaged-windows-exe"
+        schemaVersion = 2
+        process = "packaged-windows-listener-jvm"
+        listenerOwnerVerified = $true
+        jvmModuleVerified = $true
         stopMode = "Graceful"
         samples = @($script:TelemetrySamples.ToArray())
         verifiedRestarts = 1
@@ -159,7 +216,7 @@ try {
     $initial = AwaitApi $Process $listing
     Check ($null -ne $initial -and ($initial.PSObject.Properties.Name -contains "rooms")) "first startup responds with public directory"
     $Checks++
-    RecordProcessSample $Process 1 "ready"
+    RecordProcessSample $Process 1 "ready" @($adminPort,$wsPort,$clientPort)
     $body = @{gameId="yacht";name="R14e packaged persistent room";displayName="R14e host";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=4} | ConvertTo-Json -Compress
     $hosted = Invoke-RestMethod -Method Post -Uri "$api/public/hosted" -Headers $originHeaders -ContentType "application/json" -Body $body -TimeoutSec 10
     Check (-not [string]::IsNullOrEmpty($hosted.token)) "real anonymous host bearer issued"
@@ -174,7 +231,7 @@ try {
     $posted = Invoke-RestMethod -Method Post -Uri "$api/chat" -Headers $headers -ContentType "application/json" -Body $chatBody -TimeoutSec 10
     Check ($posted.messageId -eq $messageId) "chat was persisted before restart"
     $Checks++
-    RecordProcessSample $Process 1 "afterChat"
+    RecordProcessSample $Process 1 "afterChat" @($adminPort,$wsPort,$clientPort)
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -191,14 +248,14 @@ try {
     $after = AwaitApi $Process $listing
     Check (@($after.rooms | Where-Object { $_.roomCode -eq $code }).Count -eq 1) "hosted public room survived hard-stop restart"
     $Checks++
-    RecordProcessSample $Process 2 "ready"
+    RecordProcessSample $Process 2 "ready" @($adminPort,$wsPort,$clientPort)
     $me = Invoke-RestMethod -Method Get -Uri "$api/me" -Headers $headers -TimeoutSec 10
     Check ($me.room.roomCode -eq $code) "original member session survives restart"
     $Checks++
     $messages = Invoke-RestMethod -Method Get -Uri "$api/chat?after=-1" -Headers $headers -TimeoutSec 10
     Check (@($messages.messages | Where-Object { $_.messageId -eq $messageId }).Count -eq 1) "durable room chat survives restart"
     $Checks++
-    RecordProcessSample $Process 2 "afterReplay"
+    RecordProcessSample $Process 2 "afterReplay" @($adminPort,$wsPort,$clientPort)
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
