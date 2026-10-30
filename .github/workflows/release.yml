@@ -149,7 +149,8 @@ jobs:
           $consistency = Join-Path $env:RUNNER_TEMP "game-room-r14t-consistency.json"
           $localTls = Join-Path $env:RUNNER_TEMP "game-room-r14v-packaged-local-tls.json"
           $fullGame = Join-Path $env:RUNNER_TEMP "game-room-r14y-packaged-full-match.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame
+          $sixPlayer = Join-Path $env:RUNNER_TEMP "game-room-r15b-packaged-six-player.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame -SixPlayerReportPath $sixPlayer
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -337,6 +338,22 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "game-room-r14y-summary.json"
           node ./analyze-packaged-yacht-full-match.mjs "--input=$report" "--summary=$summary"
           if ($LASTEXITCODE -ne 0) { throw "R14y actual packaged 26-turn Yacht completion invalid" }
+          Get-Content $summary
+
+      - name: R15b verify actual packaged six-player Yacht 78-turn match
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-yacht-six-player.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R15b six-player packaged game worker JS invalid" }
+          node --check ./analyze-packaged-yacht-six-player.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R15b six-player packaged analyzer JS invalid" }
+          node ./analyze-packaged-yacht-six-player.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R15b analyzer strict contract self-test failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r15b-packaged-six-player.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r15b-summary.json"
+          node ./analyze-packaged-yacht-six-player.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R15b real packaged six-player 78-turn game invalid" }
           Get-Content $summary
 
       - name: Create release archive and checksum
