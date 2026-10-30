@@ -141,23 +141,34 @@ public final class GameRoomR3Probe {
             check(restarted.events(host,4).events().size()==1,
                 "authorized remaining host can continue replay");
 
-            // A duplicated POST after the rate limit must be idempotent;
-            // it cannot consume another quota or turn into a 409.
+            // Freeze only the flood probe's MONOTONIC quota clock. JDBC
+            // scheduling under CI can exceed 1 s for five writes, so an
+            // unmodified System.nanoTime makes the sixth rejection flaky.
+            // The real service still defaults to System::nanoTime.
+            var quotaNanos=new java.util.concurrent.atomic.AtomicLong(0);
+            var floodService=new GameRoomRealtimeService(db,access,(id,json)->{},
+                java.time.Clock.systemUTC(),quotaNanos::get);
             var flood=access.createHostedRoom("yacht","Flood R3","Host",
                 SeatRole.SPECTATOR,2,4);
             String floodToken=flood.hostCredential().token();
             GameRoomRealtimeService.Event initial=null;
             for(int i=1;i<=5;i++){
-                var result=service.chat(floodToken,"flood0000"+i,"Line "+i);
+                var result=floodService.chat(floodToken,"flood0000"+i,"Line "+i);
                 if(i==1)initial=result;
             }
             var original=initial;
-            check(service.chat(floodToken,"flood00001","Line 1").equals(original),
-                "idempotent retry succeeds even at chat rate limit");
-            conflict(() -> service.chat(floodToken,"flood00006","Sixth"),
-                "sixth distinct message within one second rejected");
-            check(service.lastSequence(floodToken)==5,
+            check(floodService.chat(floodToken,"flood00001","Line 1").equals(original),
+                "idempotent retry does not consume quota at limit");
+            conflict(() -> floodService.chat(floodToken,"flood00006","Sixth"),
+                "sixth distinct message in the SAME monotonic second rejected");
+            check(floodService.lastSequence(floodToken)==5,
                 "rejected chat and identical retry do not advance event cursor");
+            // Advancing the exact rate window proves that new writes are
+            // accepted again without sleeping or weakening the 5/s cap.
+            quotaNanos.addAndGet(1_000_000_000L);
+            check(floodService.chat(floodToken,"flood00006","Sixth").sequence()==6
+                && floodService.lastSequence(floodToken)==6,
+                "new monotonic second restores chat quota exactly");
 
             System.out.println("GAME_ROOM_R3_PASSED checks="+checks
                 +" events=durable chat=moderated tombstone=redacted"
