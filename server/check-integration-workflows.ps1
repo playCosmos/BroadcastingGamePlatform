@@ -236,7 +236,7 @@ if (-not ($Package.IndexOf($externalContract) -lt $Package.IndexOf($correlatedCo
 # fixtures, its sanitized report comes from the actual Windows EXE.
 foreach ($text in @($Package, $Release)) {
     if (-not $text.Contains($yachtRecovery) -or
-        -not $text.Contains("-YachtReportPath $yacht") -or
+        -not $text.Contains('-YachtReportPath $yacht') -or
         -not $text.Contains("node ./analyze-packaged-yacht-recovery.mjs --self-test") -or
         -not $text.Contains('node ./analyze-packaged-yacht-recovery.mjs "--input=$report" "--summary=$summary"')) {
         throw "R14r: both workflows must verify real packaged Yacht game and guest chat recovery"
