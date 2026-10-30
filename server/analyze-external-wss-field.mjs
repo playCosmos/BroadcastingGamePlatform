@@ -5,6 +5,8 @@
  * No TLS-bypass, credentials, paths, addresses, room IDs or PIDs in output.
  */
 import {readFile,stat,writeFile} from "node:fs/promises";
+import {resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 
 const assert=(condition,msg)=>{
     if(!condition)throw Error("R14p invalid WSS field report: "+msg);
@@ -253,5 +255,9 @@ async function main(){
         " failures="+summary.totalFailures+
         " allChecksPassed="+summary.allProbeChecksPassed);
 }
-try{await main();}
-catch(error){console.error(String(error?.message||error));process.exitCode=1;}
+// Shared strict validators for R14q: import does not execute CLI side effects.
+export {parse,analyze,fixture};
+if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
+    try{await main();}
+    catch(error){console.error(String(error?.message||error));process.exitCode=1;}
+}

@@ -32,8 +32,9 @@ $packagedWs = "- name: R14m verify real packaged spectator WebSocket fanout"
 $duration = "- name: R14n verify packaged Windows listener-JVM duration trend"
 $fieldContract = "- name: R14o verify external field duration analyzer contract"
 $externalContract = "- name: R14p verify external multi-client WSS field analyzer contract"
+$correlatedContract = "- name: R14q verify combined JVM and external WSS field correlation"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -49,7 +50,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($packagedWs) -lt $Release.IndexOf($duration) -and
            $Release.IndexOf($duration) -lt $Release.IndexOf($fieldContract) -and
            $Release.IndexOf($fieldContract) -lt $Release.IndexOf($externalContract) -and
-           $Release.IndexOf($externalContract) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($externalContract) -lt $Release.IndexOf($correlatedContract) -and
+           $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -211,4 +213,20 @@ if (-not ($Package.IndexOf($fieldContract) -lt $Package.IndexOf($externalContrac
            $Release.IndexOf($externalContract) -lt $Release.IndexOf($publish))) {
     throw "R14p: external WSS contract gate must precede publication"
 }
-Write-Host "[workflow] R14p independent external WSS multi-member field analyzer contract verified"
+# R14q may only validate synthetic correlated field reports. The real
+# independently operator-controlled 24-hour files are never CI inputs.
+foreach ($workflow in @($Package, $Release)) {
+    if (-not $workflow.Contains($correlatedContract) -or
+        -not $workflow.Contains("node --check ./analyze-correlated-field-evidence.mjs") -or
+        -not $workflow.Contains("node ./analyze-correlated-field-evidence.mjs --self-test") -or
+        $workflow.Contains("analyze-correlated-field-evidence.mjs --jvm=")) {
+        throw "R14q: field correlation is syntax/synthetic-only in hosted CI"
+    }
+}
+if (-not ($Package.IndexOf($externalContract) -lt $Package.IndexOf($correlatedContract) -and
+           $Package.IndexOf($correlatedContract) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($externalContract) -lt $Release.IndexOf($correlatedContract) -and
+           $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($publish))) {
+    throw "R14q: correlation contract must run before publication"
+}
+Write-Host "[workflow] R14q separate operator field correlation contract verified"
