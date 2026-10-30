@@ -10,7 +10,7 @@ param(
 )
 $ErrorActionPreference = "Stop"
 $here=Split-Path -Parent $MyInvocation.MyCommand.Path
-if (@($HttpPort,$WebSocketPort,$ProxyPort | Select-Object -Unique).Count -ne 3) {
+if (@(@($HttpPort,$WebSocketPort,$ProxyPort) | Select-Object -Unique).Count -ne 3) {
     throw "R14v three different test-only listener ports required"
 }
 if (-not $RoomId -or $HostToken -eq $GuestToken) {
@@ -127,6 +127,9 @@ try {
            $result.bothPlayersSameMatchVersionAndDice -ne $true){
             throw "R14v actual HTTPS/WSS test report incomplete"
         }
+        $analysis=Join-Path $FixtureRoot "r14v-local-client-strict-summary.json"
+        & node (Join-Path $here "analyze-external-yacht-two-player-field.mjs") "--input=$raw" "--summary=$analysis" | Out-Null
+        if ($LASTEXITCODE -ne 0) {throw "R14v R14u strict external-client schema rejected localhost test"}
         Write-Output ([ordered]@{
             launch=2;mode="run";tlsVerified=$true;players=2
             snapshots=3;cleanCloses=3;liveChatDeliveries=3
