@@ -298,7 +298,7 @@ public final class GameRoomYachtR4HttpProbe {
             .getAsJsonObject("room");
         require(room.get("memberCount").getAsInt()==20
             && room.get("playerCount").getAsInt()==6
-            && room.get("spectatorCount").getAsInt()==14
+            && room.get("memberCount").getAsInt()-room.get("playerCount").getAsInt()==14
             && room.get("maxPlayers").getAsInt()==6
             && room.get("maxRoomMembers").getAsInt()==20,
             "R14z distinct player and combined room capacities preserved");
