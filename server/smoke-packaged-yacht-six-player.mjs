@@ -48,23 +48,39 @@ async function run(){
     check(/^[A-HJ-NP-Z2-9]{6}$/.test(code)
         &&hosted.room.memberCount===1&&hosted.room.playerCount===1,
         "one host occupies one player and one member slot");
+    // R14m already admits twelve PUBLIC spectators into another room in
+    // the same packaged JVM. Its 30/10-minute per-IP public-join abuse cap
+    // is intentionally shared with R15b. Admission via host-issued bounded
+    // invitations is a distinct, supported production path; do not weaken
+    // the global public-join limiter or bypass actual membership checks.
+    const playerInvitation=await post("/host/invite",hosted.token,{
+        seatRole:"PLAYER",maxUses:5,expiresInSeconds:3600},201);
+    const spectatorInvitation=await post("/host/invite",hosted.token,{
+        seatRole:"SPECTATOR",maxUses:14,expiresInSeconds:3600},201);
+    check(playerInvitation.seatRole==="PLAYER" &&
+        spectatorInvitation.seatRole==="SPECTATOR" &&
+        playerInvitation.maxUses===5 &&
+        spectatorInvitation.maxUses===14,
+        "host issues bounded player and spectator invitations");
     const players=[hosted.token],ids=new Set([hosted.memberId]);
     for(let i=1;i<6;i++){
-        const member=await post("/public/join","",{
-            gameId:"yacht",roomCode:code,
-            displayName:"R15b Player "+i,seatRole:"PLAYER"},201);
+        const member=await post("/join","",{
+            invitation:playerInvitation.token,
+            displayName:"R15b Player "+i},201);
         check(ids.add(member.memberId).size===i+1,
-            "six different player member IDs");
+            "six different invited player member IDs");
         players.push(member.token);
     }
+    // Public requests still exercise actual capacity denial, without
+    // issuing 19 more public joins on the already loaded shared listener.
     await post("/public/join","",{
         gameId:"yacht",roomCode:code,displayName:"Overflow Player",
         seatRole:"PLAYER"},409);
     const viewers=[];
     for(let i=0;i<14;i++){
-        const member=await post("/public/join","",{
-            gameId:"yacht",roomCode:code,
-            displayName:"R15b Viewer "+i,seatRole:"SPECTATOR"},201);
+        const member=await post("/join","",{
+            invitation:spectatorInvitation.token,
+            displayName:"R15b Viewer "+i},201);
         check(!ids.has(member.memberId),"spectator member identity is distinct");
         ids.add(member.memberId);viewers.push(member.token);
     }
