@@ -847,6 +847,18 @@ function RunSixPlayerPackagedYacht([string]$Root,[int[]]$Ports) {
         # error label; do not pipe request bodies/member credentials to CI.
         $stdout=$child.StandardOutput.ReadToEnd()
         $stderr=$child.StandardError.ReadToEnd()
+        if ($child.ExitCode -ne 0) {
+            # The Node worker reports ONLY fixed fixture labels, HTTP paths
+            # and numeric status codes. Never output raw response JSON or
+            # commands: those could contain member tokens/room identifiers.
+            $safe = [regex]::Match($stderr,
+                'GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_FAILED reason=([^\r\n]{0,180})')
+            if ($safe.Success) {
+                Write-Host ("R15B_PACKAGED_DIAGNOSTIC " + $safe.Groups[1].Value)
+            } else {
+                Write-Host "R15B_PACKAGED_DIAGNOSTIC missing_sanitized_worker_reason"
+            }
+        }
         if ($stdout -match "GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_PASSED") {
             Write-Host "GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_STAGE_PASSED"
         }
