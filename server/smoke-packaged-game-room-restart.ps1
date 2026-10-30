@@ -15,7 +15,8 @@ param(
     [string]$YachtWsReportPath = "",
     [string]$ConsistencyReportPath = "",
     [string]$LocalTlsReportPath = "",
-    [string]$FullGameReportPath = ""
+    [string]$FullGameReportPath = "",
+    [string]$SixPlayerReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -536,6 +537,21 @@ if ($FullGameReportPath) {
         throw "R14y nine report paths must be fresh and distinct"
     }
 }
+# R15b is opt-in and uses the SECOND packaged JVM after full R14y.
+if ($SixPlayerReportPath) {
+    if (-not $FullGameReportPath -or $StopMode -ne "Graceful") {
+        throw "R15b requires R14y full packaged Yacht and graceful shutdown"
+    }
+    $paths=@($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath,
+        $YachtReportPath,$YachtWsReportPath,$ConsistencyReportPath,
+        $LocalTlsReportPath,$FullGameReportPath,$SixPlayerReportPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if (@($paths | Select-Object -Unique).Count -ne 10 -or
+        (Test-Path -LiteralPath $SixPlayerReportPath)) {
+        throw "R15b ten report paths must be new and distinct"
+    }
+}
+$script:SixPlayerGameStage=$null
 $script:FullGameStage=$null
 $script:LocalTlsStages=[System.Collections.Generic.List[object]]::new()
 # R14t is an opt-in extra actual Windows packaged consistency check.
@@ -806,6 +822,62 @@ function RunFullPackagedYacht([string]$Root,[int[]]$Ports) {
         $script:FullGameStage=$stage
     } finally { $child.Dispose() }
 }
+function RunSixPlayerPackagedYacht([string]$Root,[int[]]$Ports) {
+    if (-not $SixPlayerReportPath) { return }
+    $scratch=Join-Path $Root "r15b-six-player-match.json"
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName="node"
+    $info.WorkingDirectory=$ServerRoot
+    $info.UseShellExecute=$false
+    $info.CreateNoWindow=$true
+    $info.RedirectStandardOutput=$true
+    $info.RedirectStandardError=$true
+    $info.ArgumentList.Add((Join-Path $ServerRoot "smoke-packaged-yacht-six-player.mjs"))
+    $info.ArgumentList.Add("--report=$scratch")
+    $info.Environment["BGP_R15B_LAUNCH"]="2"
+    $info.Environment["BGP_R15B_HTTP_PORT"]=[string]$Ports[2]
+    $child=[Diagnostics.Process]::Start($info)
+    Check ($null -ne $child) "R15b packaged six-player client did not start"
+    try {
+        if (-not $child.WaitForExit(120000)) {
+            $child.Kill($true)
+            throw "R15b packaged six-player client exceeded 120 seconds"
+        }
+        # This child only prints the fixed success marker or a non-secret
+        # error label; do not pipe request bodies/member credentials to CI.
+        $stdout=$child.StandardOutput.ReadToEnd()
+        $stderr=$child.StandardError.ReadToEnd()
+        if ($stdout -match "GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_PASSED") {
+            Write-Host "GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_STAGE_PASSED"
+        }
+        Check ($child.ExitCode -eq 0) "R15b six-player packaged client failed (exit $($child.ExitCode))"
+        Check (Test-Path -LiteralPath $scratch) "R15b report missing"
+        $stage=Get-Content -LiteralPath $scratch -Raw -Encoding utf8 | ConvertFrom-Json
+        Check ($stage.kind -eq "packaged-yacht-six-player-capacity" -and
+            $stage.players -eq 6 -and $stage.spectators -eq 14 -and
+            $stage.members -eq 20 -and $stage.totalCompletedTurns -eq 78 -and
+            $stage.finalPhase -eq "FINISHED" -and
+            $stage.finalRoomState -eq "POST_GAME") "R15b packaged six-player report invalid"
+        $script:SixPlayerGameStage=$stage
+    } finally { $child.Dispose() }
+}
+function WriteSixPlayerGameReport {
+    if (-not $SixPlayerReportPath) { return }
+    Check ($null -ne $script:SixPlayerGameStage) "R15b stage must have passed"
+    $report=[ordered]@{
+        kind="packaged-yacht-six-player-evidence";schemaVersion=1
+        source="packaged-windows-listener-jvm";verifiedRestarts=1
+        verifiedGracefulExits=2;portsReleased=$true
+        stage=$script:SixPlayerGameStage
+    }
+    $stream=[IO.File]::Open($SixPlayerReportPath,[IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        $writer=[IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
+        try {$writer.WriteLine(($report | ConvertTo-Json -Depth 8 -Compress))}
+        finally {$writer.Dispose()}
+    } finally {$stream.Dispose()}
+}
 function WriteFullGameReport {
     if (-not $FullGameReportPath) { return }
     Check ($null -ne $script:FullGameStage) "R14y full-match stage must have passed"
@@ -932,6 +1004,7 @@ try {
     RunPackagedConsistency 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunLocalTlsYacht 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunFullPackagedYacht $FixtureRoot @($adminPort,$wsPort,$clientPort)
+    RunSixPlayerPackagedYacht $FixtureRoot @($adminPort,$wsPort,$clientPort)
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -947,6 +1020,8 @@ try {
         WriteConsistencyReport
         WriteLocalTlsReport
         WriteFullGameReport
+        WriteSixPlayerGameReport
+        if ($SixPlayerReportPath) { Write-Host "GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_PASSED players=6 spectators=14 members=20 turns=78 postGame=true" }
         if ($FullGameReportPath) { Write-Host "GAME_ROOM_R14Y_PACKAGED_YACHT_FULL_MATCH_PASSED players=2 completed=26 postGame=true" }
         if ($LocalTlsReportPath) { Write-Host "GAME_ROOM_R14V_PACKAGED_LOCAL_TLS_WSS_PASSED players=2 snapshots=5 replay=1 dice=1" }
         if ($ConsistencyReportPath) { Write-Host "GAME_ROOM_R14T_PACKAGED_CONSISTENCY_PASSED players=2 launches=2 chatRetries=2 yachtRollRetries=1 staleRejected=2" }
