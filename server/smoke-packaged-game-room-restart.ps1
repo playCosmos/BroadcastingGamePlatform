@@ -11,7 +11,8 @@ param(
     [ValidateSet(0,6)]
     [int]$WsSoakCycles = 0,
     [string]$WsSoakReportPath = "",
-    [string]$YachtReportPath = ""
+    [string]$YachtReportPath = "",
+    [string]$YachtWsReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -504,6 +505,21 @@ function WriteWsFanoutReport {
 }
 # R14r: independent two-player Yacht room inside the SAME real packaged
 # Windows JVM fixture, separate from R14m's spectator-only fanout room.
+# R14s is strictly opt-in with R14r and must not overwrite artifacts.
+if ($YachtWsReportPath) {
+    if (-not $YachtReportPath -or $WsSoakCycles -ne 6 -or
+        $StopMode -ne "Graceful") {
+        throw "R14s requires actual packaged R14r/R14n graceful fixture"
+    }
+    $all = @($TelemetryPath,$LoadReportPath,$WsReportPath,
+        $WsSoakReportPath,$YachtReportPath,$YachtWsReportPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if (@($all | Select-Object -Unique).Count -ne 6 -or
+        (Test-Path -LiteralPath $YachtWsReportPath)) {
+        throw "R14s player WS report must be fresh and distinct"
+    }
+}
+$script:YachtWsStages = [System.Collections.Generic.List[object]]::new()
 $script:YachtContext = $null
 $script:YachtObservations = [System.Collections.Generic.List[object]]::new()
 function YachtApi([string]$Api,[string]$Path,[string]$Token,
@@ -568,6 +584,68 @@ function WriteYachtRecoveryReport {
         finally {$writer.Dispose()}
     } finally {$stream.Dispose()}
 }
+# R14s: child runs against the exact same packaged JVM and R14r match.
+# Credentials are passed to a disposable local child solely through env;
+# the invocation and report contain no tokens, member IDs or room codes.
+function RunPackagedYachtPlayerWs([int]$Launch,[string]$Root,[int[]]$Ports) {
+    if (-not $YachtWsReportPath) { return }
+    $ctx = $script:YachtContext
+    Check ($null -ne $ctx) "R14s two authenticated R14r player identities required"
+    $scratch=Join-Path $Root ("r14s-yacht-ws-" + $Launch + ".json")
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName="node"
+    $info.WorkingDirectory=$ServerRoot
+    $info.UseShellExecute=$false
+    $info.CreateNoWindow=$true
+    $info.RedirectStandardOutput=$true
+    $info.RedirectStandardError=$true
+    $info.ArgumentList.Add((Join-Path $ServerRoot "smoke-packaged-yacht-player-ws.mjs"))
+    $info.ArgumentList.Add("--report=$scratch")
+    $info.Environment["BGP_R14S_LAUNCH"]=[string]$Launch
+    $info.Environment["BGP_R14S_HTTP_PORT"]=[string]$Ports[2]
+    $info.Environment["BGP_R14S_WS_PORT"]=[string]$Ports[1]
+    $info.Environment["BGP_R14S_ROOM_ID"]=[string](YachtApi "http://127.0.0.1:$($Ports[2])/api/v1/room-membership" "/me" $ctx.HostToken).room.roomId
+    $info.Environment["BGP_R14S_HOST_TOKEN"]=$ctx.HostToken
+    $info.Environment["BGP_R14S_GUEST_TOKEN"]=$ctx.GuestToken
+    $child=[Diagnostics.Process]::Start($info)
+    Check ($null -ne $child) "R14s Node fixture worker did not start"
+    try {
+        if (-not $child.WaitForExit(90000)) {
+            $child.Kill($true)
+            throw "R14s player worker exceeded 90-second bounded limit"
+        }
+        Check ($child.ExitCode -eq 0) "R14s player worker failed (review protected fixture logs)"
+        Check (Test-Path -LiteralPath $scratch) "R14s player worker wrote no sanitized report"
+        $stage=Get-Content -LiteralPath $scratch -Raw -Encoding utf8 | ConvertFrom-Json
+        Check ($stage.kind -eq "packaged-yacht-player-ws" -and
+            $stage.launch -eq $Launch) "R14s player worker wrong stage/report"
+        $script:YachtWsStages.Add($stage)
+    } finally {
+        $child.Dispose()
+    }
+}
+function WriteYachtPlayerWsReport {
+    if (-not $YachtWsReportPath) { return }
+    Check ($script:YachtWsStages.Count -eq 2) "R14s requires two verified packaged client stages"
+    $report=[ordered]@{
+        kind="packaged-yacht-player-ws-recovery"
+        schemaVersion=1
+        source="packaged-windows-listener-jvm"
+        players=2
+        verifiedRestarts=1
+        verifiedGracefulExits=2
+        portsReleased=$true
+        listenerOwnerVerified=$true
+        jvmModuleVerified=$true
+        stages=@($script:YachtWsStages.ToArray())
+    }
+    $stream=[IO.File]::Open($YachtWsReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        $writer=[IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
+        try{$writer.WriteLine(($report | ConvertTo-Json -Depth 10 -Compress))}
+        finally{$writer.Dispose()}
+    } finally{$stream.Dispose()}
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -624,6 +702,7 @@ try {
     RunPackagedHttpLoad $Process 1 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
     RunPackagedWsFanout $Process 1 $token $code $roomId $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunPackagedYacht 1 $api "http://127.0.0.1:$clientPort"
+    RunPackagedYachtPlayerWs 1 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -651,6 +730,7 @@ try {
     RunPackagedHttpLoad $Process 2 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
     RunPackagedWsFanout $Process 2 $token $code $roomId $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunPackagedYacht 2 $api "http://127.0.0.1:$clientPort"
+    RunPackagedYachtPlayerWs 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -662,6 +742,8 @@ try {
         WriteWsFanoutReport
         WriteWsDurationReport
         WriteYachtRecoveryReport
+        WriteYachtPlayerWsReport
+        if ($YachtWsReportPath) { Write-Host "GAME_ROOM_R14S_PACKAGED_YACHT_WS_RECOVERY_PASSED players=2 launches=2 ws=6 extraTurns=4" }
         if ($YachtReportPath) { Write-Host "GAME_ROOM_R14R_PACKAGED_YACHT_RECOVERY_PASSED players=2 rolls=2 chatRecovered=true restarts=1" }
         if ($WsSoakCycles -gt 0) { Write-Host "GAME_ROOM_R14N_PACKAGED_WS_DURATION_PASSED launches=2 cyclesPerLaunch=6 spectators=12" }
         if ($WsSpectators -gt 0) { Write-Host "GAME_ROOM_R14M_PACKAGED_WS_FANOUT_PASSED launches=2 spectators=12 liveEvents=24 replayEvents=24" }
