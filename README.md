@@ -32,6 +32,8 @@
 
 자세한 구조는 `docs/ARCHITECTURE.md`를 참고합니다.
 
+공통 게임룸의 원래 요구사항과 구현·검증 상태는 [`docs/COMMON_GAME_ROOM_PLAN.md`](docs/COMMON_GAME_ROOM_PLAN.md)를 참고합니다. 이 계획서는 R0 원안과 R14w 통합 Draft 상태를 구분합니다.
+
 Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWING_GUESS.md`, 시청자 추첨 계획은 `docs/tools/VIEWER_DRAW.md`를 기준 문서로 사용합니다.
 
 ## 현재 웹 흐름
@@ -59,7 +61,7 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - Viewer Draw: Core + Number Draw + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
 - Yacht: Y0 점수 · Y1 영속화 · Y2 API 검증, 공통 R4 멀티플레이 Beta 플레이 가능(통합 Draft 브랜치). Y4 OBS·Y5 방송 입력·Y6 종합 안정화는 후속
-- 공통 GameRoom: R1~R14c 통합 브랜치 구현·자동 검증 완료(아직 Draft PR 미병합); 브라우저 입장·채팅·관전·강퇴·복구·퇴장·폐쇄 회귀 검사 포함
+- 공통 GameRoom: R1~R14w 통합 Draft 브랜치 구현·자동 검증 완료(아직 main 미병합); 브라우저 입장·채팅·관전·복구·퇴장·폐쇄·Windows 패키징 TLS 신뢰 검증 포함. 실제 외부망/운영자 인수 검증은 미완료
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: SOOP IMPLEMENTED / PROVIDER EXPANSION PENDING
 - Viewer Draw Finish Slow Motion/Podium + Goldberg Machine: PLANNED

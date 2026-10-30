@@ -1,5 +1,13 @@
 # Architecture
 
+## 브랜치별 구현 상태 (2026-10-30)
+
+**본문의 기존 '현재 구현/계획' 표기는 출시 기준인 `main`과 초기 구현 시점의 설명을 포함한다.** 아직 병합하지 않은 GameRoom 기능을 릴리스 기능으로 혼동하지 않는다.
+
+- **통합 Draft 브랜치:** Yacht 및 Drawing Guess의 독립 브라우저 클라이언트, GameRoom 회원/방장/플레이어/관전자 정원, 세션·룸 채팅·Drawing 다중 채널 및 Telephone 모드, WebSocket 복구가 추가되었다. 상세 원칙과 미결정 사항은 [공통 게임룸 계획](./COMMON_GAME_ROOM_PLAN.md)에, 단계별 동작과 테스트는 `docs/platform/GAME_ROOM_*.md`에 기록한다.
+- **검증된 범위:** [R14w Windows 패키지 CI](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/41015222549) 통과. 실제 패키징된 Windows JVM에서 localhost HTTPS/WSS 및 인증서 신뢰·호스트명 오류 검증이 수행되었다. 운영망·공개 CA·실제 서로 다른 클라이언트 컴퓨터의 테스트는 수행되지 않았다.
+- **배포 상태:** R14w까지의 개발 브랜치는 `main`에 미병합이다. 기존 Board/관리자/방송 오버레이의 호환성은 출시 인수검사에서 다시 검증한다. 병합/릴리스 없이 Draft를 배포 기능으로 취급하지 않는다.
+
 ## 목적
 
 Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여러 게임 모듈에 전달하는 플랫폼이다.
