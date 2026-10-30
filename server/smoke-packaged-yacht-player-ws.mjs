@@ -65,6 +65,20 @@ async function connect(token,cursor){
     const c={ws:null,frames:[],waiters:[],closed:false,closeCode:null};
     const ws=new WebSocket(url);
     c.ws=ws;connections.push(c);
+    ws.addEventListener("message",event=>{
+        let frame;
+        try{frame=JSON.parse(String(event.data));}catch{return}
+        c.frames.push(frame);
+        if(c.frames.length>160)c.frames.shift();
+        for(const w of [...c.waiters])if(w.predicate(frame)){
+            c.waiters=c.waiters.filter(q=>q!==w);w.resolve(frame);
+        }
+    });
+    ws.addEventListener("close",event=>{
+        c.closed=true;c.closeCode=event.code;
+        for(const w of [...c.waiters])w.reject(Error("socket closed"));
+        c.waiters.length=0;
+    });
     await new Promise((resolve,reject)=>{
         const timer=setTimeout(()=>stop(Error("socket connect timeout")),timeoutMs);
         let settled=false;
@@ -81,20 +95,6 @@ async function connect(token,cursor){
         },{once:true});
         ws.addEventListener("error",()=>stop(Error("socket transport failed")),{once:true});
         ws.addEventListener("close",()=>stop(Error("socket closed before subscribe")),{once:true});
-    });
-    ws.addEventListener("message",event=>{
-        let frame;
-        try{frame=JSON.parse(String(event.data));}catch{return}
-        c.frames.push(frame);
-        if(c.frames.length>160)c.frames.shift();
-        for(const w of [...c.waiters])if(w.predicate(frame)){
-            c.waiters=c.waiters.filter(q=>q!==w);w.resolve(frame);
-        }
-    });
-    ws.addEventListener("close",event=>{
-        c.closed=true;c.closeCode=event.code;
-        for(const w of [...c.waiters])w.reject(Error("socket closed"));
-        c.waiters.length=0;
     });
     const snapshot=await awaitFrame(c,r=>r.type==="room.snapshot","snapshot");
     assert(snapshot.roomId===roomId&&snapshot.memberCount>=2&&
