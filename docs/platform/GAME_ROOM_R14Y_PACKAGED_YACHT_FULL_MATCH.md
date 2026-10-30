@@ -19,6 +19,12 @@ The existing isolated two-lifetime Windows packaged EXE fixture is unchanged unt
 
 The worker should emit `GAME_ROOM_R14Y_PACKAGED_YACHT_FULL_MATCH_PASSED players=2 scored=26 categories=13 postGame=true`, and the outer fixture should emit `GAME_ROOM_R14Y_PACKAGED_YACHT_FULL_MATCH_PASSED players=2 completed=26 postGame=true` after both real JVM graceful shutdowns.
 
+## Real Chrome browser endgame acceptance
+
+The normal Windows `Real GameRoom Chrome Edge browser E2E` also drives an actual independent **host and guest browser tab** through a fresh **26-turn Yacht match** via their authenticated fetch APIs. This is separate from the packaged EXE worker: the browser's active member, real server legal categories, roll/score versions, all final 13-category scorecards, score replay and rejected final roll are exercised. The two Chrome tabs must display `POST_GAME`, **경기 종료**, two standings, disabled roll/score buttons, and the completed result must remain visible after a host browser page reload while preserving session identity.
+
+Required browser marker: `GAME_ROOM_R14Y_BROWSER_YACHT_FULL_MATCH_PASSED players=2 completed=26 ui=finished reload=true`. This tests actual browser DOM and session-state reconciliation, unlike the R14y packaged Node worker. The browser test uses the isolated real Java fixture, not the packaged EXE; the **separate packaged proof above remains mandatory**.
+
 ## CI acceptance
 
 Both package and manual release workflows pass a distinct ninth `-FullGameReportPath`, then check worker/analyzer syntax, run strict analyzer selftests and validate the actual sanitized packaged result. A new short-retention artifact `GameRoom-R14y-Packaged-Yacht-Full-Match` stores only the validated evidence and summary. Static workflow guard forbids omission, skipping the actual packaged process, or using external player credentials.
