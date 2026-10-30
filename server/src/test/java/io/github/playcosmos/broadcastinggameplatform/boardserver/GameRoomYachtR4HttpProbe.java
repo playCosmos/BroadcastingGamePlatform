@@ -221,6 +221,7 @@ public final class GameRoomYachtR4HttpProbe {
                 +" spectator=midgame host_ready=true"
                 +" roll_hold_score=player_authorized dice=server_only"
                 +" duplicate_command=stable recovery=sqlite");
+            sixPlayerCapacityAcceptance(client,base,access);
         } finally {
             if(web!=null)web.close();
             try(var files=Files.walk(baseDir)){
@@ -229,6 +230,177 @@ public final class GameRoomYachtR4HttpProbe {
                 });
             }
         }
+    }
+
+    /**
+     * R14z: real common-member HTTP integration at both simultaneous limits:
+     * 6 real PLAYERs + 14 SPECTATORs = 20 actual distinct members, then
+     * 6 * 13 = 78 authoritative Yacht score turns with spectator readback.
+     * Deliberately reuse the disposable R4 web listener/SQLite and admin
+     * session without injecting game state, dice values or synthetic members.
+     */
+    private static void sixPlayerCapacityAcceptance(HttpClient client,URI base,
+        GameRoomAccessService access) throws Exception {
+        var created=request(client,base,ROOT+"/hosted","POST", """
+            {"gameId":"yacht","name":"R14z six-player full-capacity match",
+             "displayName":"R14z Host","hostSeat":"PLAYER",
+             "maxPlayers":6,"maxRoomMembers":20}
+            """,null,"BGP_ADMIN_SESSION=yacht-r4-admin");
+        require(created.statusCode()==201,"R14z admin creates six-player room");
+        var hosted=parse(created);
+        String host=hosted.get("token").getAsString();
+        var tokens=new java.util.ArrayList<String>();
+        var ids=new java.util.HashSet<String>();
+        var tokenById=new java.util.HashMap<String,String>();
+        tokens.add(host);
+        String hostId=hosted.get("memberId").getAsString();
+        ids.add(hostId);tokenById.put(hostId,host);
+        var playerInvite=access.invite(host,
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.PLAYER,5,Duration.ofMinutes(40)).token();
+        for(int index=1;index<6;index++){
+            var joined=request(client,base,ROOT+"/join","POST",
+                "{\"invitation\":\""+playerInvite+"\",\"displayName\":\"R14z Player "+
+                    index+"\"}",null,null);
+            require(joined.statusCode()==201,"R14z player joined "+index);
+            var admitted=parse(joined);
+            String token=admitted.get("token").getAsString();
+            String id=admitted.get("memberId").getAsString();
+            require(ids.add(id),"R14z real player member IDs must be distinct");
+            tokens.add(token);
+            tokenById.put(id,token);
+        }
+        String overflowPlayer=access.invite(host,
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.PLAYER,1,Duration.ofMinutes(40)).token();
+        require(request(client,base,ROOT+"/join","POST",
+            "{\"invitation\":\""+overflowPlayer+
+                "\",\"displayName\":\"Overflow Player\"}",null,null).statusCode()==409,
+            "R14z seventh player rejected before total room is full");
+        String spectatorInvite=access.invite(host,
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.SPECTATOR,15,Duration.ofMinutes(40)).token();
+        var watchers=new java.util.ArrayList<String>();
+        for(int index=0;index<14;index++){
+            var entered=request(client,base,ROOT+"/join","POST",
+                "{\"invitation\":\""+spectatorInvite+
+                    "\",\"displayName\":\"R14z Spectator "+index+"\"}",null,null);
+            require(entered.statusCode()==201,"R14z spectator joined "+index);
+            var admitted=parse(entered);
+            String token=admitted.get("token").getAsString();
+            require(ids.add(admitted.get("memberId").getAsString()),
+                "R14z spectator member must be distinct");
+            watchers.add(token);
+        }
+        require(ids.size()==20 && tokens.size()==6 && watchers.size()==14,
+            "R14z host counts once; exactly 20 independent joined members");
+        var room=asState(request(client,base,ROOT+"/me","GET",null,host,null))
+            .getAsJsonObject("room");
+        require(room.get("memberCount").getAsInt()==20
+            && room.get("playerCount").getAsInt()==6
+            && room.get("spectatorCount").getAsInt()==14
+            && room.get("maxPlayers").getAsInt()==6
+            && room.get("maxRoomMembers").getAsInt()==20,
+            "R14z distinct player and combined room capacities preserved");
+        require(request(client,base,ROOT+"/join","POST",
+            "{\"invitation\":\""+spectatorInvite+
+                "\",\"displayName\":\"Overflow Spectator\"}",null,null).statusCode()==409,
+            "R14z 21st member rejected despite unused spectator invitation");
+        require(request(client,base,ROOT+"/me/seat","POST",
+            "{\"seatRole\":\"PLAYER\"}",watchers.get(0),null).statusCode()==409,
+            "R14z spectator promotion cannot exceed six player capacity");
+        for(int i=0;i<tokens.size();i++){
+            require(request(client,base,ROOT+"/me/ready","POST",
+                "{\"ready\":true}",tokens.get(i),null).statusCode()==200,
+                "R14z all six actual players ready "+i);
+        }
+        require(request(client,base,ROOT+"/yacht/start","POST","{}",
+            watchers.get(0),null).statusCode()==403,
+            "R14z spectator cannot start Yacht");
+        var started=asState(request(client,base,ROOT+"/yacht/start","POST","{}",
+            host,null));
+        var match=started.getAsJsonObject("yacht").getAsJsonObject("match");
+        require(match.getAsJsonArray("players").size()==6
+            && "ACTIVE".equals(match.get("phase").getAsString())
+            && started.getAsJsonObject("room").get("memberCount").getAsInt()==20,
+            "R14z real match locks six players while retaining fourteen viewers");
+        String matchId=match.get("id").getAsString();
+        var legalCategories=Category.values();
+        for(int turn=0;turn<78;turn++){
+            var reading=asState(request(client,base,ROOT+"/yacht","GET",null,
+                watchers.get(turn%watchers.size()),null));
+            var current=reading.getAsJsonObject("yacht").getAsJsonObject("match");
+            int playerIndex=current.get("currentPlayer").getAsInt();
+            require("ACTIVE".equals(current.get("phase").getAsString())
+                && current.get("completedTurns").getAsInt()==turn
+                && playerIndex==turn%6
+                && matchId.equals(current.get("id").getAsString()),
+                "R14z all seventy-eight turns retain actual six-player rotation");
+            String ownerId=current.getAsJsonArray("players").get(playerIndex)
+                .getAsJsonObject().get("id").getAsString();
+            String owner=tokenById.get(ownerId);
+            require(owner!=null,"R14z active player belongs to real joined roster");
+            int version=current.get("version").getAsInt();
+            if(turn==0 || turn==77){
+                require(request(client,base,ROOT+"/yacht/roll","POST",
+                    "{\"commandId\":\"r14z-spectator-roll-"+turn+
+                    "\",\"expectedVersion\":"+version+"}",
+                    watchers.get(0),null).statusCode()==403,
+                    "R14z spectator cannot roll at beginning or last turn");
+                require(request(client,base,ROOT+"/yacht/roll","POST",
+                    "{\"commandId\":\"r14z-nonactive-roll-"+turn+
+                    "\",\"expectedVersion\":"+version+"}",
+                    tokens.get((playerIndex+1)%6),null).statusCode()==403,
+                    "R14z nonactive player cannot alter current turn");
+            }
+            var rolled=asState(request(client,base,ROOT+"/yacht/roll","POST",
+                "{\"commandId\":\"r14z-roll-"+turn+
+                    "\",\"expectedVersion\":"+version+"}",owner,null));
+            var afterRoll=rolled.getAsJsonObject("yacht").getAsJsonObject("match");
+            require(afterRoll.get("rolls").getAsInt()==1
+                && afterRoll.get("version").getAsInt()>version,
+                "R14z server dice roll commits in active player's turn");
+            var choices=rolled.getAsJsonObject("yacht")
+                .getAsJsonObject("availableScores").getAsJsonObject("points");
+            Category selected=null;
+            for(var candidate:legalCategories){
+                if(choices.has(candidate.name())){selected=candidate;break;}
+            }
+            require(selected!=null,
+                "R14z only legal server-authoritative score categories may be selected");
+            var scored=asState(request(client,base,ROOT+"/yacht/score","POST",
+                "{\"commandId\":\"r14z-score-"+turn+
+                    "\",\"expectedVersion\":"+afterRoll.get("version").getAsInt()+
+                    ",\"category\":\""+selected.id()+"\"}",owner,null));
+            var next=scored.getAsJsonObject("yacht").getAsJsonObject("match");
+            require(next.get("completedTurns").getAsInt()==turn+1
+                && next.get("currentPlayer").getAsInt()==(turn+1)%6
+                && next.get("version").getAsInt()>
+                    afterRoll.get("version").getAsInt()
+                && (turn==77)==("FINISHED".equals(next.get("phase").getAsString()))
+                && ((turn==77)?"POST_GAME":"PLAYING").equals(
+                    scored.getAsJsonObject("room").get("state").getAsString()),
+                "R14z score committed exactly once with authoritative round state");
+        }
+        for(String viewer:watchers){
+            var snapshot=asState(request(client,base,ROOT+"/yacht","GET",
+                null,viewer,null));
+            var finalMatch=snapshot.getAsJsonObject("yacht").getAsJsonObject("match");
+            require("FINISHED".equals(finalMatch.get("phase").getAsString())
+                && finalMatch.get("completedTurns").getAsInt()==78
+                && finalMatch.getAsJsonArray("players").size()==6
+                && finalMatch.getAsJsonArray("players").asList().stream()
+                    .allMatch(p->p.getAsJsonObject().getAsJsonObject("sheet")
+                        .getAsJsonObject("scores").size()==13)
+                && snapshot.getAsJsonObject("room").get("memberCount").getAsInt()==20
+                && snapshot.getAsJsonObject("room").get("playerCount").getAsInt()==6
+                && "POST_GAME".equals(snapshot.getAsJsonObject("room")
+                    .get("state").getAsString()),
+                "R14z every actual spectator sees completed 78-turn match and capacity");
+        }
+        System.out.println("GAME_ROOM_R14Z_SIX_PLAYER_CAPACITY_PASSED"+
+            " players=6 spectators=14 members=20 turns=78"+
+            " scoresPerPlayer=13 postGame=true");
     }
 
     private static com.google.gson.JsonObject parse(HttpResponse<String> response) {
