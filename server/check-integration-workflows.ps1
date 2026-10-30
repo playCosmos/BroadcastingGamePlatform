@@ -38,6 +38,7 @@ $yachtPlayerWs = "- name: R14s verify actual packaged Yacht player WSS reconnect
 $consistency = "- name: R14t verify real packaged chat duplicates and Yacht command consistency"
 $externalYacht = "- name: R14u verify operator-only external Yacht two-player field contract"
 $localTls = "- name: R14v verify actual packaged localhost TLS WSS two-player probe"
+$fullMatch = "- name: R14y verify complete packaged two-player Yacht match and final duplicate"
 $publish = "- name: Create or update GitHub Release"
 foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $yachtRecovery, $yachtPlayerWs, $consistency, $externalYacht, $localTls, $publish)) {
     if (-not $Release.Contains($required)) {
@@ -357,3 +358,31 @@ if (-not $trustFixture.Contains('verify-packaged-local-tls-trust.mjs') -or
 }
 Write-Host "[workflow] R14w packaged localhost TLS negative trust checks gate distribution"
 
+
+# R14y must use the existing isolated Windows package after R14r-t/v;
+# the game ends only once and must reject a new post-finish roll.
+$fullMatchScript=Get-Content (Join-Path $RepoRoot "server/smoke-packaged-game-room-restart.ps1") -Raw
+$fullMatchWorker=Get-Content (Join-Path $RepoRoot "server/smoke-packaged-yacht-full-match.mjs") -Raw
+foreach ($workflow in @($Package,$Release)) {
+    if (-not $workflow.Contains($fullMatch) -or
+        -not $workflow.Contains('-FullGameReportPath $fullGame') -or
+        -not $workflow.Contains('node --check ./smoke-packaged-yacht-full-match.mjs') -or
+        -not $workflow.Contains('node ./analyze-packaged-yacht-full-match.mjs --self-test') -or
+        -not $workflow.Contains('node ./analyze-packaged-yacht-full-match.mjs "--input=$report" "--summary=$summary"') -or
+        $workflow.Contains('BGP_R14S_HOST_TOKEN') -or
+        $workflow.Contains('BGP_R14S_GUEST_TOKEN')) {
+        throw "R14y: full packaged Yacht game must gate Windows package and release"
+    }
+}
+if (-not ($Package.IndexOf($localTls) -lt $Package.IndexOf($fullMatch) -and
+           $Package.IndexOf($fullMatch) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($localTls) -lt $Release.IndexOf($fullMatch) -and
+           $Release.IndexOf($fullMatch) -lt $Release.IndexOf($publish)) -or
+    -not $Package.Contains("Upload R14y actual packaged Yacht full-match evidence") -or
+    -not $fullMatchScript.Contains('RunFullPackagedYacht $FixtureRoot') -or
+    -not $fullMatchScript.Contains('WriteFullGameReport') -or
+    -not $fullMatchWorker.Contains('completed<26') -or
+    -not $fullMatchWorker.Contains('postFinishRollRejected:true')) {
+    throw "R14y: full-match must finish before packaging and preserve negative command checks"
+}
+Write-Host "[workflow] R14y real Windows packaged 26-turn Yacht completion verified"
