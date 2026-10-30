@@ -542,12 +542,12 @@ function RunPackagedYacht([int]$Launch,[string]$Api,[string]$Origin) {
     } else {
         $ctx=$script:YachtContext
         Check ($null -ne $ctx) "R14r missing first-launch game context"
-        $host=YachtApi $Api "/yacht" $ctx.HostToken
+        $hostState=YachtApi $Api "/yacht" $ctx.HostToken
         $guest=YachtApi $Api "/yacht" $ctx.GuestToken
-        Check ($host.memberId -eq $ctx.HostId -and $guest.memberId -eq $ctx.GuestId -and $host.yacht.match.id -eq $ctx.MatchId -and $host.yacht.match.version -eq $ctx.VersionBeforeRestart -and $host.yacht.match.rolls -eq 1 -and $host.yacht.match.phase -eq "ACTIVE" -and $host.room.state -eq "PLAYING" -and (@($host.yacht.match.dice) -join ",") -eq $ctx.DiceBeforeRestart) "R14r Yacht ID/version/dice did not survive packaged JVM restart"
+        Check ($hostState.memberId -eq $ctx.HostId -and $guest.memberId -eq $ctx.GuestId -and $hostState.yacht.match.id -eq $ctx.MatchId -and $hostState.yacht.match.version -eq $ctx.VersionBeforeRestart -and $hostState.yacht.match.rolls -eq 1 -and $hostState.yacht.match.phase -eq "ACTIVE" -and $hostState.room.state -eq "PLAYING" -and (@($hostState.yacht.match.dice) -join ",") -eq $ctx.DiceBeforeRestart) "R14r Yacht ID/version/dice did not survive packaged JVM restart"
         $history=YachtApi $Api "/chat?after=-1" $ctx.GuestToken
         Check (@($history.messages | Where-Object { $_.messageId -eq "r14rGuestBeforeRestart" -and [long]$_.sequence -eq $ctx.ChatSequence }).Count -eq 1) "R14r guest chat did not survive restart"
-        $scored=YachtApi $Api "/yacht/score" $ctx.HostToken "POST" @{commandId="r14r-host-score";expectedVersion=[long]$host.yacht.match.version;category="chance"}
+        $scored=YachtApi $Api "/yacht/score" $ctx.HostToken "POST" @{commandId="r14r-host-score";expectedVersion=[long]$hostState.yacht.match.version;category="chance"}
         Check ($scored.yacht.match.completedTurns -eq 1 -and $scored.yacht.match.currentPlayer -eq 1 -and $scored.yacht.match.version -gt $ctx.VersionBeforeRestart) "R14r score did not rotate turn"
         $next=YachtApi $Api "/yacht" $ctx.GuestToken
         Check ($next.currentPlayer -eq $true -and $next.memberId -eq $ctx.GuestId) "R14r guest not active after score"
