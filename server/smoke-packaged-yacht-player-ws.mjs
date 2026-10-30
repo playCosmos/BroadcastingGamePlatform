@@ -203,8 +203,10 @@ async function main(){
         // Replaying the prior chat through an authenticated socket is
         // distinct from successful REST durable lookup.
         const prior=previous.messages.find(m=>m.messageId==="r14sL1Missed");
-        await see(a,"r14sL1Missed",prior.sequence,true);
-        replayed++; // guest also receives the history during subscribe
+        await Promise.all([
+            see(a,"r14sL1Missed",prior.sequence,true),
+            see(b,"r14sL1Missed",prior.sequence,true)
+        ]);
     }
     const firstId=matchIdPrefix+"Live";
     const first=await chat(guest,firstId);
