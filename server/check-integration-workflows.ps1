@@ -33,8 +33,9 @@ $duration = "- name: R14n verify packaged Windows listener-JVM duration trend"
 $fieldContract = "- name: R14o verify external field duration analyzer contract"
 $externalContract = "- name: R14p verify external multi-client WSS field analyzer contract"
 $correlatedContract = "- name: R14q verify combined JVM and external WSS field correlation"
+$yachtRecovery = "- name: R14r validate actual packaged Yacht and guest chat recovery"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $yachtRecovery, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -51,7 +52,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($duration) -lt $Release.IndexOf($fieldContract) -and
            $Release.IndexOf($fieldContract) -lt $Release.IndexOf($externalContract) -and
            $Release.IndexOf($externalContract) -lt $Release.IndexOf($correlatedContract) -and
-           $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($yachtRecovery) -and
+           $Release.IndexOf($yachtRecovery) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -229,4 +231,25 @@ if (-not ($Package.IndexOf($externalContract) -lt $Package.IndexOf($correlatedCo
            $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($publish))) {
     throw "R14q: correlation contract must run before publication"
 }
-Write-Host "[workflow] R14q separate operator field correlation contract verified"
+# R14r: a real packaged two-PLAYER Yacht match and distinct guest chat
+# must survive a graceful packaged JVM restart. Unlike synthetic R14o-q
+# fixtures, its sanitized report comes from the actual Windows EXE.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($yachtRecovery) -or
+        -not $text.Contains('-YachtReportPath $yacht') -or
+        -not $text.Contains("node ./analyze-packaged-yacht-recovery.mjs --self-test") -or
+        -not $text.Contains('node ./analyze-packaged-yacht-recovery.mjs "--input=$report" "--summary=$summary"')) {
+        throw "R14r: both workflows must verify real packaged Yacht game and guest chat recovery"
+    }
+}
+if (-not ($Package.IndexOf($correlatedContract) -lt $Package.IndexOf($yachtRecovery) -and
+           $Package.IndexOf($yachtRecovery) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($yachtRecovery) -and
+           $Release.IndexOf($yachtRecovery) -lt $Release.IndexOf($publish))) {
+    throw "R14r: actual packaged Yacht gate must run before distribution"
+}
+if (-not $Package.Contains("Upload R14r packaged Yacht recovery metrics") -or
+    -not $Package.Contains("game-room-r14r-summary.json")) {
+    throw "R14r: sanitized packaged Yacht measurements must be retained"
+}
+Write-Host "[workflow] R14r actual packaged two-player Yacht and durable guest chat guards verified"
