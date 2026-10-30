@@ -10,7 +10,8 @@ param(
     [string]$WsReportPath = "",
     [ValidateSet(0,6)]
     [int]$WsSoakCycles = 0,
-    [string]$WsSoakReportPath = ""
+    [string]$WsSoakReportPath = "",
+    [string]$YachtReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -55,6 +56,11 @@ if ($WsSoakCycles -gt 0) {
     }
 } elseif ($WsSoakReportPath) {
     throw "R14n report path requires -WsSoakCycles 6"
+}
+if ($YachtReportPath) {
+    if ($StopMode -ne "Graceful" -or $WsSoakCycles -ne 6) { throw "R14r requires R14n full packaged fixture" }
+    $paths = @($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath,$YachtReportPath) | ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if (@($paths | Select-Object -Unique).Count -ne 5 -or (Test-Path $YachtReportPath)) { throw "R14r report output must be new and distinct" }
 }
 
 # Exercise the shipped EXE, not just a Java self-check.
@@ -496,6 +502,72 @@ function WriteWsFanoutReport {
         finally { $writer.Dispose() }
     } finally { $stream.Dispose() }
 }
+# R14r: independent two-player Yacht room inside the SAME real packaged
+# Windows JVM fixture, separate from R14m's spectator-only fanout room.
+$script:YachtContext = $null
+$script:YachtObservations = [System.Collections.Generic.List[object]]::new()
+function YachtApi([string]$Api,[string]$Path,[string]$Token,
+    [string]$Method="GET",[object]$Body=$null) {
+    $headers = @{ Authorization = "Bearer $Token" }
+    if ($Method -eq "POST") {
+        $headers.Origin = $Api.Substring(0,$Api.IndexOf("/api/"))
+        return Invoke-RestMethod -Method Post -Uri "$Api$Path" -Headers $headers -ContentType "application/json" -Body ($Body | ConvertTo-Json -Compress -Depth 8) -TimeoutSec 12
+    }
+    return Invoke-RestMethod -Method Get -Uri "$Api$Path" -Headers $headers -TimeoutSec 12
+}
+function RunPackagedYacht([int]$Launch,[string]$Api,[string]$Origin) {
+    if (-not $YachtReportPath) { return }
+    if ($Launch -eq 1) {
+        $hosted = Invoke-RestMethod -Method Post -Uri "$Api/public/hosted" -Headers @{Origin=$Origin} -ContentType "application/json" -Body (@{gameId="yacht";name="R14r packaged two-player match";displayName="R14r first player";hostSeat="PLAYER";maxPlayers=2;maxRoomMembers=4} | ConvertTo-Json -Compress) -TimeoutSec 12
+        $joined = Invoke-RestMethod -Method Post -Uri "$Api/public/join" -Headers @{Origin=$Origin} -ContentType "application/json" -Body (@{gameId="yacht";roomCode=[string]$hosted.room.roomCode;displayName="R14r second player";seatRole="PLAYER"} | ConvertTo-Json -Compress) -TimeoutSec 12
+        Check ($hosted.memberId -ne $joined.memberId -and $hosted.room.roomId -eq $joined.room.roomId) "R14r two independent players required"
+        $script:YachtContext = @{ HostToken=[string]$hosted.token;GuestToken=[string]$joined.token;HostId=[string]$hosted.memberId;GuestId=[string]$joined.memberId }
+        $ctx = $script:YachtContext
+        [void](YachtApi $Api "/me/ready" $ctx.HostToken "POST" @{ready=$true})
+        [void](YachtApi $Api "/me/ready" $ctx.GuestToken "POST" @{ready=$true})
+        $started = YachtApi $Api "/yacht/start" $ctx.HostToken "POST" @{}
+        Check ($started.room.state -eq "PLAYING" -and $started.yacht.match.phase -eq "ACTIVE" -and $started.yacht.match.completedTurns -eq 0) "R14r Yacht start did not commit"
+        $state = YachtApi $Api "/yacht" $ctx.HostToken
+        Check ($state.memberId -eq $ctx.HostId -and $state.currentPlayer -eq $true) "R14r wrong active host"
+        $rolled = YachtApi $Api "/yacht/roll" $ctx.HostToken "POST" @{commandId="r14r-first-roll";expectedVersion=[long]$state.yacht.match.version}
+        Check ($rolled.yacht.match.rolls -eq 1 -and $rolled.yacht.match.version -gt $state.yacht.match.version -and @($rolled.yacht.match.dice).Count -eq 5) "R14r first dice roll did not commit"
+        $ctx.MatchId=[string]$rolled.yacht.match.id
+        $ctx.VersionBeforeRestart=[long]$rolled.yacht.match.version
+        $ctx.DiceBeforeRestart=(@($rolled.yacht.match.dice) -join ",")
+        $chat=YachtApi $Api "/chat" $ctx.GuestToken "POST" @{messageId="r14rGuestBeforeRestart";text="R14r two-player guest chat"}
+        Check ($chat.messageId -eq "r14rGuestBeforeRestart" -and [long]$chat.sequence -ge 0) "R14r guest chat not committed"
+        $ctx.ChatSequence=[long]$chat.sequence
+        $script:YachtObservations.Add([ordered]@{launch=1;players=2;rolls=1;completedTurns=0;chatCommitted=$true;matchVersion=[long]$rolled.yacht.match.version})
+        Write-Host "GAME_ROOM_R14R_PACKAGED_YACHT_STAGE_PASSED stage=before-restart"
+    } else {
+        $ctx=$script:YachtContext
+        Check ($null -ne $ctx) "R14r missing first-launch game context"
+        $host=YachtApi $Api "/yacht" $ctx.HostToken
+        $guest=YachtApi $Api "/yacht" $ctx.GuestToken
+        Check ($host.memberId -eq $ctx.HostId -and $guest.memberId -eq $ctx.GuestId -and $host.yacht.match.id -eq $ctx.MatchId -and $host.yacht.match.version -eq $ctx.VersionBeforeRestart -and $host.yacht.match.rolls -eq 1 -and $host.yacht.match.phase -eq "ACTIVE" -and $host.room.state -eq "PLAYING" -and (@($host.yacht.match.dice) -join ",") -eq $ctx.DiceBeforeRestart) "R14r Yacht ID/version/dice did not survive packaged JVM restart"
+        $history=YachtApi $Api "/chat?after=-1" $ctx.GuestToken
+        Check (@($history.messages | Where-Object { $_.messageId -eq "r14rGuestBeforeRestart" -and [long]$_.sequence -eq $ctx.ChatSequence }).Count -eq 1) "R14r guest chat did not survive restart"
+        $scored=YachtApi $Api "/yacht/score" $ctx.HostToken "POST" @{commandId="r14r-host-score";expectedVersion=[long]$host.yacht.match.version;category="chance"}
+        Check ($scored.yacht.match.completedTurns -eq 1 -and $scored.yacht.match.currentPlayer -eq 1 -and $scored.yacht.match.version -gt $ctx.VersionBeforeRestart) "R14r score did not rotate turn"
+        $next=YachtApi $Api "/yacht" $ctx.GuestToken
+        Check ($next.currentPlayer -eq $true -and $next.memberId -eq $ctx.GuestId) "R14r guest not active after score"
+        $guestRoll=YachtApi $Api "/yacht/roll" $ctx.GuestToken "POST" @{commandId="r14r-guest-roll";expectedVersion=[long]$next.yacht.match.version}
+        Check ($guestRoll.yacht.match.completedTurns -eq 1 -and $guestRoll.yacht.match.rolls -eq 1 -and $guestRoll.yacht.match.version -gt $next.yacht.match.version) "R14r guest could not continue match"
+        $script:YachtObservations.Add([ordered]@{launch=2;players=2;rolls=1;completedTurns=1;chatRecovered=$true;matchIdRecovered=$true;diceRecovered=$true;versionRecovered=$true;turnRotated=$true;guestRollCommitted=$true})
+        Write-Host "GAME_ROOM_R14R_PACKAGED_YACHT_STAGE_PASSED stage=after-restart"
+    }
+}
+function WriteYachtRecoveryReport {
+    if (-not $YachtReportPath) { return }
+    Check ($script:YachtObservations.Count -eq 2) "R14r missing two observations"
+    $result=[ordered]@{kind="packaged-yacht-chat-recovery";schemaVersion=1;source="packaged-windows-listener-jvm";players=2;verifiedRestarts=1;verifiedGracefulExits=2;portsReleased=$true;listenerOwnerVerified=$true;jvmModuleVerified=$true;observations=@($script:YachtObservations.ToArray())}
+    $stream=[IO.File]::Open($YachtReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        $writer=[IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
+        try {$writer.WriteLine(($result | ConvertTo-Json -Depth 9 -Compress))}
+        finally {$writer.Dispose()}
+    } finally {$stream.Dispose()}
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -551,6 +623,7 @@ try {
     RecordProcessSample $Process 1 "afterChat" @($adminPort,$wsPort,$clientPort)
     RunPackagedHttpLoad $Process 1 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
     RunPackagedWsFanout $Process 1 $token $code $roomId $FixtureRoot @($adminPort,$wsPort,$clientPort)
+    RunPackagedYacht 1 $api "http://127.0.0.1:$clientPort"
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -577,6 +650,7 @@ try {
     RecordProcessSample $Process 2 "afterReplay" @($adminPort,$wsPort,$clientPort)
     RunPackagedHttpLoad $Process 2 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
     RunPackagedWsFanout $Process 2 $token $code $roomId $FixtureRoot @($adminPort,$wsPort,$clientPort)
+    RunPackagedYacht 2 $api "http://127.0.0.1:$clientPort"
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -587,6 +661,8 @@ try {
         WriteLoadTelemetry
         WriteWsFanoutReport
         WriteWsDurationReport
+        WriteYachtRecoveryReport
+        if ($YachtReportPath) { Write-Host "GAME_ROOM_R14R_PACKAGED_YACHT_RECOVERY_PASSED players=2 rolls=2 chatRecovered=true restarts=1" }
         if ($WsSoakCycles -gt 0) { Write-Host "GAME_ROOM_R14N_PACKAGED_WS_DURATION_PASSED launches=2 cyclesPerLaunch=6 spectators=12" }
         if ($WsSpectators -gt 0) { Write-Host "GAME_ROOM_R14M_PACKAGED_WS_FANOUT_PASSED launches=2 spectators=12 liveEvents=24 replayEvents=24" }
         if ($LoadRounds -gt 0) { Write-Host "GAME_ROOM_R14L_PACKAGED_HTTP_SOAK_PASSED roundsPerLaunch=$LoadRounds restarts=1 gracefulExits=2" }
