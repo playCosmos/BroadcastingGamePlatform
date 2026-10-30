@@ -3612,6 +3612,23 @@ async function run(){
         "THREE_OF_KIND","FOUR_OF_KIND","FULL_HOUSE","SMALL_STRAIGHT",
         "LARGE_STRAIGHT","YACHT","CHANCE"];
     let gameId="",latestVersion=-1,lastScoreCommand=null;
+    // The Chrome fixture concurrently maintains real authenticated WSS,
+    // heartbeat and chat reads. A short-lived 500/503 may mean that the
+    // EXACTLY-ONCE Yacht transaction committed but the response was lost.
+    // Retry only an identical command ID + payload; never waive conflict,
+    // permission or state assertions. Keep diagnostics non-secret.
+    const yachtWrite=async (page,path,payload,credential,turn)=>{
+        let result=await backend(page,path,"POST",payload,credential);
+        for(let attempt=0;attempt<2 &&
+            (result.status===500 || result.status===503);attempt++){
+            console.log("GAME_ROOM_R14Y_BROWSER_TRANSIENT_RETRY"+
+                " turn="+turn+" action="+path.slice("/yacht/".length)+
+                " http="+result.status+" retry="+(attempt+1));
+            await nap(120*(attempt+1));
+            result=await backend(page,path,"POST",payload,credential);
+        }
+        return result;
+    };
     for(let completed=0;completed<26;completed++){
         const player=completed%2,member=yachtPages[player],token=yachtTokens[player];
         const reading=await backend(member,"/yacht","GET",null,token);
@@ -3623,13 +3640,16 @@ async function run(){
             (completed===0 || game.id===gameId),
             "R14y browser source state must advance one turn at a time");
         if(completed===0)gameId=game.id;
-        const rolled=await backend(member,"/yacht/roll","POST",{
+        const rolled=await yachtWrite(member,"/yacht/roll",{
             commandId:"r14y-browser-roll-"+completed,expectedVersion:game.version
-        },token);
+        },token,completed);
         check(rolled.status===200 &&
             rolled.data.yacht?.match?.rolls===1 &&
             rolled.data.yacht.match.version>game.version,
-            "R14y actual browser member roll must persist");
+            "R14y actual browser member roll must persist"+
+            " turn="+completed+" http="+rolled.status+
+            " actualRolls="+(rolled.data.yacht?.match?.rolls ?? "missing")+
+            " versionAdvanced="+((rolled.data.yacht?.match?.version ?? -1)>game.version));
         const eligible=rolled.data.yacht?.availableScores?.points || {};
         const category=scoreCategories.find(id=>
             Object.prototype.hasOwnProperty.call(eligible,id));
@@ -3637,14 +3657,17 @@ async function run(){
         const payload={commandId:"r14y-browser-score-"+completed,
             expectedVersion:rolled.data.yacht.match.version,
             category:category.toLowerCase()};
-        const scored=await backend(member,"/yacht/score","POST",payload,token);
+        const scored=await yachtWrite(member,"/yacht/score",payload,token,completed);
         check(scored.status===200 &&
             scored.data.yacht?.match?.completedTurns===completed+1 &&
             scored.data.yacht.match.version>payload.expectedVersion &&
             scored.data.yacht.match.currentPlayer===(completed+1)%2 &&
             scored.data.yacht.match.phase===(completed===25?"FINISHED":"ACTIVE") &&
             scored.data.room?.state===(completed===25?"POST_GAME":"PLAYING"),
-            "R14y browser-reachable score/room transition invalid");
+            "R14y browser-reachable score/room transition invalid"+
+            " turn="+completed+" http="+scored.status+
+            " turns="+(scored.data.yacht?.match?.completedTurns ?? "missing")+
+            " phase="+(scored.data.yacht?.match?.phase ?? "missing"));
         latestVersion=scored.data.yacht.match.version;
         if(completed===25)lastScoreCommand={member,token,payload};
     }
