@@ -604,7 +604,8 @@ function RunPackagedYachtPlayerWs([int]$Launch,[string]$Root,[int[]]$Ports) {
     $info.Environment["BGP_R14S_LAUNCH"]=[string]$Launch
     $info.Environment["BGP_R14S_HTTP_PORT"]=[string]$Ports[2]
     $info.Environment["BGP_R14S_WS_PORT"]=[string]$Ports[1]
-    $info.Environment["BGP_R14S_ROOM_ID"]=[string](YachtApi "http://127.0.0.1:$($Ports[2])/api/v1/room-membership" "/me" $ctx.HostToken).room.roomId
+    $member=YachtApi "http://127.0.0.1:$($Ports[2])/api/v1/room-membership" "/me" $ctx.HostToken
+    $info.Environment["BGP_R14S_ROOM_ID"]=[string]$member.room.roomId
     $info.Environment["BGP_R14S_HOST_TOKEN"]=$ctx.HostToken
     $info.Environment["BGP_R14S_GUEST_TOKEN"]=$ctx.GuestToken
     $child=[Diagnostics.Process]::Start($info)
