@@ -218,7 +218,8 @@ jobs:
           $yacht = Join-Path $env:RUNNER_TEMP "game-room-r14r-packaged-yacht.json"
           $playerWs = Join-Path $env:RUNNER_TEMP "game-room-r14s-yacht-player-ws.json"
           $consistency = Join-Path $env:RUNNER_TEMP "game-room-r14t-consistency.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency
+          $localTls = Join-Path $env:RUNNER_TEMP "game-room-r14v-packaged-local-tls.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -441,6 +442,35 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "R14u analyzer syntax invalid" }
           node ./analyze-external-yacht-two-player-field.mjs --self-test
           if ($LASTEXITCODE -ne 0) { throw "R14u external field analyzer mutation contract failed" }
+
+      - name: R14v verify actual packaged localhost TLS WSS two-player probe
+        working-directory: server
+        shell: pwsh
+        run: |
+          # This is an ephemeral LOCALHOST HTTPS/WSS reverse proxy around
+          # the actual Windows packaged JVM, NEVER a public field client run.
+          node --check ./smoke-packaged-local-tls-proxy.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14v local-only TLS proxy syntax invalid" }
+          node --check ./analyze-packaged-local-tls-wss.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14v packaged local TLS analyzer syntax invalid" }
+          node ./analyze-packaged-local-tls-wss.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14v local TLS negative fixture selftest failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14v-packaged-local-tls.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14v-summary.json"
+          node ./analyze-packaged-local-tls-wss.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14v real Windows packaged local TLS/WSS acceptance invalid" }
+          Get-Content $summary
+
+      - name: Upload R14v actual packaged local TLS evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GameRoom-R14v-Packaged-Local-TLS-WSS
+          path: |
+            ${{ runner.temp }}/game-room-r14v-packaged-local-tls.json
+            ${{ runner.temp }}/game-room-r14v-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       # Isolated fixture JVM observations only: never include credentials,
       # real room identifiers or production server process measurements.

@@ -37,8 +37,9 @@ $yachtRecovery = "- name: R14r validate actual packaged Yacht and guest chat rec
 $yachtPlayerWs = "- name: R14s verify actual packaged Yacht player WSS reconnect and multiple turns"
 $consistency = "- name: R14t verify real packaged chat duplicates and Yacht command consistency"
 $externalYacht = "- name: R14u verify operator-only external Yacht two-player field contract"
+$localTls = "- name: R14v verify actual packaged localhost TLS WSS two-player probe"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $yachtRecovery, $yachtPlayerWs, $consistency, $externalYacht, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $yachtRecovery, $yachtPlayerWs, $consistency, $externalYacht, $localTls, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -59,7 +60,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($yachtRecovery) -lt $Release.IndexOf($yachtPlayerWs) -and
            $Release.IndexOf($yachtPlayerWs) -lt $Release.IndexOf($consistency) -and
            $Release.IndexOf($consistency) -lt $Release.IndexOf($externalYacht) -and
-           $Release.IndexOf($externalYacht) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($externalYacht) -lt $Release.IndexOf($localTls) -and
+           $Release.IndexOf($localTls) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -314,4 +316,26 @@ if (-not ($Package.IndexOf($consistency) -lt $Package.IndexOf($externalYacht) -a
            $Release.IndexOf($externalYacht) -lt $Release.IndexOf($publish))) {
     throw "R14u: synthetic external field safety contract must precede distribution"
 }
-Write-Host "[workflow] R14u operator-only public HTTPS/WSS chat and Yacht field guard verified"
+# R14v runs the genuine R14u HTTPS/WSS client against an ephemeral
+# certificate-validated LOCALHOST TLS proxy in front of the real packaged JVM.
+# Public field credentials and public endpoints must remain operator-only.
+foreach ($text in @($Package,$Release)) {
+    if (-not $text.Contains($localTls) -or
+        -not $text.Contains('-LocalTlsReportPath $localTls') -or
+        -not $text.Contains('node --check ./smoke-packaged-local-tls-proxy.mjs') -or
+        -not $text.Contains('node ./analyze-packaged-local-tls-wss.mjs --self-test') -or
+        -not $text.Contains('node ./analyze-packaged-local-tls-wss.mjs "--input=$report" "--summary=$summary"') -or
+        $text.Contains('BGP_R14U_PLAYER_TOKENS_JSON') -or
+        $text.Contains('BGP_R14U_TEST_ROOM_ID') -or
+        $text.Contains('observe-external-yacht-two-player-field.mjs --base=')) {
+        throw "R14v: real Windows TLS fixture must be localhost-owned, not public traffic"
+    }
+}
+if (-not ($Package.IndexOf($externalYacht) -lt $Package.IndexOf($localTls) -and
+           $Package.IndexOf($localTls) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($externalYacht) -lt $Release.IndexOf($localTls) -and
+           $Release.IndexOf($localTls) -lt $Release.IndexOf($publish)) -or
+    -not $Package.Contains("Upload R14v actual packaged local TLS evidence")) {
+    throw "R14v actual packaged TLS/WSS must be verified before publication"
+}
+Write-Host "[workflow] R14v real Windows packaged localhost-only TLS/WSS client acceptance verified"
