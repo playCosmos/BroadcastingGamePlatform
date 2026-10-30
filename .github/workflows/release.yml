@@ -310,6 +310,8 @@ jobs:
           # the actual Windows packaged JVM, NEVER a public field client run.
           node --check ./smoke-packaged-local-tls-proxy.mjs
           if ($LASTEXITCODE -ne 0) { throw "R14v local-only TLS proxy syntax invalid" }
+          node --check ./verify-packaged-local-tls-trust.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14w packaged local TLS trust verifier syntax invalid" }
           node --check ./analyze-packaged-local-tls-wss.mjs
           if ($LASTEXITCODE -ne 0) { throw "R14v packaged local TLS analyzer syntax invalid" }
           node ./analyze-packaged-local-tls-wss.mjs --self-test
