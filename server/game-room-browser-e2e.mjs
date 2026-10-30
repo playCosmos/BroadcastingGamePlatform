@@ -3559,17 +3559,44 @@ async function sixPlayerBrowserCapacityAcceptance(base){
             "R15a authorized turn rotation "+turn);
         let next;
         if(turn<6){
+            // The seven independent real Chrome contexts may still be
+            // executing a prior ready/refresh operation. A visible enabled
+            // button alone does NOT prove the operation lock is free.
+            await waitRoomIdle(page,"game");
+            await cdp.eval(page,"window.dispatchEvent(new Event('online'));true");
             await poll(async()=>await cdp.eval(page,
-                "document.getElementById('roll').disabled===false"),
-                "R15a player roll button enabled "+index);
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('roomState').textContent==='PLAYING'"+
+                " && document.getElementById('turnHeadline').textContent==="+
+                    JSON.stringify("현재 턴 · "+match.players[index].displayName)+
+                " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+                " && !document.getElementById('roll').disabled"),
+                "R15a active player "+index+" has an idle, current turn UI");
             await click(page,"roll");
-            next=await poll(async()=>{
+            try {
+                next=await poll(async()=>{
+                    const snapshot=await backend(page,"/yacht","GET",null,token);
+                    const after=snapshot.data.yacht?.match;
+                    return snapshot.status===200 && after?.id===matchId
+                        && after.completedTurns===turn && after.rolls===1
+                        && after.version>match.version ? snapshot:null;
+                },"R15a UI roll commits "+index);
+            }catch(error){
+                const dom=await cdp.eval(page,
+                    "({notice:document.getElementById('notice').textContent,"+
+                    "busy:document.getElementById('game').getAttribute('aria-busy'),"+
+                    "turn:document.getElementById('turnHeadline').textContent,"+
+                    "detail:document.getElementById('turnDetail').textContent,"+
+                    "rollDisabled:document.getElementById('roll').disabled})");
                 const snapshot=await backend(page,"/yacht","GET",null,token);
-                const after=snapshot.data.yacht?.match;
-                return snapshot.status===200 && after?.id===matchId
-                    && after.completedTurns===turn && after.rolls===1
-                    && after.version>match.version ? snapshot:null;
-            },"R15a UI roll commits "+index);
+                const current=snapshot.data.yacht?.match;
+                throw Error(String(error)+"; R15a diagnostic="+JSON.stringify({
+                    turn,index,dom,http:snapshot.status,
+                    serverTurns:current?.completedTurns,
+                    serverRolls:current?.rolls,serverVersion:current?.version,
+                    browserHttpErrors:cdp.network.slice(-5).map(x=>x.status)
+                }));
+            }
         } else {
             next=await backend(page,"/yacht/roll","POST",{
                 commandId:"r15a-browser-roll-"+turn,
@@ -3585,10 +3612,13 @@ async function sixPlayerBrowserCapacityAcceptance(base){
         check(Boolean(category),"R15a server-legal score "+turn);
         if(turn<6){
             const scoreIndex=categories.indexOf(category);
+            await waitRoomIdle(page,"game");
             await poll(async()=>await cdp.eval(page,
-                "document.querySelectorAll('#scoreGrid button')["+
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('turnDetail').textContent.includes('굴림 1 / 3')"+
+                " && document.querySelectorAll('#scoreGrid button')["+
                     scoreIndex+"]?.disabled===false"),
-                "R15a score button enabled "+index);
+                "R15a score button enabled after synchronized roll "+index);
             await cdp.eval(page,"(()=>{window.confirm=()=>true;"+
                 "document.querySelectorAll('#scoreGrid button')["+
                 scoreIndex+"].click();return true;})()");
