@@ -29,6 +29,16 @@ function observedSpan(rows,which){
         which+" has invalid UTC range");
     const elapsedDelta=last.elapsedSeconds-first.elapsedSeconds;
     const utcDelta=(b-a)/1000;
+    // Check every sample, not just endpoints. Independent field analyzers
+    // validate ordering/scheduling, but a fabricated middle monotonic
+    // timestamp could otherwise shift workload correlation by minutes.
+    const toleranceEach=Math.max(30,Math.min(300,elapsedDelta*.002));
+    for(const row of rows.slice(2,-1)){
+        const wall=(utc(row)-a)/1000;
+        const monotonic=row.elapsedSeconds-first.elapsedSeconds;
+        requireFact(Math.abs(wall-monotonic)<=toleranceEach,
+            which+" UTC observations diverge from monotonic elapsed samples");
+    }
     // Each source's independent monotonic-clock duration must agree
     // approximately with real UTC. Prevent fabricated shifted clocks.
     const tolerance=Math.max(30,Math.min(600,elapsedDelta*.005));
