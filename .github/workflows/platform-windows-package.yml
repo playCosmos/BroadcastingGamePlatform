@@ -219,7 +219,8 @@ jobs:
           $playerWs = Join-Path $env:RUNNER_TEMP "game-room-r14s-yacht-player-ws.json"
           $consistency = Join-Path $env:RUNNER_TEMP "game-room-r14t-consistency.json"
           $localTls = Join-Path $env:RUNNER_TEMP "game-room-r14v-packaged-local-tls.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls
+          $fullGame = Join-Path $env:RUNNER_TEMP "game-room-r14y-packaged-full-match.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -463,6 +464,22 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "R14v real Windows packaged local TLS/WSS acceptance invalid" }
           Get-Content $summary
 
+      - name: R14y verify complete packaged two-player Yacht match and final duplicate
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-yacht-full-match.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14y packaged Yacht full-game worker syntax invalid" }
+          node --check ./analyze-packaged-yacht-full-match.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14y packaged Yacht full-game analyzer syntax invalid" }
+          node ./analyze-packaged-yacht-full-match.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14y full-game analyzer negative contract failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14y-packaged-full-match.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14y-summary.json"
+          node ./analyze-packaged-yacht-full-match.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14y actual packaged 26-turn Yacht completion invalid" }
+          Get-Content $summary
+
       - name: Upload R14v actual packaged local TLS evidence
         if: always()
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -471,6 +488,17 @@ jobs:
           path: |
             ${{ runner.temp }}/game-room-r14v-packaged-local-tls.json
             ${{ runner.temp }}/game-room-r14v-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: Upload R14y actual packaged Yacht full-match evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GameRoom-R14y-Packaged-Yacht-Full-Match
+          path: |
+            ${{ runner.temp }}/game-room-r14y-packaged-full-match.json
+            ${{ runner.temp }}/game-room-r14y-summary.json
           if-no-files-found: ignore
           retention-days: 14
 
