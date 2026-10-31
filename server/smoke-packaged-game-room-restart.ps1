@@ -18,7 +18,8 @@ param(
     [string]$FullGameReportPath = "",
     [string]$SixPlayerReportPath = "",
     [string]$TwentyWsReportPath = "",
-    [string]$YachtWsEventsReportPath = ""
+    [string]$YachtWsEventsReportPath = "",
+    [string]$MemberYachtReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -582,6 +583,23 @@ if ($YachtWsEventsReportPath) {
         throw "R15d twelve evidence files must be new and distinct"
     }
 }
+# R15e proves every native Yacht roll/score reaches all authenticated
+# member-room sockets without opening a second socket per browser member.
+if ($MemberYachtReportPath) {
+    if (-not $TwentyWsReportPath -or -not $YachtWsEventsReportPath
+        -or $StopMode -ne "Graceful") {
+        throw "R15e single member-socket game-event delivery requires R15c/R15d"
+    }
+    $paths=@($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath,
+        $YachtReportPath,$YachtWsReportPath,$ConsistencyReportPath,
+        $LocalTlsReportPath,$FullGameReportPath,$SixPlayerReportPath,
+        $TwentyWsReportPath,$YachtWsEventsReportPath,$MemberYachtReportPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if (@($paths | Select-Object -Unique).Count -ne 13 -or
+        (Test-Path -LiteralPath $MemberYachtReportPath)) {
+        throw "R15e thirteen evidence files must be new and distinct"
+    }
+}
 $script:SixPlayerGameStage=$null
 $script:FullGameStage=$null
 $script:LocalTlsStages=[System.Collections.Generic.List[object]]::new()
@@ -872,6 +890,9 @@ function RunSixPlayerPackagedYacht([string]$Root,[int[]]$Ports) {
     if ($YachtWsEventsReportPath) {
         $info.ArgumentList.Add("--yacht-ws-report=$YachtWsEventsReportPath")
     }
+    if ($MemberYachtReportPath) {
+        $info.ArgumentList.Add("--member-yacht-report=$MemberYachtReportPath")
+    }
     $info.Environment["BGP_R15B_LAUNCH"]="2"
     $info.Environment["BGP_R15B_HTTP_PORT"]=[string]$Ports[2]
     $child=[Diagnostics.Process]::Start($info)
@@ -932,6 +953,17 @@ function RunSixPlayerPackagedYacht([string]$Root,[int[]]$Ports) {
                 $events.replayedMissedEvents -eq 10 -and
                 $events.strictEventOrder -eq $true -and
                 $events.versionAndTurnConsistent -eq $true) "R15d actual packaged Yacht events invalid"
+        }
+        if ($MemberYachtReportPath) {
+            Check (Test-Path -LiteralPath $MemberYachtReportPath) "R15e private native event evidence missing"
+            $memberEvents=Get-Content -LiteralPath $MemberYachtReportPath -Raw -Encoding utf8 | ConvertFrom-Json
+            Check ($memberEvents.kind -eq "packaged-member-yacht-one-socket" -and
+                $memberEvents.authenticatedMemberSockets -eq 20 -and
+                $memberEvents.extraYachtSocketsPerMember -eq 0 -and
+                $memberEvents.committedNativeEvents -eq 156 -and
+                $memberEvents.authenticatedMemberYachtDeliveries -eq 3120 -and
+                $memberEvents.nativeVersionsStrict -eq $true -and
+                $memberEvents.allTwentySessionsLive -eq $true) "R15e member-game socket delivery invalid"
         }
         $script:SixPlayerGameStage=$stage
     } finally { $child.Dispose() }
@@ -1099,6 +1131,7 @@ try {
         if ($SixPlayerReportPath) { Write-Host "GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_PASSED players=6 spectators=14 members=20 turns=78 postGame=true" }
         if ($TwentyWsReportPath) { Write-Host "GAME_ROOM_R15C_PACKAGED_TWENTY_MEMBER_WS_PASSED players=6 spectators=14 sockets=20 live=40 replay=1 turns=78" }
         if ($YachtWsEventsReportPath) { Write-Host "GAME_ROOM_R15D_PACKAGED_YACHT_EVENTS_PASSED players=6 sockets=24 yacht=4 live=614 replay=10 turns=78" }
+        if ($MemberYachtReportPath) { Write-Host "GAME_ROOM_R15E_PACKAGED_MEMBER_YACHT_WS_PASSED players=6 members=20 sockets=24 gameEvents=156 delivered=3120" }
         if ($FullGameReportPath) { Write-Host "GAME_ROOM_R14Y_PACKAGED_YACHT_FULL_MATCH_PASSED players=2 completed=26 postGame=true" }
         if ($LocalTlsReportPath) { Write-Host "GAME_ROOM_R14V_PACKAGED_LOCAL_TLS_WSS_PASSED players=2 snapshots=5 replay=1 dice=1" }
         if ($ConsistencyReportPath) { Write-Host "GAME_ROOM_R14T_PACKAGED_CONSISTENCY_PASSED players=2 launches=2 chatRetries=2 yachtRollRetries=1 staleRejected=2" }
