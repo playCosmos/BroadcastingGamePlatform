@@ -212,9 +212,9 @@ function selfTest(){
         {id:11,event:"pull_request",path:".github/workflows/platform-windows-package.yml",
             head_sha:c,head_branch:TIP,status:"completed",conclusion:"success"}
     ];
-    const good=[{name:"package",status:"completed",conclusion:"success",
+    const greenJobs=[{name:"package",status:"completed",conclusion:"success",
         steps:CI_GATES.map(name=>({name,status:"completed",conclusion:"success"}))}];
-    if(latestCi(green,c).push.id!==10||!ciJobValid(good))
+    if(latestCi(green,c).push.id!==10||!ciJobValid(greenJobs))
         throw Error("green CI rejected");
     const attempts=[
         [green[0]],
@@ -227,8 +227,8 @@ function selfTest(){
         try{latestCi(runs,c);}catch{rejected=true;}
         if(!rejected)throw Error("bad CI run accepted");
     }
-    const missing=structuredClone(good);missing[0].steps.pop();
-    const failed=structuredClone(good);failed[0].steps[0].conclusion="failure";
+    const missing=structuredClone(greenJobs);missing[0].steps.pop();
+    const failed=structuredClone(greenJobs);failed[0].steps[0].conclusion="failure";
     if(ciJobValid(missing)||ciJobValid(failed))throw Error("bad gates accepted");
     console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+16));
 }
