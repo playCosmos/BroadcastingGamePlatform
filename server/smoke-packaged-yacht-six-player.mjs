@@ -11,8 +11,11 @@ const report=process.argv.length>=3&&process.argv[2].startsWith("--report=")
     ?process.argv[2].slice(9):"";
 const wsReport=process.argv.length===4&&process.argv[3].startsWith("--ws-report=")
     ?process.argv[3].slice(12):"";
+const yachtWsReport=process.argv.length===5&&process.argv[4].startsWith("--yacht-ws-report=")
+    ?process.argv[4].slice(18):"";
 const wsPort=Number(process.env.BGP_R15C_WS_PORT||0);
 const wsEnabled=Boolean(wsReport&&wsPort);
+const yachtWsEnabled=Boolean(yachtWsReport&&wsEnabled);
 const base="http://127.0.0.1:"+port, api=base+"/api/v1/room-membership";
 const fail=label=>{throw Error("R15b acceptance failed: "+label)};
 const check=(condition,label)=>{if(!condition)fail(label)};
@@ -23,10 +26,12 @@ check(Number.isInteger(port)&&port>=1024&&port<=65535
     &&process.env.BGP_R15B_LAUNCH==="2"
     &&report.length>0&&report.length<1024&&!report.includes("\0")
     &&(process.argv.length===3 && wsPort===0
-        || process.argv.length===4 && wsEnabled
+        || (process.argv.length===4||process.argv.length===5) && wsEnabled
             &&wsReport.length<1024&&!wsReport.includes("\0")
             &&Number.isInteger(wsPort)&&wsPort>=1024&&wsPort<=65535
-            &&wsPort!==port&&typeof WebSocket==="function"),
+            &&wsPort!==port&&typeof WebSocket==="function"
+            &&(process.argv.length===4 || yachtWsEnabled
+                &&yachtWsReport.length<1024&&!yachtWsReport.includes("\0"))),
     "required disposable second packaged listener and report path");
 
 async function request(path,method="GET",body=null,token="",expected=200){
@@ -143,6 +148,112 @@ async function finishTwentyWs(session){
         " players=6 spectators=14 sockets=20 live=40 replay=1 turns=78");
 }
 
+// R15d: four actual Yacht event sockets alongside the twenty authenticated
+// member-room sockets. The packaged listener caps a single IP at 24 sockets.
+// A temporarily disconnected observer recovers missed Yacht state-change
+// events through the existing bounded public Yacht event-history API.
+const yachtSockets=[];
+const yachtEvents=frame=>({
+    type:frame.type,sequence:frame.sequence,
+    version:frame.match?.version,turns:frame.match?.completedTurns
+});
+function matchingYachtEvent(frame){
+    return frame&&["yacht.dice.rolled","yacht.score.committed"].includes(frame.type);
+}
+async function yachtSocket(code){
+    const ws=new WebSocket("ws://127.0.0.1:"+wsPort+"/?yachtCode="+code);
+    const item={ws,frames:[],closed:false,closeCode:null};
+    yachtSockets.push(item);
+    ws.addEventListener("message",event=>{
+        try{
+            const frame=JSON.parse(String(event.data));
+            if(matchingYachtEvent(frame)){
+                check(frame.roomCode===code && frame.gameId==="yacht",
+                    "R15d Yacht notification scoped to correct match");
+                item.frames.push(yachtEvents(frame));
+            }
+        }catch{item.invalidFrame=true}
+    });
+    ws.addEventListener("close",event=>{item.closed=true;item.closeCode=event.code});
+    const until=Date.now()+15000;
+    while(ws.readyState===WebSocket.CONNECTING&&Date.now()<until)await sleep(50);
+    check(ws.readyState===WebSocket.OPEN,"R15d live Yacht WS connects");
+    return item;
+}
+async function yachtClosed(item){
+    if(item.closed)return;
+    item.ws.close(1000,"R15d fixture reconnect");
+    const until=Date.now()+15000;
+    while(!item.closed&&Date.now()<until)await sleep(50);
+    check(item.closed&&(item.closeCode===1000||item.closeCode===1001),
+        "R15d normal Yacht socket close");
+}
+async function yachtWaitCount(item,count,label){
+    const until=Date.now()+15000;
+    while(item.frames.length<count&&Date.now()<until){
+        check(!item.closed,"R15d Yacht socket closed during "+label);
+        await sleep(50);
+    }
+    check(item.frames.length===count&&!item.invalidFrame,
+        "R15d exact Yacht event count "+label);
+}
+async function yachtGapHistory(code,afterSequence){
+    const ctrl=new AbortController(),timer=setTimeout(()=>ctrl.abort(),12000);
+    try{
+        const url=base+"/api/v1/games/yacht/public/"+code+
+            "/events?since="+afterSequence;
+        const res=await fetch(url,{signal:ctrl.signal,redirect:"error"});
+        check(res.status===200,"R15d real Yacht durable HTTP replay");
+        const history=await res.json();
+        check(Array.isArray(history)&&history.length===10,
+            "R15d missing exactly ten Yacht events during disconnection");
+        check(history.every(x=>x.roomCode===code&&x.gameId==="yacht"
+            &&matchingYachtEvent(x)),
+            "R15d replay scope and known event types");
+        return history.map(yachtEvents);
+    }finally{clearTimeout(timer)}
+}
+function yachtMatches(actual,expected,label){
+    check(actual.length===expected.length,"R15d Yacht frames count "+label);
+    for(let i=0;i<expected.length;i++){
+        const a=actual[i],e=expected[i];
+        check(a.type===e.type&&a.sequence===e.sequence
+            &&a.version===e.version&&a.turns===e.turns,
+            "R15d Yacht ordered committed event "+label+" "+i);
+        if(i)check(a.sequence>actual[i-1].sequence,
+            "R15d Yacht strictly increasing event sequence");
+    }
+}
+async function finishYachtWs(context){
+    const {sockets,oldFourth,missed,expected}=context;
+    for(let i=0;i<4;i++){
+        const visible=sockets[i].frames;
+        const wanted=i===3?expected.slice(42):expected;
+        await yachtWaitCount(sockets[i],wanted.length,"subscriber "+i);
+        yachtMatches(visible,wanted,"subscriber "+i);
+    }
+    check(missed.length===10,"R15d bounded Yacht REST gap replay exists");
+    yachtMatches([...oldFourth.frames,...missed,...sockets[3].frames],
+        expected,"disconnected spectator recovery");
+    check(sockets.every(x=>x.ws.readyState===WebSocket.OPEN),
+        "R15d four live Yacht notifications remain connected at game finish");
+    for(const socket of sockets)await yachtClosed(socket);
+    const result={
+        kind:"packaged-six-player-yacht-events",schemaVersion:1,
+        source:"packaged-windows-listener-jvm",players:6,spectators:14,
+        concurrentMemberSockets:20,concurrentYachtSockets:4,
+        completedTurns:78,committedRollEvents:78,committedScoreEvents:78,
+        liveYachtEvents:4*156-10,replayedMissedEvents:10,
+        recoveredSubscriber:true,strictEventOrder:true,
+        versionAndTurnConsistent:true,allGameSocketsNormalClose:true,
+        unauthorizedCommandsProduceNoEvents:true
+    };
+    await writeFile(yachtWsReport,JSON.stringify(result)+"\n",
+        {encoding:"utf8",flag:"wx"});
+    console.log("GAME_ROOM_R15D_PACKAGED_YACHT_EVENTS_PASSED"+
+        " players=6 sockets=24 yacht=4 live=614 replay=10 turns=78");
+}
+
 async function run(){
     const hosted=await post("/public/hosted","",{
         gameId:"yacht",name:"R15b packaged six-player acceptance",
@@ -206,10 +317,22 @@ async function run(){
     await post("/yacht/start",viewers[0],{},403);
     const started=await post("/yacht/start",players[0],{});
     const matchId=started.yacht.match.id;
+    const yachtContext=yachtWsEnabled?{
+        sockets:[],oldFourth:null,missed:[],expected:[],
+        code:started.yacht.roomCode
+    }:null;
     check(started.yacht.match.phase==="ACTIVE"
         &&started.yacht.match.players.length===6
         &&started.room.state==="PLAYING",
         "six actual ready players start the packaged Yacht match");
+    if(yachtContext){
+        check(/^[A-HJ-NP-Z2-9]{6}$/.test(yachtContext.code),
+            "R15d authoritative Yacht event room code");
+        for(let i=0;i<4;i++){
+            yachtContext.sockets.push(await yachtSocket(yachtContext.code));
+            await sleep(60);
+        }
+    }
     const byMember=new Map();
     for(let i=0;i<6;i++){
         const me=await request("/me","GET",null,players[i]);
@@ -240,6 +363,10 @@ async function run(){
             &&rolled.yacht.match.completedTurns===turn
             &&rolled.yacht.match.version>match.version,
             "real packaged dice roll "+turn);
+        if(yachtContext)yachtContext.expected.push({
+            type:"yacht.dice.rolled",sequence:rolled.yacht.match.version,
+            version:rolled.yacht.match.version,turns:turn
+        });
         const legal=rolled.yacht.availableScores?.points;
         const category=categories.find(k=>Object.hasOwn(legal||{},k));
         check(Boolean(category),"server-legal score "+turn);
@@ -254,6 +381,23 @@ async function run(){
             &&scored.yacht.match.phase===(turn===77?"FINISHED":"ACTIVE")
             &&scored.room.state===(turn===77?"POST_GAME":"PLAYING"),
             "packaged match turn and room lifecycle "+turn);
+        if(yachtContext){
+            yachtContext.expected.push({
+                type:"yacht.score.committed",sequence:scored.yacht.match.version,
+                version:scored.yacht.match.version,turns:turn+1
+            });
+            if(turn===15){
+                const fourth=yachtContext.sockets[3];
+                await yachtWaitCount(fourth,32,"pre-disconnect");
+                yachtContext.oldFourth=fourth;
+                await yachtClosed(fourth);
+            }
+            if(turn===20){
+                yachtContext.missed=await yachtGapHistory(yachtContext.code,
+                    yachtContext.oldFourth.frames.at(-1).sequence);
+                yachtContext.sockets[3]=await yachtSocket(yachtContext.code);
+            }
+        }
         if(turn===77)lastScore={token,command,version:scored.yacht.match.version};
     }
     check(Boolean(lastScore),"final score transaction exists");
@@ -283,6 +427,7 @@ async function run(){
         &&final.yacht.match.completedTurns===78
         &&final.room.state==="POST_GAME",
         "postgame rejected command cannot mutate durable finished game");
+    if(yachtContext)await finishYachtWs(yachtContext);
     if(wsSession)await finishTwentyWs(wsSession);
     const result={kind:"packaged-yacht-six-player-capacity",schemaVersion:1,
         source:"packaged-windows-listener-jvm",players:6,spectators:14,
@@ -304,5 +449,7 @@ try{await run()}catch(error){
     process.exitCode=1;
 }finally{
     for(const item of wsConnections)
+        if(!item.closed)try{item.ws.close()}catch{}
+    for(const item of yachtSockets)
         if(!item.closed)try{item.ws.close()}catch{}
 }
