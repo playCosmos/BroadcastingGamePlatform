@@ -3774,7 +3774,6 @@ async function sixPlayerBrowserCapacityAcceptance(base){
     console.log("GAME_ROOM_R15F_BROWSER_SINGLE_SOCKET_RECOVERY_PASSED"+
         " tabs=7 perTabSockets=1 nativeEvents=1092 reconnect=1 replay=1");
     for(const viewer of pages){
-        await poll(async()=>await cdp.eval(viewer,    for(const viewer of pages){
         await poll(async()=>await cdp.eval(viewer,
             "(()=>{const $=id=>document.getElementById(id);"+
             "return $('roomState').textContent==='POST_GAME'"+
