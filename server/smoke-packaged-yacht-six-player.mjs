@@ -94,7 +94,7 @@ async function closeSocket(item){
 }
 async function deliverTwenty(items,hostToken,messageId){
     const result=await post("/chat",hostToken,{
-        messageId,text:"R15c twenty-member packaged chat"});
+        messageId,text:"R15c twenty-member packaged chat"},201);
     check(result.messageId===messageId
         &&Number.isSafeInteger(result.sequence),
         "R15c chat commits to real packaged SQLite");
