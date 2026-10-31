@@ -9,7 +9,7 @@ import {writeFile} from "node:fs/promises";
 const port=Number(process.env.BGP_R15B_HTTP_PORT);
 const report=process.argv.length>=3&&process.argv[2].startsWith("--report=")
     ?process.argv[2].slice(9):"";
-const wsReport=process.argv.length===4&&process.argv[3].startsWith("--ws-report=")
+const wsReport=process.argv.length>=4&&process.argv[3].startsWith("--ws-report=")
     ?process.argv[3].slice(12):"";
 const yachtWsReport=process.argv.length===5&&process.argv[4].startsWith("--yacht-ws-report=")
     ?process.argv[4].slice(18):"";
@@ -22,7 +22,7 @@ const check=(condition,label)=>{if(!condition)fail(label)};
 const categories=["ACES","TWOS","THREES","FOURS","FIVES","SIXES",
     "THREE_OF_KIND","FOUR_OF_KIND","FULL_HOUSE","SMALL_STRAIGHT",
     "LARGE_STRAIGHT","YACHT","CHANCE"];
-check(Number.isInteger(port)&&port>=1024&&port<=65535
+const configValid=Number.isInteger(port)&&port>=1024&&port<=65535
     &&process.env.BGP_R15B_LAUNCH==="2"
     &&report.length>0&&report.length<1024&&!report.includes("\0")
     &&(process.argv.length===3 && wsPort===0
@@ -31,8 +31,7 @@ check(Number.isInteger(port)&&port>=1024&&port<=65535
             &&Number.isInteger(wsPort)&&wsPort>=1024&&wsPort<=65535
             &&wsPort!==port&&typeof WebSocket==="function"
             &&(process.argv.length===4 || yachtWsEnabled
-                &&yachtWsReport.length<1024&&!yachtWsReport.includes("\0"))),
-    "required disposable second packaged listener and report path");
+                &&yachtWsReport.length<1024&&!yachtWsReport.includes("\0")));
 
 async function request(path,method="GET",body=null,token="",expected=200){
     const controller=new AbortController();
@@ -443,7 +442,10 @@ async function run(){
     console.log("GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_PASSED"+
         " players=6 spectators=14 members=20 turns=78 postGame=true");
 }
-try{await run()}catch(error){
+try{
+    check(configValid,"required disposable second packaged listener and report path");
+    await run();
+}catch(error){
     console.error("GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_FAILED"+
         " reason="+String(error.message||error).replace(/[^\w \-/.:]/g,"").slice(0,160));
     process.exitCode=1;
