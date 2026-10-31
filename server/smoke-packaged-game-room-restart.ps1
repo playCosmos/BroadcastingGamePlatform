@@ -586,8 +586,8 @@ if ($YachtWsEventsReportPath) {
 # R15e proves every native Yacht roll/score reaches all authenticated
 # member-room sockets without opening a second socket per browser member.
 if ($MemberYachtReportPath) {
-    if (-not $TwentyWsReportPath -or -not $YachtWsEventsReportPath
-        -or $StopMode -ne "Graceful") {
+    if (-not $TwentyWsReportPath -or -not $YachtWsEventsReportPath -or
+        $StopMode -ne "Graceful") {
         throw "R15e single member-socket game-event delivery requires R15c/R15d"
     }
     $paths=@($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath,
