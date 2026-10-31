@@ -64,7 +64,7 @@ async function waitFrame(item,predicate,label){
 }
 async function joinSocket(token,roomId,cursor=-1){
     const ws=new WebSocket("ws://127.0.0.1:"+wsPort+"/?memberRoomId="+roomId);
-    const item={ws,frames:[],closed:false};
+    const item={ws,frames:[],closed:false,closeCode:null};
     wsConnections.push(item);
     ws.addEventListener("message",event=>{
         try{
@@ -72,7 +72,7 @@ async function joinSocket(token,roomId,cursor=-1){
             if(item.frames.length>50)item.frames.shift();
         }catch{}
     });
-    ws.addEventListener("close",()=>{item.closed=true});
+    ws.addEventListener("close",event=>{item.closed=true;item.closeCode=event.code});
     const until=Date.now()+15000;
     while(ws.readyState===WebSocket.CONNECTING&&Date.now()<until)await sleep(50);
     check(ws.readyState===WebSocket.OPEN,"R15c packaged member WS connects");
@@ -89,7 +89,8 @@ async function closeSocket(item){
     item.ws.close(1000,"fixture complete");
     const until=Date.now()+15000;
     while(!item.closed&&Date.now()<until)await sleep(50);
-    check(item.closed,"R15c clean member WS shutdown");
+    check(item.closed && (item.closeCode===1000||item.closeCode===1001),
+        "R15c clean member WS shutdown");
 }
 async function deliverTwenty(items,hostToken,messageId){
     const result=await post("/chat",hostToken,{
