@@ -6,6 +6,7 @@
  *
  * node server/audit-game-room-pr-stack.mjs --self-test
  * node server/audit-game-room-pr-stack.mjs --live
+ * GITHUB_TOKEN=... node server/audit-game-room-pr-stack.mjs --live-ancestry
  *
  * GITHUB_TOKEN is optional; if set, it is used only as a request header.
  */
@@ -14,7 +15,7 @@ const TIP="feature/common-game-room-r15h-cross-room-24-socket-isolation";
 const ROOT_PR=33;
 const REQUIRED_STAGES=81;
 const API="https://api.github.com/repos/"+REPOSITORY;
-const allowed=new Set(["--self-test","--live"]);
+const allowed=new Set(["--self-test","--live","--live-ancestry"]);
 const modes=process.argv.slice(2);
 if(modes.length!==1||!allowed.has(modes[0])){
     console.error("GAME_ROOM_STACK_AUDIT_INVALID_MODE");
@@ -78,6 +79,15 @@ function audit(prs,mainSha,{tip=TIP,rootNumber=ROOT_PR,minimum=REQUIRED_STAGES}=
     };
 }
 
+// Compare each exact parent SHA to the child head. Matching PR metadata
+// alone cannot establish commit ancestry; these checks are read-only.
+function isExactDescendant(compare,baseSha){
+    return compare?.status==="ahead"
+        &&Number.isSafeInteger(compare.ahead_by)&&compare.ahead_by>0
+        &&compare.behind_by===0
+        &&compare.merge_base_commit?.sha===baseSha;
+}
+
 function sample(n,head,base,baseSha,sha){
     return {
         number:n,state:"open",draft:true,merged_at:null,
@@ -132,7 +142,15 @@ function selfTest(){
         if(outcome.valid||!outcome.failures.includes(expected))
             throw Error("mutation unexpectedly accepted: "+name);
     }
-    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+1));
+    const good={status:"ahead",ahead_by:2,behind_by:0,
+        merge_base_commit:{sha:a}};
+    if(!isExactDescendant(good,a)
+        ||isExactDescendant({...good,status:"diverged"},a)
+        ||isExactDescendant({...good,behind_by:1},a)
+        ||isExactDescendant({...good,ahead_by:0},a)
+        ||isExactDescendant({...good,merge_base_commit:{sha:b}},a))
+        throw Error("ancestry comparison contract rejected");
+    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+6));
 }
 async function api(path){
     const token=process.env.GITHUB_TOKEN||"";
@@ -152,7 +170,37 @@ async function api(path){
         return await response.json();
     }finally{clearTimeout(timeout);}
 }
-async function live(){
+async function verifyLiveAncestry(prs){
+    // This mode intentionally requires an operator-supplied GitHub token:
+    // 81 compare requests exceed the anonymous GitHub hourly API quota.
+    if(!process.env.GITHUB_TOKEN)
+        throw Error("authenticated GitHub access required for ancestry");
+    const byHead=new Map(prs.map(p=>[p.head?.ref,p]));
+    const pairs=[];
+    let p=byHead.get(TIP);
+    while(p){
+        pairs.push({base:p.base.sha,head:p.head.sha});
+        if(p.base.ref==="main")break;
+        p=byHead.get(p.base.ref);
+    }
+    if(pairs.length!==REQUIRED_STAGES||p?.number!==ROOT_PR)
+        throw Error("unexpected integration chain size");
+    // Small batches prevent unnecessary GitHub secondary rate-limit pressure.
+    for(let i=0;i<pairs.length;i+=3){
+        const group=pairs.slice(i,i+3);
+        const checked=await Promise.all(group.map(async pair=>{
+            const result=await api("/compare/"+pair.base+"..."+pair.head+"?per_page=1");
+            return isExactDescendant(result,pair.base);
+        }));
+        if(checked.some(value=>!value))
+            throw Error("non-descendant PR pair at index "+i);
+    }
+    console.log("GAME_ROOM_STACK_ANCESTRY_VALID checks="+pairs.length+
+        " root="+ROOT_PR+" tip=116 allParentsAncestors=true");
+    console.log("GAME_ROOM_STACK_ANCESTRY_ADVISORY"+
+        " merge_conflicts_not_checked=true no_merges_performed=true");
+}
+async function live(verifyAncestry=false){
     const prs=[];
     // GitHub exposes at most 100 PRs per page. Bound pagination and fail
     // closed rather than claiming a healthy partial lineage.
@@ -172,6 +220,7 @@ async function live(){
             outcome.failures.join(",")+" links="+outcome.links);
         process.exitCode=1;return;
     }
+    if(verifyAncestry)await verifyLiveAncestry(prs);
     console.log("GAME_ROOM_STACK_AUDIT_VALID"+
         " root="+outcome.root+" tip="+outcome.tip+
         " drafts="+outcome.draftCount+" links="+outcome.links+
@@ -183,10 +232,10 @@ async function live(){
 }
 try{
     if(modes[0]==="--self-test")selfTest();
-    else await live();
+    else await live(modes[0]==="--live-ancestry");
 }catch(error){
     // Avoid echoing a potentially credential-bearing URL or request headers.
     console.error("GAME_ROOM_STACK_AUDIT_FAILED"+
-        " type="+(modes[0]==="--live"?"metadata_or_validation":"selftest"));
+        " type="+(modes[0].startsWith("--live")?"metadata_or_validation":"selftest"));
     process.exitCode=1;
 }
