@@ -3633,16 +3633,49 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
         await poll(async()=>await cdp.eval(host,
             "document.getElementById('roomState').textContent==='PLAYING'"),
             "R15h room B match starts");
+        // A PLAYING room label is not enough: the browser may still be
+        // processing the host's Start action when this real HTTP client rolls.
+        // Synchronize the actual current-turn UI without weakening server
+        // version checks or retrying any write.
+        await waitRoomIdle(host,"game");
+        await poll(async()=>await cdp.eval(host,
+            "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+            " && document.getElementById('roomState').textContent==='PLAYING'"+
+            " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+            " && document.getElementById('roll').disabled===false"),
+            "R15h B host UI is idle and on current turn",20000);
         const before=await backend(host,"/yacht","GET",null,tokens[0]);
         const match=before.data.yacht?.match;
         check(before.status===200&&before.data.currentPlayer===true
-            &&match?.completedTurns===0,
+            &&match?.completedTurns===0&&match?.rolls===0
+            &&match?.phase==="ACTIVE"&&Number.isSafeInteger(match?.version),
             "R15h room B host has first turn");
         const rolled=await backend(host,"/yacht/roll","POST",{
             commandId:"r15h-b-roll",expectedVersion:match.version
         },tokens[0]);
-        check(rolled.status===200&&rolled.data.yacht?.match?.rolls===1,
-            "R15h room B native roll committed");
+        if(rolled.status!==200||rolled.data.yacht?.match?.rolls!==1){
+            // Report only numeric status/turn/version/roll and boolean UI
+            // state. Never print room codes, credentials or response bodies.
+            const current=await backend(host,"/yacht","GET",null,tokens[0]);
+            const state=await cdp.eval(host,
+                "({busy:document.getElementById('game').getAttribute('aria-busy')==='true',"+
+                "rollDisabled:document.getElementById('roll').disabled,"+
+                "playing:document.getElementById('roomState').textContent==='PLAYING'})");
+            throw Error("browser acceptance failed: R15h room B native roll committed; "+
+                "diagnostic="+JSON.stringify({
+                    writeStatus:rolled.status,readStatus:current.status,
+                    expectedVersion:match.version,
+                    responseVersion:rolled.data.yacht?.match?.version??null,
+                    responseRolls:rolled.data.yacht?.match?.rolls??null,
+                    currentVersion:current.data.yacht?.match?.version??null,
+                    currentRolls:current.data.yacht?.match?.rolls??null,
+                    currentTurns:current.data.yacht?.match?.completedTurns??null,
+                    currentPhaseIsActive:current.data.yacht?.match?.phase==="ACTIVE",
+                    currentPlayer:current.data.currentPlayer===true,
+                    ui:state,
+                    recentHttp:cdp.network.slice(-5).map(x=>x.status)
+                }));
+        }
         const category=Object.keys(rolled.data.yacht.availableScores?.points||{})[0];
         check(Boolean(category),"R15h room B has legal score choice");
         const scored=await backend(host,"/yacht/score","POST",{
