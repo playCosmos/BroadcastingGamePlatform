@@ -88,6 +88,18 @@ function isExactDescendant(compare,baseSha){
         &&compare.merge_base_commit?.sha===baseSha;
 }
 
+function sameLineageSnapshot(original,latest){
+    const byNumber=new Map(latest.map(p=>[p.number,p]));
+    return original.every(p=>{
+        const next=byNumber.get(p.number);
+        return next?.state===p.state&&next?.draft===p.draft
+            &&next?.head?.ref===p.head?.ref
+            &&next?.head?.sha===p.head?.sha
+            &&next?.base?.ref===p.base?.ref
+            &&next?.base?.sha===p.base?.sha;
+    });
+}
+
 function sample(n,head,base,baseSha,sha){
     return {
         number:n,state:"open",draft:true,merged_at:null,
@@ -150,7 +162,16 @@ function selfTest(){
         ||isExactDescendant({...good,ahead_by:0},a)
         ||isExactDescendant({...good,merge_base_commit:{sha:b}},a))
         throw Error("ancestry comparison contract rejected");
-    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+6));
+    const original=structuredClone(pristine);
+    const changedHead=structuredClone(pristine);
+    changedHead[1].head.sha=b;
+    const changedBase=structuredClone(pristine);
+    changedBase[1].base.sha=a;
+    if(!sameLineageSnapshot(pristine,original)
+        ||sameLineageSnapshot(pristine,changedHead)
+        ||sameLineageSnapshot(pristine,changedBase))
+        throw Error("lineage snapshot contract rejected");
+    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+9));
 }
 async function api(path){
     const token=process.env.GITHUB_TOKEN||"";
@@ -170,15 +191,16 @@ async function api(path){
         return await response.json();
     }finally{clearTimeout(timeout);}
 }
-async function verifyLiveAncestry(prs){
+async function verifyLiveAncestry(prs,mainSha){
     // This mode intentionally requires an operator-supplied GitHub token:
     // 81 compare requests exceed the anonymous GitHub hourly API quota.
     if(!process.env.GITHUB_TOKEN)
         throw Error("authenticated GitHub access required for ancestry");
     const byHead=new Map(prs.map(p=>[p.head?.ref,p]));
-    const pairs=[];
+    const pairs=[],lineage=[];
     let p=byHead.get(TIP);
     while(p){
+        lineage.push(p);
         pairs.push({base:p.base.sha,head:p.head.sha});
         if(p.base.ref==="main")break;
         p=byHead.get(p.base.ref);
@@ -195,6 +217,21 @@ async function verifyLiveAncestry(prs){
         if(checked.some(value=>!value))
             throw Error("non-descendant PR pair at index "+i);
     }
+    // Fail closed if any audited PR ref or main has moved while the
+    // individually pinned compare requests were running.
+    const latest=[];
+    for(let page=1;page<=5;page++){
+        const batch=await api("/pulls?state=open&per_page=100&page="+page);
+        if(!Array.isArray(batch)||batch.length>100)
+            throw Error("invalid refreshed PR list");
+        latest.push(...batch);
+        if(batch.length<100)break;
+        if(page===5)throw Error("refreshed PR pagination overflow");
+    }
+    const refreshedMain=await api("/branches/main");
+    if(refreshedMain?.commit?.sha!==mainSha
+        ||!sameLineageSnapshot(lineage,latest))
+        throw Error("lineage changed during ancestry audit");
     console.log("GAME_ROOM_STACK_ANCESTRY_VALID checks="+pairs.length+
         " root="+ROOT_PR+" tip=116 allParentsAncestors=true");
     console.log("GAME_ROOM_STACK_ANCESTRY_ADVISORY"+
@@ -220,7 +257,7 @@ async function live(verifyAncestry=false){
             outcome.failures.join(",")+" links="+outcome.links);
         process.exitCode=1;return;
     }
-    if(verifyAncestry)await verifyLiveAncestry(prs);
+    if(verifyAncestry)await verifyLiveAncestry(prs,main.commit.sha);
     console.log("GAME_ROOM_STACK_AUDIT_VALID"+
         " root="+outcome.root+" tip="+outcome.tip+
         " drafts="+outcome.draftCount+" links="+outcome.links+
