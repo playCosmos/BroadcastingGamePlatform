@@ -6,6 +6,7 @@
  *
  * node server/audit-game-room-pr-stack.mjs --self-test
  * node server/audit-game-room-pr-stack.mjs --live
+ * node server/audit-game-room-pr-stack.mjs --live-ci
  * GITHUB_TOKEN=... node server/audit-game-room-pr-stack.mjs --live-ancestry
  *
  * GITHUB_TOKEN is optional; if set, it is used only as a request header.
@@ -15,7 +16,7 @@ const TIP="feature/common-game-room-r15h-cross-room-24-socket-isolation";
 const ROOT_PR=33;
 const REQUIRED_STAGES=81;
 const API="https://api.github.com/repos/"+REPOSITORY;
-const allowed=new Set(["--self-test","--live","--live-ancestry"]);
+const allowed=new Set(["--self-test","--live","--live-ancestry","--live-ci"]);
 const modes=process.argv.slice(2);
 if(modes.length!==1||!allowed.has(modes[0])){
     console.error("GAME_ROOM_STACK_AUDIT_INVALID_MODE");
@@ -100,6 +101,40 @@ function sameLineageSnapshot(original,latest){
     });
 }
 
+const CI_GATES=[
+    "Check PowerShell scripts","Check browser JavaScript",
+    "Run platform regression probes","Real GameRoom Chrome Edge browser E2E",
+    "Verify package","R14h packaged GameRoom graceful exit and restart",
+    "R14n verify packaged Windows listener-JVM duration trend",
+    "R15b verify actual packaged six-player Yacht 78-turn match",
+    "R15e verify native Yacht events to all 20 authenticated member WebSockets"
+];
+// Fail closed if the most recent exact-head attempt of either event is
+// pending or failed, even when a prior run succeeded.
+function latestCi(runs,head){
+    const result={};
+    for(const event of ["push","pull_request"]){
+        const matches=runs.filter(r=>r?.event===event
+            &&r.path===".github/workflows/platform-windows-package.yml"
+            &&r.head_sha===head&&r.head_branch===TIP
+            &&Number.isSafeInteger(r.id)).sort((a,b)=>b.id-a.id);
+        const run=matches[0];
+        if(run?.status!=="completed"||run.conclusion!=="success")
+            throw Error("latest "+event+" Windows CI not successful");
+        result[event]=run;
+    }
+    return result;
+}
+function ciJobValid(jobs){
+    if(!Array.isArray(jobs)||jobs.length!==1)return false;
+    const job=jobs[0];
+    if(job.name!=="package"||job.status!=="completed"
+        ||job.conclusion!=="success"||!Array.isArray(job.steps))
+        return false;
+    return CI_GATES.every(name=>job.steps.filter(s=>
+        s.name===name&&s.status==="completed"
+            &&s.conclusion==="success").length===1);
+}
 function sample(n,head,base,baseSha,sha){
     return {
         number:n,state:"open",draft:true,merged_at:null,
@@ -171,7 +206,31 @@ function selfTest(){
         ||sameLineageSnapshot(pristine,changedHead)
         ||sameLineageSnapshot(pristine,changedBase))
         throw Error("lineage snapshot contract rejected");
-    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+9));
+    const green=[
+        {id:10,event:"push",path:".github/workflows/platform-windows-package.yml",
+            head_sha:c,head_branch:TIP,status:"completed",conclusion:"success"},
+        {id:11,event:"pull_request",path:".github/workflows/platform-windows-package.yml",
+            head_sha:c,head_branch:TIP,status:"completed",conclusion:"success"}
+    ];
+    const good=[{name:"package",status:"completed",conclusion:"success",
+        steps:CI_GATES.map(name=>({name,status:"completed",conclusion:"success"}))}];
+    if(latestCi(green,c).push.id!==10||!ciJobValid(good))
+        throw Error("green CI rejected");
+    const attempts=[
+        [green[0]],
+        [...green,{...green[0],id:12,status:"in_progress"}],
+        [...green,{...green[1],id:13,conclusion:"failure"}],
+        [{...green[0],head_sha:a},green[1]]
+    ];
+    for(const runs of attempts){
+        let rejected=false;
+        try{latestCi(runs,c);}catch{rejected=true;}
+        if(!rejected)throw Error("bad CI run accepted");
+    }
+    const missing=structuredClone(good);missing[0].steps.pop();
+    const failed=structuredClone(good);failed[0].steps[0].conclusion="failure";
+    if(ciJobValid(missing)||ciJobValid(failed))throw Error("bad gates accepted");
+    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+16));
 }
 async function api(path){
     const token=process.env.GITHUB_TOKEN||"";
@@ -237,7 +296,35 @@ async function verifyLiveAncestry(prs,mainSha){
     console.log("GAME_ROOM_STACK_ANCESTRY_ADVISORY"+
         " merge_conflicts_not_checked=true no_merges_performed=true");
 }
-async function live(verifyAncestry=false){
+// Read-only, exact-head dual-CI gate. Does not prove sequential merge.
+async function verifyLiveCi(prs,mainSha){
+    const tip=prs.find(p=>p.head?.ref===TIP);
+    const sha=tip.head.sha;
+    const result=await api("/actions/runs?head_sha="+sha+"&per_page=100&page=1");
+    if(!Array.isArray(result?.workflow_runs)
+        ||!Number.isSafeInteger(result.total_count)
+        ||result.total_count>100)throw Error("incomplete workflow evidence");
+    const chosen=latestCi(result.workflow_runs,sha);
+    for(const event of ["push","pull_request"]){
+        const jobs=await api("/actions/runs/"+chosen[event].id+
+            "/jobs?per_page=100");
+        if(jobs?.total_count!==1||!ciJobValid(jobs.jobs))
+            throw Error("required Windows CI gates did not pass");
+    }
+    const refreshed=await api("/pulls?state=open&per_page=100&page=1");
+    const main=await api("/branches/main");
+    if(!Array.isArray(refreshed)||refreshed.length>=100
+        ||!sameLineageSnapshot(prs,refreshed)
+        ||main?.commit?.sha!==mainSha)
+        throw Error("ref changed during CI audit");
+    console.log("GAME_ROOM_STACK_CI_VALID tip="+tip.number+
+        " pushRun="+chosen.push.id+" prRun="+chosen.pull_request.id+
+        " gates="+CI_GATES.length+" dualSuccess=true");
+    console.log("GAME_ROOM_STACK_CI_ADVISORY"+
+        " tip_only=true no_sequential_merge_test=true"+
+        " no_external_field_acceptance=true");
+}
+async function live(mode){
     const prs=[];
     // GitHub exposes at most 100 PRs per page. Bound pagination and fail
     // closed rather than claiming a healthy partial lineage.
@@ -257,7 +344,8 @@ async function live(verifyAncestry=false){
             outcome.failures.join(",")+" links="+outcome.links);
         process.exitCode=1;return;
     }
-    if(verifyAncestry)await verifyLiveAncestry(prs,main.commit.sha);
+    if(mode==="--live-ancestry")await verifyLiveAncestry(prs,main.commit.sha);
+    if(mode==="--live-ci")await verifyLiveCi(prs,main.commit.sha);
     console.log("GAME_ROOM_STACK_AUDIT_VALID"+
         " root="+outcome.root+" tip="+outcome.tip+
         " drafts="+outcome.draftCount+" links="+outcome.links+
@@ -265,11 +353,11 @@ async function live(verifyAncestry=false){
         " parentHeadsExact=true mainBaseExact=true");
     console.log("GAME_ROOM_STACK_AUDIT_ADVISORY"+
         " no_automatic_merge=true no_remote_field_proof=true"+
-        " commit_ancestry_not_proven=true");
+        " commit_ancestry_not_proven="+(mode==="--live-ancestry"?"false":"true"));
 }
 try{
     if(modes[0]==="--self-test")selfTest();
-    else await live(modes[0]==="--live-ancestry");
+    else await live(modes[0]);
 }catch(error){
     // Avoid echoing a potentially credential-bearing URL or request headers.
     console.error("GAME_ROOM_STACK_AUDIT_FAILED"+
