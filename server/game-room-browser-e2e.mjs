@@ -3676,16 +3676,49 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
                     recentHttp:cdp.network.slice(-5).map(x=>x.status)
                 }));
         }
-        const category=Object.keys(rolled.data.yacht.availableScores?.points||{})[0];
+        const categories=["ACES","TWOS","THREES","FOURS","FIVES","SIXES",
+            "THREE_OF_KIND","FOUR_OF_KIND","FULL_HOUSE","SMALL_STRAIGHT",
+            "LARGE_STRAIGHT","YACHT","CHANCE"];
+        const options=rolled.data.yacht.availableScores?.points||{};
+        const category=categories.find(key=>
+            Object.prototype.hasOwnProperty.call(options,key));
         check(Boolean(category),"R15h room B has legal score choice");
+        // Allow the same real host tab that issued the roll to process
+        // its native Yacht event and finish its refresh before scoring.
+        // Keep the version-pinned server POST as a single strict write.
+        await waitRoomIdle(host,"game");
+        await poll(async()=>await cdp.eval(host,
+            "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+            " && document.getElementById('turnDetail').textContent.includes('굴림 1 / 3')"+
+            " && document.querySelectorAll('#scoreGrid button')["+
+                categories.indexOf(category)+"]?.disabled===false"),
+            "R15h B host score UI synchronized after native roll",20000);
         const scored=await backend(host,"/yacht/score","POST",{
             commandId:"r15h-b-score",
             expectedVersion:rolled.data.yacht.match.version,
             category:category.toLowerCase()
         },tokens[0]);
-        check(scored.status===200
-            &&scored.data.yacht.match.completedTurns===1,
-            "R15h room B native score committed");
+        if(scored.status!==200
+            ||scored.data.yacht?.match?.completedTurns!==1){
+            const current=await backend(host,"/yacht","GET",null,tokens[0]);
+            const state=await cdp.eval(host,
+                "({busy:document.getElementById('game').getAttribute('aria-busy')==='true',"+
+                "playing:document.getElementById('roomState').textContent==='PLAYING',"+
+                "rollsVisible:document.getElementById('turnDetail').textContent.includes('굴림 1 / 3')})");
+            throw Error("browser acceptance failed: R15h room B native score committed; "+
+                "diagnostic="+JSON.stringify({
+                    writeStatus:scored.status,readStatus:current.status,
+                    expectedVersion:rolled.data.yacht.match.version,
+                    responseVersion:scored.data.yacht?.match?.version??null,
+                    responseTurns:scored.data.yacht?.match?.completedTurns??null,
+                    currentVersion:current.data.yacht?.match?.version??null,
+                    currentRolls:current.data.yacht?.match?.rolls??null,
+                    currentTurns:current.data.yacht?.match?.completedTurns??null,
+                    currentPhaseIsActive:current.data.yacht?.match?.phase==="ACTIVE",
+                    currentPlayer:current.data.currentPlayer===true,
+                    ui:state,recentHttp:cdp.network.slice(-5).map(x=>x.status)
+                }));
+        }
         await poll(async()=>(await Promise.all(roomB.slice(0,4)
             .map(nativeCount))).every(x=>x===2),
             "R15h four B member sockets receive two B Yacht events",18000);
