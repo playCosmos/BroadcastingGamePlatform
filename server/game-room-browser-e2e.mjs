@@ -100,11 +100,13 @@ const R15F_SOCKET_AUDIT_SCRIPT = String.raw`(()=>{
             const uri=String(args[0]||"");
             const kind=uri.includes("memberRoomId=")?"member":
                 uri.includes("yachtCode=")?"yacht":"other";
-            const record={kind,opened:false,closed:false,
+            const record={kind,opened:false,closed:false,closeCode:null,
                 subscriptions:[],events:[],socket};
             connections.push(record);
             socket.addEventListener("open",()=>{record.opened=true});
-            socket.addEventListener("close",()=>{record.closed=true});
+            socket.addEventListener("close",event=>{
+                record.closed=true;record.closeCode=event.code;
+            });
             socket.addEventListener("message",event=>{
                 try{
                     const frame=JSON.parse(String(event.data));
@@ -3505,11 +3507,223 @@ async function commonRoomLifecycleAcceptance(base,game){
         game+" closed room rejects a new anonymous spectator");
 }
 
+// R15h: 24 real browser member connections from TWO independent game rooms
+// on the SAME loopback IP. Test isolation for committed chat + native Yacht
+// events, capacity denial at 25 sockets, kick 1008 and slot reclamation.
+async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
+    roomAToken,roomACode){
+    const gameUrl=base+"/games/yacht/";
+    const liveSocketCount=page=>cdp.eval(page,
+        "(()=>{const a=window.__r15fSocketAudit;return !a?-1:"+
+        "a.connections.filter(c=>c.kind==='member'&&c.opened&&!c.closed"+
+        "&&c.socket.readyState===WebSocket.OPEN).length;})()");
+    const hasEvent=(page,type,id)=>cdp.eval(page,
+        "window.__r15fSocketAudit.connections.some(c=>"+
+        "c.events.some(e=>e.type==="+JSON.stringify(type)+
+        "&&e.messageId==="+JSON.stringify(id)+"))");
+    const nativeCount=page=>cdp.eval(page,
+        "window.__r15fSocketAudit.connections.reduce((sum,c)=>"+
+        "sum+c.events.filter(e=>e.type==='yacht.dice.rolled'"+
+        "||e.type==='yacht.score.committed').length,0)");
+    const roomB=[];
+    try {
+        const host=await cdp.page(gameUrl,{auditWebSockets:true});
+        roomB.push(host);
+        await fill(host,"createRoom",{
+            name:"R15h distinct Yacht room B",
+            displayName:"R15h Room B Host",maxPlayers:2,maxRoomMembers:4
+        });
+        const roomBCode=await poll(async()=>{
+            const value=await getRoom(host,"#roomCode");
+            return /^[A-HJ-NP-Z2-9]{6}$/.test(value)?value:null;
+        },"R15h separate hosted Yacht room B");
+        check(roomBCode!==roomACode,"R15h different room codes");
+        for(let i=1;i<4;i++){
+            const page=await cdp.page(gameUrl,{auditWebSockets:true});
+            roomB.push(page);
+            await fill(page,"publicJoinRoom",{
+                roomCode:roomBCode,
+                displayName:"R15h Room B Member "+i,
+                seatRole:i===1?"PLAYER":"SPECTATOR"
+            });
+            await poll(async()=>await cdp.eval(page,
+                "document.getElementById('game').hidden===false"),
+                "R15h room B independent real browser admission "+i);
+        }
+        const tokens=await Promise.all(roomB.map(page=>userToken(page,
+            "gamecenter.yacht.member-session.v1")));
+        const roomBInfo=await backend(host,"/me","GET",null,tokens[0]);
+        check(roomBInfo.status===200&&roomBInfo.data.room.memberCount===4
+            &&roomBInfo.data.room.playerCount===2
+            &&new Set(tokens).size===4,
+            "R15h separate B capacity and four independent bearers");
+        const all24=[...roomAPages,...roomB];
+        await poll(async()=>{
+            const states=await Promise.all(all24.map(liveSocketCount));
+            return states.length===24&&states.every(count=>count===1);
+        },"R15h both rooms hold 24 native browser member sockets",30000);
+        // Unauthorized 25th WS is rejected at the unchanged 24/IP cap,
+        // before it can authenticate or receive any member events.
+        const probe=await cdp.page(gameUrl);
+        roomB.push(probe);
+        const url=ws+"?memberRoomId="+
+            encodeURIComponent(roomBInfo.data.room.roomId);
+        await cdp.eval(probe,`(()=>{
+            const socket=new WebSocket(${JSON.stringify(url)});
+            window.__r15hCapacity={closed:false,code:null,frames:0};
+            socket.addEventListener("close",event=>{
+                window.__r15hCapacity.closed=true;
+                window.__r15hCapacity.code=event.code;
+            });
+            socket.addEventListener("message",()=>{
+                window.__r15hCapacity.frames++;
+            });
+            return true;
+        })()`);
+        await poll(async()=>await cdp.eval(probe,
+            "window.__r15hCapacity.closed&&"+
+            "window.__r15hCapacity.code===1013&&"+
+            "window.__r15hCapacity.frames===0"),
+            "R15h 25th connection refused with 1013",12000);
+        check((await Promise.all(all24.map(liveSocketCount)))
+            .every(count=>count===1),
+            "R15h denied excess socket did not evict existing members");
+        // Room A chat reaches all twenty A tabs, NEVER any B tab.
+        const chatAId="r15h-a-only";
+        const chatA=await backend(roomAPages[0],"/chat","POST",{
+            messageId:chatAId,text:"R15h only for room A"
+        },roomAToken);
+        check(chatA.status===201,"R15h room A chat committed");
+        await poll(async()=>(await Promise.all(roomAPages.map(page=>
+            hasEvent(page,"room.chat.message",chatAId)))).every(Boolean),
+            "R15h all twenty A members see their own room chat",20000);
+        await nap(300);
+        check((await Promise.all(roomB.slice(0,4).map(page=>
+            hasEvent(page,"room.chat.message",chatAId)))).every(x=>!x),
+            "R15h room A event cannot cross into room B");
+        // Room B chat reaches only its four authenticated subscribers.
+        const chatBId="r15h-b-only";
+        const chatB=await backend(host,"/chat","POST",{
+            messageId:chatBId,text:"R15h only for room B"
+        },tokens[0]);
+        check(chatB.status===201,"R15h room B chat committed");
+        await poll(async()=>(await Promise.all(roomB.slice(0,4).map(page=>
+            hasEvent(page,"room.chat.message",chatBId)))).every(Boolean),
+            "R15h four B subscribers receive own chat",20000);
+        await nap(300);
+        check((await Promise.all(roomAPages.map(page=>
+            hasEvent(page,"room.chat.message",chatBId)))).every(x=>!x),
+            "R15h room B event cannot cross into room A");
+        // Commit a native Yacht roll and score in B while A is still
+        // subscribed. Game event delivery must be scoped to B alone.
+        for(const i of [0,1]){
+            await waitRoomIdle(roomB[i],"game");
+            await poll(async()=>await cdp.eval(roomB[i],
+                "document.getElementById('ready').hidden===false"),
+                "R15h room B ready control visible "+i);
+            await click(roomB[i],"ready");
+            await poll(async()=>await cdp.eval(roomB[i],
+                "document.getElementById('ready').textContent.includes('취소')"),
+                "R15h room B player ready "+i);
+        }
+        await poll(async()=>await cdp.eval(host,
+            "document.getElementById('start').disabled===false"),
+            "R15h room B can start two-player Yacht");
+        await click(host,"start");
+        await poll(async()=>await cdp.eval(host,
+            "document.getElementById('roomState').textContent==='PLAYING'"),
+            "R15h room B match starts");
+        const before=await backend(host,"/yacht","GET",null,tokens[0]);
+        const match=before.data.yacht?.match;
+        check(before.status===200&&before.data.currentPlayer===true
+            &&match?.completedTurns===0,
+            "R15h room B host has first turn");
+        const rolled=await backend(host,"/yacht/roll","POST",{
+            commandId:"r15h-b-roll",expectedVersion:match.version
+        },tokens[0]);
+        check(rolled.status===200&&rolled.data.yacht?.match?.rolls===1,
+            "R15h room B native roll committed");
+        const category=Object.keys(rolled.data.yacht.availableScores?.points||{})[0];
+        check(Boolean(category),"R15h room B has legal score choice");
+        const scored=await backend(host,"/yacht/score","POST",{
+            commandId:"r15h-b-score",
+            expectedVersion:rolled.data.yacht.match.version,
+            category:category.toLowerCase()
+        },tokens[0]);
+        check(scored.status===200
+            &&scored.data.yacht.match.completedTurns===1,
+            "R15h room B native score committed");
+        await poll(async()=>(await Promise.all(roomB.slice(0,4)
+            .map(nativeCount))).every(x=>x===2),
+            "R15h four B member sockets receive two B Yacht events",18000);
+        check((await Promise.all(roomAPages.map(nativeCount)))
+            .every(x=>x===156),
+            "R15h twenty A browser sockets receive no native B game events");
+        // Revoking a B spectator must close exactly their socket with 1008,
+        // release capacity, and reject their old bearer.
+        const oldGuest=roomB[2],oldToken=tokens[2];
+        const oldIdentity=await backend(oldGuest,"/me","GET",null,oldToken);
+        check(oldIdentity.status===200,"R15h revocation target exists");
+        const kicked=await backend(host,"/host/kick","POST",{
+            memberId:oldIdentity.data.memberId
+        },tokens[0]);
+        check(kicked.status===200,"R15h host kicks B spectator");
+        await poll(async()=>await cdp.eval(oldGuest,
+            "(()=>{const c=window.__r15fSocketAudit.connections[0];"+
+            "return c.closed&&c.closeCode===1008;})()"),
+            "R15h kicked browser WS closes 1008",15000);
+        check((await backend(oldGuest,"/me","GET",null,oldToken)).status===403,
+            "R15h kicked bearer cannot access room");
+        const replacement=await cdp.page(gameUrl,{auditWebSockets:true});
+        roomB.push(replacement);
+        await fill(replacement,"publicJoinRoom",{
+            roomCode:roomBCode,displayName:"R15h B Replacement Spectator",
+            seatRole:"SPECTATOR"
+        });
+        await poll(async()=>await cdp.eval(replacement,
+            "document.getElementById('game').hidden===false"),
+            "R15h replacement spectator may join active B room");
+        const replacementToken=await userToken(replacement,
+            "gamecenter.yacht.member-session.v1");
+        check(Boolean(replacementToken)&&!tokens.includes(replacementToken),
+            "R15h replacement has unique new credential");
+        const live24=[...roomAPages,roomB[0],roomB[1],roomB[3],replacement];
+        await poll(async()=>(await Promise.all(live24.map(liveSocketCount)))
+            .every(x=>x===1),
+            "R15h cap slot reclaimed for new authenticated browser",18000);
+        // A kicked member cannot receive newly committed B messages.
+        const replacementId="r15h-b-after-kick";
+        const extra=await backend(host,"/chat","POST",{
+            messageId:replacementId,text:"R15h B after replacement"
+        },tokens[0]);
+        check(extra.status===201,"R15h room B post-kick chat committed");
+        await poll(async()=>(await Promise.all([host,roomB[1],roomB[3],
+            replacement].map(page=>hasEvent(page,"room.chat.message",
+                replacementId)))).every(Boolean),
+            "R15h replacement and remaining B members receive chat");
+        check(!await hasEvent(oldGuest,"room.chat.message",replacementId)
+            &&(await Promise.all(roomAPages.map(page=>
+                hasEvent(page,"room.chat.message",replacementId))))
+                .every(x=>!x),
+            "R15h revoked and other-room members cannot see new B chat");
+        console.log("GAME_ROOM_R15H_BROWSER_CROSS_ROOM_BOUNDARY_PASSED"+
+            " rooms=2 browserSockets=24 capRejected=1013"+
+            " chatIsolation=both yachtIsolation=both"+
+            " kick=1008 recycled=1");
+    } finally {
+        // Navigating away destroys B sockets rather than letting the Yacht
+        // page's 3-second reconnection backstop reopen them behind the test.
+        for(const page of roomB){
+            try{await cdp.navigate(page,"about:blank");}catch{}
+        }
+    }
+}
+
 // R15a: six real player tabs and one browser spectator share a complete
 // 20-member Yacht room. R14z already checks each of 14 spectator HTTP views.
 // Here the first turn from EACH of the six players uses real UI buttons;
 // remaining HTTP commands run inside the authenticated real Chrome contexts.
-async function sixPlayerBrowserCapacityAcceptance(base){
+async function sixPlayerBrowserCapacityAcceptance(base,ws){
     const path=base+"/games/yacht/";
     const pages=await Promise.all(Array.from({length:7},()=>
         cdp.page(path,{auditWebSockets:true})));
@@ -3833,6 +4047,8 @@ async function sixPlayerBrowserCapacityAcceptance(base){
     console.log("GAME_ROOM_R15G_BROWSER_TWENTY_MEMBER_PASSED"+
         " players=6 spectators=14 browserContexts=20 memberSockets=20"+
         " nativeEvents=156 nativeDeliveries=3120 uiFinal=20 reconnect=1");
+    await twoRoomBrowserIsolationAcceptance(base,ws,twentyPages,
+        playerTokens[0],roomCode);
     await cdp.navigate(spectator,path);
     check(await userToken(spectator,credentialKey)===spectatorToken,
         "R15a spectator reload retains credential");
@@ -4145,7 +4361,7 @@ async function run(){
     await poll(()=>server.exitCode!==null || server.signalCode!==null,
         "R14c Yacht lifecycle fixture shutdown");
     const sixPlayerFixture=await launchServer();
-    await sixPlayerBrowserCapacityAcceptance(sixPlayerFixture.base);
+    await sixPlayerBrowserCapacityAcceptance(sixPlayerFixture.base,sixPlayerFixture.ws);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
