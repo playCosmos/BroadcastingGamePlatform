@@ -3799,6 +3799,14 @@ async function sixPlayerBrowserCapacityAcceptance(base){
         "R15f replayed chat renders in spectator UI");
     check(await userToken(spectator,credentialKey)===spectatorToken,
         "R15f WS reconnect preserves private browser membership identity");
+    // All 20 real browser contexts must render the same committed chat,
+    // including the spectator that received it via durable reconnect replay.
+    await poll(async()=>{
+        const rendered=await Promise.all(twentyPages.map(page=>cdp.eval(page,
+            "document.getElementById('chatMessages').textContent.includes("+
+            JSON.stringify("R15f recovered after disconnect")+")")));
+        return rendered.every(Boolean);
+    },"R15g all twenty Chrome UIs render persisted postgame chat",30000);
     console.log("GAME_ROOM_R15F_BROWSER_SINGLE_SOCKET_RECOVERY_PASSED"+
         " tabs=7 perTabSockets=1 nativeEvents=1092 reconnect=1 replay=1");
     // Verify all twenty HTML views remain responsive and synchronized with
