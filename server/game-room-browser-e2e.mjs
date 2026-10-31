@@ -3558,18 +3558,46 @@ async function sixPlayerBrowserCapacityAcceptance(base){
             "a.connections[0].subscriptions.length===1;})()")));
         return live.every(Boolean);
     },"R15f seven independent Chrome member sockets established",22000);
+    // R15g: convert the previous thirteen HTTP-only spectator identities into
+    // thirteen genuine independent Chrome/Edge browser contexts. Each joins
+    // via the production invitation form, creates a real authenticated
+    // member WebSocket and renders the ordinary Yacht room UI. One bounded
+    // 13-use host invitation avoids weakening the public admission limiter.
+    const invite=await backend(players[0],"/host/invite","POST",{
+        seatRole:"SPECTATOR",maxUses:13,expiresInSeconds:3600
+    },playerTokens[0]);
+    check(invite.status===201&&Boolean(invite.data.token)
+        &&invite.data.seatRole==="SPECTATOR"&&invite.data.maxUses===13,
+        "R15g real host issues bounded spectator invitation");
+    const extraSpectators=[];
     const spectatorTokens=[spectatorToken];
     for(let i=1;i<14;i++){
-        const admitted=await backend(spectator,"/public/join","POST",{
-            gameId:"yacht",roomCode,displayName:"R15a Extra Spectator "+i,
-            seatRole:"SPECTATOR"
+        const page=await cdp.page(path,{auditWebSockets:true});
+        extraSpectators.push(page);
+        await fill(page,"joinRoom",{
+            invitation:invite.data.token,
+            displayName:"R15g Browser Spectator "+i
         });
-        check(admitted.status===201 && Boolean(admitted.data.token),
-            "R15a additional spectator "+i);
-        spectatorTokens.push(admitted.data.token);
+        await poll(async()=>await cdp.eval(page,
+            "document.getElementById('game').hidden===false"),
+            "R15g independent spectator Chrome UI admission "+i);
+        const token=await poll(()=>userToken(page,credentialKey),
+            "R15g distinct Chrome spectator credential "+i);
+        spectatorTokens.push(token);
     }
-    check(new Set([...playerTokens,...spectatorTokens]).size===20,
-        "R15a twenty distinct room member credentials");
+    const twentyPages=[...pages,...extraSpectators];
+    check(twentyPages.length===20&&
+        new Set([...playerTokens,...spectatorTokens]).size===20,
+        "R15g twenty independent Chrome contexts have distinct room credentials");
+    await poll(async()=>{
+        const opened=await Promise.all(twentyPages.map(p=>cdp.eval(p,
+            "(()=>{const a=window.__r15fSocketAudit;return a&&"+
+            "a.connections.length===1 &&"+
+            "a.connections[0].kind==='member' &&"+
+            "a.connections[0].opened && !a.connections[0].closed &&"+
+            "a.connections[0].subscriptions.length===1;})()")));
+        return opened.every(Boolean);
+    },"R15g twenty actual Chrome authenticated member WS connections",25000);
     const state=await backend(spectator,"/me","GET",null,spectatorToken);
     const members=state.data.room?.members||[];
     check(state.status===200 && state.data.room.playerCount===6
@@ -3705,11 +3733,11 @@ async function sixPlayerBrowserCapacityAcceptance(base){
             && next.data.room?.state===(turn===77?"POST_GAME":"PLAYING"),
             "R15a 78-turn six-player state "+turn);
     }
-    // R15f proof: actual Chrome/Edge sockets, not Node WS clients,
-    // receive the native Yacht fanout for each of the 78 roll+score turns.
+    // R15g extends R15f from seven to twenty REAL independent Chrome
+    // contexts, with exactly one authenticated native member socket each.
     const expectedNative=156;
     await poll(async()=>{
-        const counts=await Promise.all(pages.map(p=>cdp.eval(p,
+        const counts=await Promise.all(twentyPages.map(p=>cdp.eval(p,
             "(()=>{const a=window.__r15fSocketAudit;"+
             "if(!a||a.connections.length!==1 || "+
             "a.connections[0].kind!=='member')return -1;"+
@@ -3717,8 +3745,8 @@ async function sixPlayerBrowserCapacityAcceptance(base){
             "e.type==='yacht.dice.rolled'||"+
             "e.type==='yacht.score.committed').length;})()")));
         return counts.every(x=>x===expectedNative);
-    },"R15f all seven real Chrome tabs receive 156 Yacht events",30000);
-    for(const page of pages){
+    },"R15g all twenty real Chrome tabs receive 156 Yacht events",45000);
+    for(const page of twentyPages){
         const native=await cdp.eval(page,`window.__r15fSocketAudit
             .connections[0].events.filter(e=>e.type.startsWith("yacht."))`);
         check(native.length===156
@@ -3726,7 +3754,7 @@ async function sixPlayerBrowserCapacityAcceptance(base){
                 "yacht.dice.rolled":"yacht.score.committed")
                 &&e.sequence===e.version
                 &&e.turns===Math.floor(i/2)+(i%2)),
-            "R15f native WS version, order, turn contract in real Chrome");
+            "R15g native WS version, order, turn contract in real Chrome");
     }
     // Validate cursor separation and the browser's actual reconnect:
     // Yacht event sequences now exceed room chat sequences (~157 vs 1).
@@ -3771,9 +3799,19 @@ async function sixPlayerBrowserCapacityAcceptance(base){
         "R15f replayed chat renders in spectator UI");
     check(await userToken(spectator,credentialKey)===spectatorToken,
         "R15f WS reconnect preserves private browser membership identity");
+    // All 20 real browser contexts must render the same committed chat,
+    // including the spectator that received it via durable reconnect replay.
+    await poll(async()=>{
+        const rendered=await Promise.all(twentyPages.map(page=>cdp.eval(page,
+            "document.getElementById('chatMessages').textContent.includes("+
+            JSON.stringify("R15f recovered after disconnect")+")")));
+        return rendered.every(Boolean);
+    },"R15g all twenty Chrome UIs render persisted postgame chat",30000);
     console.log("GAME_ROOM_R15F_BROWSER_SINGLE_SOCKET_RECOVERY_PASSED"+
         " tabs=7 perTabSockets=1 nativeEvents=1092 reconnect=1 replay=1");
-    for(const viewer of pages){
+    // Verify all twenty HTML views remain responsive and synchronized with
+    // authoritative server state despite 3,120 native browser notifications.
+    for(const viewer of twentyPages){
         await poll(async()=>await cdp.eval(viewer,
             "(()=>{const $=id=>document.getElementById(id);"+
             "return $('roomState').textContent==='POST_GAME'"+
@@ -3785,8 +3823,16 @@ async function sixPlayerBrowserCapacityAcceptance(base){
             "&& $('roll').disabled"+
             "&& [...document.querySelectorAll('#scoreGrid button')]"+
             ".every(b=>b.disabled);})()"),
-            "R15a browser 20-member completed UI",30000);
+            "R15g browser 20-member completed UI",45000);
     }
+    check((await Promise.all(extraSpectators.map(p=>cdp.eval(p,
+        "(()=>{const a=window.__r15fSocketAudit;return a&&"+
+        "a.connections.length===1&&a.connections[0].kind==='member'&&"+
+        "a.connections[0].opened&&!a.connections[0].closed;})()"))))
+        .every(Boolean),"R15g all thirteen added spectator sockets remain live");
+    console.log("GAME_ROOM_R15G_BROWSER_TWENTY_MEMBER_PASSED"+
+        " players=6 spectators=14 browserContexts=20 memberSockets=20"+
+        " nativeEvents=156 nativeDeliveries=3120 uiFinal=20 reconnect=1");
     await cdp.navigate(spectator,path);
     check(await userToken(spectator,credentialKey)===spectatorToken,
         "R15a spectator reload retains credential");
