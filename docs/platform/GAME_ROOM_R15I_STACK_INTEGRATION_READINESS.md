@@ -54,6 +54,23 @@ At audited tip `5af36ff`, [PR CI #41213791261](https://github.com/playCosmos/Bro
 
 Diagnostic-only follow-up on the same PR adds fixed-phase, fixed-reason, integer-cycle and numeric HTTP status diagnostics to `smoke-packaged-websocket-fanout.mjs`. The PowerShell packaged wrapper reads **only a strict, bounded, token-free failure marker**, never raw stderr (which may contain a temporary room URL/credential); failed assertions still fail. It does **not** loosen connection/admission limits, reduce 6-cycle/12-spectator load, modify production service code or suppress failures. Verify fresh **Push and PR** Windows results on the final amended tip and inspect both workflow logs before acceptance; if R14n fails again use the new categorized phase/status to identify the failure instead of assuming CI flakiness. Previously observed ancestry comparisons remain valid for the audited tip; the newly appended diagnostic commits must be separately confirmed as descendants, and the final SHA recorded.
 
+## R15k — exact-tip dual Windows CI preflight (2026-11-01)
+
+The previous amended tip `38e2a0e97d7b863aa90ab446138135fb2511c03f` passed **both** [Push #41242769114](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/41242769114) and [PR #41242774966](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/41242774966), each **53/53 successful Windows steps**. Both logs independently contain `GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases=21`, R15g 20 independent Chrome contexts / 3,120 native deliveries, R15h two-room 24-socket boundary (1013 admission, 1008 kicked-member close, event isolation and slot reuse), two complete R14n 6-cycle packaged spectator sessions, R15b six-player 78-turn match, and R15e packaged 20-member Yacht event delivery. A prior same-head mismatch (one CI green, one red) demonstrates why neither workflow alone is sufficient.
+
+The operator-only read-only auditor now supports:
+
+```powershell
+node server/audit-game-room-pr-stack.mjs --self-test
+node server/audit-game-room-pr-stack.mjs --live-ci
+```
+
+`--live-ci` first verifies the complete 81-stage open Draft metadata chain. It then queries **only GitHub's current exact tip HEAD SHA** for the Windows Package workflow and requires the **newest matching Push AND PR workflow run** to be completed successfully. Each must have a successful package job with nine critical named gates, including PowerShell syntax, JavaScript syntax, platform regression, real Chrome/Edge GameRoom E2E, package verification, R14h graceful restart, R14n duration validation, R15b six-player game and R15e twenty authenticated member event fan-out. If a newer failed/cancelled/in-progress run exists or the gate is missing, it fails closed. Finally, the tool refreshes all open PR refs and the `main` commit and fails on drift. It prints `GAME_ROOM_STACK_CI_VALID` with the two actual run IDs only after success. `GITHUB_TOKEN` remains optional for public read-only metadata requests and is never logged.
+
+`--self-test` now covers **28 offline cases** (including missing CI event, stale successful attempt overridden by newer failed/incomplete run, wrong head, and absent/failed critical gate); ordinary CI only runs the deterministic offline tests. `--live-ci` is **not** automatically executed in package/release CI and neither proves all 81 individual stage CI histories, conflict-free sequential merges, external HTTPS/WSS field operation nor installer signing.
+
+**Important:** adding the R15k gate changes PR #116's head. The green results listed above are valid for `38e2a0e`, **not** an automatic success claim for the subsequently amended head. Reconfirm both workflows for the final exact SHA before integration approval.
+
 ## Recommended controlled integration (requires explicit approval)
 
 1. **Freeze additional feature PRs** temporarily, and record exact tip SHA plus approved scope. Preserve the current passing CI results and the existing README/documents. Complete an adversarial diff/security review of the cumulative PR #33→#116 changes against `main`; independently review authorization, room state machine, SQLite migration, WebSocket client lifetimes, packaging and release protections.
