@@ -31,16 +31,16 @@ The report is deliberately **advisory**. If a parent is updated, a PR is retarge
 
 ## R15j — optional exact Git commit-ancestry preflight (2026-11-01)
 
-The R15i `--live` mode only checks PR names, SHA equality and Draft status. **SHA equality in GitHub PR metadata is not proof that an individual child commit actually descends from its parent's commit.** The existing read-only auditor now also offers an explicitly operator-triggered `--live-ancestry` mode. It first performs the complete 81-stage metadata audit, then checks the **81 exact GitHub compare relations**: `main` base SHA → PR #33 head, followed by each parent PR head → child PR head through #116. For every pair it requires `status=ahead`, `behind_by=0`, `ahead_by>0`, and the compare merge-base SHA exactly equal to the expected parent SHA. Any mismatch or API failure blocks the result. Requests are limited to three in flight; this is not run by ordinary CI, and it never merges or edits branches.
+The R15i `--live` mode only checks PR names, SHA equality and Draft status. **SHA equality in GitHub PR metadata is not proof that an individual child commit actually descends from its parent's commit.** The existing read-only auditor now also offers an explicitly operator-triggered `--live-ancestry` mode. It first performs the complete 81-stage metadata audit, then checks the **81 exact GitHub compare relations**: `main` base SHA → PR #33 head, followed by each parent PR head → child PR head through #116. For every pair it requires `status=ahead`, `behind_by=0`, `ahead_by>0`, and the compare merge-base SHA exactly equal to the expected parent SHA. Any mismatch or API failure blocks the result. Requests are limited to three in flight. After checking all 81 ancestry relations, the auditor re-reads the open PRs and `main` and blocks success if any audited ref or base SHA drifted during the run. This is not run by ordinary CI, and it never merges or edits branches.
 
 ```powershell
-# Operator-only, with a token granted read-only repository metadata access.
-$env:GITHUB_TOKEN = <read-only-token-from-secure-secret-store>
-node server/audit-game-room-pr-stack.mjs --live-ancestry
-Remove-Item Env:GITHUB_TOKEN
+# Operator-only: populate GITHUB_TOKEN through an approved secret manager first.
+if (-not $env:GITHUB_TOKEN) { throw "A read-only GitHub token is required" }
+try { node server/audit-game-room-pr-stack.mjs --live-ancestry }
+finally { Remove-Item Env:GITHUB_TOKEN -ErrorAction SilentlyContinue }
 ```
 
-The token must be provided through an environment variable; it is never printed by the auditor. A successful audit emits `GAME_ROOM_STACK_ANCESTRY_VALID checks=81 root=33 tip=116 allParentsAncestors=true`, plus an explicit advisory that merge conflicts have **not** been checked. `--self-test` remains offline and now covers 18 metadata and ancestry-result cases; the existing normal Windows CI browser check invokes only this offline test. The 81-pair operator audit itself remains **unexecuted** until an authorized operator supplies a token; do not infer completion from offline CI.
+The token must be provided through an environment variable; it is never printed by the auditor. A successful audit emits `GAME_ROOM_STACK_ANCESTRY_VALID checks=81 root=33 tip=116 allParentsAncestors=true`, plus an explicit advisory that merge conflicts have **not** been checked. `--self-test` remains offline and now covers 21 metadata, ancestry-result and snapshot-drift cases; the existing normal Windows CI browser check invokes only this offline test. The 81-pair operator audit itself remains **unexecuted** until an authorized operator supplies a token; do not infer completion from offline CI.
 
 Independently, GitHub's compare metadata was inspected on 2026-11-01: `main` commit `62ed59928558431e5608e9194f034e53685ef69a` is the merge base of the then-current PR #116 tip `57d5c8e40455077b2906cc24f98523e5ce490755`, with **879 ahead, 0 behind**. The immediately preceding #115 commit `639110fae27086071844be7b467019694137c043` was an ancestor of that tip (**5 ahead, 0 behind**). These **two** observed comparisons do not substitute for all 81 operator-mode comparisons, individual merge rehearsals, a security review, or live external HTTPS/WSS tests. Since this R15j update changes #116's head, all previous R15i exact-head CI results are historical and new Push + PR Windows CI must pass before marking this update accepted.
 
