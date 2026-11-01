@@ -112,14 +112,25 @@ const CI_GATES=[
 // Fail closed if the most recent exact-head attempt of either event is
 // pending or failed, even when a prior run succeeded.
 function latestCi(runs,head){
+    if(!Array.isArray(runs))throw Error("invalid CI run collection");
     const result={};
     for(const event of ["push","pull_request"]){
         const matches=runs.filter(r=>r?.event===event
             &&r.path===".github/workflows/platform-windows-package.yml"
-            &&r.head_sha===head&&r.head_branch===TIP
-            &&Number.isSafeInteger(r.id)).sort((a,b)=>b.id-a.id);
+            &&r.head_sha===head&&r.head_branch===TIP);
+        // GitHub reruns retain their original run ID, but run_started_at
+        // advances on the new attempt. An older ID may therefore be the
+        // most recent failed or pending attempt. Missing timestamps block
+        // an affirmative pre-merge result rather than guessing by ID.
+        if(matches.length===0||matches.some(r=>
+            !Number.isSafeInteger(r.id)||
+            typeof r.run_started_at!=="string"||
+            !Number.isFinite(Date.parse(r.run_started_at))))
+            throw Error("invalid "+event+" Windows CI attempt metadata");
+        matches.sort((a,b)=>Date.parse(b.run_started_at)
+            -Date.parse(a.run_started_at)||b.id-a.id);
         const run=matches[0];
-        if(run?.status!=="completed"||run.conclusion!=="success")
+        if(run.status!=="completed"||run.conclusion!=="success")
             throw Error("latest "+event+" Windows CI not successful");
         result[event]=run;
     }
@@ -208,9 +219,11 @@ function selfTest(){
         throw Error("lineage snapshot contract rejected");
     const green=[
         {id:10,event:"push",path:".github/workflows/platform-windows-package.yml",
-            head_sha:c,head_branch:TIP,status:"completed",conclusion:"success"},
+            head_sha:c,head_branch:TIP,status:"completed",conclusion:"success",
+            run_started_at:"2026-11-01T00:00:00Z"},
         {id:11,event:"pull_request",path:".github/workflows/platform-windows-package.yml",
-            head_sha:c,head_branch:TIP,status:"completed",conclusion:"success"}
+            head_sha:c,head_branch:TIP,status:"completed",conclusion:"success",
+            run_started_at:"2026-11-01T00:00:00Z"}
     ];
     const greenJobs=[{name:"package",status:"completed",conclusion:"success",
         steps:CI_GATES.map(name=>({name,status:"completed",conclusion:"success"}))}];
@@ -218,9 +231,17 @@ function selfTest(){
         throw Error("green CI rejected");
     const attempts=[
         [green[0]],
-        [...green,{...green[0],id:12,status:"in_progress"}],
-        [...green,{...green[1],id:13,conclusion:"failure"}],
-        [{...green[0],head_sha:a},green[1]]
+        [...green,{...green[0],id:12,status:"in_progress",
+            run_started_at:"2026-11-01T00:01:00Z"}],
+        [...green,{...green[1],id:13,conclusion:"failure",
+            run_started_at:"2026-11-01T00:01:00Z"}],
+        [{...green[0],head_sha:a},green[1]],
+        // Older run ID rerun after the green run; ID ordering is unsafe.
+        [...green,{...green[0],id:9,status:"in_progress",
+            run_started_at:"2026-11-01T00:02:00Z"}],
+        [...green,{...green[1],id:8,conclusion:"failure",
+            run_started_at:"2026-11-01T00:02:00Z"}],
+        [...green,{...green[0],id:9,run_started_at:null}]
     ];
     for(const runs of attempts){
         let rejected=false;
@@ -230,7 +251,7 @@ function selfTest(){
     const missing=structuredClone(greenJobs);missing[0].steps.pop();
     const failed=structuredClone(greenJobs);failed[0].steps[0].conclusion="failure";
     if(ciJobValid(missing)||ciJobValid(failed))throw Error("bad gates accepted");
-    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+16));
+    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+19));
 }
 async function api(path){
     const token=process.env.GITHUB_TOKEN||"";
