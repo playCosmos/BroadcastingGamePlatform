@@ -36,7 +36,7 @@
   let drawingActive=false,strokeId="",lastPoint=null,sendQueue=Promise.resolve();
   let currentPointer=null,pendingPoints=[],pointTimer=null;
   let refreshBusy=false,rerun=false,busy=false,admissionBusy=false,roundWordId="";
-  let membershipGeneration=0,publicRoomsEpoch=0;
+  let membershipGeneration=0,publicRoomsEpoch=0,chatReadEpoch=0,refreshGeneration=-1;
   const currentMembership=(generation,credential)=>
     generation===membershipGeneration && credential===secret;
   function clearRoomBoundViews(){
@@ -143,6 +143,12 @@
     busy=false;admissionBusy=false;
     $("room").removeAttribute("aria-busy");
   }
+  function detachPendingReads(){
+    // Old room GETs may remain blocked indefinitely. The new member must
+    // not inherit their refresh lock, rerun flag or chat response order.
+    refreshBusy=false;rerun=false;refreshGeneration=-1;
+    chatReadEpoch++;
+  }
 
   function resetNativeCanvas(){
     drawingActive=false;strokeId="";lastPoint=null;
@@ -159,6 +165,7 @@
     // telephone authoring drafts before showing the public admission UI.
     membershipGeneration++;
     releaseMemberOperations();
+    detachPendingReads();
     secret="";snapshot=null;telephone={active:false};
     window.TelephoneView.render(telephone,null,null);
     clearRoomBoundViews();
@@ -185,6 +192,7 @@
   function accept(secretValue){
     membershipGeneration++;
     releaseMemberOperations();
+    detachPendingReads();
     secret=secretValue;
     snapshot=null;
     clearRoomBoundViews();
@@ -482,8 +490,10 @@
   async function refreshChat(generation=membershipGeneration,
       credential=secret){
     if(!credential || !currentMembership(generation,credential))return;
+    const readEpoch=++chatReadEpoch;
     const data=await request("/chat?after=-1","GET",null,credential);
-    if(!currentMembership(generation,credential))return;
+    if(!currentMembership(generation,credential) ||
+       readEpoch!==chatReadEpoch)return;
     const list=$("chatList");list.replaceChildren();
     data.messages.forEach(m=>{
       const li=document.createElement("li");
@@ -602,11 +612,12 @@
   }
   async function refresh() {
     if(!secret)return;
-    if(refreshBusy){rerun=true;return;}
     const generation=membershipGeneration,credential=secret;
-    const current=()=>generation===membershipGeneration &&
-      credential===secret;
-    refreshBusy=true;
+    const current=()=>currentMembership(generation,credential);
+    if(refreshBusy && refreshGeneration===generation){
+      rerun=true;return;
+    }
+    refreshBusy=true;refreshGeneration=generation;
     try{
       // Both reads MUST use the same captured membership token. A stale
       // response is never allowed to publish a previous room snapshot.
@@ -635,8 +646,14 @@
       else say(e.message||"상태 조회 실패",true);
     }
     finally{
-      refreshBusy=false;
-      if(rerun){rerun=false;setTimeout(refresh,200);}
+      // Releasing an older member's GET must not unlock a newer member's
+      // refresh, or schedule another refresh for the wrong room.
+      if(!current())return;
+      refreshBusy=false;refreshGeneration=-1;
+      if(rerun){
+        rerun=false;
+        setTimeout(()=>{if(current())refresh();},200);
+      }
     }
   }
 

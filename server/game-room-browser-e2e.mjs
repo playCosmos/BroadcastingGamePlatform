@@ -2677,6 +2677,60 @@ async function telephoneBrowserAcceptance(base,coop){
 // R13y: member actions are scoped to the room they began in, not to the
 // mutable member token or room UI of the tab when HTTP finally completes.
 // A separate server fixture avoids the anonymous hosted-room quota.
+// R14b: a same-member chat read begun before a real chat write must
+// never overwrite the newer chat list when its older GET resolves last.
+async function latestChatResponseAcceptance(page,{listId,label}){
+    await waitRoomIdle(page,listId==="chatList"?"room":"game");
+    await cdp.eval(page,`(()=>{
+        const original=window.fetch.bind(window);
+        window.__r14bChatOriginal=original;
+        window.__r14bChatHeld=false;
+        window.__r14bChatRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/chat?after=-1" &&
+               options.method==="GET" && options.headers?.Authorization &&
+               !window.__r14bChatHeld){
+                window.__r14bChatHeld=true;
+                return new Promise(resolve=>{window.__r14bChatRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        window.dispatchEvent(new Event("online"));
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(page,
+        "window.__r14bChatHeld===true"),
+        label+" old authenticated chat GET held");
+    const freshText="R14b latest chat "+label;
+    await fill(page,"chatForm",{text:freshText});
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById("+JSON.stringify(listId)+").textContent.includes("+
+        JSON.stringify(freshText)+")"),
+        label+" later chat GET renders real fresh message");
+    await cdp.eval(page,`(()=>{
+        const release=window.__r14bChatRelease;
+        if(!release)throw Error("prior chat GET not held");
+        release(new Response(JSON.stringify({messages:[]}),{
+            status:200,headers:{"Content-Type":"application/json"}
+        }));
+        window.__r14bChatRelease=null;
+        return true;
+    })()`);
+    await nap(320);
+    check(await cdp.eval(page,
+        "document.getElementById("+JSON.stringify(listId)+").textContent.includes("+
+        JSON.stringify(freshText)+")"),
+        label+" old empty chat GET cannot erase latest real message");
+    await cdp.eval(page,`(()=>{
+        window.fetch=window.__r14bChatOriginal;
+        delete window.__r14bChatOriginal;
+        delete window.__r14bChatRelease;
+        delete window.__r14bChatHeld;
+        return true;
+    })()`);
+}
+
 async function memberActionSessionAcceptance(base){
     const page=await cdp.page(base+"/games/drawing-guess/room/");
     const other=await cdp.page(base+"/games/drawing-guess/room/");
@@ -2839,6 +2893,70 @@ async function memberActionSessionAcceptance(base){
         "document.getElementById('chatList').textContent.includes("+
         "'new member chat after stale POST')"),
         "replacement member can send real chat after old action finishes");
+    await latestChatResponseAcceptance(page,{
+        listId:"chatList",label:"Drawing"
+    });
+    // Hold a previous member's snapshot while joining another hosted room.
+    // An old busy GET may not block that replacement room's first refresh.
+    await waitRoomIdle(page,"room");
+    await cdp.eval(page,`(()=>{
+        const original=window.fetch.bind(window);
+        const bearer=${JSON.stringify("Bearer "+tokenC)};
+        window.__r14bOldDrawingFetch=original;
+        window.__r14bOldDrawingHeld=false;
+        window.__r14bOldDrawingRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/drawing" &&
+               options.headers?.Authorization===bearer &&
+               !window.__r14bOldDrawingHeld){
+                window.__r14bOldDrawingHeld=true;
+                return new Promise(resolve=>{
+                    window.__r14bOldDrawingRelease=resolve;
+                });
+            }
+            return original(url,options);
+        };
+        window.dispatchEvent(new Event("online"));
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(page,
+        "window.__r14bOldDrawingHeld===true"),
+        "Drawing former room GET held before admission");
+    await fill(page,"publicJoinForm",{
+        roomCode:codeB,displayName:"R14b Drawing returned target",
+        seatRole:"SPECTATOR"
+    });
+    const nextToken=await poll(async()=>{
+        const value=await userToken(page,"gamecenter.drawing.room.member.v1");
+        return value && value!==tokenC?value:null;
+    },"Drawing new member admitted while prior snapshot GET held");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('roomName').textContent==="+
+        "'R13y independently hosted target'"),
+        "Drawing new room refresh proceeds without old member GET completion");
+    await cdp.eval(page,`(()=>{
+        const release=window.__r14bOldDrawingRelease;
+        if(!release)throw Error("prior drawing GET not held");
+        release(new Response(JSON.stringify({error:"prior member revoked"}),{
+            status:403,headers:{"Content-Type":"application/json"}
+        }));
+        window.__r14bOldDrawingRelease=null;
+        return true;
+    })()`);
+    await nap(300);
+    check(await userToken(page,"gamecenter.drawing.room.member.v1")===
+        nextToken,"old Drawing GET 403 cannot revoke replacement room");
+    check(await cdp.eval(page,
+        "document.getElementById('roomName').textContent==="+
+        "'R13y independently hosted target'"),
+        "old Drawing GET cannot publish previous member UI");
+    await cdp.eval(page,`(()=>{
+        window.fetch=window.__r14bOldDrawingFetch;
+        delete window.__r14bOldDrawingFetch;
+        delete window.__r14bOldDrawingRelease;
+        return true;
+    })()`);
     return {codeA,codeB};
 }
 
@@ -3104,6 +3222,9 @@ async function yachtSessionFenceAcceptance(base){
         "document.getElementById('chatMessages').textContent.includes("+
         "'Yacht current chat after stale response')"),
         "Yacht replacement member sends a real chat after stale response");
+    await latestChatResponseAcceptance(host,{
+        listId:"chatMessages",label:"Yacht"
+    });
 }
 
 async function run(){

@@ -64,7 +64,7 @@ check(css.includes("@media(max-width:880px)"),
   "independent UI should fit narrow/mobile viewports");
 // R14a: Yacht private data and authenticated operations cannot cross sessions.
 for (const clause of [
-  "let membershipGeneration = 0, publicRoomsEpoch = 0;",
+  "let membershipGeneration = 0, publicRoomsEpoch = 0, chatReadEpoch = 0;",
   "function detachOldSession()",
   "function clearSession()",
   "function resetMemberViews()",
@@ -86,6 +86,12 @@ for (const clause of [
 ]) {
   check(js.includes(clause),"Yacht session fence missing: "+clause);
 }
+check(js.includes("chatReadEpoch++;"),
+  "member exit or replacement invalidates old chat response sequence");
+check(js.includes("const readEpoch=++chatReadEpoch;"),
+  "each authenticated chat GET owns an independent latest-read sequence");
+check(js.includes("readEpoch!==chatReadEpoch)return;"),
+  "late same-member chat GET is discarded when a newer read exists");
 check((js.match(/\},\{admission:true\}\);/g)||[]).length===3,
   "create, invitation join and public join independently admit while old member POST pending");
 check((js.match(/saveSession\((?:result|joined)\.token\)/g)||[]).length===3,

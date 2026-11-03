@@ -19,7 +19,7 @@
   let lastMemberSequence = -1, configuredRoom = "", configuredYacht = "";
   let busy = false, admissionBusy = false, running = false;
   let refreshRequested = false, runningGeneration = -1;
-  let membershipGeneration = 0, publicRoomsEpoch = 0;
+  let membershipGeneration = 0, publicRoomsEpoch = 0, chatReadEpoch = 0;
   const currentMembership = (generation, credential) =>
     generation === membershipGeneration && credential === token;
   // Command IDs are idempotency keys, NOT authentication secrets.
@@ -81,6 +81,7 @@
   }
   function detachOldSession() {
     membershipGeneration++;
+    chatReadEpoch++;
     busy = false;admissionBusy = false;running = false;
     runningGeneration = -1;refreshRequested = false;
     $("game").removeAttribute("aria-busy");
@@ -411,8 +412,12 @@
 
   async function refreshChat(generation=membershipGeneration,credential=token) {
     if(!credential || !currentMembership(generation,credential))return;
+    // WebSocket and explicit refresh can overlap within one membership.
+    // A later GET replaces any earlier pending response.
+    const readEpoch=++chatReadEpoch;
     const page=await request("/chat?after=-1","GET",null,credential);
-    if(!currentMembership(generation,credential))return;
+    if(!currentMembership(generation,credential) ||
+       readEpoch!==chatReadEpoch)return;
     const list=$("chatMessages");
     list.replaceChildren();
     page.messages.forEach(m=>{

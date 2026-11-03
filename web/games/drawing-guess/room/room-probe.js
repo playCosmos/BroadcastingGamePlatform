@@ -67,8 +67,8 @@ has(js,'const generation=membershipGeneration,credential=secret',
   "room refresh captures one immutable token and session generation");
 has(js,"const currentMembership=(generation,credential)=>","shared guard for auxiliary reads");
 
-has(js,"let membershipGeneration=0,publicRoomsEpoch=0;",
-  "public directory owns a separate latest-response epoch");
+has(js,"let membershipGeneration=0,publicRoomsEpoch=0,chatReadEpoch=0,refreshGeneration=-1;",
+  "directory, chat and member refresh each have independent response ownership");
 has(js,"function invalidatePublicRooms(){",
   "admission and teardown can revoke pending public listings");
 has(js,"publicRoomsEpoch++;",
@@ -95,6 +95,27 @@ ok(/loadPrompt\(round\.roundId,generation,credential\)\.catch\(e=>\{[\s\S]*?snap
   "private prompt errors fenced to original round, not merely original member");
 
 has(js,"function clearMembership()","common session cleanup routine");
+
+// R14b: member transition detaches the old refresh lock, and same-session
+// simultaneous chat reads publish only the newest authoritative response.
+has(js,"function detachPendingReads(){",
+  "member changes drop any previous refresh and chat read ownership");
+has(js,"refreshBusy=false;rerun=false;refreshGeneration=-1;",
+  "stale member refresh lock and queued rerun are detached");
+has(js,"chatReadEpoch++;",
+  "member change invalidates any pending previous chat GET");
+ok((js.match(/releaseMemberOperations\(\);\s*detachPendingReads\(\);/g)||[]).length===2,
+  "join and clear both detach earlier member read state");
+has(js,"const readEpoch=++chatReadEpoch;",
+  "each chat read supersedes previous in-flight chat results");
+has(js,"readEpoch!==chatReadEpoch)return;",
+  "out-of-order chat read never erases later read");
+has(js,"if(refreshBusy && refreshGeneration===generation){",
+  "a blocked old member refresh cannot serialize the new membership");
+has(js,"refreshBusy=true;refreshGeneration=generation;",
+  "refresh lock is owned by initiating member generation");
+ok(/finally\s*\{[\s\S]*?if\(!current\(\)\)return;\s*refreshBusy=false;refreshGeneration=-1;/.test(js),
+  "old read finally cannot unlock or rerun next membership");
 
 has(js,'function operation(action,{admission=false}={})',
   "member and admission operation scopes are explicit");
@@ -185,7 +206,7 @@ has(js,"await refreshChannels(generation,credential)","main room refresh pins ch
 has(js,"await refreshStreamerAssignments(generation,credential)","main room refresh pins streamers");
 has(js,"const latest=await request(\"/drawing/telephone\",\"GET\",null,credential)","WSS cue pins telephone token");
 has(js,"if(!currentMembership(generation,credential))return;","stale read cannot mutate current room");
-has(js,'const current=()=>generation===membershipGeneration',
+has(js,'const current=()=>currentMembership(generation,credential);',
   "late responses cannot commit across membership replacement");
 has(js,'const nextSnapshot=await request("/drawing","GET",null,credential)',
   "first member GET is pinned to the starting token");
@@ -197,8 +218,8 @@ ok(/if\(!current\(\)\)return;\s*snapshot=nextSnapshot;telephone=nextTelephone;/.
   "only paired current responses publish authoritative room state");
 ok(/if\(!current\(\)\)return;\s*if\(e.status===403\)invalidateSession\(\)/.test(js),
   "stale 403 errors never invalidate a newly accepted token");
-has(js,'if(rerun){rerun=false;setTimeout(refresh,200);}',
-  "held old refresh hands the next session a future refresh");
+has(js,'setTimeout(()=>{if(current())refresh();},200);',
+  "only a current member can schedule a deferred refresh");
 
 has(js,'const API="/api/v1/room-membership"',"member API exclusively");
 for(const path of [
