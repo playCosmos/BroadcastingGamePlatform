@@ -110,8 +110,8 @@
 
   async function createRoom(event) {
     event.preventDefault();
+    const form = new FormData(event.currentTarget);
     await operation(async () => {
-      const form = new FormData(event.currentTarget);
       const maxPlayers = Number(form.get("maxPlayers"));
       const maxRoomMembers = Number(form.get("maxRoomMembers"));
       if (maxRoomMembers < maxPlayers)
@@ -129,8 +129,8 @@
 
   async function joinRoom(event) {
     event.preventDefault();
+    const data = new FormData(event.currentTarget);
     await operation(async () => {
-      const data = new FormData(event.currentTarget);
       const result = await request("/join", "POST", {
         invitation: String(data.get("invitation") || "").trim(),
         displayName: data.get("displayName")
@@ -144,8 +144,8 @@
 
   async function joinPublicRoom(event) {
     event.preventDefault();
+    const form=new FormData(event.currentTarget);
     await operation(async()=>{
-      const form=new FormData(event.currentTarget);
       const joined=await request("/public/join","POST",{
         gameId:"yacht",
         roomCode:String(form.get("roomCode")||"").trim().toUpperCase(),
@@ -452,8 +452,8 @@
   }));
   $("chatForm").addEventListener("submit",event => {
     event.preventDefault();
+    const input=event.currentTarget.elements.text;
     operation(async () => {
-      const input=event.currentTarget.elements.text;
       const content=input.value.trim();
       if (!content) return;
       await request("/chat","POST",{messageId:newCommandId("chat-"),text:content});

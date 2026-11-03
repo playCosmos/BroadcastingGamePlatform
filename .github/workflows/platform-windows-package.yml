@@ -11,7 +11,7 @@ on:
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
   pull_request:
-    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence, feature/yacht-y2-room-api, feature/common-game-room-r1-domain, feature/common-game-room-r2-auth, feature/common-game-room-r3-realtime, feature/common-game-room-r4-yacht-client, feature/common-game-room-r5-drawing-integration, feature/common-game-room-r5-reconciliation, feature/common-game-room-r5-transport-acceptance, feature/common-game-room-r5-membership-revocation, feature/common-game-room-r6-public-admission]
+    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence, feature/yacht-y2-room-api, feature/common-game-room-r1-domain, feature/common-game-room-r2-auth, feature/common-game-room-r3-realtime, feature/common-game-room-r4-yacht-client, feature/common-game-room-r5-drawing-integration, feature/common-game-room-r5-reconciliation, feature/common-game-room-r5-transport-acceptance, feature/common-game-room-r5-membership-revocation, feature/common-game-room-r6-public-admission, feature/common-game-room-r7-lifecycle]
     paths:
       - "server/**"
       - "web/**"
@@ -67,6 +67,10 @@ jobs:
         working-directory: server
         shell: pwsh
         run: ./run-regression-probes.ps1
+
+      - name: Real GameRoom Chrome Edge browser E2E
+        shell: pwsh
+        run: ./server/smoke-game-room-browser.ps1
 
       - name: Build Windows app
         working-directory: server

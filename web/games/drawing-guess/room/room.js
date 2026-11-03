@@ -365,8 +365,9 @@
   }
 
   $("createForm").addEventListener("submit",event=>{
-    event.preventDefault();operation(async()=>{
-      const form=new FormData(event.currentTarget);
+    event.preventDefault();
+    const form=new FormData(event.currentTarget);
+    operation(async()=>{
       const maxPlayers=Number(form.get("maxPlayers"));
       const maxRoomMembers=Number(form.get("maxRoomMembers"));
       if(maxRoomMembers<maxPlayers)
@@ -381,8 +382,9 @@
     });
   });
   $("publicJoinForm").addEventListener("submit",event=>{
-    event.preventDefault();operation(async()=>{
-      const form=new FormData(event.currentTarget);
+    event.preventDefault();
+    const form=new FormData(event.currentTarget);
+    operation(async()=>{
       const code=String(form.get("roomCode")||"").trim().toUpperCase();
       const member=await request("/public/join","POST",{
         gameId:"drawing_guess",roomCode:code,
@@ -397,8 +399,9 @@
     async()=>{await loadPublicRooms();say("공개방 목록을 새로고침했습니다.");}
   ));
   $("joinForm").addEventListener("submit",event=>{
-    event.preventDefault();operation(async()=>{
-      const form=new FormData(event.currentTarget);
+    event.preventDefault();
+    const form=new FormData(event.currentTarget);
+    operation(async()=>{
       const member=await request("/join","POST",{
         invitation:String(form.get("invitation")).trim(),
         displayName:form.get("displayName")},"");
@@ -423,19 +426,22 @@
     say("경기가 시작됐습니다.");render();await refresh();
   }));
   $("promptForm").addEventListener("submit",event=>{
-    event.preventDefault();operation(async()=>{
-      const form=new FormData(event.currentTarget);
+    event.preventDefault();
+    const submitted=event.currentTarget;
+    const form=new FormData(submitted);
+    operation(async()=>{
       const accepted=String(form.get("accepted")||"")
         .split(",").map(x=>x.trim()).filter(Boolean).slice(0,20);
       snapshot=await request("/drawing/round","POST",{
         promptId:id("r5word-"),answer:form.get("answer"),acceptedAnswers:accepted});
-      event.currentTarget.reset();
+      submitted.reset();
       say("라운드가 시작됐습니다.");render();await refresh();
     });
   });
   $("guessForm").addEventListener("submit",event=>{
-    event.preventDefault();operation(async()=>{
-      const field=event.currentTarget.elements.text;
+    event.preventDefault();
+    const field=event.currentTarget.elements.text;
+    operation(async()=>{
       const result=await request("/drawing/guess","POST",{text:field.value});
       say(result.status==="CORRECT"?"정답! "+result.guesserScore+"점":
         result.status==="WRONG"?"틀렸습니다. 다시 시도하세요.":
@@ -465,8 +471,9 @@
     say("초대 링크를 복사했습니다.");
   }));
   $("chatForm").addEventListener("submit",event=>{
-    event.preventDefault();operation(async()=>{
-      const field=event.currentTarget.elements.text;
+    event.preventDefault();
+    const field=event.currentTarget.elements.text;
+    operation(async()=>{
       if(!field.value.trim())return;
       await request("/chat","POST",{messageId:id("roomchat-"),text:field.value});
       field.value="";await refreshChat();
