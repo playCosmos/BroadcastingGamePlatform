@@ -33,7 +33,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
     private enum ChannelKind {
         BOARD,
-        DRAWING
+        DRAWING,
+        YACHT
     }
 
     private record Channel(
@@ -94,6 +95,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         handshakeRates = new LinkedHashMap<>();
     private final Predicate<String> roomCodeValidator;
     private final DrawingSyncService drawingSync;
+    private final Predicate<String> yachtCodeValidator;
 
     public BoardGameWebSocketServer(String host, int port) {
         this(host, port, roomCode -> true, null);
@@ -113,7 +115,16 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         Predicate<String> roomCodeValidator,
         DrawingSyncService drawingSync
     ) {
+        this(host, port, roomCodeValidator, drawingSync, code -> false);
+    }
+
+    public BoardGameWebSocketServer(
+        String host, int port, Predicate<String> roomCodeValidator,
+        DrawingSyncService drawingSync, Predicate<String> yachtCodeValidator
+    ) {
         super(new InetSocketAddress(host, port));
+        this.yachtCodeValidator = yachtCodeValidator == null
+            ? code -> false : yachtCodeValidator;
         this.roomCodeValidator = roomCodeValidator == null
             ? roomCode -> false
             : roomCodeValidator;
@@ -193,7 +204,16 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             return;
         }
 
-        connection.close(1008, "valid board room or drawing code required");
+        String yachtCode = normalizeCode(query.get("yachtCode"));
+        if (yachtCode != null && yachtCodeValidator.test(yachtCode)) {
+            if (!registerIfCapacity(connection,
+                new Channel(ChannelKind.YACHT, yachtCode, null, false))) {
+                connection.close(1013, "Yacht channel at capacity");
+                return;
+            }
+            return;
+        }
+        connection.close(1008, "valid board, Yacht or drawing code required");
     }
 
     private synchronized boolean allowHandshake(
@@ -279,7 +299,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
 
         if (
-            channel.kind() == ChannelKind.BOARD
+            (channel.kind() == ChannelKind.BOARD
+                || channel.kind() == ChannelKind.YACHT)
                 && channelConnections >= MAX_BOARD_CONNECTIONS_PER_ROOM
         ) {
             return false;
@@ -371,6 +392,12 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         if (channel.kind() == ChannelKind.BOARD) {
             return;
         }
+        if (channel.kind() == ChannelKind.YACHT) {
+            // Yacht mutations require authenticated HTTP; WebSocket clients
+            // can only observe independently validated room-code channels.
+            connection.close(1008, "Yacht WebSocket is read-only");
+            return;
+        }
 
         if (!channel.canWrite()) {
             connection.close(1008, "drawing overlay is read-only");
@@ -420,6 +447,22 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
     public int connectedClients() {
         return connectedClients.get();
+    }
+
+    public boolean broadcastYacht(String roomCode, String json) {
+        String normalized = normalizeCode(roomCode);
+        if (normalized == null) return false;
+        boolean sent = false;
+        for (var entry : channelByConnection.entrySet()) {
+            Channel channel = entry.getValue();
+            if (channel.kind() != ChannelKind.YACHT
+                || !normalized.equals(channel.code())) continue;
+            WebSocket connection = entry.getKey();
+            if (!connection.isOpen()) continue;
+            connection.send(json);
+            sent = true;
+        }
+        return sent;
     }
 
     public boolean broadcastEvent(String roomId, String json) {

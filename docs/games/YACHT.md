@@ -1,6 +1,6 @@
 # Yacht 게임 모듈 계획
 
-상태: **Y0 완료 · Y1 Domain/Persistence 구현 중** (Y2~Y6 미구현, 플레이 불가)
+상태: **Y0·Y1 CI 통과 · Y2 Room/API 구현 중** (Y3~Y6 미구현, 관리자 플레이 UI 미제공)
 
 게임 ID: `yacht`
 
@@ -802,6 +802,42 @@ Yacht에서 실제 중복이 발생하는 항목만 추출한다.
 완료 조건:
 
 - 서버 프로세스 재시작 전후 상태 parity
+
+### Y2 — API / Room (구현 중)
+
+- 별도 `V30__yacht_room_commands_events.sql` 스키마: 6자리 Yacht room code, 요청 ID별 멱등성 결과, match version을 event sequence로 사용하는 순서 보존 이벤트를 SQLite에 저장
+- `YachtRoomService`: 2~6인 경기 생성 요청의 idempotency(`requestId`), 서버 권위형 Roll/Hold/Score/Activate/Pause/Resume/Close 명령의 단일 DB 트랜잭션. `commandId` 재전송은 원래 확정한 응답을 그대로 복구하고, 동일 ID에 다른 내용이면 409 충돌
+- 기존 관리자 인증·Origin 정책을 따르는 `/api/v1/games/yacht/rooms` 생성 및 하위 명령 API. 클라이언트는 `expectedVersion`과 `commandId`를 명시해야 하며 주사위 값을 직접 전달할 수 없음
+- 룸 코드 소지자만 공개 `/api/v1/games/yacht/public/{roomCode}` 상태 조회 및 `/events?since={sequence}` 최대 100건 순차 조회. 플랫폼 기존 public lookup rate limiter 재사용. 공개 응답에 세션 토큰·관리자 설정/비밀번호 포함하지 않음
+- `BoardGameWebSocketServer`: `?yachtCode=XXXXXX` 쿼리의 별도 읽기 전용 채널. 다른 보드·Drawing Guess 브로드캐스트와 격리. 상태변경 이벤트는 DB commit 이후 전송하며, 네트워크 유실 시 sequence 커서 조회로 복구
+- `YachtRoomProbe`: 실제 SQLite에서 2인 26턴 완료, 롤 RNG 멱등성, 서버 재시작 후 중간 턴/이벤트 복구, 동시성 충돌, 방송 실패 복구 검증
+- `YachtHttpApiProbe`: 실 HTTP 인증·CSRF/Origin·임의 주사위 거부·공개 룸 코드·중복 Roll/Score/Close·관리자 에셋 접근 경계 검증
+- **Y3의 실제 운영자 플레이 화면이 없으므로 아직 GAME 02를 AVAILABLE로 표시하지 않음**. Y5 방송 채팅/후원 연결은 계속 보류
+
+#### Y2 API (관리자 전용, 인증+같은 출처 변이 요청)
+
+```text
+POST /api/v1/games/yacht/rooms
+  {"requestId":"unique-create-id","name":"Game","players":[{"id":"p1","displayName":"A"},{"id":"p2","displayName":"B"}]}
+GET  /api/v1/games/yacht/rooms/{roomCode}
+GET  /api/v1/games/yacht/rooms/{roomCode}/events?since=-1
+POST /api/v1/games/yacht/rooms/{roomCode}/activate
+POST /api/v1/games/yacht/rooms/{roomCode}/roll
+POST /api/v1/games/yacht/rooms/{roomCode}/hold
+POST /api/v1/games/yacht/rooms/{roomCode}/score
+POST /api/v1/games/yacht/rooms/{roomCode}/pause
+POST /api/v1/games/yacht/rooms/{roomCode}/resume
+POST /api/v1/games/yacht/rooms/{roomCode}/close
+  {"commandId":"unique-command-id","expectedVersion":7,"held":[true,false,true,false,false]}   # hold only
+  {"commandId":"unique-command-id","expectedVersion":7,"category":"chance"}                   # score only
+```
+
+공개 읽기(룸 코드를 알아야 사용 가능, 인증 관리자 명령 불가):
+```text
+GET /api/v1/games/yacht/public/{roomCode}
+GET /api/v1/games/yacht/public/{roomCode}/events?since=7
+WS  ?yachtCode={roomCode}  # 읽기 전용, Yacht 이벤트만 수신
+```
 
 ### Y2 — API / Room
 
