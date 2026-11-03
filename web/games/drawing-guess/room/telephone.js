@@ -9,7 +9,7 @@
   const undoHistory=[],redoHistory=[];
   const historyLimit=25;
   let gestureBefore=null;
-  let lastAutoWake="";
+  let lastAutoWake="",exporting=false;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   function visible(id,yes){$(id).hidden=!yes;}
   function canEdit(){
@@ -80,6 +80,7 @@
     albumIndex=Math.max(0,Math.min(state.presentation?.albumIndex??0,
       albums.length-1));
     const album=albums[albumIndex];
+    $("telephoneDownload").disabled=exporting;
     entryIndex=Math.max(0,Math.min(state.presentation?.stepIndex??0,
       album.entries.length-1));
     $("telephoneAlbumTitle").textContent=(albumIndex+1)+"/"+albums.length+
@@ -131,7 +132,9 @@
     isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
-      phaseKey="";resetDraft();updateTools();return;
+      phaseKey="";resetDraft();updateTools();
+      $("telephoneDownloadStatus").textContent="";
+      return;
     }
     const key=data.state+":"+data.stage;
     if(key!==phaseKey){
@@ -380,6 +383,116 @@
       if(state.state==="REVEAL")renderAlbums();
     }
   }
+
+  // The server has already authorized this complete album in REVEAL.
+  // Compose only existing normalized text/strokes; never load user URLs.
+  function wrapPosterText(ctx,value,maxWidth){
+    const result=[];
+    for(const line of String(value??"").split(/\r?\n/)){
+      let current="";
+      for(const character of line){
+        const next=current+character;
+        if(current && ctx.measureText(next).width>maxWidth){
+          result.push(current);current=character;
+        }else current=next;
+      }
+      result.push(current);
+    }
+    return result;
+  }
+  function composeAlbumPoster(album,index){
+    if(!Array.isArray(album?.entries) || !album.entries.length ||
+       album.entries.length>12)throw Error("앨범 단계를 확인할 수 없습니다.");
+    const width=960,margin=42,gap=20,cardWidth=width-margin*2;
+    const drawingWidth=cardWidth-36;
+    const drawingHeight=Math.round(drawingWidth*560/960);
+    const measuring=document.createElement("canvas").getContext("2d");
+    measuring.font="24px system-ui, sans-serif";
+    const cards=album.entries.map((entry,i)=>{
+      const drawing=entry.kind==="DRAWING";
+      const lines=drawing?[]:wrapPosterText(measuring,entry.content,cardWidth-44);
+      return {entry,drawing,lines,number:i+1,
+        height:drawing?74+drawingHeight+28:
+          74+Math.max(60,lines.length*34)+22};
+    });
+    const height=132+cards.reduce((sum,card)=>sum+card.height+gap,0)+46;
+    if(height>12000)throw Error("앨범 이미지가 너무 큽니다.");
+    const poster=document.createElement("canvas");
+    poster.width=width;poster.height=height;
+    const ctx=poster.getContext("2d");
+    ctx.fillStyle="#eaf0f7";ctx.fillRect(0,0,width,height);
+    ctx.fillStyle="#182638";ctx.fillRect(0,0,width,114);
+    ctx.fillStyle="#fff";
+    ctx.font="bold 33px system-ui, sans-serif";
+    ctx.fillText("GameCenter · Telephone",margin,50);
+    ctx.font="23px system-ui, sans-serif";
+    ctx.fillText((index+1)+"번 앨범 · "+String(album.originalAuthor??"")+"님의 이야기",
+      margin,88,width-margin*2);
+    let y=132;
+    for(const card of cards){
+      ctx.fillStyle="#fff";ctx.fillRect(margin,y,cardWidth,card.height);
+      ctx.fillStyle="#203247";ctx.font="bold 23px system-ui, sans-serif";
+      const label=card.number+"단계 · "+String(card.entry.author??"")+
+        (card.drawing?"님의 그림":"님의 문장");
+      ctx.fillText(label,margin+20,y+41,cardWidth-40);
+      if(card.drawing){
+        const source=document.createElement("canvas");
+        source.width=960;source.height=560;
+        incomingDrawing(card.entry.content,source);
+        ctx.drawImage(source,margin+18,y+74,drawingWidth,drawingHeight);
+      }else{
+        ctx.fillStyle="#182638";
+        ctx.font="24px system-ui, sans-serif";
+        for(let i=0;i<card.lines.length;i++)
+          ctx.fillText(card.lines[i],margin+22,y+104+i*34);
+      }
+      y+=card.height+gap;
+    }
+    ctx.fillStyle="#5c6b7e";ctx.font="18px system-ui, sans-serif";
+    ctx.fillText("GameCenter · 완성된 이야기 앨범",margin,height-23);
+    return poster;
+  }
+  async function exportCurrentAlbum(){
+    if(exporting || !state.active || state.state!=="REVEAL" ||
+       !Array.isArray(state.albums) || !state.albums.length)return;
+    const index=Math.max(0,Math.min(
+      state.presentation?.albumIndex??0,state.albums.length-1));
+    const album=state.albums[index];
+    exporting=true;
+    $("telephoneDownload").disabled=true;
+    $("telephoneDownloadStatus").textContent="앨범 이미지를 준비하고 있습니다.";
+    try{
+      const poster=composeAlbumPoster(album,index);
+      const blob=await new Promise((resolve,reject)=>{
+        if(typeof poster.toBlob!=="function"){
+          reject(Error("이미지 저장을 지원하지 않는 브라우저입니다."));return;
+        }
+        poster.toBlob(value=>value?resolve(value):
+          reject(Error("PNG 변환에 실패했습니다.")),"image/png");
+      });
+      if(!state.active || state.state!=="REVEAL")return;
+      const url=URL.createObjectURL(blob);
+      try{
+        const link=document.createElement("a");
+        link.href=url;
+        link.download="gamecenter-telephone-album-"+(index+1)+".png";
+        document.body.append(link);
+        link.click();
+        link.remove();
+        $("telephoneDownloadStatus").textContent="현재 앨범 이미지를 저장했습니다.";
+      }finally{
+        // Keep the object URL alive until the browser starts the download.
+        window.setTimeout(()=>URL.revokeObjectURL(url),30000);
+      }
+    }catch(error){
+      $("telephoneDownloadStatus").textContent=
+        error.message||"앨범 이미지를 저장하지 못했습니다.";
+    }finally{
+      exporting=false;
+      $("telephoneDownload").disabled=false;
+    }
+  }
+  $("telephoneDownload").addEventListener("click",exportCurrentAlbum);
   $("telephoneAutoplay").addEventListener("click",()=>{
     playback(state.playback?.playing?"PAUSE":"PLAY",
       Number($("telephonePlaybackSpeed").value));

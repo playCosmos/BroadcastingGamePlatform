@@ -334,6 +334,48 @@ async function cancelTouchStroke(page,coordinates,yRatio){
         type:"touchCancel",touchPoints:[]},page.sessionId);
 }
 
+// Real browser PNG decoding, not merely a mocked download button click.
+async function captureTelephoneAlbumExport(page,index,minHeight){
+    await cdp.eval(page,`(()=>{
+        window.__posterResult={done:false};
+        if(!window.__posterOriginalClick)
+            window.__posterOriginalClick=HTMLAnchorElement.prototype.click;
+        HTMLAnchorElement.prototype.click=function(){
+            if(!this.download?.startsWith("gamecenter-telephone-album-"))
+                return window.__posterOriginalClick.call(this);
+            const name=this.download;
+            fetch(this.href).then(response=>response.blob()).then(async blob=>{
+                const signature=Array.from(new Uint8Array(
+                    await blob.slice(0,8).arrayBuffer()));
+                const image=await createImageBitmap(blob);
+                window.__posterResult={done:true,name,type:blob.type,
+                    size:blob.size,width:image.width,height:image.height,
+                    signature};
+                image.close();
+            }).catch(error=>{
+                window.__posterResult={done:true,error:String(error)};
+            });
+        };
+        return true;
+    })()`);
+    await click(page,"telephoneDownload");
+    const result=await poll(async()=>await cdp.eval(page,
+        "window.__posterResult?.done ? window.__posterResult : null"),
+        "complete authorized album PNG "+index,20000);
+    check(!result.error,"album PNG encode/decode succeeded: "+result.error);
+    check(result.name==="gamecenter-telephone-album-"+index+".png",
+        "download filename uses safe album index only");
+    check(result.type==="image/png" && result.size>3000,
+        "export produces a nonempty PNG Blob");
+    check(result.signature?.join(",")==="137,80,78,71,13,10,26,10",
+        "exported image has valid PNG signature");
+    check(result.width===960 && result.height>=minHeight,
+        "complete multi-stage album composed in one image, not current slide");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('telephoneDownloadStatus').textContent"+
+        ".includes('저장했습니다')"),"accessible album export status");
+}
+
 /**
  * Abort upgraded sockets like a dropped Wi-Fi connection, with no clean WS
  * close frame. Confirm the browser resubscribes, durable Canvas history
@@ -800,6 +842,14 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephonePlay').hidden===false"),
         "host sees telephone stage panel after rendering");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneReveal').hidden"),
+        "private telephone submissions cannot show album export");
+    await cdp.eval(host,
+        "document.getElementById('telephoneDownload').click();true");
+    check(await cdp.eval(host,
+        "document.getElementById('telephoneDownloadStatus').textContent===''"),
+        "forged pre-reveal local export action yields no image");
     const spectator=await backend(pages[3],"/drawing/telephone","GET",
         null,tokens[3]);
     check(spectator.status===200 && !spectator.data.previousContent &&
@@ -945,6 +995,18 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneReveal').hidden===false"),
         "spectator has revealed gallery before presenter moves cursor");
+    const posterCursor=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    await captureTelephoneAlbumExport(pages[3],1,coop?1800:1000);
+    const afterPoster=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(afterPoster.data.presentation.revision===
+        posterCursor.data.presentation.revision &&
+        afterPoster.data.presentation.albumIndex===
+        posterCursor.data.presentation.albumIndex &&
+        afterPoster.data.presentation.stepIndex===
+        posterCursor.data.presentation.stepIndex,
+        "spectator PNG export does not move host's authoritative reveal");
     check(await cdp.eval(pages[3],
         "document.getElementById('telephoneStepNext').disabled"),
         "spectator slide controls cannot alter the host presentation");
@@ -998,6 +1060,7 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(pages[3],
         "document.getElementById('telephoneAlbumTitle').textContent.startsWith('2/')"),
         "reconnected spectator follows subsequent host album change");
+    await captureTelephoneAlbumExport(pages[3],2,coop?1800:1000);
     const finalCursor=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
     check(finalCursor.data.presentation.albumIndex===1
         && finalCursor.data.presentation.stepIndex===0
