@@ -80,6 +80,20 @@ has(html,'id="telephoneAutoplay"',"host can play/pause album slides");
 has(html,'id="telephonePlaybackSpeed"',"host can select slide interval");
 has(html,'id="telephonePlaybackProgress"',"all participants see playback status");
 has(html,'id="telephoneStageTime"',"telephone stages show a timing region");
+has(telephone,'function syncServerClock(data)',"clock samples come from authorized room snapshot");
+has(telephone,'Date.parse(data?.serverNow)',"clock aligns to server UTC timestamp");
+has(telephone,'stamp>serverClockEpoch',"stale snapshots cannot rewind clock");
+has(telephone,'serverClockAt=performance.now()', "clock uses monotonic browser anchor");
+has(telephone,'function serverAlignedNow()', "stage and presentation share estimated server now");
+has(telephone,'serverClockEpoch+Math.max(0,performance.now()-serverClockAt)',
+    "local wall-clock jumps cannot change live timers");
+has(telephone,'(Date.parse(play.nextAt)-serverAlignedNow())/1000)',
+    "autoplay timer uses aligned server clock");
+has(telephone,'const now=serverAlignedNow()', "stage expiry/retry uses aligned server clock");
+has(telephone,'if(state.active)syncServerClock(state)',"authenticated state refresh recalibrates timer");
+has(telephone,'serverClockEpoch=NaN;serverClockAt=0',"room teardown discards stale clock");
+no(telephone,'(Date.parse(play.nextAt)-Date.now())',"slideshow no longer uses wall clock");
+
 has(html,'id="telephoneStageTimeProgress"',"stage progress bar exists");
 has(html,'id="telephoneTimeAlert"',"time thresholds have polite live alerts");
 has(html,'id="telephoneDeadline" aria-live="off"',"per-second timer is not announced");

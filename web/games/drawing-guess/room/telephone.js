@@ -14,6 +14,22 @@
   let deadlineKey="",deadlineAlert="",deadlineWakeAttempts=0;
   let deadlineWakeInFlight=false,nextDeadlineWakeAt=0;
   let albumTimelineKey="",stageTimelineKey="";
+  let serverClockEpoch=NaN,serverClockAt=0;
+  function syncServerClock(data){
+    const stamp=Date.parse(data?.serverNow);
+    // Ignore duplicate or out-of-order WS/HTTP snapshots: a stale
+    // timestamp cannot rewind an already synchronized display clock.
+    if(Number.isFinite(stamp) &&
+       (!Number.isFinite(serverClockEpoch) || stamp>serverClockEpoch)){
+      serverClockEpoch=stamp;
+      serverClockAt=performance.now();
+    }
+  }
+  function serverAlignedNow(){
+    return Number.isFinite(serverClockEpoch)
+      ?serverClockEpoch+Math.max(0,performance.now()-serverClockAt)
+      :Date.now();
+  }
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   function visible(id,yes){$(id).hidden=!yes;}
   function canEdit(){
@@ -288,6 +304,7 @@
       present(albumIndex,step);
   });
   function renderAlbums(){
+    syncServerClock(state);
     const albums=state.albums||[];
     if(!albums.length)return;
     // Unlike the previous local-only carousel, the persisted authoritative
@@ -362,8 +379,10 @@
   function render(data,send,onRefresh,host=false){
     state=data||{active:false};request=send;refresh=onRefresh;
     isPresenter=Boolean(host);
+    if(state.active)syncServerClock(state);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      serverClockEpoch=NaN;serverClockAt=0;
       resetDeadline();
       setFocus(false);
       clearTimeline();
@@ -439,7 +458,7 @@
       return;
     }
     const remaining=Math.max(0,Math.ceil(
-      (Date.parse(play.nextAt)-Date.now())/1000));
+      (Date.parse(play.nextAt)-serverAlignedNow())/1000));
     caption.textContent="자동 재생 · "+play.intervalSeconds+
       "초 간격 · 다음 장면 "+remaining+"초 후";
     // When a deadline is due, ask the server to materialize the next
@@ -482,7 +501,7 @@
       $("telephoneTimeAlert").textContent="";
     }
     visible("telephoneStageTime",true);
-    const now=Date.now();
+    const now=serverAlignedNow();
     const until=started+duration*1000-now;
     const remaining=Math.max(0,Math.ceil(until/1000));
     const percent=Math.max(0,Math.min(100,until/(duration*1000)*100));
