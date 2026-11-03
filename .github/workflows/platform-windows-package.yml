@@ -181,9 +181,21 @@ jobs:
             throw "packaged platform server probe failed: $($probe.ExitCode)"
           }
 
+      - name: R14h extended WebSocket endurance (24 rounds)
+        working-directory: server
+        shell: pwsh
+        run: |
+          $classPath = @("target/test-classes", "target/classes", "target/probe-dependencies/*") -join [IO.Path]::PathSeparator
+          java -cp $classPath io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomWebSocketEnduranceR14gProbe --rounds=24
+          if ($LASTEXITCODE -ne 0) { throw "R14h extended WebSocket endurance failed: $LASTEXITCODE" }
+
       - name: R14e packaged GameRoom startup and crash-restart
         shell: pwsh
         run: ./server/smoke-packaged-game-room-restart.ps1
+
+      - name: R14h packaged GameRoom graceful exit and restart
+        shell: pwsh
+        run: ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful
 
       - name: Upload Windows package
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

@@ -23,15 +23,19 @@ $releaseBranch = "refs/heads/release/"
 $gate = "- name: Real GameRoom Chrome Edge browser E2E"
 $regression = "- name: Run release regression probes"
 $packaged = "- name: R14e packaged GameRoom startup and crash-restart"
+$extended = "- name: R14h extended WebSocket endurance (24 rounds)"
+$graceful = "- name: R14h packaged GameRoom graceful exit and restart"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $packaged, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $packaged, $graceful, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
 }
 if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
-           $Release.IndexOf($gate) -lt $Release.IndexOf($packaged) -and
-           $Release.IndexOf($packaged) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($gate) -lt $Release.IndexOf($extended) -and
+           $Release.IndexOf($extended) -lt $Release.IndexOf($packaged) -and
+           $Release.IndexOf($packaged) -lt $Release.IndexOf($graceful) -and
+           $Release.IndexOf($graceful) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -41,4 +45,16 @@ if (-not $Package.Contains($packaged) -or
     -not $Package.Contains("run: ./server/smoke-packaged-game-room-restart.ps1")) {
     throw "R14e: Windows package CI must run actual packaged executable restart"
 }
-Write-Host "[workflow] R14e staged branches, browser and packaged restart gates verified"
+if (-not $Package.Contains($extended) -or -not $Package.Contains($graceful) -or
+    -not $Package.Contains("GameRoomWebSocketEnduranceR14gProbe --rounds=24") -or
+    -not $Package.Contains("smoke-packaged-game-room-restart.ps1 -StopMode Graceful") -or
+    -not $Release.Contains("GameRoomWebSocketEnduranceR14gProbe --rounds=24") -or
+    -not $Release.Contains("smoke-packaged-game-room-restart.ps1 -StopMode Graceful")) {
+    throw "R14h: both Windows workflows must run extended WS soak and packaged graceful exit"
+}
+if (-not ($Package.IndexOf($extended) -lt $Package.IndexOf($packaged) -and
+           $Package.IndexOf($packaged) -lt $Package.IndexOf($graceful) -and
+           $Package.IndexOf($graceful) -lt $Package.IndexOf("- name: Upload Windows package"))) {
+    throw "R14h: all shutdown gates must pass before Windows artifact upload"
+}
+Write-Host "[workflow] R14h integration, endurance and packaged graceful exit gates verified"

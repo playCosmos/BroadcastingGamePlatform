@@ -26,6 +26,7 @@ import io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDraw
 import java.awt.Desktop;
 import java.net.URI;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -381,6 +382,7 @@ public final class PlatformServerMain {
             try { chatSubscription.close(); } catch (Exception ignored) {}
             try { participantSoop.close(); } catch (Exception ignored) {}
             try { providers.close(); } catch (Exception ignored) {}
+            System.out.println("[platform-server] shutdown complete");
             try { fileLog.close(); } catch (Exception ignored) {}
             shutdown.countDown();
         };
@@ -411,6 +413,35 @@ public final class PlatformServerMain {
             explicitExit
         );
         trayRef.set(tray);
+
+        // CI-only, disabled for every normal launch: the Windows app-image
+        // test can invoke the SAME graceful explicitExit callback as the tray
+        // Exit menu without depending on an interactive Windows Explorer shell.
+        // No HTTP endpoint, listening socket or runtime user command is added.
+        String ciExitRequest = System.getenv("BGP_CI_GRACEFUL_EXIT_REQUEST");
+        if ("true".equalsIgnoreCase(System.getenv("CI"))
+            && ciExitRequest != null && !ciExitRequest.isBlank()) {
+            Path request = Path.of(ciExitRequest).toAbsolutePath().normalize();
+            if (!request.startsWith(root) || request.equals(root)) {
+                throw new IllegalArgumentException(
+                    "CI graceful exit request must be under application root");
+            }
+            Thread.ofPlatform().daemon(true).name("platform-ci-exit-watch")
+                .start(() -> {
+                    while (!shutdownStarted.get()) {
+                        if (Files.isRegularFile(request)) {
+                            System.out.println("[platform-server] CI graceful exit requested");
+                            explicitExit.run();
+                            return;
+                        }
+                        try { Thread.sleep(100); }
+                        catch (InterruptedException ignored) {
+                            Thread.currentThread().interrupt();
+                            return;
+                        }
+                    }
+                });
+        }
 
         if (
             config.streamerId() == null ||
