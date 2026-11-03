@@ -91,6 +91,7 @@
     }catch{/* browser persistence may be disabled */}
     secret="";
     snapshot=null;telephone={active:false};
+    window.TelephoneView.render(telephone,null,null);
     sessionStorage.removeItem(STORAGE);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
@@ -103,6 +104,7 @@
     sessionStorage.setItem(STORAGE,secretValue);
     try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
     roomBinding="";drawingBinding="";telephone={active:false};
+    window.TelephoneView.render(telephone,null,null);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
     chatSequence=-1;canvasSequence=0;
@@ -552,11 +554,15 @@
     });
   });
   $("start").addEventListener("click",()=>operation(async()=>{
-    if($("mode").value==="TELEPHONE_CHAIN"){
+    if($("mode").value==="TELEPHONE_CHAIN" ||
+       $("mode").value==="TELEPHONE_COOP"){
+      const coop=$("mode").value==="TELEPHONE_COOP";
       telephone=await request("/drawing/telephone/start","POST",{
-        durationSeconds:Number($("duration").value)
+        durationSeconds:Number($("duration").value),
+        mode:coop?"COOP":"NORMAL"
       });
-      say("전화 그림이 시작됐습니다. 모두 첫 문장을 작성하세요.");
+      say(coop?"협동 이어 그리기가 시작됐습니다. 모두 첫 그림을 그리세요.":
+        "전화 그림이 시작됐습니다. 모두 첫 문장을 작성하세요.");
       await refresh();return;
     }
     const rotateStreamers=$("mode").value==="STREAMER_ROTATION";

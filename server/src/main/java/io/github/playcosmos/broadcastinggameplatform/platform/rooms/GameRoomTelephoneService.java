@@ -24,13 +24,14 @@ import java.util.Objects;
  * No browser-supplied album slot, author, or provider identity is trusted.
  */
 public final class GameRoomTelephoneService {
+    public enum Mode { NORMAL, COOP }
     public record AlbumEntry(int stage,String kind,String content,String author) {}
     public record Album(String originalAuthor,List<AlbumEntry> entries) {}
     public record View(boolean active,String state,int stage,int stages,int seconds,
                        String stageStartedAt,int submitted,int participants,
                        String taskKind,String previousKind,String previousContent,
-                       boolean mySubmitted,List<Album> albums) {}
-    private record Match(int stage,int size,int seconds,String started,String state) {}
+                       boolean mySubmitted,List<Album> albums,Mode mode) {}
+    private record Match(int stage,int size,int seconds,String started,String state,Mode mode) {}
     private record Slot(int order,String memberId,String name) {}
 
     private final GameRoomService rooms;
@@ -42,6 +43,11 @@ public final class GameRoomTelephoneService {
     }
 
     public View start(String hostToken,int seconds)throws SQLException {
+        return start(hostToken,seconds,Mode.NORMAL);
+    }
+
+    public View start(String hostToken,int seconds,Mode mode)throws SQLException {
+        Objects.requireNonNull(mode,"mode");
         if(seconds<30 || seconds>600)
             throw new IllegalArgumentException("turn timer must be 30..600 seconds");
         return rooms.write(conn->{
@@ -52,7 +58,7 @@ public final class GameRoomTelephoneService {
                 throw new GameRoomAccessService.Forbidden("connected host required");
             Match existing=match(conn,room.roomId());
             if(existing!=null) {
-                if(existing.seconds()!=seconds)
+                if(existing.seconds()!=seconds || existing.mode()!=mode)
                     throw new GameRoomService.RoomConflict("telephone configuration frozen");
                 return view(conn,room,principal.memberId(),existing);
             }
@@ -67,11 +73,12 @@ public final class GameRoomTelephoneService {
             String now=Instant.now().toString();
             try(var add=conn.prepareStatement("""
                 INSERT INTO game_room_telephone_match(
-                  room_id,stage,roster_size,duration_seconds,stage_started_at,state)
-                VALUES(?,0,?,?,?,'PLAYING')
+                  room_id,stage,roster_size,duration_seconds,stage_started_at,state,mode)
+                VALUES(?,0,?,?,?,'PLAYING',?)
                 """)) {
                 add.setString(1,room.roomId());add.setInt(2,players.size());
-                add.setInt(3,seconds);add.setString(4,now);add.executeUpdate();
+                add.setInt(3,seconds);add.setString(4,now);
+                add.setString(5,mode.name());add.executeUpdate();
             }
             int order=0;
             for(Member m:players) {
@@ -106,7 +113,7 @@ public final class GameRoomTelephoneService {
             drawing(room);
             Match match=match(conn,room.roomId());
             if(match==null) return new View(false,"LOBBY",0,0,0,null,
-                0,0,null,null,null,false,List.of());
+                0,0,null,null,null,false,List.of(),Mode.NORMAL);
             advanceExpired(conn,room,match);
             return view(conn,GameRoomService.read(conn,room.roomId()),
                 principal.memberId(),match(conn,room.roomId()));
@@ -138,8 +145,24 @@ public final class GameRoomTelephoneService {
             if(slot<0)throw new GameRoomAccessService.Forbidden(
                 "only original frozen players may submit");
             int album=Math.floorMod(slot-match.stage(),match.size());
-            boolean drawing=match.stage()%2==1;
-            String content=drawing?normalizeDrawing(drawingJson):normalizeText(text);
+            boolean drawing=match.mode()==Mode.COOP || match.stage()%2==1;
+            String content;
+            if(match.mode()==Mode.COOP) {
+                // The client submits only NEW strokes. Previous authors'
+                // content is read from SQLite and cannot be erased/replaced.
+                String delta=normalizeDrawing(drawingJson,true);
+                String inherited="[]";
+                if(match.stage()>0) {
+                    var before=entry(conn,room.roomId(),album,match.stage()-1);
+                    if(before==null || !"DRAWING".equals(before.kind()))
+                        throw new GameRoomService.RoomConflict(
+                            "previous cooperative canvas unavailable");
+                    inherited=before.content();
+                }
+                content=appendStrokes(inherited,delta);
+            } else {
+                content=drawing?normalizeDrawing(drawingJson):normalizeText(text);
+            }
             try(var insert=conn.prepareStatement("""
                 INSERT INTO game_room_telephone_entry(
                   room_id,album_slot,stage,member_id,kind,content,submitted_at)
@@ -177,8 +200,14 @@ public final class GameRoomTelephoneService {
                 """)) {
                 insert.setString(1,room.roomId());insert.setInt(2,album);
                 insert.setInt(3,match.stage());insert.setString(4,slot.memberId());
-                insert.setString(5,match.stage()%2==1?"DRAWING":"TEXT");
-                insert.setString(6,match.stage()%2==1?"[]":"(시간 초과)");
+                boolean drawing=match.mode()==Mode.COOP || match.stage()%2==1;
+                insert.setString(5,drawing?"DRAWING":"TEXT");
+                String timeoutContent=drawing?"[]":"(시간 초과)";
+                if(match.mode()==Mode.COOP && match.stage()>0) {
+                    var predecessor=entry(conn,room.roomId(),album,match.stage()-1);
+                    timeoutContent=predecessor==null?"[]":predecessor.content();
+                }
+                insert.setString(6,timeoutContent);
                 insert.setString(7,deadline.toString());insert.executeUpdate();
             }
         }
@@ -212,7 +241,8 @@ public final class GameRoomTelephoneService {
         throws SQLException {
         boolean reveal="REVEAL".equals(m.state());
         int slot=slot(conn,room.roomId(),memberId);
-        String kind=!reveal?(m.stage()%2==1?"DRAWING":"TEXT"):null;
+        String kind=!reveal?
+            (m.mode()==Mode.COOP || m.stage()%2==1?"DRAWING":"TEXT"):null;
         String previousKind=null,previousContent=null;
         boolean submitted=false;
         if(!reveal && slot>=0) {
@@ -228,7 +258,8 @@ public final class GameRoomTelephoneService {
         return new View(true,m.state(),m.stage(),m.size(),m.seconds(),
             m.started(),reveal?m.size():count(conn,room.roomId(),m.stage()),
             m.size(),slot>=0?kind:null,previousKind,previousContent,
-            submitted,reveal?albums(conn,room.roomId(),m.size()):List.of());
+            submitted,reveal?albums(conn,room.roomId(),m.size()):List.of(),
+            m.mode());
     }
 
     private List<Album> albums(Connection conn,String roomId,int size)
@@ -304,13 +335,14 @@ public final class GameRoomTelephoneService {
 
     private static Match match(Connection conn,String roomId)throws SQLException {
         try(var stmt=conn.prepareStatement("""
-            SELECT stage,roster_size,duration_seconds,stage_started_at,state
+            SELECT stage,roster_size,duration_seconds,stage_started_at,state,mode
             FROM game_room_telephone_match WHERE room_id=?
             """)) {
             stmt.setString(1,roomId);
             try(var rows=stmt.executeQuery()){
                 return rows.next()?new Match(rows.getInt(1),rows.getInt(2),
-                    rows.getInt(3),rows.getString(4),rows.getString(5)):null;
+                    rows.getInt(3),rows.getString(4),rows.getString(5),
+                    Mode.valueOf(rows.getString(6))):null;
             }
         }
     }
@@ -322,8 +354,24 @@ public final class GameRoomTelephoneService {
         return value;
     }
 
+    /** Add only submitted strokes to the trusted previous snapshot. */
+    private static String appendStrokes(String inherited,String delta) {
+        JsonArray base=JsonParser.parseString(inherited).getAsJsonArray();
+        JsonArray additions=JsonParser.parseString(delta).getAsJsonArray();
+        if(base.size()+additions.size()>300)
+            throw new IllegalArgumentException("cooperative drawing exceeds 300 strokes");
+        for(JsonElement stroke:additions)base.add(stroke);
+        String combined=base.toString();
+        if(combined.length()>180_000)
+            throw new IllegalArgumentException("cooperative canvas exceeds storage budget");
+        return combined;
+    }
+
     /** Bound each drawable point to a unit canvas; never store executable SVG. */
     private static String normalizeDrawing(String input) {
+        return normalizeDrawing(input,false);
+    }
+    private static String normalizeDrawing(String input,boolean emptyAllowed) {
         if(input==null||input.length()>180_000)
             throw new IllegalArgumentException("drawing payload too large");
         JsonElement parsed;
@@ -333,7 +381,7 @@ public final class GameRoomTelephoneService {
         }
         if(!parsed.isJsonArray())throw new IllegalArgumentException("strokes array required");
         JsonArray inputStrokes=parsed.getAsJsonArray();
-        if(inputStrokes.isEmpty()||inputStrokes.size()>100)
+        if((inputStrokes.isEmpty()&&!emptyAllowed)||inputStrokes.size()>100)
             throw new IllegalArgumentException("drawing strokes out of bounds");
         var output=new JsonArray();
         for(JsonElement part:inputStrokes) {
