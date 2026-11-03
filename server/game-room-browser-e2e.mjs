@@ -3455,6 +3455,220 @@ async function commonRoomLifecycleAcceptance(base,game){
         game+" closed room rejects a new anonymous spectator");
 }
 
+// R15a: six real player tabs and one browser spectator share a complete
+// 20-member Yacht room. R14z already checks each of 14 spectator HTTP views.
+// Here the first turn from EACH of the six players uses real UI buttons;
+// remaining HTTP commands run inside the authenticated real Chrome contexts.
+async function sixPlayerBrowserCapacityAcceptance(base){
+    const path=base+"/games/yacht/";
+    const pages=await Promise.all(Array.from({length:7},()=>cdp.page(path)));
+    const players=pages.slice(0,6),spectator=pages[6];
+    await fill(players[0],"createRoom",{
+        name:"R15a Chrome six-player capacity",
+        displayName:"R15a Host",maxPlayers:6,maxRoomMembers:20
+    });
+    const roomCode=await poll(async()=>{
+        const code=await getRoom(players[0],"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(code)?code:null;
+    },"R15a browser creates six-player common room");
+    for(let i=1;i<players.length;i++){
+        await fill(players[i],"publicJoinRoom",{
+            roomCode,displayName:"R15a Player "+i,seatRole:"PLAYER"
+        });
+        await poll(async()=>await cdp.eval(players[i],
+            "document.getElementById('game').hidden===false"),
+            "R15a real player "+i+" joins");
+    }
+    const seventh=await backend(spectator,"/public/join","POST",{
+        gameId:"yacht",roomCode,displayName:"R15a seventh player",
+        seatRole:"PLAYER"
+    });
+    check(seventh.status===409,"R15a seventh player rejected at six slots");
+    await fill(spectator,"publicJoinRoom",{
+        roomCode,displayName:"R15a Browser Spectator",seatRole:"SPECTATOR"
+    });
+    await poll(async()=>await cdp.eval(spectator,
+        "document.getElementById('game').hidden===false"),
+        "R15a browser spectator joins");
+    const credentialKey="gamecenter.yacht.member-session.v1";
+    const playerTokens=await Promise.all(players.map(p=>userToken(p,credentialKey)));
+    const spectatorToken=await userToken(spectator,credentialKey);
+    check(playerTokens.every(Boolean) && Boolean(spectatorToken)
+        && new Set([...playerTokens,spectatorToken]).size===7,
+        "R15a independent Chrome member credentials");
+    const spectatorTokens=[spectatorToken];
+    for(let i=1;i<14;i++){
+        const admitted=await backend(spectator,"/public/join","POST",{
+            gameId:"yacht",roomCode,displayName:"R15a Extra Spectator "+i,
+            seatRole:"SPECTATOR"
+        });
+        check(admitted.status===201 && Boolean(admitted.data.token),
+            "R15a additional spectator "+i);
+        spectatorTokens.push(admitted.data.token);
+    }
+    check(new Set([...playerTokens,...spectatorTokens]).size===20,
+        "R15a twenty distinct room member credentials");
+    const state=await backend(spectator,"/me","GET",null,spectatorToken);
+    const members=state.data.room?.members||[];
+    check(state.status===200 && state.data.room.playerCount===6
+        && state.data.room.memberCount===20
+        && state.data.room.maxPlayers===6
+        && state.data.room.maxRoomMembers===20
+        && members.filter(m=>m.seatRole==="PLAYER").length===6
+        && members.filter(m=>m.seatRole==="SPECTATOR").length===14
+        && members.filter(m=>m.isHost).length===1,
+        "R15a room capacity accounts host once");
+    const overflow=await backend(spectator,"/public/join","POST",{
+        gameId:"yacht",roomCode,displayName:"R15a twenty-first viewer",
+        seatRole:"SPECTATOR"
+    });
+    check(overflow.status===409,"R15a twenty-first member refused");
+    for(let i=0;i<players.length;i++){
+        await waitRoomIdle(players[i],"game");
+        await poll(async()=>await cdp.eval(players[i],
+            "document.getElementById('ready').hidden===false"),
+            "R15a player ready control "+i);
+        await click(players[i],"ready");
+        await poll(async()=>await cdp.eval(players[i],
+            "document.getElementById('ready').textContent.includes('취소')"),
+            "R15a player ready state "+i);
+    }
+    await poll(async()=>await cdp.eval(players[0],
+        "document.getElementById('start').disabled===false"),
+        "R15a host can start with six ready players");
+    await click(players[0],"start");
+    await poll(async()=>await cdp.eval(players[0],
+        "document.getElementById('roomState').textContent==='PLAYING'"),
+        "R15a actual six-player UI starts");
+    const original=await backend(players[0],"/yacht","GET",null,playerTokens[0]);
+    const matchId=original.data.yacht?.match?.id;
+    check(original.status===200 && Boolean(matchId)
+        && original.data.yacht.match.players.length===6,
+        "R15a exactly six real players joined match");
+    const categories=["ACES","TWOS","THREES","FOURS","FIVES","SIXES",
+        "THREE_OF_KIND","FOUR_OF_KIND","FULL_HOUSE","SMALL_STRAIGHT",
+        "LARGE_STRAIGHT","YACHT","CHANCE"];
+    for(let turn=0;turn<78;turn++){
+        const index=turn%6,page=players[index],token=playerTokens[index];
+        const before=await backend(page,"/yacht","GET",null,token);
+        const match=before.data.yacht?.match;
+        check(before.status===200 && before.data.currentPlayer===true
+            && match?.id===matchId && match.phase==="ACTIVE"
+            && match.completedTurns===turn && match.currentPlayer===index
+            && match.rolls===0,
+            "R15a authorized turn rotation "+turn);
+        let next;
+        if(turn<6){
+            // The seven independent real Chrome contexts may still be
+            // executing a prior ready/refresh operation. A visible enabled
+            // button alone does NOT prove the operation lock is free.
+            await waitRoomIdle(page,"game");
+            await cdp.eval(page,"window.dispatchEvent(new Event('online'));true");
+            await poll(async()=>await cdp.eval(page,
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('roomState').textContent==='PLAYING'"+
+                " && document.getElementById('turnHeadline').textContent==="+
+                    JSON.stringify("현재 턴 · "+match.players[index].displayName)+
+                " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+                " && !document.getElementById('roll').disabled"),
+                "R15a active player "+index+" has an idle, current turn UI");
+            await click(page,"roll");
+            try {
+                next=await poll(async()=>{
+                    const snapshot=await backend(page,"/yacht","GET",null,token);
+                    const after=snapshot.data.yacht?.match;
+                    return snapshot.status===200 && after?.id===matchId
+                        && after.completedTurns===turn && after.rolls===1
+                        && after.version>match.version ? snapshot:null;
+                },"R15a UI roll commits "+index);
+            }catch(error){
+                const dom=await cdp.eval(page,
+                    "({notice:document.getElementById('notice').textContent,"+
+                    "busy:document.getElementById('game').getAttribute('aria-busy'),"+
+                    "turn:document.getElementById('turnHeadline').textContent,"+
+                    "detail:document.getElementById('turnDetail').textContent,"+
+                    "rollDisabled:document.getElementById('roll').disabled})");
+                const snapshot=await backend(page,"/yacht","GET",null,token);
+                const current=snapshot.data.yacht?.match;
+                throw Error(String(error)+"; R15a diagnostic="+JSON.stringify({
+                    turn,index,dom,http:snapshot.status,
+                    serverTurns:current?.completedTurns,
+                    serverRolls:current?.rolls,serverVersion:current?.version,
+                    browserHttpErrors:cdp.network.slice(-5).map(x=>x.status)
+                }));
+            }
+        } else {
+            next=await backend(page,"/yacht/roll","POST",{
+                commandId:"r15a-browser-roll-"+turn,
+                expectedVersion:match.version
+            },token);
+            check(next.status===200 && next.data.yacht?.match?.rolls===1
+                && next.data.yacht.match.version>match.version,
+                "R15a browser-authenticated roll "+turn);
+        }
+        const prediction=next.data.yacht?.availableScores?.points||{};
+        const category=categories.find(key=>
+            Object.prototype.hasOwnProperty.call(prediction,key));
+        check(Boolean(category),"R15a server-legal score "+turn);
+        if(turn<6){
+            const scoreIndex=categories.indexOf(category);
+            await waitRoomIdle(page,"game");
+            await poll(async()=>await cdp.eval(page,
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('turnDetail').textContent.includes('굴림 1 / 3')"+
+                " && document.querySelectorAll('#scoreGrid button')["+
+                    scoreIndex+"]?.disabled===false"),
+                "R15a score button enabled after synchronized roll "+index);
+            await cdp.eval(page,"(()=>{window.confirm=()=>true;"+
+                "document.querySelectorAll('#scoreGrid button')["+
+                scoreIndex+"].click();return true;})()");
+            next=await poll(async()=>{
+                const snapshot=await backend(page,"/yacht","GET",null,token);
+                return snapshot.status===200
+                    && snapshot.data.yacht?.match?.completedTurns===turn+1
+                    ? snapshot:null;
+            },"R15a UI score commits "+index);
+        } else {
+            next=await backend(page,"/yacht/score","POST",{
+                commandId:"r15a-browser-score-"+turn,
+                expectedVersion:next.data.yacht.match.version,
+                category:category.toLowerCase()
+            },token);
+            check(next.status===200,"R15a browser score POST "+turn);
+        }
+        const after=next.data.yacht?.match;
+        check(after?.completedTurns===turn+1
+            && after.currentPlayer===(turn+1)%6
+            && after.phase===(turn===77?"FINISHED":"ACTIVE")
+            && next.data.room?.state===(turn===77?"POST_GAME":"PLAYING"),
+            "R15a 78-turn six-player state "+turn);
+    }
+    for(const viewer of pages){
+        await poll(async()=>await cdp.eval(viewer,
+            "(()=>{const $=id=>document.getElementById(id);"+
+            "return $('roomState').textContent==='POST_GAME'"+
+            "&& $('turnHeadline').textContent==='경기 종료'"+
+            "&& $('standings').children.length===6"+
+            "&& $('roster').children.length===20"+
+            "&& $('roomPopulation').textContent.includes('20 / 20')"+
+            "&& $('playerPopulation').textContent.includes('6 / 6')"+
+            "&& $('roll').disabled"+
+            "&& [...document.querySelectorAll('#scoreGrid button')]"+
+            ".every(b=>b.disabled);})()"),
+            "R15a browser 20-member completed UI",30000);
+    }
+    await cdp.navigate(spectator,path);
+    check(await userToken(spectator,credentialKey)===spectatorToken,
+        "R15a spectator reload retains credential");
+    await poll(async()=>await cdp.eval(spectator,
+        "document.getElementById('roomState').textContent==='POST_GAME'"+
+        " && document.getElementById('standings').children.length===6"),
+        "R15a spectator reload restores six-player scoreboard",20000);
+    console.log("GAME_ROOM_R15A_BROWSER_SIX_PLAYER_CAPACITY_PASSED"+
+        " players=6 spectators=14 members=20 turns=78"+
+        " uiPlayers=6 uiSpectators=1 reload=true");
+}
+
 async function run(){
     const {base,ws}=await launchServer();
     await launchChrome();
@@ -3751,6 +3965,11 @@ async function run(){
         "R14c Drawing lifecycle fixture shutdown");
     const yachtLifecycleFixture=await launchServer();
     await commonRoomLifecycleAcceptance(yachtLifecycleFixture.base,"yacht");
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "R14c Yacht lifecycle fixture shutdown");
+    const sixPlayerFixture=await launchServer();
+    await sixPlayerBrowserCapacityAcceptance(sixPlayerFixture.base);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+

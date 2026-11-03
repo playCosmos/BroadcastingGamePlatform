@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiConsumer;
+import java.util.function.LongSupplier;
 
 /**
  * Durable member-only chat and a monotonic room event log. Neither the
@@ -28,6 +29,7 @@ public final class GameRoomRealtimeService {
     private final GameRoomService rooms;
     private final GameRoomAccessService access;
     private final Clock clock;
+    private final LongSupplier monotonicNanos;
     private final BiConsumer<String, String> broadcast;
     private final ConcurrentHashMap<String, Rate> memberRates = new ConcurrentHashMap<>();
 
@@ -43,10 +45,15 @@ public final class GameRoomRealtimeService {
     public record ChatPage(long next, List<ChatMessage> messages) {}
 
     private static final class Rate {
-        long started = System.nanoTime();
+        private final LongSupplier monotonicNanos;
+        long started;
         int count;
+        Rate(LongSupplier monotonicNanos) {
+            this.monotonicNanos = monotonicNanos;
+            started = monotonicNanos.getAsLong();
+        }
         synchronized boolean allow() {
-            long now = System.nanoTime();
+            long now = monotonicNanos.getAsLong();
             if (now - started >= RATE_WINDOW_NANOS) {
                 started = now;
                 count = 0;
@@ -64,11 +71,21 @@ public final class GameRoomRealtimeService {
                                    GameRoomAccessService access,
                                    BiConsumer<String, String> broadcast,
                                    Clock clock) {
+        this(database,access,broadcast,clock,System::nanoTime);
+    }
+
+    // Package-private monotonic clock seam for deterministic rate-limit probes.
+    // Production callers always use System.nanoTime, never a wall clock.
+    GameRoomRealtimeService(DatabaseAccess database,
+                            GameRoomAccessService access,
+                            BiConsumer<String, String> broadcast,
+                            Clock clock, LongSupplier monotonicNanos) {
         this.database = Objects.requireNonNull(database);
         this.rooms = new GameRoomService(database, clock);
         this.access = Objects.requireNonNull(access);
         this.broadcast = Objects.requireNonNull(broadcast);
         this.clock = Objects.requireNonNull(clock);
+        this.monotonicNanos = Objects.requireNonNull(monotonicNanos);
     }
 
     /**
@@ -187,7 +204,7 @@ public final class GameRoomRealtimeService {
             }
             // Idempotent retries must not consume the sender's chat quota.
             String rateKey = self.roomId() + ":" + self.memberId();
-            if (!memberRates.computeIfAbsent(rateKey,key -> new Rate()).allow()) {
+            if (!memberRates.computeIfAbsent(rateKey,key -> new Rate(monotonicNanos)).allow()) {
                 throw new GameRoomService.RoomConflict("chat rate exceeded");
             }
             long sequence = nextSequence(connection, self.roomId());
