@@ -863,11 +863,17 @@ async function canvasQueueSessionAcceptance(base){
         window.__r13vRelease=null;
         window.__r13vOldWrites=0;
         window.__r13vNewWrites=0;
+        window.__r13vOldStrokeIds=new Set();
+        window.__r13vCrossRoomWrites=[];
         window.fetch=(url,options={})=>{
             const path=typeof url==="string"?url:url?.url;
             if(path==="/api/v1/room-membership/drawing/canvas"){
                 const bearer=options.headers?.Authorization||"";
+                const evt=JSON.parse(options.body||"{}").event;
+                const strokeId=evt?.payload?.strokeId||
+                    evt?.payload?.stroke?.strokeId||"";
                 if(bearer===oldBearer){
+                    if(strokeId)window.__r13vOldStrokeIds.add(strokeId);
                     window.__r13vOldWrites++;
                     if(!window.__r13vHeld){
                         window.__r13vHeld=true;
@@ -875,7 +881,11 @@ async function canvasQueueSessionAcceptance(base){
                             window.__r13vRelease=resolve;
                         });
                     }
-                }else window.__r13vNewWrites++;
+                }else{
+                    window.__r13vNewWrites++;
+                    if(strokeId && window.__r13vOldStrokeIds.has(strokeId))
+                        window.__r13vCrossRoomWrites.push(evt.type);
+                }
             }
             return original(url,options);
         };
@@ -949,8 +959,6 @@ async function canvasQueueSessionAcceptance(base){
     const inkBeforeLateOld=await cdp.eval(mobile,inkSamples);
     check(inkBeforeLateOld>10,
         "new member's own native ink has been painted before stale response");
-    const newWritesBeforeLateOld=await cdp.eval(mobile,
-        "window.__r13vNewWrites");
     await cdp.eval(mobile,`(()=>{
         const release=window.__r13vRelease;
         if(!release)throw Error("missing held old canvas request");
@@ -964,9 +972,9 @@ async function canvasQueueSessionAcceptance(base){
     check(await cdp.eval(mobile,inkSamples)>10,
         "late successful old canvas response cannot clear new room ink");
     check(await cdp.eval(mobile,
-        "window.__r13vOldWrites===1 && window.__r13vNewWrites==="+
-        String(newWritesBeforeLateOld)),
-        "old queued strokes never POST with new room's membership bearer");
+        "window.__r13vOldWrites===1 && "+
+        "window.__r13vCrossRoomWrites.length===0"),
+        "old stroke IDs never POST with replacement room bearer");
     check(await userToken(mobile,
         "gamecenter.drawing.room.member.v1")===freshToken,
         "stale canvas queue cannot replace new anonymous member");
@@ -989,6 +997,8 @@ async function canvasQueueSessionAcceptance(base){
         delete window.__r13vHeld;
         delete window.__r13vOldWrites;
         delete window.__r13vNewWrites;
+        delete window.__r13vOldStrokeIds;
+        delete window.__r13vCrossRoomWrites;
         return true;
     })()`);
 }
@@ -2548,6 +2558,43 @@ async function telephoneBrowserAcceptance(base,coop){
     const nextRoomCode=await getRoom(switcher,"#roomCode");
     check(/^[A-HJ-NP-Z2-9]{6}$/.test(nextRoomCode),
         "independent target hosted room remains available");
+    // R13x: pause the incoming room read; the previous room's private
+    // prompt and invitation must disappear before the new room resolves.
+    await cdp.eval(host,`(()=>{
+        const forwarded=window.fetch.bind(window);
+        const previousBearer=${JSON.stringify("Bearer "+oldPresenterToken)};
+        window.__r13xForwarded=forwarded;
+        window.__r13xDrawingHeld=false;
+        window.__r13xDrawingRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            const bearer=options.headers?.Authorization||"";
+            if(path==="/api/v1/room-membership/drawing" && bearer &&
+               bearer!==previousBearer && !window.__r13xDrawingHeld){
+                window.__r13xDrawingHeld=true;
+                return new Promise((resolve,reject)=>{
+                    window.__r13xDrawingRelease=()=>
+                        forwarded(url,options).then(resolve,reject);
+                });
+            }
+            return forwarded(url,options);
+        };
+        document.getElementById("drawerWord").textContent=
+            "PRIVATE OLD ROOM ANSWER";
+        document.getElementById("drawerWord").hidden=false;
+        document.getElementById("inviteOutput").textContent=
+            "https://old-room.invalid/#invite=old-secret";
+        document.getElementById("copyInvite").hidden=false;
+        document.getElementById("promptForm").elements.answer.value=
+            "old private pending answer";
+        document.getElementById("guessForm").elements.text.value=
+            "old private pending guess";
+        document.getElementById("chatForm").elements.text.value=
+            "old private unsent message";
+        document.getElementById("broadcastForm").elements.grant.value=
+            "old private operator grant";
+        return true;
+    })()`);
     await fill(host,"publicJoinForm",{
         roomCode:nextRoomCode,displayName:"Former gallery presenter",
         seatRole:"SPECTATOR"
@@ -2557,6 +2604,31 @@ async function telephoneBrowserAcceptance(base,coop){
             "gamecenter.drawing.room.member.v1");
         return next && next!==oldPresenterToken?next:null;
     },"presenter tab accepts independent spectator membership");
+    await poll(async()=>await cdp.eval(host,
+        "window.__r13xDrawingHeld===true"),
+        "replacement room initial drawing GET held for private-view teardown");
+    check(await cdp.eval(host,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("drawerWord").hidden && $("drawerWord").textContent==="" &&
+            $("inviteOutput").textContent==="" && $("copyInvite").hidden &&
+            $("operatorRoomId").hidden && $("roomCode").textContent==="" &&
+            $("members").children.length===0 &&
+            $("promptForm").elements.answer.value==="" &&
+            $("guessForm").elements.text.value==="" &&
+            $("chatForm").elements.text.value==="" &&
+            $("broadcastForm").elements.grant.value==="" &&
+            $("roomName").textContent==="게임룸 정보를 불러오는 중...";
+    })()`),"old prompt, invitation and host labels clear before the new GET");
+    await cdp.eval(host,`(()=>{
+        const release=window.__r13xDrawingRelease;
+        if(!release)throw Error("replacement drawing GET was not held");
+        window.fetch=window.__r13xForwarded;
+        release();
+        delete window.__r13xForwarded;
+        delete window.__r13xDrawingRelease;
+        delete window.__r13xDrawingHeld;
+        return true;
+    })()`);
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('roomName').textContent===" +
         "'Hosted again after close'"+
