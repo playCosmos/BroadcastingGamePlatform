@@ -35,8 +35,9 @@ $externalContract = "- name: R14p verify external multi-client WSS field analyze
 $correlatedContract = "- name: R14q verify combined JVM and external WSS field correlation"
 $yachtRecovery = "- name: R14r validate actual packaged Yacht and guest chat recovery"
 $yachtPlayerWs = "- name: R14s verify actual packaged Yacht player WSS reconnect and multiple turns"
+$consistency = "- name: R14t verify real packaged chat duplicates and Yacht command consistency"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $yachtRecovery, $yachtPlayerWs, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $correlatedContract, $yachtRecovery, $yachtPlayerWs, $consistency, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -55,7 +56,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($externalContract) -lt $Release.IndexOf($correlatedContract) -and
            $Release.IndexOf($correlatedContract) -lt $Release.IndexOf($yachtRecovery) -and
            $Release.IndexOf($yachtRecovery) -lt $Release.IndexOf($yachtPlayerWs) -and
-           $Release.IndexOf($yachtPlayerWs) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($yachtPlayerWs) -lt $Release.IndexOf($consistency) -and
+           $Release.IndexOf($consistency) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -272,4 +274,22 @@ if (-not ($Package.IndexOf($yachtRecovery) -lt $Package.IndexOf($yachtPlayerWs) 
     -not $Package.Contains("Upload R14s packaged Yacht player WebSocket evidence")) {
     throw "R14s: actual packaged player acceptance must precede distribution"
 }
-Write-Host "[workflow] R14s actual Yacht player reconnect and multi-turn evidence gate verified"
+# R14t must verify real packaged duplicate/late chat and Yacht command
+# idempotency. No public site, user credentials or 24-hour field files.
+foreach ($workflow in @($Package, $Release)) {
+    if (-not $workflow.Contains($consistency) -or
+        -not $workflow.Contains('-ConsistencyReportPath $consistency') -or
+        -not $workflow.Contains('node --check ./smoke-packaged-yacht-consistency.mjs') -or
+        -not $workflow.Contains('node ./analyze-packaged-yacht-consistency.mjs --self-test') -or
+        -not $workflow.Contains('node ./analyze-packaged-yacht-consistency.mjs "--input=$report" "--summary=$summary"')) {
+        throw "R14t: real packaged duplicate and stale Yacht acceptance gate missing"
+    }
+}
+if (-not ($Package.IndexOf($yachtPlayerWs) -lt $Package.IndexOf($consistency) -and
+           $Package.IndexOf($consistency) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($yachtPlayerWs) -lt $Release.IndexOf($consistency) -and
+           $Release.IndexOf($consistency) -lt $Release.IndexOf($publish)) -or
+    -not $Package.Contains("Upload R14t packaged chat and Yacht consistency evidence")) {
+    throw "R14t: actual packaged consistency results must gate distribution"
+}
+Write-Host "[workflow] R14t real packaged duplicate/cursor and Yacht stale-command acceptance verified"

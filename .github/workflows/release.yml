@@ -146,7 +146,8 @@ jobs:
           $duration = Join-Path $env:RUNNER_TEMP "game-room-r14n-packaged-duration.json"
           $yacht = Join-Path $env:RUNNER_TEMP "game-room-r14r-packaged-yacht.json"
           $playerWs = Join-Path $env:RUNNER_TEMP "game-room-r14s-yacht-player-ws.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs
+          $consistency = Join-Path $env:RUNNER_TEMP "game-room-r14t-consistency.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -269,6 +270,22 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "game-room-r14s-summary.json"
           node ./analyze-packaged-yacht-player-ws.mjs "--input=$report" "--summary=$summary"
           if ($LASTEXITCODE -ne 0) { throw "R14s actual two-player WSS and Yacht turn evidence invalid" }
+          Get-Content $summary
+
+      - name: R14t verify real packaged chat duplicates and Yacht command consistency
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-yacht-consistency.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14t fixture syntax invalid" }
+          node --check ./analyze-packaged-yacht-consistency.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14t analyzer syntax invalid" }
+          node ./analyze-packaged-yacht-consistency.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14t duplicate/stale request negative tests failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14t-consistency.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14t-summary.json"
+          node ./analyze-packaged-yacht-consistency.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14t actual packaged consistency acceptance failed" }
           Get-Content $summary
 
       - name: Create release archive and checksum
