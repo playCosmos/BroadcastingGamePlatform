@@ -1076,9 +1076,23 @@ public final class GameClientHttpServer implements AutoCloseable {
                         throw new IllegalArgumentException(
                             "numeric reveal revision required");
                     long revision=json.get("expectedRevision").getAsLong();
-                    sendJson(exchange,200,sharedDrawing.telephone().present(
+                    var reveal=sharedDrawing.telephone().present(
                         token,roomApiInt(json,"albumIndex"),
-                        roomApiInt(json,"stepIndex"),revision));
+                        roomApiInt(json,"stepIndex"),revision);
+                    // The position was committed before announcing it.
+                    // A failed optional push never rolls back presenter work;
+                    // clients also reconcile from GET and room event replay.
+                    if(roomRealtime!=null && reveal.presentation()!=null
+                        && reveal.presentation().revision()>0) {
+                        try{
+                            roomRealtime.announceTelephonePresentation(
+                                token,reveal.presentation().revision());
+                        }catch(java.sql.SQLException | IllegalStateException ignored) {
+                            System.err.println(
+                                "[telephone] deferred presentation event; snapshot remains authoritative");
+                        }
+                    }
+                    sendJson(exchange,200,reveal);
                 }
                 case "telephone/submit" -> {
                     var json=readTelephoneBody(exchange);

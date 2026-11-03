@@ -42,6 +42,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomTelephoneR13bProbe",
     "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomTelephoneCoopR13cProbe",
     "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomTelephonePresenterR13dProbe",
+    "io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomTelephoneLiveRevealR13eProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomDrawingR5HttpProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomDrawingR5TransportProbe",
     "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomHttpR2Probe",

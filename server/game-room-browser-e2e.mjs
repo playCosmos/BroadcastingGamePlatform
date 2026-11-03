@@ -875,7 +875,18 @@ async function telephoneBrowserAcceptance(base,coop){
     check(await cdp.eval(pages[3],
         "document.getElementById('telephoneStepNext').disabled"),
         "spectator slide controls cannot alter the host presentation");
+    const memberWs=await cdp.eval(pages[3],
+        "(async()=> (await (await fetch('/api/client/config',{cache:'no-store'})).json()).websocketUrl)()");
+    await startMemberObserver(pages[3],final.data.albums.length&&
+        (await backend(host,"/me","GET",null,tokens[0])).data.room.roomId,
+        tokens[3],memberWs);
+    await poll(async()=>await cdp.eval(pages[3],
+        "window.__roomObserver?.events.some(e=>e.includes('room.snapshot'))"),
+        "spectator replay observer authenticated before presentation push");
     await click(host,"telephoneStepNext");
+    await poll(async()=>await cdp.eval(pages[3],
+        "window.__roomObserver?.events.some(e=>e.includes('room.telephone.presentation'))"),
+        "host presentation pushes durable room WebSocket event",2000);
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"+
         " && document.querySelectorAll('#telephoneAlbumEntries article').length===1"),

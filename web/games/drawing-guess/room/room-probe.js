@@ -79,6 +79,12 @@ has(js,'window.TelephoneView.render(telephone,request,refresh,isHost())',
   "presenter permission derives from authenticated host");
 has(server,'sharedDrawing.telephone().present(',
   "server controls canonical reveal cursor for all players");
+has(js,'data.type==="room.telephone.presentation"',
+  "read-only room websocket listens for host reveal cues");
+has(js,'syncTelephoneReveal(data,roomId,secret)',
+  "push reconciles against committed server snapshot");
+has(server,'roomRealtime.announceTelephonePresentation(',
+  "HTTP presenter commit produces durable room event");
 has(js,'mode:coop?"COOP":"NORMAL"',"explicit authoritative telephone mode chosen by host");
 has(html,'id="telephoneReveal"',"album reveal panel exists");
 has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
