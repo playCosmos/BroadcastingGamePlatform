@@ -142,7 +142,8 @@ jobs:
         run: |
           $report = Join-Path $env:RUNNER_TEMP "game-room-r14k-packaged-exe.json"
           $load = Join-Path $env:RUNNER_TEMP "game-room-r14l-packaged-load.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load
+          $ws = Join-Path $env:RUNNER_TEMP "game-room-r14m-packaged-ws.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -170,6 +171,22 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "game-room-r14l-summary.json"
           node ./analyze-packaged-http-soak.mjs "--input=$load" "--summary=$summary" --min-rounds=24
           if ($LASTEXITCODE -ne 0) { throw "R14l packaged HTTP/SQLite workload or JVM measurements invalid" }
+          Get-Content $summary
+
+      - name: R14m verify real packaged spectator WebSocket fanout
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-websocket-fanout.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14m packaged WebSocket client syntax invalid" }
+          node --check ./analyze-packaged-ws-fanout.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14m analyzer syntax invalid" }
+          node ./analyze-packaged-ws-fanout.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14m strict contract self-test failed" }
+          $ws = Join-Path $env:RUNNER_TEMP "game-room-r14m-packaged-ws.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14m-summary.json"
+          node ./analyze-packaged-ws-fanout.mjs "--input=$ws" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14m packaged WS fanout/replay evidence invalid" }
           Get-Content $summary
 
       - name: Create release archive and checksum

@@ -28,8 +28,9 @@ $graceful = "- name: R14h packaged GameRoom graceful exit and restart"
 $telemetry = "- name: R14j validate and summarize soak metrics"
 $processTelemetry = "- name: R14k validate packaged EXE resource samples"
 $packagedLoad = "- name: R14l verify packaged JVM HTTP SQLite soak (48 rounds)"
+$packagedWs = "- name: R14m verify real packaged spectator WebSocket fanout"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -41,7 +42,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($packaged) -lt $Release.IndexOf($graceful) -and
            $Release.IndexOf($graceful) -lt $Release.IndexOf($processTelemetry) -and
            $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($packagedLoad) -and
-           $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($packagedWs) -and
+           $Release.IndexOf($packagedWs) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -125,4 +127,26 @@ if (-not $Package.Contains("Upload R14l packaged HTTP soak metrics") -or
     -not $Package.Contains("game-room-r14l-summary.json")) {
     throw "R14l: sanitized workload metrics must remain inspectable"
 }
-Write-Host "[workflow] R14l packaged JVM sequential HTTP/SQLite soak and release gates verified"
+# R14m: the actual packaged JVM must fan out an authenticated chat event to
+# twelve distinct spectator sockets, close them, then replay the next committed
+# event from a durable cursor. Both Windows workflows enforce this gate.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($packagedWs) -or
+        -not $text.Contains("-WsSpectators 12 -WsReportPath") -or
+        -not $text.Contains("node --check ./smoke-packaged-websocket-fanout.mjs") -or
+        -not $text.Contains("node ./analyze-packaged-ws-fanout.mjs --self-test") -or
+        -not $text.Contains('node ./analyze-packaged-ws-fanout.mjs "--input=$ws" "--summary=$summary"')) {
+        throw "R14m: both workflows must validate real packaged spectator WebSocket fanout"
+    }
+}
+if (-not ($Package.IndexOf($packagedLoad) -lt $Package.IndexOf($packagedWs) -and
+           $Package.IndexOf($packagedWs) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($packagedWs) -and
+           $Release.IndexOf($packagedWs) -lt $Release.IndexOf($publish))) {
+    throw "R14m: packaged WebSocket fanout gate must precede distribution"
+}
+if (-not $Package.Contains("Upload R14m packaged WS fanout metrics") -or
+    -not $Package.Contains("game-room-r14m-summary.json")) {
+    throw "R14m: sanitized packaged WS fanout data must remain inspectable"
+}
+Write-Host "[workflow] R14m packaged spectator fanout/replay publication guards verified"

@@ -61,11 +61,19 @@ public final class GameRoomR3TransportProbe {
             return inbox.poll(300,TimeUnit.MILLISECONDS)==null;
         }
         void expectClose()throws Exception {
-            for(int i=0;i<25;i++){
-                if(closeCode.get()==1008)return;
+            // JDK HttpClient WebSocket onClose delivery can lag behind the
+            // server's close frame on heavily scheduled Windows CI runners.
+            // Keep the same strict 1008 check, only extend the bounded wait.
+            long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
+            while(System.nanoTime()<deadline){
+                int code=closeCode.get();
+                if(code==1008)return;
+                if(code>0)throw new AssertionError(
+                    "expected WebSocket 1008, received "+code);
                 Thread.sleep(80);
             }
-            throw new AssertionError("expected WebSocket 1008: "+closeCode.get());
+            throw new AssertionError(
+                "expected WebSocket 1008 within 8s: "+closeCode.get());
         }
     }
 
