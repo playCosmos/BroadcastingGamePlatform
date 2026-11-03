@@ -2,9 +2,9 @@
 
 ## 공통 게임룸 통합 현황 (2026-11-03)
 
-- **`main` 코드 통합:** Yacht Y0~Y2 및 공통 GameRoom R1~R14w 단계가 병합되어 있습니다. 독립 Yacht/Drawing Guess 브라우저 화면, 회원·방장·플레이어·관전자 정원, 인증·룸 채팅, 복수 방송 채널·Telephone, 회복·WebSocket 및 패키징 테스트를 포함합니다. 기능별 설계와 현재 권한 계약은 [공통 게임룸 계획](./COMMON_GAME_ROOM_PLAN.md), `docs/platform/GAME_ROOM_*.md` 및 실제 코드가 우선합니다.
-- **자동 검증:** [R14w 정확한 커밋 Windows CI](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/41015222549)에서 로컬 Windows 패키지 HTTPS/WSS 인증서 신뢰·호스트명 오류 처리 등이 통과했습니다.
-- **현장 수용 범위:** 공인 CA·실제 WAN·서로 다른 물리 기기, 장시간 SOOP 운영 계정 및 24시간 관측은 아직 자동검증으로 입증되지 않았습니다. **코드 병합을 운영 릴리스·배포 승인으로 해석하지 않습니다.**
+- **`main` 코드 통합:** Yacht Y0~Y2 및 GameRoom R1~R15h를 순차 병합했습니다. 독립 Yacht·Drawing Guess 클라이언트, 플레이어/관전자 전체 정원, 인증·룸 채팅·복수 방송 채널·Telephone, 세션 보호, 공인 인증서 검증을 요구하는 외부 측정 도구와 Windows 패키징 검증을 포함합니다. 최신 권한·DB 계약은 소스 코드와 [공통 게임룸 계획](./COMMON_GAME_ROOM_PLAN.md), `docs/platform/GAME_ROOM_*.md`를 기준으로 확인합니다.
+- **자동 검증 경계:** #116 원본 브랜치의 [정확한 HEAD Windows CI](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/41281520539)가 53개 단계에서 성공했습니다. 로컬 Windows 실행 파일에서 Yacht 6인/20회원 78턴 및 인증 회원 WebSocket, 실제 Chrome/Edge 20개 컨텍스트와 IP당 24소켓 제한·방 간 격리를 검증했습니다. 최종 병합 `main` CI는 별도의 실행 결과가 필요합니다.
+- **현장 수용 범위:** 공인 CA 외부망·NAT, 서로 다른 물리 기기, Safari/iOS/Android 실기기, 장시간 SOOP 계정 및 24시간 현장 관측은 여전히 별도 검증 대상입니다. **코드 병합은 자동으로 프로덕션 릴리스·배포를 승인하지 않습니다.**
 
 ## 목적
 
