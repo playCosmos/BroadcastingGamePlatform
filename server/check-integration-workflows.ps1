@@ -339,3 +339,21 @@ if (-not ($Package.IndexOf($externalYacht) -lt $Package.IndexOf($localTls) -and
     throw "R14v actual packaged TLS/WSS must be verified before publication"
 }
 Write-Host "[workflow] R14v real Windows packaged localhost-only TLS/WSS client acceptance verified"
+# R14w checks genuine certificate trust on the same short-lived TLS endpoint
+# before invoking R14u. Only localhost is contacted; no bearer is available.
+$trustFixture = Get-Content (Join-Path $RepoRoot "server/smoke-packaged-local-tls-client.ps1") -Raw
+$trustVerifier = Get-Content (Join-Path $RepoRoot "server/verify-packaged-local-tls-trust.mjs") -Raw
+foreach ($text in @($Package,$Release)) {
+    if (-not $text.Contains("node --check ./verify-packaged-local-tls-trust.mjs")) {
+        throw "R14w: trust verifier syntax must be gated in Windows package and release"
+    }
+}
+if (-not $trustFixture.Contains('verify-packaged-local-tls-trust.mjs') -or
+    -not $trustFixture.Contains('if($LASTEXITCODE -ne 0){throw "R14w packaged localhost TLS trust controls failed"}') -or
+    -not $trustVerifier.Contains('rejectUnauthorized: true') -or
+    -not $trustVerifier.Contains('"ERR_TLS_CERT_ALTNAME_INVALID"') -or
+    -not $trustVerifier.Contains('await mustReject("localhost", []')) {
+    throw "R14w: positive trust, untrusted root and wrong-hostname acceptance required"
+}
+Write-Host "[workflow] R14w packaged localhost TLS negative trust checks gate distribution"
+

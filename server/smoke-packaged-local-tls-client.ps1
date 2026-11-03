@@ -69,6 +69,12 @@ try {
         } finally {$tcp.Dispose()}
     }
     if(-not $ready){throw "R14v localhost TLS proxy did not listen"}
+    # R14w: against THIS real packaged fixture TLS endpoint, prove that
+    # certificate trust is required and hostname mismatches are rejected.
+    # The verifier has no tokens, API requests, or remote network targets.
+    & node (Join-Path $here "verify-packaged-local-tls-trust.mjs") "--port=$ProxyPort" "--ca=$pemPath" | Out-Null
+    if($LASTEXITCODE -ne 0){throw "R14w packaged localhost TLS trust controls failed"}
+    Write-Host "GAME_ROOM_R14W_PACKAGED_LOCAL_TLS_NEGATIVE_PASSED launch=$Launch checks=3"
     $clientInfo=[Diagnostics.ProcessStartInfo]::new()
     $clientInfo.FileName="node"
     $clientInfo.WorkingDirectory=$here
