@@ -54,13 +54,11 @@ public final class BoardGameDatabaseBackupProbe {
                     // A previous-version test fixture must have the previous
                     // SCHEMA, not merely a decremented PRAGMA. V31 introduced
                     // these tables; dropping them reproduces a real V30 DB.
-                    if (currentSchemaVersion == 30
-                        && previousSchemaVersion == 29) {
-                        // Reproduce the real V32 schema, including removing
-                        // the column introduced by V33 (not just user_version).
-                        statement.execute("DROP TABLE game_room_event");
-                        statement.execute("DROP TABLE game_room_chat");
-                        statement.execute("ALTER TABLE game_room DROP COLUMN event_sequence");
+                    if (currentSchemaVersion == 31
+                        && previousSchemaVersion == 30) {
+                        // V34 added one binding table. Reconstruct a true
+                        // pre-V34 DB, not merely a decremented user_version.
+                        statement.execute("DROP TABLE game_room_yacht_link");
                     } else {
                         throw new IllegalStateException(
                             "refresh pre-migration schema fixture for latest migration");

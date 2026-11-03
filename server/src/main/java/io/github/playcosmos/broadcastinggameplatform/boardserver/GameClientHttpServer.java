@@ -15,6 +15,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAcce
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomModels;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomService;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomYachtService;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParseException;
 import java.util.ConcurrentModificationException;
@@ -88,6 +89,7 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final YachtRoomService yachtGame;
     private final GameRoomAccessService memberRooms;
     private final GameRoomRealtimeService roomRealtime;
+    private final GameRoomYachtService sharedYacht;
     private final AtomicReference<String> adminBootstrapToken;
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
@@ -282,6 +284,20 @@ public final class GameClientHttpServer implements AutoCloseable {
         YachtRoomService yachtGame, GameRoomAccessService memberRooms,
         GameRoomRealtimeService roomRealtime
     ) throws IOException {
+        this(config,workingDirectory,rooms,runtime,adminAuthStore,
+            platformEvents,providers,viewerDraw,drawingGameSync,drawingGame,
+            yachtGame,memberRooms,roomRealtime,null);
+    }
+
+    public GameClientHttpServer(
+        BoardServerConfig config, Path workingDirectory,
+        RoomService rooms, BoardGameRuntimeEngine runtime,
+        AdminAuthStore adminAuthStore, PlatformEventBus platformEvents,
+        ProviderRegistry providers, ViewerDrawService viewerDraw,
+        DrawingSyncService drawingGameSync, DrawingGuessGameService drawingGame,
+        YachtRoomService yachtGame, GameRoomAccessService memberRooms,
+        GameRoomRealtimeService roomRealtime, GameRoomYachtService sharedYacht
+    ) throws IOException {
         var drawingSync = drawingGameSync;
         var normalized = config.normalized();
         this.config = normalized;
@@ -300,6 +316,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         this.yachtGame = yachtGame;
         this.memberRooms = memberRooms;
         this.roomRealtime = roomRealtime;
+        this.sharedYacht = sharedYacht;
         this.adminBootstrapToken = new AtomicReference<>(
             randomToken(24)
         );
@@ -341,6 +358,7 @@ public final class GameClientHttpServer implements AutoCloseable {
         server.createContext("/api/state", this::proxyAdminState);
         server.createContext("/api/board/rooms", this::boardRooms);
         server.createContext("/games/board/", this::serveBoardAsset);
+        server.createContext("/games/yacht/", this::serveYachtAsset);
         server.createContext(
             "/games/drawing-guess/",
             this::serveDrawingGuessAsset
@@ -665,6 +683,10 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             String token = roomApiBearer(exchange);
+            if (suffix.equals("/yacht") || suffix.startsWith("/yacht/")) {
+                sharedYachtApi(exchange,method,suffix,token);
+                return;
+            }
             if (("/events".equals(suffix) || "/chat".equals(suffix))
                 && "GET".equals(method)) {
                 if (roomRealtime == null) {
@@ -806,6 +828,89 @@ public final class GameClientHttpServer implements AutoCloseable {
         } catch (java.sql.SQLException failed) {
             sendJson(exchange, 500, Map.of("error", "room storage unavailable"));
         }
+    }
+
+    private void sharedYachtApi(HttpExchange exchange,String method,
+                                String suffix,String token) throws IOException {
+        if (sharedYacht == null) {
+            sendJson(exchange,503,Map.of("error","Yacht membership unavailable"));
+            return;
+        }
+        try {
+            if ("/yacht".equals(suffix) && "GET".equals(method)) {
+                sendJson(exchange,200,sharedYachtView(sharedYacht.state(token)));
+                return;
+            }
+            if (!"POST".equals(method)) {
+                exchange.sendResponseHeaders(405,-1);
+                exchange.close();
+                return;
+            }
+            if ("/yacht/start".equals(suffix)) {
+                readYachtBody(exchange,Set.of());
+                sendJson(exchange,200,sharedYachtView(sharedYacht.start(token)));
+                return;
+            }
+            String action=suffix.substring("/yacht/".length());
+            if (!Set.of("roll","hold","score").contains(action)) {
+                sendJson(exchange,404,Map.of("error","unknown Yacht member action"));
+                return;
+            }
+            JsonObject body=readYachtBody(exchange,Set.of(
+                "commandId","expectedVersion","held","category"));
+            String commandId=roomApiText(body,"commandId");
+            if (!body.has("expectedVersion")
+                || !body.get("expectedVersion").isJsonPrimitive()
+                || !body.get("expectedVersion").getAsJsonPrimitive().isNumber()
+                || !body.get("expectedVersion").getAsString()
+                    .matches("(?:0|[1-9][0-9]{0,14})")) {
+                throw new IllegalArgumentException("Yacht expectedVersion required");
+            }
+            List<Boolean> held=null;
+            if (body.has("held")) {
+                if (!"hold".equals(action) || !body.get("held").isJsonArray()
+                    || body.getAsJsonArray("held").size()!=5) {
+                    throw new IllegalArgumentException("invalid Yacht hold mask");
+                }
+                var flags=new java.util.ArrayList<Boolean>();
+                for (var die:body.getAsJsonArray("held")) {
+                    if (!die.isJsonPrimitive()
+                        || !die.getAsJsonPrimitive().isBoolean()) {
+                        throw new IllegalArgumentException("boolean hold flag required");
+                    }
+                    flags.add(die.getAsBoolean());
+                }
+                held=List.copyOf(flags);
+            }
+            String category=body.has("category")
+                ? roomApiText(body,"category") : null;
+            if (category!=null && !"score".equals(action)) {
+                throw new IllegalArgumentException("category only valid for score");
+            }
+            var command=new YachtRoomService.Command(commandId,
+                body.get("expectedVersion").getAsLong(),held,category);
+            sendJson(exchange,200,sharedYachtView(
+                sharedYacht.command(token,action,command)));
+        } catch (GameRoomAccessService.Forbidden denied) {
+            sendJson(exchange,403,Map.of("error","Yacht player permission denied"));
+        } catch (ConcurrentModificationException | IllegalStateException conflict) {
+            sendJson(exchange,409,Map.of("error","Yacht turn or room conflict"));
+        } catch (NoSuchElementException missing) {
+            sendJson(exchange,404,Map.of("error","Yacht room unavailable"));
+        } catch (IllegalArgumentException | JsonParseException invalid) {
+            sendJson(exchange,400,Map.of("error","invalid Yacht member action"));
+        } catch (java.sql.SQLException failed) {
+            sendJson(exchange,500,Map.of("error","Yacht server error"));
+        }
+    }
+
+    private static Object sharedYachtView(GameRoomYachtService.State state) {
+        var view=new java.util.LinkedHashMap<String,Object>();
+        view.put("room",publicRoomMembership(state.room()));
+        view.put("memberId",state.memberId());
+        view.put("currentPlayer",state.currentPlayer());
+        view.put("yacht",state.yacht());
+        return view;
     }
 
     private boolean requireRoomApiOrigin(HttpExchange exchange) throws IOException {
@@ -2824,6 +2929,20 @@ public final class GameClientHttpServer implements AutoCloseable {
         Path allowedRoot = webRoot.resolve("games/board").normalize();
 
         serveFile(exchange, requested, allowedRoot);
+    }
+
+    private void serveYachtAsset(HttpExchange exchange) throws IOException {
+        if (!requireGetOrHead(exchange)) return;
+        String path=exchange.getRequestURI().getPath();
+        if (path==null || !path.startsWith("/games/yacht/")) {
+            exchange.sendResponseHeaders(404,-1);
+            exchange.close();
+            return;
+        }
+        String relative=path.substring("/games/yacht/".length());
+        if (relative.isBlank()) relative="index.html";
+        Path root=webRoot.resolve("games/yacht").normalize();
+        serveFile(exchange,root.resolve(relative).normalize(),root);
     }
 
     private void serveDrawingGuessAsset(HttpExchange exchange)
