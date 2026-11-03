@@ -48,7 +48,8 @@ public final class BoardGameDatabase implements DatabaseAccess {
         "/db/migration/V36__common_room_public_admission.sql",
         "/db/migration/V37__common_room_public_activity.sql",
         "/db/migration/V38__common_room_drawing_broadcast_bindings.sql",
-        "/db/migration/V39__drawing_broadcast_channel_grants.sql"
+        "/db/migration/V39__drawing_broadcast_channel_grants.sql",
+        "/db/migration/V40__drawing_streamer_drawer_roster.sql"
     };
 
     private final Path databasePath;

@@ -66,7 +66,12 @@ for(const path of [
   '"/drawing/guess"','"/drawing/canvas"','"/drawing/complete-round"',
   '"/drawing/finish"','"/chat"'
 ]) has(js,path,"canonical member API "+path);
-has(js,'mode:$("mode").value',"server-defined mode submitted");
+has(js,'mode:rotateStreamers?"ROTATING_DRAWER":$("mode").value,',
+  "new streamer rotation opt-in maps to authoritative native rotating mode");
+has(js,'streamerRotation:rotateStreamers',"server receives explicit multi-streamer intent");
+has(html,'<option value="STREAMER_ROTATION">',"host can choose streamer turns");
+has(js,'"/drawing/streamers/assign"',"host mapping endpoint is member-authenticated");
+has(js,'await refreshStreamerAssignments()',"approved channel roster refresh");
 has(js,'roomCode:code',"room admission uses typed public code");
 has(js,'show("closeRoom",isHost() && room.state!=="PLAYING")',"host cannot close an active match in UI");
 has(js,'request("/host/close","POST",{})',"host close uses member-scoped HTTP");
