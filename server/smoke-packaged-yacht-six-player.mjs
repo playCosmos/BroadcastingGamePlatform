@@ -11,11 +11,15 @@ const report=process.argv.length>=3&&process.argv[2].startsWith("--report=")
     ?process.argv[2].slice(9):"";
 const wsReport=process.argv.length>=4&&process.argv[3].startsWith("--ws-report=")
     ?process.argv[3].slice(12):"";
-const yachtWsReport=process.argv.length===5&&process.argv[4].startsWith("--yacht-ws-report=")
+const yachtWsReport=process.argv.length>=5&&process.argv[4].startsWith("--yacht-ws-report=")
     ?process.argv[4].slice(18):"";
+const memberYachtReport=process.argv.length===6
+    &&process.argv[5].startsWith("--member-yacht-report=")
+    ?process.argv[5].slice(22):"";
 const wsPort=Number(process.env.BGP_R15C_WS_PORT||0);
 const wsEnabled=Boolean(wsReport&&wsPort);
 const yachtWsEnabled=Boolean(yachtWsReport&&wsEnabled);
+const memberYachtEnabled=Boolean(memberYachtReport&&yachtWsEnabled);
 const base="http://127.0.0.1:"+port, api=base+"/api/v1/room-membership";
 const fail=label=>{throw Error("R15b acceptance failed: "+label)};
 const check=(condition,label)=>{if(!condition)fail(label)};
@@ -26,12 +30,15 @@ const configValid=Number.isInteger(port)&&port>=1024&&port<=65535
     &&process.env.BGP_R15B_LAUNCH==="2"
     &&report.length>0&&report.length<1024&&!report.includes("\0")
     &&(process.argv.length===3 && wsPort===0
-        || (process.argv.length===4||process.argv.length===5) && wsEnabled
+        || (process.argv.length>=4&&process.argv.length<=6) && wsEnabled
             &&wsReport.length<1024&&!wsReport.includes("\0")
             &&Number.isInteger(wsPort)&&wsPort>=1024&&wsPort<=65535
             &&wsPort!==port&&typeof WebSocket==="function"
             &&(process.argv.length===4 || yachtWsEnabled
-                &&yachtWsReport.length<1024&&!yachtWsReport.includes("\0")));
+                &&yachtWsReport.length<1024&&!yachtWsReport.includes("\0"))
+            &&(process.argv.length!==6 || memberYachtEnabled
+                &&memberYachtReport.length<1024
+                &&!memberYachtReport.includes("\0")));
 
 async function request(path,method="GET",body=null,token="",expected=200){
     const controller=new AbortController();
@@ -68,11 +75,19 @@ async function waitFrame(item,predicate,label){
 }
 async function joinSocket(token,roomId,cursor=-1){
     const ws=new WebSocket("ws://127.0.0.1:"+wsPort+"/?memberRoomId="+roomId);
-    const item={ws,frames:[],closed:false,closeCode:null};
+    const item={ws,frames:[],closed:false,closeCode:null,
+        nativeYachtEvents:0,invalidNativeYacht:false};
     wsConnections.push(item);
     ws.addEventListener("message",event=>{
         try{
-            item.frames.push(JSON.parse(String(event.data)));
+            const frame=JSON.parse(String(event.data));
+            if(["yacht.dice.rolled","yacht.score.committed"].includes(frame.type)){
+                item.nativeYachtEvents++;
+                if(typeof frame.sequence!=="number"
+                    || frame.sequence!==frame.match?.version)
+                    item.invalidNativeYacht=true;
+            }
+            item.frames.push(frame);
             if(item.frames.length>50)item.frames.shift();
         }catch{}
     });
@@ -145,6 +160,42 @@ async function finishTwentyWs(session){
         {encoding:"utf8",flag:"wx"});
     console.log("GAME_ROOM_R15C_PACKAGED_TWENTY_MEMBER_WS_PASSED"+
         " players=6 spectators=14 sockets=20 live=40 replay=1 turns=78");
+}
+
+// R15e: server native Yacht notifications must reach ALL twenty private
+// member sockets. The same session carries durable room chat; game versions
+// are a separate event cursor and must not alter member-room chat replay.
+async function requireTwentyNativeYacht(items,type,match){
+    const results=await Promise.all(items.map(item=>waitFrame(item,f=>
+        f.type===type && f.sequence===match.version &&
+        f.match?.id===match.id &&
+        f.match?.version===match.version &&
+        f.match?.completedTurns===match.completedTurns,
+        "R15e native game-event member delivery")));
+    check(results.length===20
+        &&items.every(item=>!item.closed&&!item.invalidNativeYacht),
+        "R15e all 20 authenticated room sockets received native game event");
+}
+async function writeTwentyNativeYachtEvidence(items){
+    check(items.length===20
+        &&items.every(item=>!item.closed
+            &&item.ws.readyState===WebSocket.OPEN
+            &&item.nativeYachtEvents===156 &&!item.invalidNativeYacht),
+        "R15e 20 member sockets must receive exactly 156 committed events");
+    const evidence={
+        kind:"packaged-member-yacht-one-socket",schemaVersion:1,
+        source:"packaged-windows-listener-jvm",players:6,spectators:14,
+        authenticatedMemberSockets:20,extraYachtSocketsPerMember:0,
+        legacyYachtSockets:4,sameIpConnectionCap:24,
+        completedTurns:78,committedNativeEvents:156,
+        authenticatedMemberYachtDeliveries:3120,
+        nativeVersionsStrict:true,allTwentySessionsLive:true,
+        roomChatCursorIndependent:true,legacyYachtChannelPreserved:true
+    };
+    await writeFile(memberYachtReport,JSON.stringify(evidence)+"\n",
+        {flag:"wx",encoding:"utf8"});
+    console.log("GAME_ROOM_R15E_PACKAGED_MEMBER_YACHT_WS_PASSED"+
+        " players=6 members=20 sockets=24 gameEvents=156 delivered=3120");
 }
 
 // R15d: four actual Yacht event sockets alongside the twenty authenticated
@@ -366,6 +417,9 @@ async function run(){
             type:"yacht.dice.rolled",sequence:rolled.yacht.match.version,
             version:rolled.yacht.match.version,turns:turn
         });
+        if(memberYachtEnabled)
+            await requireTwentyNativeYacht(wsSession.items,
+                "yacht.dice.rolled",rolled.yacht.match);
         const legal=rolled.yacht.availableScores?.points;
         const category=categories.find(k=>Object.hasOwn(legal||{},k));
         check(Boolean(category),"server-legal score "+turn);
@@ -380,6 +434,9 @@ async function run(){
             &&scored.yacht.match.phase===(turn===77?"FINISHED":"ACTIVE")
             &&scored.room.state===(turn===77?"POST_GAME":"PLAYING"),
             "packaged match turn and room lifecycle "+turn);
+        if(memberYachtEnabled)
+            await requireTwentyNativeYacht(wsSession.items,
+                "yacht.score.committed",scored.yacht.match);
         if(yachtContext){
             yachtContext.expected.push({
                 type:"yacht.score.committed",sequence:scored.yacht.match.version,
@@ -426,6 +483,7 @@ async function run(){
         &&final.yacht.match.completedTurns===78
         &&final.room.state==="POST_GAME",
         "postgame rejected command cannot mutate durable finished game");
+    if(memberYachtEnabled)await writeTwentyNativeYachtEvidence(wsSession.items);
     if(yachtContext)await finishYachtWs(yachtContext);
     if(wsSession)await finishTwentyWs(wsSession);
     const result={kind:"packaged-yacht-six-player-capacity",schemaVersion:1,

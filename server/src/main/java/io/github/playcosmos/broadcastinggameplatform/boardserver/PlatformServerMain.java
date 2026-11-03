@@ -101,7 +101,28 @@ public final class PlatformServerMain {
         var yachtSocket = new AtomicReference<BoardGameWebSocketServer>();
         var yachtGame = new YachtRoomService(database, (code, json) -> {
             BoardGameWebSocketServer socket = yachtSocket.get();
-            if (socket != null) socket.broadcastYacht(code, json);
+            if (socket == null) return;
+            // Keep the legacy Yacht-by-code channel for existing clients.
+            socket.broadcastYacht(code, json);
+            // Common-room browser members already maintain an authenticated
+            // memberRoomId socket. Fan out the same committed native Yacht
+            // event there so 20 users need 20, not 40, sockets per shared IP.
+            // Match link is absent during initial native create/activate;
+            // subsequent authoritative rolls/scores always have the link.
+            try (var connection = database.open();
+                var lookup = connection.prepareStatement("""
+                    SELECT room_id FROM game_room_yacht_link
+                    WHERE yacht_room_code=?
+                    """)) {
+                lookup.setString(1, code);
+                try (var rows = lookup.executeQuery()) {
+                    if (rows.next()) socket.broadcastRoomEvent(rows.getString(1), json);
+                }
+            } catch (java.sql.SQLException failure) {
+                // The native game is already committed. Do not turn an
+                // optional realtime delivery problem into a failed command.
+                System.err.println("[yacht] member event delivery lookup failed");
+            }
         });
         var sharedYacht = new GameRoomYachtService(database,commonRoomAccess,yachtGame);
         // Operator-configured SOOP stream IDs are the only sources eligible

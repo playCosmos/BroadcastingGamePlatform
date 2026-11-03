@@ -15,8 +15,8 @@
   let token = sessionStorage.getItem(STORE) || "";
   let state = null;
   let held = [false, false, false, false, false];
-  let memberSocket = null, gameSocket = null, websocketUrl = "";
-  let lastMemberSequence = -1, configuredRoom = "", configuredYacht = "";
+  let memberSocket = null, websocketUrl = "";
+  let lastMemberSequence = -1, configuredRoom = "";
   let busy = false, admissionBusy = false, running = false;
   let refreshRequested = false, runningGeneration = -1;
   let membershipGeneration = 0, publicRoomsEpoch = 0, chatReadEpoch = 0;
@@ -89,9 +89,9 @@
     resetMemberViews();
     invalidatePublicRooms();
     lastMemberSequence = -1;
-    configuredRoom = "";configuredYacht = "";
-    memberSocket?.close();gameSocket?.close();
-    memberSocket = gameSocket = null;
+    configuredRoom = "";
+    memberSocket?.close();
+    memberSocket = null;
   }
   function clearSession() {
     detachOldSession();
@@ -464,12 +464,17 @@
           if(!owns())return;
           try {
             const data=JSON.parse(event.data);
-            if(data.sequence!=null)
-              lastMemberSequence=Math.max(lastMemberSequence,Number(data.sequence));
+            // Yacht match versions and durable room chat sequence numbers
+            // are independent streams. Never let a game version advance
+            // the room-event replay cursor or chat recovery skips messages.
+            if(typeof data.type==="string" && data.type.startsWith("room.")
+               &&Number.isSafeInteger(data.sequence) && data.sequence>=0)
+              lastMemberSequence=Math.max(lastMemberSequence,data.sequence);
             if(data.type==="room.chat.message" || data.type==="room.chat.deleted")
               refreshChat(generation,credential).catch(()=>{});
             if(data.type==="room.snapshot" || data.type==="room.member.joined"
-              || data.type==="room.member.readyChanged")
+              || data.type==="room.member.readyChanged"
+              || (typeof data.type==="string" && data.type.startsWith("yacht.")))
               refresh();
           } catch { /* ignore invalid network data */ }
         });
@@ -479,26 +484,9 @@
           },1800);
         });
       }
-      const yachtCode=state.yacht?.roomCode||"";
-      if(configuredYacht!==yachtCode) {
-        gameSocket?.close();
-        configuredYacht=yachtCode;
-        gameSocket=null;
-        if(yachtCode) {
-          const socket=new WebSocket(websocketUrl
-            +(websocketUrl.includes("?")?"&":"?")
-            +"yachtCode="+encodeURIComponent(yachtCode));
-          gameSocket=socket;
-          const owns=()=>currentMembership(generation,credential)
-            && socket===gameSocket && configuredYacht===yachtCode;
-          socket.addEventListener("message",()=>{if(owns())refresh();});
-          socket.addEventListener("close",()=>{
-            if(owns())setTimeout(()=>{
-              if(owns()){configuredYacht="";refresh();}
-            },1800);
-          });
-        }
-      }
+      // Native Yacht game events now arrive through the same authenticated
+      // member socket; opening an additional public yachtCode socket per tab
+      // would exceed the server's 24/IP connection cap for 20 room members.
     } catch {/* polling remains authoritative if WS unavailable */}
   }
 
@@ -598,7 +586,6 @@
   function resumeSession() {
     if (!token) return;
     if (memberSocket?.readyState >= WebSocket.CLOSING) configuredRoom = "";
-    if (gameSocket?.readyState >= WebSocket.CLOSING) configuredYacht = "";
     refresh();
   }
   document.addEventListener("visibilitychange", () => {

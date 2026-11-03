@@ -223,7 +223,8 @@ jobs:
           $sixPlayer = Join-Path $env:RUNNER_TEMP "game-room-r15b-packaged-six-player.json"
           $twentyWs = Join-Path $env:RUNNER_TEMP "game-room-r15c-packaged-twenty-ws.json"
           $yachtEvents = Join-Path $env:RUNNER_TEMP "game-room-r15d-packaged-yacht-events.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame -SixPlayerReportPath $sixPlayer -TwentyWsReportPath $twentyWs -YachtWsEventsReportPath $yachtEvents
+          $memberYacht = Join-Path $env:RUNNER_TEMP "game-room-r15e-packaged-member-yacht.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame -SixPlayerReportPath $sixPlayer -TwentyWsReportPath $twentyWs -YachtWsEventsReportPath $yachtEvents -MemberYachtReportPath $memberYacht
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -530,6 +531,33 @@ jobs:
           node ./analyze-packaged-yacht-ws-events.mjs "--input=$report" "--summary=$summary"
           if ($LASTEXITCODE -ne 0) { throw "R15d real packaged Yacht event order and gap replay invalid" }
           Get-Content $summary
+
+      - name: R15e verify native Yacht events to all 20 authenticated member WebSockets
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-yacht-six-player.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R15e packaged single member socket client invalid" }
+          node --check ./analyze-packaged-member-yacht-ws.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R15e packaged member WS analyzer invalid" }
+          node ./analyze-packaged-member-yacht-ws.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R15e analyzer negative contract invalid" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r15e-packaged-member-yacht.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r15e-summary.json"
+          node ./analyze-packaged-member-yacht-ws.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R15e actual member game notification fanout invalid" }
+          Get-Content $summary
+
+      - name: Upload R15e authenticated member native Yacht event evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GameRoom-R15e-Packaged-Member-Yacht-Events
+          path: |
+            ${{ runner.temp }}/game-room-r15e-packaged-member-yacht.json
+            ${{ runner.temp }}/game-room-r15e-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       - name: Upload R15d actual packaged Yacht live event evidence
         if: always()

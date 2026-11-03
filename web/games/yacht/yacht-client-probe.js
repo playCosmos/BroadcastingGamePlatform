@@ -113,5 +113,15 @@ check(/if\(!current\(\)\)return;\s*state=next;/.test(js),
   "old member state commits only after ownership check");
 check(/if\(!current\(\)\)return;\s*running=false;runningGeneration=-1;/.test(js),
   "old read finally cannot unlock a new refresh");
+// R15e: one authenticated member socket per browser tab also receives native
+// Yacht events; game version numbers cannot corrupt room chat replay cursors.
+check(!js.includes("gameSocket") && !js.includes("configuredYacht")
+    && !js.includes('+"yachtCode="'),
+    "Yacht member UI must never open duplicate game WebSocket");
+check(js.includes('data.type.startsWith("yacht.")')
+    && js.includes('data.type.startsWith("room.")'),
+    "Yacht and room events share one socket but preserve independent cursors");
+check(js.includes('type:"room.subscribe",token:credential,afterSequence:lastMemberSequence'),
+    "single socket must remain authenticated and reconnect with room cursor");
 console.log("YACHT_R4_CLIENT_PASSED checks=" + checks
   + " independent=true token=per-tab role=member chat=safe");
