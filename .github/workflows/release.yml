@@ -145,7 +145,8 @@ jobs:
           $ws = Join-Path $env:RUNNER_TEMP "game-room-r14m-packaged-ws.json"
           $duration = Join-Path $env:RUNNER_TEMP "game-room-r14n-packaged-duration.json"
           $yacht = Join-Path $env:RUNNER_TEMP "game-room-r14r-packaged-yacht.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht
+          $playerWs = Join-Path $env:RUNNER_TEMP "game-room-r14s-yacht-player-ws.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -252,6 +253,22 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "game-room-r14r-summary.json"
           node ./analyze-packaged-yacht-recovery.mjs "--input=$report" "--summary=$summary"
           if ($LASTEXITCODE -ne 0) { throw "R14r actual packaged Yacht/game chat restart verification failed" }
+          Get-Content $summary
+
+      - name: R14s verify actual packaged Yacht player WSS reconnect and multiple turns
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-yacht-player-ws.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14s real player worker syntax invalid" }
+          node --check ./analyze-packaged-yacht-player-ws.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14s player analyzer syntax invalid" }
+          node ./analyze-packaged-yacht-player-ws.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14s player WS/turn mutation contracts failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14s-yacht-player-ws.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14s-summary.json"
+          node ./analyze-packaged-yacht-player-ws.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14s actual two-player WSS and Yacht turn evidence invalid" }
           Get-Content $summary
 
       - name: Create release archive and checksum
