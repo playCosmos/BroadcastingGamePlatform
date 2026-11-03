@@ -7,8 +7,12 @@
 import {writeFile} from "node:fs/promises";
 
 const port=Number(process.env.BGP_R15B_HTTP_PORT);
-const report=process.argv.length===3&&process.argv[2].startsWith("--report=")
+const report=process.argv.length>=3&&process.argv[2].startsWith("--report=")
     ?process.argv[2].slice(9):"";
+const wsReport=process.argv.length===4&&process.argv[3].startsWith("--ws-report=")
+    ?process.argv[3].slice(12):"";
+const wsPort=Number(process.env.BGP_R15C_WS_PORT||0);
+const wsEnabled=Boolean(wsReport&&wsPort);
 const base="http://127.0.0.1:"+port, api=base+"/api/v1/room-membership";
 const fail=label=>{throw Error("R15b acceptance failed: "+label)};
 const check=(condition,label)=>{if(!condition)fail(label)};
@@ -17,7 +21,12 @@ const categories=["ACES","TWOS","THREES","FOURS","FIVES","SIXES",
     "LARGE_STRAIGHT","YACHT","CHANCE"];
 check(Number.isInteger(port)&&port>=1024&&port<=65535
     &&process.env.BGP_R15B_LAUNCH==="2"
-    &&report.length>0&&report.length<1024&&!report.includes("\0"),
+    &&report.length>0&&report.length<1024&&!report.includes("\0")
+    &&(process.argv.length===3 && wsPort===0
+        || process.argv.length===4 && wsEnabled
+            &&wsReport.length<1024&&!wsReport.includes("\0")
+            &&Number.isInteger(wsPort)&&wsPort>=1024&&wsPort<=65535
+            &&wsPort!==port&&typeof WebSocket==="function"),
     "required disposable second packaged listener and report path");
 
 async function request(path,method="GET",body=null,token="",expected=200){
@@ -38,6 +47,101 @@ async function request(path,method="GET",body=null,token="",expected=200){
 }
 const state=token=>request("/yacht","GET",null,token);
 const post=(path,token,data,code=200)=>request(path,"POST",data,token,code);
+
+// R15c: real packaged member-room WebSocket fanout for 20 identities.
+// Never log credentials or real room IDs; preserve per-IP connection caps.
+const wsConnections=[];
+const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
+async function waitFrame(item,predicate,label){
+    const until=Date.now()+15000;
+    while(Date.now()<until){
+        const seen=item.frames.find(predicate);
+        if(seen)return seen;
+        check(!item.closed,"R15c unexpected close while "+label);
+        await sleep(70);
+    }
+    throw Error("R15c WebSocket timeout "+label);
+}
+async function joinSocket(token,roomId,cursor=-1){
+    const ws=new WebSocket("ws://127.0.0.1:"+wsPort+"/?memberRoomId="+roomId);
+    const item={ws,frames:[],closed:false,closeCode:null};
+    wsConnections.push(item);
+    ws.addEventListener("message",event=>{
+        try{
+            item.frames.push(JSON.parse(String(event.data)));
+            if(item.frames.length>50)item.frames.shift();
+        }catch{}
+    });
+    ws.addEventListener("close",event=>{item.closed=true;item.closeCode=event.code});
+    const until=Date.now()+15000;
+    while(ws.readyState===WebSocket.CONNECTING&&Date.now()<until)await sleep(50);
+    check(ws.readyState===WebSocket.OPEN,"R15c packaged member WS connects");
+    ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence:cursor}));
+    const snapshot=await waitFrame(item,x=>x.type==="room.snapshot","snapshot");
+    check(snapshot.roomId===roomId&&snapshot.playerCount===6
+        &&snapshot.memberCount===20
+        &&Number.isSafeInteger(snapshot.lastSequence),
+        "R15c authenticated WS snapshot includes six of twenty");
+    return item;
+}
+async function closeSocket(item){
+    if(item.closed)return;
+    item.ws.close(1000,"fixture complete");
+    const until=Date.now()+15000;
+    while(!item.closed&&Date.now()<until)await sleep(50);
+    check(item.closed && (item.closeCode===1000||item.closeCode===1001),
+        "R15c clean member WS shutdown");
+}
+async function deliverTwenty(items,hostToken,messageId){
+    const result=await post("/chat",hostToken,{
+        messageId,text:"R15c twenty-member packaged chat"},201);
+    check(result.messageId===messageId
+        &&Number.isSafeInteger(result.sequence),
+        "R15c chat commits to real packaged SQLite");
+    for(const item of items){
+        const event=await waitFrame(item,x=>x.type==="room.chat.message"
+            &&x.messageId===messageId,"member event");
+        check(event.sequence===result.sequence,
+            "R15c twenty authenticated sockets receive same event");
+    }
+    return result.sequence;
+}
+async function startTwentyWs(roomId,tokens,hostToken){
+    const items=[];
+    for(const token of tokens){
+        items.push(await joinSocket(token,roomId));
+        await sleep(80);
+    }
+    check(items.length===20&&items.every(item=>!item.closed
+        &&item.ws.readyState===WebSocket.OPEN),
+        "R15c twenty real concurrent sockets remain connected");
+    const first=await deliverTwenty(items,hostToken,"r15cChatFirst");
+    return {items,roomId,first,hostToken,replayToken:tokens[19]};
+}
+async function finishTwentyWs(session){
+    check(session.items.every(item=>!item.closed
+        &&item.ws.readyState===WebSocket.OPEN),
+        "R15c twenty real sockets stay alive across 78 Yacht turns");
+    const second=await deliverTwenty(session.items,session.hostToken,
+        "r15cChatFinal");
+    check(second>session.first,"R15c final event cursor advances");
+    for(const item of session.items)await closeSocket(item);
+    const again=await joinSocket(session.replayToken,session.roomId,session.first);
+    const replay=await waitFrame(again,x=>x.type==="room.chat.message"
+        &&x.messageId==="r15cChatFinal","replayed spectator chat");
+    check(replay.sequence===second,"R15c reconnect recovers missed chat");
+    await closeSocket(again);
+    const result={kind:"packaged-twenty-member-ws",schemaVersion:1,
+        source:"packaged-windows-listener-jvm",players:6,spectators:14,
+        concurrentSockets:20,authenticatedSnapshots:21,
+        liveEventDeliveries:40,replayedEvents:1,cleanCloses:21,
+        survivedCompletedTurns:78,finalCursorAdvanced:true,
+        allSocketsStayedLive:true};
+    await writeFile(wsReport,JSON.stringify(result)+"\n",
+        {encoding:"utf8",flag:"wx"});
+    console.log("GAME_ROOM_R15C_PACKAGED_TWENTY_MEMBER_WS_PASSED"+
+        " players=6 spectators=14 sockets=20 live=40 replay=1 turns=78");
+}
 
 async function run(){
     const hosted=await post("/public/hosted","",{
@@ -94,6 +198,9 @@ async function run(){
         gameId:"yacht",roomCode:code,displayName:"Overflow Viewer",
         seatRole:"SPECTATOR"},409);
     await post("/me/seat",viewers[0],{seatRole:"PLAYER"},409);
+    const wsSession=wsEnabled
+        ?await startTwentyWs(capacity.room.roomId,[...players,...viewers],hosted.token)
+        :null;
     for(const token of players)
         await post("/me/ready",token,{ready:true});
     await post("/yacht/start",viewers[0],{},403);
@@ -176,6 +283,7 @@ async function run(){
         &&final.yacht.match.completedTurns===78
         &&final.room.state==="POST_GAME",
         "postgame rejected command cannot mutate durable finished game");
+    if(wsSession)await finishTwentyWs(wsSession);
     const result={kind:"packaged-yacht-six-player-capacity",schemaVersion:1,
         source:"packaged-windows-listener-jvm",players:6,spectators:14,
         members:20,totalCompletedTurns:78,
@@ -194,4 +302,7 @@ try{await run()}catch(error){
     console.error("GAME_ROOM_R15B_PACKAGED_SIX_PLAYER_CAPACITY_FAILED"+
         " reason="+String(error.message||error).replace(/[^\w \-/.:]/g,"").slice(0,160));
     process.exitCode=1;
+}finally{
+    for(const item of wsConnections)
+        if(!item.closed)try{item.ws.close()}catch{}
 }
