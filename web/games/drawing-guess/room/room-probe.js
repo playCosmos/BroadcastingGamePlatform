@@ -146,6 +146,35 @@ has(telephone,'if(!state.active || state.state==="REVEAL")',"reveal and inactive
 no(telephone,'"/drawing/telephone/advance"',"browser cannot advance server stage");
 
 has(html,'id="telephonePalette"',"telephone drawing has a preset color palette");
+has(html,'id="telephoneShapeTools"',"four mutually exclusive drawing mode controls");
+has(html,'data-tool="PEN" aria-pressed="true"',"freehand is initial selected tool");
+has(html,'data-tool="LINE" aria-pressed="false"',"line tool accessible");
+has(html,'data-tool="RECT" aria-pressed="false"',"rectangle tool accessible");
+has(html,'data-tool="ELLIPSE" aria-pressed="false"',"ellipse tool accessible");
+has(html,'id="telephoneToolHelp"',"drawing tool has readable instructions");
+has(html,'.telephoneShapeTools button{min-height:44px',"shape tools have large touch targets");
+has(telephone,'function shapePoints(tool,origin,end)',"shapes emit a regular polyline");
+has(telephone,'if(tool==="LINE")return [origin,end]',"straight lines have bounded endpoints");
+has(telephone,'if(tool==="RECT")return [',"rectangle has five closed vertices");
+has(telephone,'return Array.from({length:65}',"ellipse has 64 segments plus closure");
+has(telephone,'if(!["PEN","LINE","RECT","ELLIPSE"].includes(next))return',
+  "only enumerated drawing tools are accepted");
+has(telephone,'!canEdit() || pointer!==null',"shape switches require editable idle phase");
+has(telephone,'button.setAttribute("aria-pressed",String(!eraser && drawTool===button.dataset.tool))',
+  "shape button pressed state follows current mode");
+has(telephone,'shapeOrigin=!eraser && drawTool!=="PEN"?point(event):null',
+  "only committed pen/shape gestures create own stroke");
+has(telephone,'activeStroke.points=shapePoints(drawTool,shapeOrigin,point(event))',
+  "shape pointermove previews canonical geometry");
+has(telephone,'if(canceled)strokes=gestureBefore||[]',
+  "canceled gesture cannot persist a shape");
+has(telephone,'if(gestureBefore)remember(gestureBefore)',
+  "one shape commit is one undo entry");
+has(telephone,'if(eraser)drawTool="PEN"', "eraser selection returns to freehand");
+has(telephone,'shapeOrigin=null;', "gesture cleanup resets shape origin");
+has(telephone,'redraw();updateTools();saveDraft();',
+  "committed shape uses R13o private draft recovery");
+
 has(html,'id="telephoneRedo"',"telephone drawing has redo control");
 has(html,'id="telephoneDownload"',"completed gallery can download an album");
 has(html,'id="telephoneReplayTools"',"revealed picture has local replay controls");

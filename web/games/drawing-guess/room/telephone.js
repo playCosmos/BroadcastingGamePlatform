@@ -4,7 +4,8 @@
   let state = {active:false},request = null,refresh = null,phaseKey = "";
   let albumIndex = 0,entryIndex=0,strokes = [],baseStrokes = [],
     activeStroke = null,pointer = null,erasingLocal=false;
-  let penColor="#25374c",penWidth=6,eraser=false;
+  let penColor="#25374c",penWidth=6,eraser=false,drawTool="PEN";
+  let shapeOrigin=null;
   let submitting = false,presenting=false,isPresenter=false;
   const undoHistory=[],redoHistory=[];
   const historyLimit=25;
@@ -54,6 +55,21 @@
       button.setAttribute("aria-pressed",String(!eraser &&
         button.dataset.color.toLowerCase()===penColor.toLowerCase()));
     }
+    for(const button of $("telephoneShapeTools").querySelectorAll("button[data-tool]")){
+      button.disabled=!editable||!idle;
+      button.setAttribute("aria-pressed",String(!eraser && drawTool===button.dataset.tool));
+    }
+    $("telephoneToolHelp").textContent=eraser
+      ?state.mode==="COOP"
+        ?"지우개: 이번 단계에서 추가한 내 획만 삭제합니다."
+        :"지우개: 그린 부분을 흰색으로 덮습니다."
+      :drawTool==="PEN"
+        ?"펜: 드래그하여 자유롭게 그립니다."
+        :drawTool==="LINE"
+          ?"직선: 시작점부터 끝점까지 드래그합니다."
+          :drawTool==="RECT"
+            ?"사각형: 모서리부터 반대 모서리까지 드래그합니다."
+            :"타원: 외곽 영역을 드래그합니다.";
   }
   function remember(before){
     if(before.length===strokes.length &&
@@ -148,6 +164,7 @@
   function resetDraft(){
     strokes=[];baseStrokes=[];undoHistory.length=0;redoHistory.length=0;
     gestureBefore=null;activeStroke=null;pointer=null;erasingLocal=false;
+    shapeOrigin=null;
     paint(draw,[]);
   }
   function paint(canvas,lines) {
@@ -632,6 +649,35 @@
     return {x:Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width)),
             y:Math.max(0,Math.min(1,(event.clientY-rect.top)/rect.height))};
   }
+  // A shape is a *single* canonical polyline, not a new server payload kind.
+  // Every point is normalized by point(event) and within [0,1]. Ellipse's
+  // 64 segments + closure fit the existing 96-point server cap.
+  function shapePoints(tool,origin,end){
+    if(tool==="PEN" ||
+       (origin.x===end.x && origin.y===end.y))return [origin];
+    if(tool==="LINE")return [origin,end];
+    const left=Math.min(origin.x,end.x),right=Math.max(origin.x,end.x);
+    const top=Math.min(origin.y,end.y),bottom=Math.max(origin.y,end.y);
+    if(tool==="RECT")return [
+      {x:left,y:top},{x:right,y:top},{x:right,y:bottom},
+      {x:left,y:bottom},{x:left,y:top}
+    ];
+    const cx=(left+right)/2,cy=(top+bottom)/2;
+    const rx=(right-left)/2,ry=(bottom-top)/2;
+    return Array.from({length:65},(_,i)=>{
+      const theta=i*Math.PI*2/64;
+      return {x:cx+rx*Math.cos(theta),y:cy+ry*Math.sin(theta)};
+    });
+  }
+  $("telephoneShapeTools").addEventListener("click",event=>{
+    const button=event.target.closest("button[data-tool]");
+    if(!button || !canEdit() || pointer!==null)return;
+    const next=button.dataset.tool;
+    if(!["PEN","LINE","RECT","ELLIPSE"].includes(next))return;
+    drawTool=next;
+    eraser=false;
+    updateTools();
+  });
   function eraseOwnStroke(p){
     // Only the current author's unsubmitted overlay is mutable in COOP.
     const near=stroke=>(stroke.points||[]).some(q=>
@@ -647,6 +693,7 @@
     gestureBefore=strokes.slice();
     pointer=event.pointerId;
     erasingLocal=eraser && state.mode==="COOP";
+    shapeOrigin=!eraser && drawTool!=="PEN"?point(event):null;
     if(erasingLocal){
       activeStroke=null;
       eraseOwnStroke(point(event));
@@ -662,7 +709,13 @@
     if(event.pointerId!==pointer || !canEdit())return;
     event.preventDefault();
     if(erasingLocal){eraseOwnStroke(point(event));return;}
-    if(!activeStroke||activeStroke.points.length>=96)return;
+    if(!activeStroke)return;
+    if(shapeOrigin){
+      activeStroke.points=shapePoints(drawTool,shapeOrigin,point(event));
+      redraw();
+      return;
+    }
+    if(activeStroke.points.length>=96)return;
     const p=point(event),last=activeStroke.points[activeStroke.points.length-1];
     if(Math.abs(p.x-last.x)+Math.abs(p.y-last.y)<0.001)return;
     activeStroke.points.push(p);redraw();
@@ -671,8 +724,13 @@
     if(pointer!==event.pointerId)return;
     event.preventDefault();
     if(canceled)strokes=gestureBefore||[];
-    else if(gestureBefore)remember(gestureBefore);
+    else{
+      if(shapeOrigin && activeStroke)
+        activeStroke.points=shapePoints(drawTool,shapeOrigin,point(event));
+      if(gestureBefore)remember(gestureBefore);
+    }
     pointer=null;activeStroke=null;erasingLocal=false;gestureBefore=null;
+    shapeOrigin=null;
     redraw();updateTools();saveDraft();
   }
   draw.addEventListener("pointerup",event=>finishGesture(event));
@@ -698,7 +756,9 @@
   });
   $("telephoneEraser").addEventListener("click",()=>{
     if(!canEdit() || pointer!==null)return;
-    eraser=!eraser;updateTools();
+    eraser=!eraser;
+    if(eraser)drawTool="PEN";
+    updateTools();
   });
   $("telephoneUndo").addEventListener("click",()=>{
     if(!canEdit()||pointer!==null||!undoHistory.length)return;
