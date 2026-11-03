@@ -51,6 +51,17 @@ public final class BoardGameDatabaseBackupProbe {
             for (int cycle = 0; cycle < 6; cycle += 1) {
                 try (var connection = database.open();
                      var statement = connection.createStatement()) {
+                    // A previous-version test fixture must have the previous
+                    // SCHEMA, not merely a decremented PRAGMA. V31 introduced
+                    // these tables; dropping them reproduces a real V30 DB.
+                    if (currentSchemaVersion == 28
+                        && previousSchemaVersion == 27) {
+                        statement.execute("DROP TABLE game_room_member");
+                        statement.execute("DROP TABLE game_room");
+                    } else {
+                        throw new IllegalStateException(
+                            "refresh pre-migration schema fixture for latest migration");
+                    }
                     statement.execute(
                         "PRAGMA user_version=" + previousSchemaVersion
                     );
