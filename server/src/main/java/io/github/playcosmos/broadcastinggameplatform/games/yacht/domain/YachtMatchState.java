@@ -18,7 +18,7 @@ public record YachtMatchState(
     int currentPlayer, int completedTurns, int rolls,
     List<Integer> dice, List<Boolean> held, long version
 ) {
-    public enum Phase { READY, ACTIVE, PAUSED, FINISHED }
+    public enum Phase { READY, ACTIVE, PAUSED, FINISHED, CLOSED }
 
     public record Player(String id, String displayName, Sheet sheet) {
         public Player {
@@ -91,7 +91,9 @@ public record YachtMatchState(
                 throw new IllegalArgumentException("inconsistent scorecard turn ordering");
             }
         }
-        if ((phase == Phase.FINISHED) != (completedTurns == players.size() * 13)
+        if ((phase == Phase.FINISHED && completedTurns != players.size() * 13)
+            || (completedTurns == players.size() * 13
+                && phase != Phase.FINISHED && phase != Phase.CLOSED)
             || (phase == Phase.READY && (completedTurns != 0 || rolls != 0))) {
             throw new IllegalArgumentException("invalid Yacht match lifecycle");
         }
@@ -104,7 +106,8 @@ public record YachtMatchState(
                 throw new IllegalArgumentException("invalid active dice");
             }
         }
-        if ((phase == Phase.READY || phase == Phase.FINISHED) && rolls != 0) {
+        if ((phase == Phase.READY || phase == Phase.FINISHED
+            || phase == Phase.CLOSED) && rolls != 0) {
             throw new IllegalArgumentException("inactive match has a pending roll");
         }
     }
@@ -173,6 +176,13 @@ public record YachtMatchState(
         }
         return transitioned(players, Phase.ACTIVE, currentPlayer,
             completedTurns, rolls, dice, mask);
+    }
+
+    /** Close any nonclosed match, retaining committed scores and event history. */
+    public YachtMatchState close() {
+        if (phase == Phase.CLOSED) throw new IllegalStateException("match already closed");
+        return transitioned(players, Phase.CLOSED, currentPlayer,
+            completedTurns, 0, EMPTY_DICE, NO_HOLD);
     }
 
     public YachtScoring.Choices availableScores() {
