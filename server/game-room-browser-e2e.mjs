@@ -87,6 +87,53 @@ async function launchChrome(){
     cdp=new CDP(devtools.ws);
     await cdp.ready;
 }
+// R15f: observe the REAL browser WebSocket API, not a synthetic socket.
+// Keep only event kinds, sequence numbers and socket states in page memory.
+// Never retain or report bearer tokens, game payloads or chat content.
+const R15F_SOCKET_AUDIT_SCRIPT = String.raw`(()=>{
+    const NativeWebSocket=globalThis.WebSocket;
+    const connections=[];
+    globalThis.__r15fSocketAudit={connections};
+    globalThis.WebSocket=new Proxy(NativeWebSocket,{
+        construct(Target,args){
+            const socket=Reflect.construct(Target,args);
+            const uri=String(args[0]||"");
+            const kind=uri.includes("memberRoomId=")?"member":
+                uri.includes("yachtCode=")?"yacht":"other";
+            const record={kind,opened:false,closed:false,
+                subscriptions:[],events:[],socket};
+            connections.push(record);
+            socket.addEventListener("open",()=>{record.opened=true});
+            socket.addEventListener("close",()=>{record.closed=true});
+            socket.addEventListener("message",event=>{
+                try{
+                    const frame=JSON.parse(String(event.data));
+                    const type=frame.type;
+                    if(type==="room.chat.message" || type==="room.chat.deleted" ||
+                        type==="yacht.dice.rolled" || type==="yacht.score.committed"){
+                        record.events.push({
+                            type,sequence:frame.sequence,
+                            version:frame.match?.version,
+                            turns:frame.match?.completedTurns,
+                            messageId:frame.messageId||null
+                        });
+                    }
+                }catch{}
+            });
+            const send=socket.send.bind(socket);
+            socket.send=function(payload){
+                try{
+                    const command=JSON.parse(String(payload));
+                    if(command.type==="room.subscribe")
+                        record.subscriptions.push(command.afterSequence);
+                }catch{}
+                return send(payload);
+            };
+            return socket;
+        }
+    });
+})()`;
+
 class CDP{
     constructor(url){
         this.nextId=0;this.pending=new Map();this.exceptions=[];this.network=[];
@@ -125,7 +172,7 @@ class CDP{
                 ...(sessionId?{sessionId}:{})}));
         });
     }
-    async page(url){
+    async page(url,{auditWebSockets=false}={}){
         const {browserContextId}=await this.send("Target.createBrowserContext",{
             disposeOnDetach:true});
         const {targetId}=await this.send("Target.createTarget",{
@@ -135,6 +182,9 @@ class CDP{
         await this.send("Runtime.enable",{},sessionId);
         await this.send("Page.enable",{},sessionId);
         await this.send("Network.enable",{},sessionId);
+        if(auditWebSockets)
+            await this.send("Page.addScriptToEvaluateOnNewDocument",
+                {source:R15F_SOCKET_AUDIT_SCRIPT},sessionId);
         const page={browserContextId,targetId,sessionId};
         await this.navigate(page,url);
         return page;
@@ -3461,7 +3511,8 @@ async function commonRoomLifecycleAcceptance(base,game){
 // remaining HTTP commands run inside the authenticated real Chrome contexts.
 async function sixPlayerBrowserCapacityAcceptance(base){
     const path=base+"/games/yacht/";
-    const pages=await Promise.all(Array.from({length:7},()=>cdp.page(path)));
+    const pages=await Promise.all(Array.from({length:7},()=>
+        cdp.page(path,{auditWebSockets:true})));
     const players=pages.slice(0,6),spectator=pages[6];
     await fill(players[0],"createRoom",{
         name:"R15a Chrome six-player capacity",
@@ -3496,6 +3547,17 @@ async function sixPlayerBrowserCapacityAcceptance(base){
     check(playerTokens.every(Boolean) && Boolean(spectatorToken)
         && new Set([...playerTokens,spectatorToken]).size===7,
         "R15a independent Chrome member credentials");
+    // Seven independent real Chrome pages should each create exactly one
+    // authenticated member socket, no redundant public Yacht socket.
+    await poll(async()=>{
+        const live=await Promise.all(pages.map(p=>cdp.eval(p,
+            "(()=>{const a=window.__r15fSocketAudit;return a && "+
+            "a.connections.length===1 && "+
+            "a.connections[0].kind==='member' && "+
+            "a.connections[0].opened && !a.connections[0].closed && "+
+            "a.connections[0].subscriptions.length===1;})()")));
+        return live.every(Boolean);
+    },"R15f seven independent Chrome member sockets established",22000);
     const spectatorTokens=[spectatorToken];
     for(let i=1;i<14;i++){
         const admitted=await backend(spectator,"/public/join","POST",{
@@ -3643,6 +3705,74 @@ async function sixPlayerBrowserCapacityAcceptance(base){
             && next.data.room?.state===(turn===77?"POST_GAME":"PLAYING"),
             "R15a 78-turn six-player state "+turn);
     }
+    // R15f proof: actual Chrome/Edge sockets, not Node WS clients,
+    // receive the native Yacht fanout for each of the 78 roll+score turns.
+    const expectedNative=156;
+    await poll(async()=>{
+        const counts=await Promise.all(pages.map(p=>cdp.eval(p,
+            "(()=>{const a=window.__r15fSocketAudit;"+
+            "if(!a||a.connections.length!==1 || "+
+            "a.connections[0].kind!=='member')return -1;"+
+            "return a.connections[0].events.filter(e=>"+
+            "e.type==='yacht.dice.rolled'||"+
+            "e.type==='yacht.score.committed').length;})()")));
+        return counts.every(x=>x===expectedNative);
+    },"R15f all seven real Chrome tabs receive 156 Yacht events",30000);
+    for(const page of pages){
+        const native=await cdp.eval(page,`window.__r15fSocketAudit
+            .connections[0].events.filter(e=>e.type.startsWith("yacht."))`);
+        check(native.length===156
+            && native.every((e,i)=>e.type===(i%2===0?
+                "yacht.dice.rolled":"yacht.score.committed")
+                &&e.sequence===e.version
+                &&e.turns===Math.floor(i/2)+(i%2)),
+            "R15f native WS version, order, turn contract in real Chrome");
+    }
+    // Validate cursor separation and the browser's actual reconnect:
+    // Yacht event sequences now exceed room chat sequences (~157 vs 1).
+    // Close the browser's native socket, commit a chat message while offline,
+    // then require its real room.subscribe to replay from the CHAT cursor.
+    const chatA=await backend(players[0],"/chat","POST",{
+        messageId:"r15f-browser-before-gap",text:"R15f before disconnect"
+    },playerTokens[0]);
+    check(chatA.status===201&&Number.isSafeInteger(chatA.data.sequence),
+        "R15f committed pre-gap room chat");
+    await poll(async()=>await cdp.eval(spectator,
+        `window.__r15fSocketAudit.connections[0].events.some(e=>
+            e.type==="room.chat.message"&&
+            e.messageId==="r15f-browser-before-gap")`),
+        "R15f first chat received on real Chrome member WS");
+    await cdp.eval(spectator,`(()=>{
+        const c=window.__r15fSocketAudit.connections[0];
+        c.socket.close(1000,"R15f reconnect acceptance");
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(spectator,
+        "window.__r15fSocketAudit.connections[0].closed"),
+        "R15f Chrome member WS closes cleanly");
+    const chatB=await backend(players[0],"/chat","POST",{
+        messageId:"r15f-browser-gap-replay",text:"R15f recovered after disconnect"
+    },playerTokens[0]);
+    check(chatB.status===201 && chatB.data.sequence>chatA.data.sequence,
+        "R15f offline chat committed after first durable sequence");
+    await poll(async()=>await cdp.eval(spectator,
+        "(()=>{const a=window.__r15fSocketAudit;"+
+        "return a.connections.length===2 && "+
+        "a.connections[0].closed && "+
+        "a.connections[1].kind==='member' && "+
+        "a.connections[1].opened && !a.connections[1].closed && "+
+        "a.connections[1].subscriptions.includes("+chatA.data.sequence+") && "+
+        "a.connections[1].events.some(e=>e.type==='room.chat.message'&&"+
+        "e.messageId==='r15f-browser-gap-replay');})()"),
+        "R15f Chrome reconnects with ROOM cursor and replays offline chat",22000);
+    await poll(async()=>await cdp.eval(spectator,
+        "document.getElementById('chatMessages').textContent.includes("+
+        JSON.stringify("R15f recovered after disconnect")+")"),
+        "R15f replayed chat renders in spectator UI");
+    check(await userToken(spectator,credentialKey)===spectatorToken,
+        "R15f WS reconnect preserves private browser membership identity");
+    console.log("GAME_ROOM_R15F_BROWSER_SINGLE_SOCKET_RECOVERY_PASSED"+
+        " tabs=7 perTabSockets=1 nativeEvents=1092 reconnect=1 replay=1");
     for(const viewer of pages){
         await poll(async()=>await cdp.eval(viewer,
             "(()=>{const $=id=>document.getElementById(id);"+

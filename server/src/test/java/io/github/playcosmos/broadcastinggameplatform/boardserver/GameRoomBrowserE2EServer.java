@@ -55,9 +55,29 @@ public final class GameRoomBrowserE2EServer {
         var canvas=new DrawingSyncService(database);
         var repository=new DrawingGuessRepository(database);
         var drawingGame=new DrawingGuessGameService(repository,canvas);
-        var yacht=new YachtRoomService(database,()->1,(code,json)->{});
-        var sharedYacht=new GameRoomYachtService(database,access,yacht);
         var active=new AtomicReference<BoardGameWebSocketServer>();
+        // Mirror PlatformServerMain's committed Yacht event fanout: the
+        // previous browser fixture silently discarded every native event.
+        // Keep legacy code-channel compatibility AND the authenticated
+        // common-room member channel to test the production browser path.
+        var yacht=new YachtRoomService(database,()->1,(code,json)->{
+            var ws=active.get();
+            if(ws==null)return;
+            ws.broadcastYacht(code,json);
+            try(var connection=database.open();
+                var binding=connection.prepareStatement("""
+                    SELECT room_id FROM game_room_yacht_link
+                    WHERE yacht_room_code=?
+                    """)){
+                binding.setString(1,code);
+                try(var rows=binding.executeQuery()){
+                    if(rows.next())ws.broadcastRoomEvent(rows.getString(1),json);
+                }
+            }catch(java.sql.SQLException failure){
+                System.err.println("[yacht] browser fixture member fanout lookup failed");
+            }
+        });
+        var sharedYacht=new GameRoomYachtService(database,access,yacht);
         var realtime=new GameRoomRealtimeService(database,access,(id,event)->{
             var ws=active.get();
             if(ws!=null)ws.broadcastRoomEvent(id,event);
@@ -68,7 +88,7 @@ public final class GameRoomBrowserE2EServer {
                 if(ws!=null)ws.broadcastDrawingEvent(code,event);
             });
         var websocket=new BoardGameWebSocketServer("127.0.0.1",wsPort,
-            code->false,canvas,code->false,access,realtime);
+            code->false,canvas,yacht::exists,access,realtime);
         active.set(websocket);
         websocket.start();
         var http=new GameClientHttpServer(config,root,
