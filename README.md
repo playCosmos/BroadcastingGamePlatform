@@ -23,7 +23,7 @@
 - Provider: SOOP (현재)
 - Provider: CHZZK (추후)
 - Game Module: Board (현재)
-- Game Module: Yacht (계획, Yahtzee 계열)
+- Game Module: Yacht (Y0 순수 점수 엔진 구현 중, Yahtzee 계열; 플레이 기능 미제공)
 - Game Module: Drawing Guess (Classic Guess D0~D6 구현)
 - Broadcast Tool: Viewer Draw (Random/Number + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw 구현)
 - 추가 게임/방송 도구: 독립 모듈로 확장
@@ -55,7 +55,7 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - Board: AVAILABLE
 - Viewer Draw: Core + Number Draw + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
-- Yacht: PLANNED
+- Yacht: Y0 RULES / SCORING 구현 중 (Y1~Y6 PLANNED, 플레이 불가)
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: SOOP IMPLEMENTED / PROVIDER EXPANSION PENDING
 - Viewer Draw Finish Slow Motion/Podium + Goldberg Machine: PLANNED
