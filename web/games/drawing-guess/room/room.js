@@ -36,7 +36,7 @@
   let drawingActive=false,strokeId="",lastPoint=null,sendQueue=Promise.resolve();
   let currentPointer=null,pendingPoints=[],pointTimer=null;
   let refreshBusy=false,rerun=false,busy=false,admissionBusy=false,roundWordId="";
-  let membershipGeneration=0;
+  let membershipGeneration=0,publicRoomsEpoch=0;
   const currentMembership=(generation,credential)=>
     generation===membershipGeneration && credential===secret;
   function clearRoomBoundViews(){
@@ -66,15 +66,29 @@
   const ctx=$("canvas").getContext("2d");
   const strokes=new Map();
 
+  function invalidatePublicRooms(){
+    // The directory can outlive an admission or a voluntary room exit.
+    // Never publish a response that started in an earlier view epoch.
+    publicRoomsEpoch++;
+    $("publicRooms").replaceChildren();
+  }
   async function loadPublicRooms(){
-    const listing=await request("/public/rooms?gameId=drawing_guess","GET",null,"");
+    const epoch=++publicRoomsEpoch;
+    let listing;
+    try{
+      listing=await request("/public/rooms?gameId=drawing_guess","GET",null,"");
+    }catch(e){
+      if(epoch===publicRoomsEpoch)throw e;
+      return false;
+    }
+    if(epoch!==publicRoomsEpoch)return false;
     const list=$("publicRooms");
     list.replaceChildren();
     if(!listing.rooms.length){
       const li=document.createElement("li");
       li.textContent="현재 공개방이 없습니다.";
       list.append(li);
-      return;
+      return true;
     }
     for(const room of listing.rooms){
       const li=document.createElement("li");
@@ -96,6 +110,7 @@
       li.append(details,button);
       list.append(li);
     }
+    return true;
   }
 
   function operation(action,{admission=false}={}){
@@ -153,7 +168,11 @@
     roomBinding="";drawingBinding="";
     chatSequence=-1;
     resetNativeCanvas();
+    invalidatePublicRooms();
     show("room",false);show("admission",true);
+    // Exit, close and revocation all display a new public admission view.
+    // Listing failures must not replace the higher-priority exit notice.
+    loadPublicRooms().catch(()=>{});
   }
   function invalidateSession(){
     const roomId=snapshot?.room?.roomId||"";
@@ -169,6 +188,7 @@
     secret=secretValue;
     snapshot=null;
     clearRoomBoundViews();
+    invalidatePublicRooms();
     sessionStorage.setItem(STORAGE,secretValue);
     try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
     roomBinding="";drawingBinding="";telephone={active:false};
@@ -278,7 +298,9 @@
     }else if(round?.roundId!==roundWordId){
       const generation=membershipGeneration,credential=secret;
       loadPrompt(round.roundId,generation,credential).catch(e=>{
-        if(currentMembership(generation,credential))say(e.message,true);
+        if(currentMembership(generation,credential) &&
+           snapshot?.canDraw && snapshot.game?.activeRound?.roundId===round.roundId)
+          say(e.message,true);
       });
     }
   }
@@ -653,8 +675,8 @@
   });
   $("refreshPublicRooms").addEventListener("click",()=>operation(
     async({current})=>{
-      await loadPublicRooms();
-      if(current())say("공개방 목록을 새로고침했습니다.");
+      const updated=await loadPublicRooms();
+      if(current() && updated)say("공개방 목록을 새로고침했습니다.");
     }
   ));
   $("joinForm").addEventListener("submit",event=>{
@@ -818,7 +840,6 @@
     if(!current())return;
     clearMembership();
     say("방을 닫았습니다. 이 방의 초대권은 더 이상 사용할 수 없습니다.");
-    await loadPublicRooms();
   }));
   $("leave").addEventListener("click",()=>operation(async({send,current,generation,credential})=>{
     if(!confirm("게임룸을 나가시겠습니까? 방장은 먼저 방장을 위임해야 합니다."))return;
@@ -839,7 +860,13 @@
         say("이전 참가 세션이 종료되었습니다. 새 참가 시에도 서버의 입장 정책이 적용됩니다.",true);
     }catch{/* storage unavailable */}
   }
-  if(!secret)loadPublicRooms().catch(e=>say(e.message,true));
+  if(!secret){
+    const generation=membershipGeneration;
+    loadPublicRooms().catch(e=>{
+      if(!secret && membershipGeneration===generation)
+        say(e.message||"공개방 목록 조회 실패",true);
+    });
+  }
   // Background tabs may throttle the 3s poll and socket retry timers.
   // Reconcile immediately on foreground/network recovery, retaining the
   // existing member credential and server-authoritative replay cursors.
