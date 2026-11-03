@@ -204,6 +204,17 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "R14n real packaged listener JVM duration measurements invalid" }
           Get-Content $summary
 
+      - name: R14o verify external field duration analyzer contract
+        working-directory: server
+        shell: pwsh
+        run: |
+          # Do NOT execute an overnight field observation on hosted CI.
+          # check-powershell.ps1 separately parses the read-only field sampler.
+          node --check ./analyze-packaged-jvm-field.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14o field analyzer syntax invalid" }
+          node ./analyze-packaged-jvm-field.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14o 24h/partial trace analyzer self-test failed" }
+
       - name: Create release archive and checksum
         shell: pwsh
         run: |
