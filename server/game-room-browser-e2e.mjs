@@ -4246,6 +4246,10 @@ async function run(){
         "document.getElementById('ready').textContent.includes('취소')"),
         "guest ready toggle reflected in real DOM");
     await click(host,"ready");
+    // The ready response may render an enabled start button while the host's
+    // operation() still owns aria-busy. Clicking during that window is ignored.
+    // Wait for the actual command to finish, not an arbitrary timer delay.
+    await waitRoomIdle(host,"game");
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('start').disabled===false"),"host becomes eligible to start");
     await click(host,"start");
