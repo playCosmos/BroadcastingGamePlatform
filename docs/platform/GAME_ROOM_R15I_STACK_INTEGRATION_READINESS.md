@@ -1,5 +1,23 @@
 # R15i — GameRoom stacked-PR integration readiness and drift audit
 
+## Post-integration audit (2026-11-03)
+
+The historical 2026-10-31 Draft stack below has now been **sequentially merged into `main`**. All 81 canonical Yacht/GameRoom PRs #33–#116 were merged, **excluding unmerged alternative PRs #36, #41 and #59**. The old `--live`, `--live-ci` and `--live-ancestry` modes intentionally validate the **pre-merge all-Draft** chain and must now fail; do not interpret their failure as a regression in the integrated application.
+
+For an operator-invoked **post-merge exact ancestry audit**, run from the repository checkout with Node 22+ and a read-only GitHub token supplied via the environment:
+
+```powershell
+node server/audit-game-room-pr-stack.mjs --self-test
+if (-not $env:GITHUB_TOKEN) { throw "An operator-managed GitHub token is required" }
+node server/audit-game-room-pr-stack.mjs --integrated
+```
+
+The new mode reads closed PRs and the exact current `main` SHA; requires all 81 canonical PRs to be **actually merged** (not merely closed), their merge commit SHA to be valid, and each individual merge commit to be an ancestor of the same `main` HEAD using GitHub compare. It verifies `main` and each PR's merge metadata **again after** the 81 comparisons to detect concurrent changes. Branch refs need not still exist, so an approved later branch cleanup will not invalidate an otherwise healthy history. Unmerged #36/#41/#59 remaining closed is required.
+
+This mode is **read-only** and runs 81 GitHub compares only on explicit operator request. Ordinary Windows CI runs **offline self-tests** for success and negative cases, not the live API audit. Successful merged ancestry does not prove external WAN/CA trust, physical-device operation, SOOP account ownership, 24-hour availability, installer signing, or release approval. Those are separate field-acceptance gates under Issue #122. PR/branch cleanup has its own gated inventory in Issue #119. Never commit credentials or private field reports.
+
+---
+
 ## Verified snapshot — 2026-10-31
 
 GitHub's open-PR collection contained **93 open PRs**, of which **81** form one contiguous Yacht/GameRoom **Draft** stack: **PR #33 (Y0 scoring, base `main`) through PR #116 (R15h)**. The remaining 12 open PRs belong to other feature lines. All 80 child-to-parent relationships in this stack reference the *current exact parent HEAD SHA*, and PR #33's base commit matches `main` at `62ed59928558431e5608e9194f034e53685ef69a`. This checks branch metadata, not code-level conflicts or real mergeability. It is a point-in-time observation, **not** proof that later ref updates or merges will be safe.
