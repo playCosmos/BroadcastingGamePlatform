@@ -288,6 +288,19 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "R14t actual packaged consistency acceptance failed" }
           Get-Content $summary
 
+      - name: R14u verify operator-only external Yacht two-player field contract
+        working-directory: server
+        shell: pwsh
+        run: |
+          # Public HTTPS/WSS, consenting test members and real writes are
+          # OPERATOR ONLY. Hosted CI never contacts external endpoints.
+          node --check ./observe-external-yacht-two-player-field.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14u external client syntax invalid" }
+          node --check ./analyze-external-yacht-two-player-field.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14u analyzer syntax invalid" }
+          node ./analyze-external-yacht-two-player-field.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14u external field analyzer mutation contract failed" }
+
       - name: Create release archive and checksum
         shell: pwsh
         run: |
