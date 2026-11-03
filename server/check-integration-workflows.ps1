@@ -22,17 +22,23 @@ $sourceGuard = '$releaseRef -ne "refs/heads/main"'
 $releaseBranch = "refs/heads/release/"
 $gate = "- name: Real GameRoom Chrome Edge browser E2E"
 $regression = "- name: Run release regression probes"
+$packaged = "- name: R14e packaged GameRoom startup and crash-restart"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $packaged, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
 }
 if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
-           $Release.IndexOf($gate) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($gate) -lt $Release.IndexOf($packaged) -and
+           $Release.IndexOf($packaged) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
     throw "R14d: the workflow gate contract must run in Windows CI"
 }
-Write-Host "[workflow] R14d staged CI branch filters and pre-release browser gate verified"
+if (-not $Package.Contains($packaged) -or
+    -not $Package.Contains("run: ./server/smoke-packaged-game-room-restart.ps1")) {
+    throw "R14e: Windows package CI must run actual packaged executable restart"
+}
+Write-Host "[workflow] R14e staged branches, browser and packaged restart gates verified"
