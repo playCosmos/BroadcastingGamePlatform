@@ -1,11 +1,27 @@
 param(
     [ValidateSet("Crash","Graceful")]
     [string]$StopMode = "Crash",
-    [string]$TelemetryPath = ""
+    [string]$TelemetryPath = "",
+    [ValidateRange(0,10000)]
+    [int]$LoadRounds = 0,
+    [string]$LoadReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
 if ($TelemetryPath -and (Test-Path -LiteralPath $TelemetryPath)) { throw "R14k telemetry output already exists" }
+if ($LoadRounds -gt 0) {
+    if ($LoadRounds -lt 2 -or $StopMode -ne "Graceful" -or
+        [string]::IsNullOrWhiteSpace($LoadReportPath) -or
+        [string]::IsNullOrWhiteSpace($TelemetryPath)) {
+        throw "R14l load requires 2+ rounds, graceful stop, and separate R14k/R14l output paths"
+    }
+    if ([IO.Path]::GetFullPath($LoadReportPath) -eq [IO.Path]::GetFullPath($TelemetryPath) -or
+        (Test-Path -LiteralPath $LoadReportPath)) {
+        throw "R14l telemetry must use a new distinct path"
+    }
+} elseif ($LoadReportPath) {
+    throw "R14l report path requires LoadRounds"
+}
 
 # Exercise the shipped EXE, not just a Java self-check.
 # All database, log and configuration paths are disposable and localhost-only.
@@ -181,6 +197,82 @@ function WriteProcessTelemetry {
         finally { $writer.Dispose() }
     } finally { $stream.Dispose() }
 }
+
+# R14l: bounded HTTP/SQLite workload against the SAME packaged JVM and
+# same persisted room across restart. This does not simulate WebSocket clients.
+$script:LoadSamples = [System.Collections.Generic.List[object]]::new()
+function RunPackagedHttpLoad(
+    [System.Diagnostics.Process]$Launcher, [int]$Launch,
+    [string]$Api, [string]$Listing, [hashtable]$Headers,
+    [string]$RoomCode, [string]$OriginalMessage,
+    [int[]]$Ports, [int]$Rounds
+) {
+    if ($Rounds -eq 0) { return }
+    for ($round = 1; $round -le $Rounds; $round++) {
+        Check (-not $Launcher.HasExited) "R14l packaged app exited during HTTP load"
+        $timer = [Diagnostics.Stopwatch]::StartNew()
+        $directory = Invoke-RestMethod -Uri $Listing -Method Get -TimeoutSec 10
+        Check (@($directory.rooms | Where-Object { $_.roomCode -eq $RoomCode }).Count -eq 1) "R14l hosted room directory invariant failed"
+        $member = Invoke-RestMethod -Uri "$Api/me" -Method Get -Headers $Headers -TimeoutSec 10
+        Check ($member.room.roomCode -eq $RoomCode) "R14l bearer membership was not durable"
+        $writes = 0
+        $latestMessage = $OriginalMessage
+        # Four real committed chat events per process at 24 rounds, paced
+        # to stay well below production anti-abuse rate limits.
+        if ($round % 6 -eq 0) {
+            $latestMessage = ('r14lLoadL{0}R{1}' -f $Launch,$round)
+            $body = @{ messageId = $latestMessage; text = "R14l bounded test message" } | ConvertTo-Json -Compress
+            $posted = Invoke-RestMethod -Uri "$Api/chat" -Method Post -Headers $Headers -ContentType "application/json" -Body $body -TimeoutSec 10
+            Check ($posted.messageId -eq $latestMessage) "R14l new chat write failed"
+            $writes = 1
+        }
+        $chat = Invoke-RestMethod -Uri "$Api/chat?after=-1" -Method Get -Headers $Headers -TimeoutSec 10
+        Check (@($chat.messages | Where-Object { $_.messageId -eq $OriginalMessage }).Count -eq 1) "R14l original chat disappeared"
+        Check (@($chat.messages | Where-Object { $_.messageId -eq $latestMessage }).Count -eq 1) "R14l committed chat not readable"
+        $timer.Stop()
+        $jvm = ResolveListenerJvm $Launcher $Ports
+        try {
+            $script:LoadSamples.Add([ordered]@{
+                launch = $Launch
+                round = $round
+                elapsedMs = [Math]::Round($timer.Elapsed.TotalMilliseconds, 2)
+                requests = 3 + $writes
+                writes = $writes
+                workingSetBytes = [long]$jvm.WorkingSet64
+                privateBytes = [long]$jvm.PrivateMemorySize64
+                threadCount = [int]$jvm.Threads.Count
+                handleCount = [int]$jvm.HandleCount
+                cpuMs = [Math]::Round($jvm.TotalProcessorTime.TotalMilliseconds, 2)
+            })
+        } finally {
+            $jvm.Dispose()
+        }
+        Start-Sleep -Milliseconds 120
+    }
+}
+function WriteLoadTelemetry {
+    if ($LoadRounds -eq 0) { return }
+    Check ($script:LoadSamples.Count -eq (2 * $LoadRounds)) "R14l missing process load samples"
+    $report = [ordered]@{
+        kind = "packaged-http-soak"
+        schemaVersion = 1
+        source = "packaged-windows-listener-jvm"
+        roundsPerLaunch = $LoadRounds
+        listenerOwnerVerified = $true
+        jvmModuleVerified = $true
+        verifiedRestarts = 1
+        verifiedGracefulExits = 2
+        portsReleased = $true
+        roomRecovered = $true
+        samples = @($script:LoadSamples.ToArray())
+    }
+    $stream = [IO.File]::Open($LoadReportPath, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+    try {
+        $writer = [IO.StreamWriter]::new($stream, [Text.UTF8Encoding]::new($false))
+        try { $writer.WriteLine(($report | ConvertTo-Json -Depth 8 -Compress)) }
+        finally { $writer.Dispose() }
+    } finally { $stream.Dispose() }
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -232,6 +324,7 @@ try {
     Check ($posted.messageId -eq $messageId) "chat was persisted before restart"
     $Checks++
     RecordProcessSample $Process 1 "afterChat" @($adminPort,$wsPort,$clientPort)
+    RunPackagedHttpLoad $Process 1 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -256,6 +349,7 @@ try {
     Check (@($messages.messages | Where-Object { $_.messageId -eq $messageId }).Count -eq 1) "durable room chat survives restart"
     $Checks++
     RecordProcessSample $Process 2 "afterReplay" @($adminPort,$wsPort,$clientPort)
+    RunPackagedHttpLoad $Process 2 $api $listing $headers $code $messageId @($adminPort,$wsPort,$clientPort) $LoadRounds
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -263,6 +357,8 @@ try {
         $Process = $null
         $Checks += 5
         WriteProcessTelemetry
+        WriteLoadTelemetry
+        if ($LoadRounds -gt 0) { Write-Host "GAME_ROOM_R14L_PACKAGED_HTTP_SOAK_PASSED roundsPerLaunch=$LoadRounds restarts=1 gracefulExits=2" }
         Write-Host "GAME_ROOM_R14H_PACKAGED_GRACEFUL_EXIT_PASSED checks=$Checks shutdowns=2 ports=3"
     } else {
         Write-Host "GAME_ROOM_R14E_PACKAGED_RESTART_PASSED checks=$Checks"

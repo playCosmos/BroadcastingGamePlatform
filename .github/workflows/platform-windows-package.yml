@@ -212,7 +212,8 @@ jobs:
         shell: pwsh
         run: |
           $report = Join-Path $env:RUNNER_TEMP "game-room-r14k-packaged-exe.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report
+          $load = Join-Path $env:RUNNER_TEMP "game-room-r14l-packaged-load.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -227,6 +228,32 @@ jobs:
           node ./analyze-packaged-process-telemetry.mjs "--input=$report" "--summary=$summary"
           if ($LASTEXITCODE -ne 0) { throw "R14k packaged process telemetry invalid" }
           Get-Content $summary
+
+      - name: R14l verify packaged JVM HTTP SQLite soak (48 rounds)
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./analyze-packaged-http-soak.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14l analyzer syntax invalid" }
+          node ./analyze-packaged-http-soak.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14l analyzer self-test failed" }
+          $load = Join-Path $env:RUNNER_TEMP "game-room-r14l-packaged-load.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14l-summary.json"
+          node ./analyze-packaged-http-soak.mjs "--input=$load" "--summary=$summary" --min-rounds=24
+          if ($LASTEXITCODE -ne 0) { throw "R14l packaged HTTP/SQLite workload or JVM measurements invalid" }
+          Get-Content $summary
+
+      # R14l is disposable sequential HTTP/SQLite workload, not 24h/WAN evidence.
+      - name: Upload R14l packaged HTTP soak metrics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GameRoom-R14l-Packaged-HTTP-Soak
+          path: |
+            ${{ runner.temp }}/game-room-r14l-packaged-load.json
+            ${{ runner.temp }}/game-room-r14l-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
 
       # Isolated fixture JVM observations only: never include credentials,
       # real room identifiers or production server process measurements.
