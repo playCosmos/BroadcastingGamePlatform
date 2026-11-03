@@ -151,7 +151,8 @@ jobs:
           $fullGame = Join-Path $env:RUNNER_TEMP "game-room-r14y-packaged-full-match.json"
           $sixPlayer = Join-Path $env:RUNNER_TEMP "game-room-r15b-packaged-six-player.json"
           $twentyWs = Join-Path $env:RUNNER_TEMP "game-room-r15c-packaged-twenty-ws.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame -SixPlayerReportPath $sixPlayer -TwentyWsReportPath $twentyWs
+          $yachtEvents = Join-Path $env:RUNNER_TEMP "game-room-r15d-packaged-yacht-events.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht -YachtWsReportPath $playerWs -ConsistencyReportPath $consistency -LocalTlsReportPath $localTls -FullGameReportPath $fullGame -SixPlayerReportPath $sixPlayer -TwentyWsReportPath $twentyWs -YachtWsEventsReportPath $yachtEvents
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -371,6 +372,22 @@ jobs:
           $summary = Join-Path $env:RUNNER_TEMP "game-room-r15c-summary.json"
           node ./analyze-packaged-twenty-member-ws.mjs "--input=$report" "--summary=$summary"
           if ($LASTEXITCODE -ne 0) { throw "R15c actual packaged twenty-member WS fanout invalid" }
+          Get-Content $summary
+
+      - name: R15d verify real packaged Yacht WS roll score fanout and replay
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./smoke-packaged-yacht-six-player.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R15d packaged Yacht WS client script invalid" }
+          node --check ./analyze-packaged-yacht-ws-events.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R15d packaged Yacht WS analyzer invalid" }
+          node ./analyze-packaged-yacht-ws-events.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R15d analyzer negative contract invalid" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r15d-packaged-yacht-events.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r15d-summary.json"
+          node ./analyze-packaged-yacht-ws-events.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R15d real packaged Yacht event order and gap replay invalid" }
           Get-Content $summary
 
       - name: Create release archive and checksum
