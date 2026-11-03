@@ -399,7 +399,8 @@
         latest.presentation.revision<(telephone.presentation?.revision??-1))
         return;
       telephone=latest;
-      window.TelephoneView.render(telephone,request,refresh,isHost());
+      window.TelephoneView.render(telephone,request,refresh,isHost(),
+        snapshot?.room?.roomId,snapshot?.memberId);
     }catch{
       if(secret===credential && roomBinding===roomId)
         refresh().catch(()=>{});
@@ -475,7 +476,8 @@
       snapshot=await request("/drawing");
       telephone=await request("/drawing/telephone");
       render();
-      window.TelephoneView.render(telephone,request,refresh,isHost());
+      window.TelephoneView.render(telephone,request,refresh,isHost(),
+        snapshot?.room?.roomId,snapshot?.memberId);
       await socketConnections();await refreshChat();
       if(isHost()){
         await refreshChannels();

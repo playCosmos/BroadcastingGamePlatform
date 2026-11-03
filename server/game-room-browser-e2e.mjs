@@ -1003,6 +1003,59 @@ async function telephoneBrowserAcceptance(base,coop){
         return true;
     })()`);
 
+    // Only a player's own unsent input is durable to this tab. The
+    // authoritative stage/submission count must not change on reload.
+    const localDraftKey="gamecenter.telephone.private-draft.v1";
+    if(!coop){
+        await poll(async()=>await cdp.eval(host,
+            "!document.getElementById('telephoneTextForm').hidden"),
+            "first NORMAL author sees editable private text");
+        await cdp.eval(host,`(()=>{
+            const input=document.getElementById("telephoneText");
+            input.value="Unsubmitted tab-local sentence";
+            input.dispatchEvent(new Event("input",{bubbles:true}));
+            return true;
+        })()`);
+        const saved=await cdp.eval(host,`(()=>{
+            const raw=sessionStorage.getItem(${JSON.stringify(localDraftKey)});
+            return raw?JSON.parse(raw):null;
+        })()`);
+        check(saved?.kind==="TEXT" &&
+            saved.text==="Unsubmitted tab-local sentence" &&
+            !("previousContent" in saved) &&
+            !("token" in saved) && !("albums" in saved),
+            "text drafts contain only own input, no predecessor or credential");
+        const beforeReload=await backend(host,"/drawing/telephone","GET",
+            null,tokens[0]);
+        await cdp.navigate(host,base+"/games/drawing-guess/room/");
+        await poll(async()=>await cdp.eval(host,
+            "!document.getElementById('telephoneTextForm').hidden"+
+            " && document.getElementById('telephoneText').value==="+
+            "'Unsubmitted tab-local sentence'"),
+            "same member recovers exact unsent phrase after real page reload");
+        check((await userToken(host,"gamecenter.drawing.room.member.v1"))===
+            tokens[0],"restoring a draft does not replace the member identity");
+        await cdp.eval(host,
+            "window.dispatchEvent(new Event('online'));true");
+        await nap(220);
+        check(await cdp.eval(host,
+            "document.getElementById('telephoneText').value==="+
+            "'Unsubmitted tab-local sentence'"),
+            "same-stage foreground refresh preserves recovered phrase");
+        const afterReload=await backend(host,"/drawing/telephone","GET",
+            null,tokens[0]);
+        check(afterReload.data.stage===beforeReload.data.stage &&
+            afterReload.data.submitted===beforeReload.data.submitted,
+            "restoring text is not an implicit server submission");
+        check(await cdp.eval(pages[3],`sessionStorage.getItem(
+            ${JSON.stringify(localDraftKey)})===null`),
+            "spectator tab never receives private author draft");
+        await click(host,"telephoneDiscardDraft");
+        check(await cdp.eval(host,`(()=>{
+            return document.getElementById("telephoneText").value==="" &&
+                sessionStorage.getItem(${JSON.stringify(localDraftKey)})===null;
+        })()`),"explicit discard clears restored text without server writes");
+    }
     for(let stage=0;stage<3;stage++){
         const drawing=coop || stage===1;
         for(let i=0;i<3;i++){
@@ -1099,8 +1152,38 @@ async function telephoneBrowserAcceptance(base,coop){
                     if(coop && stage>0){
                         const kept=await cdp.eval(page,canvasImage);
                         await click(page,"telephoneEraser");
-                        await touchStroke(page,bounds,row);
-                        check(await cdp.eval(page,canvasImage)===before,
+                        await poll(async()=>await cdp.eval(page,
+                            "document.getElementById('telephoneEraser')"+
+                            ".getAttribute('aria-pressed')==='true'"),
+                            "COOP eraser is activated before drawing",4500);
+                        const eraseBounds=await cdp.eval(page,`(()=>{
+                            const canvas=document.getElementById("telephoneCanvas");
+                            const r=canvas.getBoundingClientRect();
+                            return {x:r.x,y:r.y,width:r.width,height:r.height};
+                        })()`);
+                        await touchStroke(page,eraseBounds,row);
+                        const afterErase=await cdp.eval(page,canvasImage);
+                        if(afterErase!==before){
+                            const info=await cdp.eval(page,`(()=>{
+                                const raw=sessionStorage.getItem(
+                                    ${JSON.stringify(localDraftKey)});
+                                const record=raw?JSON.parse(raw):null;
+                                return {
+                                    drawing:!document.getElementById(
+                                        "telephoneDrawingArea").hidden,
+                                    eraser:document.getElementById(
+                                        "telephoneEraser").getAttribute("aria-pressed"),
+                                    disabled:document.getElementById(
+                                        "telephoneEraser").disabled,
+                                    ownSaved:record?.strokes?.length,
+                                    notice:document.getElementById("notice").textContent,
+                                    stage:document.getElementById("telephoneProgress").textContent
+                                };
+                            })()`);
+                            throw Error("COOP eraser must preserve inherited strokes"+
+                                " stage="+stage+" info="+JSON.stringify(info));
+                        }
+                        check(afterErase===before,
                             "COOP eraser cannot remove inherited strokes");
                         await click(page,"telephoneUndo");
                         check(await cdp.eval(page,canvasImage)===kept,
@@ -1108,11 +1191,41 @@ async function telephoneBrowserAcceptance(base,coop){
                         await click(page,"telephoneEraser");
                     }
                 }
+                if(i===0 && (stage===0 || coop && stage===1)){
+                    const originalInk=await cdp.eval(page,canvasImage);
+                    const backup=await cdp.eval(page,`(()=>{
+                        const raw=sessionStorage.getItem(
+                            ${JSON.stringify(localDraftKey)});
+                        return raw?JSON.parse(raw):null;
+                    })()`);
+                    check(backup?.kind==="DRAWING" &&
+                        backup.strokes?.length>0 &&
+                        !("previousContent" in backup) &&
+                        !("baseStrokes" in backup) &&
+                        !("token" in backup),
+                        "only own mutable drawing strokes are saved (not COOP base)");
+                    const stageBeforeReload=await backend(page,
+                        "/drawing/telephone","GET",null,tokens[i]);
+                    await cdp.navigate(page,base+"/games/drawing-guess/room/");
+                    await poll(async()=>await cdp.eval(page,`(()=>{
+                        const canvas=document.getElementById("telephoneCanvas");
+                        return !document.getElementById("telephoneDrawingArea").hidden &&
+                            canvas.toDataURL()===${JSON.stringify(originalInk)} &&
+                            !document.getElementById("telephoneDiscardDraft").hidden;
+                    })()`),"own strokes plus immutable COOP background recover pixel-identically");
+                    const stageAfterReload=await backend(page,
+                        "/drawing/telephone","GET",null,tokens[i]);
+                    check(stageAfterReload.data.stage===stageBeforeReload.data.stage &&
+                        stageAfterReload.data.submitted===stageBeforeReload.data.submitted,
+                        "drawing draft reload changes neither server stage nor submissions");
+                }
                 await click(page,"telephoneDrawingDone");
             }else{
                 await cdp.eval(page,`(()=>{
                     document.getElementById("telephoneText").value=
                         ${JSON.stringify("step-"+stage+"-writer-"+i)};
+                    document.getElementById("telephoneText").dispatchEvent(
+                        new Event("input",{bubbles:true}));
                     document.getElementById("telephoneTextForm").requestSubmit();
                     return true;
                 })()`);
@@ -1124,6 +1237,9 @@ async function telephoneBrowserAcceptance(base,coop){
                     found.data.state==="REVEAL"?found.data:null;
             },"telephone submitted authoritative stage "+stage+" member "+i);
             check(outcome.active,"telephone submission remains in room lifecycle");
+            await poll(async()=>await cdp.eval(page,`sessionStorage.getItem(
+                ${JSON.stringify(localDraftKey)})===null`),
+                "successful telephone submission discards tab-local draft");
         }
         await poll(async()=>{
             const result=await backend(host,"/drawing/telephone","GET",
@@ -1156,6 +1272,10 @@ async function telephoneBrowserAcceptance(base,coop){
         null,tokens[0]);
     check(final.data.state==="REVEAL"&&final.data.albums.length===3,
         "three complete albums unveiled together");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneDraftTools').hidden"+
+        " && sessionStorage.getItem('gamecenter.telephone.private-draft.v1')===null"),
+        "album reveal removes draft controls and private unsent storage");
     const viewer=await backend(pages[3],"/drawing/telephone","GET",
         null,tokens[3]);
     check(viewer.data.albums.length===3,
@@ -1556,6 +1676,12 @@ async function telephoneBrowserAcceptance(base,coop){
         "[...document.querySelectorAll('#telephoneAlbumTimeline button,'+"+
         "'#telephoneStageTimeline button')].every(button=>button.disabled)"),
         "spectators remain read-only after host jumps");
+    // A committed cursor may reach spectators before the presenter's
+    // finally() unlock runs. Wait for the actual host control fence.
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneStepPrev').disabled===false"+
+        " && document.getElementById('telephoneAutoplay').disabled===false"),
+        "timeline stage jump fully unlocks presenter before hotkeys",10000);
     const hotkeyStart=await backend(host,"/drawing/telephone","GET",
         null,tokens[0]);
     check(hotkeyStart.data.presentation.albumIndex===2 &&
