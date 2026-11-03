@@ -187,12 +187,39 @@ public final class DrawingSyncService {
         if (token == null || token.isBlank()) return false;
         try {
             State state = activeState(code);
+            // Common GameRoom canvas writes require a fresh member + current
+            // drawer check on every HTTP request. Never upgrade a native
+            // drawer token into an independent WebSocket write capability.
+            if (isMemberRoomRound(state.roundId)) return false;
             return MessageDigest.isEqual(
                 state.drawerTokenHash.getBytes(StandardCharsets.UTF_8),
                 tokenHash(token).getBytes(StandardCharsets.UTF_8)
             );
         } catch (RuntimeException error) {
             return false;
+        }
+    }
+
+    private boolean isMemberRoomRound(String roundId) {
+        if (database == null) return false;
+        try (var connection = database.open();
+             var stmt = connection.prepareStatement("""
+                 SELECT 1
+                 FROM drawing_guess_round r
+                 JOIN drawing_guess_match m ON m.match_id = r.match_id
+                 JOIN drawing_guess_room g ON g.room_id = m.room_id
+                 WHERE r.round_id = ? AND g.source_room_id IS NOT NULL
+                 LIMIT 1
+                 """)) {
+            stmt.setString(1, roundId);
+            try (var rows = stmt.executeQuery()) {
+                return rows.next();
+            }
+        } catch (java.sql.SQLException failure) {
+            // Fail closed, including if a migration or read is incomplete.
+            throw new IllegalStateException(
+                "unable to verify drawing room token scope", failure
+            );
         }
     }
 
@@ -273,6 +300,22 @@ public final class DrawingSyncService {
             state.sequence.set(sequence);
             appendHistory(state, canonical);
             return canonical;
+        }
+    }
+
+    /**
+     * Trusted-server bridge for R5. Never route an unverified client directly
+     * here: the caller first rechecks R2 membership and active drawer turn.
+     * The private Canvas bearer remains server-side and cannot survive a kick
+     * as a freely reusable client credential.
+     */
+    public String appendForAuthorizedRound(String roundId,String rawJson) {
+        State state=requiredStateForRound(roundId);
+        synchronized(state) {
+            if(state.drawerToken == null || state.drawerToken.isBlank()) {
+                reissueDrawerToken(roundId);
+            }
+            return append(state.code,state.drawerToken,rawJson);
         }
     }
 

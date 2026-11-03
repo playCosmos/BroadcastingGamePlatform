@@ -18,6 +18,7 @@ try {
         "web/admin/assets/drawing-guess-create.js",
         "web/admin/assets/drawing-guess-room.js",
         "web/games/drawing-guess/drawing-guess-overlay.js",
+        "web/games/drawing-guess/room/room.js",
         "web/games/yacht/yacht.js",
         "web/tools/viewer-draw/viewer-draw-overlay.js",
         "web/admin/assets/board-room-admin.js",

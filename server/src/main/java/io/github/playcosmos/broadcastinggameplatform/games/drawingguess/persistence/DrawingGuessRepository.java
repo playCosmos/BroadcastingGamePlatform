@@ -160,6 +160,32 @@ public final class DrawingGuessRepository {
         String chatChannelId,
         List<ParticipantInput> participantInputs
     ) throws SQLException {
+        return createRoom(name,drawerPolicy,streamerParticipantId,scoreConfig,
+            roundDurationSeconds,chatGuessEnabled,chatProvider,chatChannelId,
+            participantInputs,null);
+    }
+
+    /** Optional idempotent common-room key; legacy rooms keep NULL. */
+    public Room createRoom(
+        String name,
+        DrawerPolicy drawerPolicy,
+        String streamerParticipantId,
+        ClassicScorePolicy.Config scoreConfig,
+        int roundDurationSeconds,
+        boolean chatGuessEnabled,
+        String chatProvider,
+        String chatChannelId,
+        List<ParticipantInput> participantInputs,
+        String sourceRoomId
+    ) throws SQLException {
+        if (sourceRoomId != null) {
+            if (!sourceRoomId.matches(
+                "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}")) {
+                throw new IllegalArgumentException("invalid source room");
+            }
+            Room existing = findRoomBySourceRoom(sourceRoomId);
+            if (existing != null) return existing;
+        }
         DrawerPolicy policy = drawerPolicy == null
             ? DrawerPolicy.ROTATING_DRAWER
             : drawerPolicy;
@@ -217,8 +243,8 @@ public final class DrawingGuessRepository {
                       streamer_participant_id, score_profile,
                       score_config_json, round_duration_seconds,
                       chat_guess_enabled, chat_provider, chat_channel_id,
-                      state, created_at, updated_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?)
+                      state, created_at, updated_at, source_room_id
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'DRAFT', ?, ?, ?)
                     """)) {
                     statement.setString(1, roomId);
                     statement.setString(2, roomName);
@@ -244,6 +270,7 @@ public final class DrawingGuessRepository {
                     );
                     statement.setString(11, now);
                     statement.setString(12, now);
+                    statement.setString(13, sourceRoomId);
                     statement.executeUpdate();
                 }
 
@@ -279,6 +306,19 @@ public final class DrawingGuessRepository {
             }
         }
         return findRoom(roomId);
+    }
+
+    public Room findRoomBySourceRoom(String sourceRoomId) throws SQLException {
+        if (sourceRoomId == null) return null;
+        try(var connection=database.open();
+            var statement=connection.prepareStatement("""
+                SELECT room_id FROM drawing_guess_room WHERE source_room_id=?
+                """)) {
+            statement.setString(1,sourceRoomId);
+            try(var rows=statement.executeQuery()){
+                return rows.next()?findRoom(rows.getString(1)):null;
+            }
+        }
     }
 
     public Participant ensureChatParticipant(

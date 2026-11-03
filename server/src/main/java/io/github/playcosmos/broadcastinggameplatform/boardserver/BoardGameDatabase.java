@@ -43,7 +43,8 @@ public final class BoardGameDatabase implements DatabaseAccess {
         "/db/migration/V31__common_game_room_foundation.sql",
         "/db/migration/V32__common_game_room_security.sql",
         "/db/migration/V33__common_game_room_realtime.sql",
-        "/db/migration/V34__common_room_yacht_binding.sql"
+        "/db/migration/V34__common_room_yacht_binding.sql",
+        "/db/migration/V35__common_room_drawing_binding.sql"
     };
 
     private final Path databasePath;
