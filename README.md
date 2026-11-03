@@ -2,7 +2,7 @@
 
 방송 채팅/후원 이벤트를 게임 모듈에 연결하는 방송용 게임 플랫폼입니다.
 
-현재 통합 개발 브랜치에는 **Board**, **Drawing Guess**, **Yacht**가 있으며, Yacht는 Yahtzee 계열 규칙의 **공통 게임룸 R4 독립 멀티플레이 Beta**를 제공합니다. GameRoom 단계별 변경은 아직 Draft PR 체인에 있으며 `main` 릴리스에 반영된 것으로 간주하지 않습니다. 방송 도구로 **Viewer Draw**의 Random/Number Draw가 구현되어 있습니다. 기존 Roulette/Lotto/Ticket 제품 전체는 이 저장소로 이전하지 않습니다.
+현재 `main`에는 **Board**, **Drawing Guess**, **Yacht** 및 공통 GameRoom 기반이 통합되어 있습니다. Yacht는 Yahtzee 계열 규칙의 **R4 독립 멀티플레이 Beta**를 제공하며, R14w까지의 게임룸 기능과 자동 검증이 병합되었습니다. **코드 병합은 운영 배포·릴리스 승인을 의미하지 않습니다.** 방송 도구로 **Viewer Draw**의 Random/Number Draw가 구현되어 있습니다. 기존 Roulette/Lotto/Ticket 제품 전체는 이 저장소로 이전하지 않습니다.
 
 ## 1차 목표
 
@@ -32,6 +32,8 @@
 
 자세한 구조는 `docs/ARCHITECTURE.md`를 참고합니다.
 
+공통 게임룸의 원래 요구사항과 구현·검증 상태는 [`docs/COMMON_GAME_ROOM_PLAN.md`](docs/COMMON_GAME_ROOM_PLAN.md)를 참고합니다. 이 계획서는 2026-10-21 R0 원안과 이후 구현 상태를 구분하며, 실제 기능·운영 승인 여부는 현재 소스/CI에서 확인합니다.
+
 Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWING_GUESS.md`, 시청자 추첨 계획은 `docs/tools/VIEWER_DRAW.md`를 기준 문서로 사용합니다.
 
 ## 현재 웹 흐름
@@ -58,8 +60,8 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - Board: AVAILABLE
 - Viewer Draw: Core + Number Draw + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
-- Yacht: Y0 점수 · Y1 영속화 · Y2 API 검증, 공통 R4 멀티플레이 Beta 플레이 가능(통합 Draft 브랜치). Y4 OBS·Y5 방송 입력·Y6 종합 안정화는 후속
-- 공통 GameRoom: R1~R14c 통합 브랜치 구현·자동 검증 완료(아직 Draft PR 미병합); 브라우저 입장·채팅·관전·강퇴·복구·퇴장·폐쇄 회귀 검사 포함
+- Yacht: Y0 점수 · Y1 영속화 · Y2 API, 공통 R4 멀티플레이 Beta `main` 병합. Y4 OBS·Y5 방송 입력·Y6 종합 안정화의 별도 수용 기준은 후속
+- 공통 GameRoom: R1~R14w `main` 병합 및 단계별 Windows 자동 검증 완료; 브라우저 입장·채팅·관전·복구·퇴장·폐쇄·Windows 패키징 TLS 신뢰 검증 포함. 실제 외부망·실기기·운영자 인수 검증은 미완료
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: SOOP IMPLEMENTED / PROVIDER EXPANSION PENDING
 - Viewer Draw Finish Slow Motion/Podium + Goldberg Machine: PLANNED

@@ -1,10 +1,16 @@
 # Architecture
 
+## 공통 게임룸 통합 현황 (2026-11-03)
+
+- **`main` 코드 통합:** Yacht Y0~Y2 및 공통 GameRoom R1~R14w 단계가 병합되어 있습니다. 독립 Yacht/Drawing Guess 브라우저 화면, 회원·방장·플레이어·관전자 정원, 인증·룸 채팅, 복수 방송 채널·Telephone, 회복·WebSocket 및 패키징 테스트를 포함합니다. 기능별 설계와 현재 권한 계약은 [공통 게임룸 계획](./COMMON_GAME_ROOM_PLAN.md), `docs/platform/GAME_ROOM_*.md` 및 실제 코드가 우선합니다.
+- **자동 검증:** [R14w 정확한 커밋 Windows CI](https://github.com/playCosmos/BroadcastingGamePlatform/actions/runs/41015222549)에서 로컬 Windows 패키지 HTTPS/WSS 인증서 신뢰·호스트명 오류 처리 등이 통과했습니다.
+- **현장 수용 범위:** 공인 CA·실제 WAN·서로 다른 물리 기기, 장시간 SOOP 운영 계정 및 24시간 관측은 아직 자동검증으로 입증되지 않았습니다. **코드 병합을 운영 릴리스·배포 승인으로 해석하지 않습니다.**
+
 ## 목적
 
 Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여러 게임 모듈에 전달하는 플랫폼이다.
 
-현재 구현 범위는 SOOP + Board + Drawing Guess + Viewer Draw(Random/Number)이며, Yacht와 CHZZK Provider를 다음 확장 대상으로 둔다.
+현재 구현 범위는 SOOP + Board + Drawing Guess + Yacht + Viewer Draw(Random/Number)이며, CHZZK Provider는 후속 확장 대상이다.
 
 ## 계층
 
@@ -25,7 +31,7 @@ Broadcasting Game Platform은 방송 서비스의 채팅/후원 이벤트를 여
    - `/api/v1/events/recent`: 인증된 운영자의 최근 공용 이벤트 조회
 4. **Game Module**
    - Board: 현재 구현
-   - Yacht: 계획, Yahtzee 계열 5주사위/13카테고리 규칙
+   - Yacht: Y0~Y2 서버 엔진/API 및 공통 GameRoom R4 독립 웹 멀티플레이 Beta (5주사위/13카테고리 규칙)
    - Drawing Guess: Classic Guess D0~D6 구현, HTML5 Canvas 기반 그림 퀴즈
    - 각 게임은 자체 도메인/상태/DB/API/Overlay를 가지며 Provider SDK에 직접 의존하지 않는다.
    - 룸 생성, 게임 상태, 룸 코드, OBS 오버레이, 게임별 WebSocket 이벤트를 담당한다.
