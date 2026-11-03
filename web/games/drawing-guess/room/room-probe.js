@@ -75,6 +75,11 @@ has(html,'<option value="TELEPHONE_COOP">',"cooperative drawing is distinct from
 has(html,'id="telephoneStepPrev"',"reveal step navigation exists");
 has(html,'id="telephoneStepNext"',"reveal next-step navigation exists");
 has(html,'id="telephonePresentationStatus"',"host presentation status accessible to room");
+has(html,'id="telephoneAutoplay"',"host can play/pause album slides");
+has(html,'id="telephonePlaybackSpeed"',"host can select slide interval");
+has(html,'id="telephonePlaybackProgress"',"all participants see playback status");
+has(server,'sharedDrawing.telephone().playback(',
+  "playback controls use canonical authenticated API");
 has(js,'window.TelephoneView.render(telephone,request,refresh,isHost())',
   "presenter permission derives from authenticated host");
 has(server,'sharedDrawing.telephone().present(',

@@ -907,6 +907,12 @@ async function telephoneBrowserAcceptance(base,coop){
     check((await userToken(pages[3],
         "gamecenter.drawing.room.member.v1"))===tokens[3],
         "reloaded spectator retains original game-room identity");
+    // The preceding step POST can render the new slide before its async
+    // refresh/finally restores the host's navigation controls. Do not
+    // interpret that legitimate in-flight guard as a failed click.
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAlbumNext').disabled===false"),
+        "previous host presentation request finishes before changing albums");
     await click(host,"telephoneAlbumNext");
     await poll(async()=>await cdp.eval(host,
         "document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"+
@@ -924,6 +930,99 @@ async function telephoneBrowserAcceptance(base,coop){
         && finalCursor.data.presentation.stepIndex===0
         && finalCursor.data.presentation.revision===2,
         "host slideshow cursor persisted in SQLite with monotonic revision");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephonePlaybackControls').hidden===false"),
+        "authenticated room host sees automatic slideshow controls");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephonePlaybackControls').hidden"),
+        "spectator cannot see the host's automatic playback actions");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephonePlaybackSpeed').disabled===false"),
+        "prior presenter request completed before changing slideshow interval");
+    await cdp.eval(host,`(()=>{
+        const select=document.getElementById("telephonePlaybackSpeed");
+        select.value="3";
+        select.dispatchEvent(new Event("change",{bubbles:true}));
+    })()`);
+    try{
+        await poll(async()=>{
+            const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+            return x.data.playback.intervalSeconds===3
+                && x.data.presentation.revision===3;
+        },"host can change slideshow interval through real browser");
+    }catch(error){
+        const page=await cdp.eval(host,`({
+            notice:document.getElementById("notice").textContent,
+            speed:document.getElementById("telephonePlaybackSpeed").value,
+            disabled:document.getElementById("telephonePlaybackSpeed").disabled,
+            controlsHidden:document.getElementById("telephonePlaybackControls").hidden,
+            playLabel:document.getElementById("telephoneAutoplay").textContent,
+            stage:document.getElementById("telephoneStepLabel").textContent
+        })`);
+        const server=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        throw Error(error.message+" client="+JSON.stringify(page)+
+            " server="+JSON.stringify({
+                playback:server.data.playback,
+                presentation:server.data.presentation,
+                state:server.data.state,status:server.status
+            })+" exceptions="+JSON.stringify(cdp.exceptions.slice(-4)));
+    }
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"),
+        "speed selection has completed before starting autoplay");
+    await startMemberObserver(pages[3],
+        (await backend(host,"/me","GET",null,tokens[0])).data.room.roomId,
+        tokens[3],memberWs);
+    await poll(async()=>await cdp.eval(pages[3],
+        "window.__roomObserver?.events.some(e=>e.includes('room.snapshot'))"),
+        "authenticated spectator listens before autonomous slide progression");
+    await click(host,"telephoneAutoplay");
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.playback.playing && x.data.presentation.revision===4;
+    },"host starts server-controlled autoplay");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneStepNext').disabled"),
+        "manual navigation is locked while autoplay is running");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.getElementById('telephoneStepLabel').textContent.startsWith('2/')"),
+        "server clock advances autonomous slide on spectator screen",13000);
+    await poll(async()=>await cdp.eval(pages[3],
+        "window.__roomObserver?.events.some(e=>e.includes('telephone-reveal-5'))"),
+        "automatic timer step is broadcast on existing room WebSocket");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"+
+        " && document.getElementById('telephoneAutoplay').textContent==='일시정지'"),
+        "play request completed before host clicks pause");
+    await click(host,"telephoneAutoplay");
+    try{
+        await poll(async()=>{
+            const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+            return !x.data.playback.playing
+                && x.data.playback.nextAt==null
+                && x.data.presentation.stepIndex>=1;
+        },"host pause freezes the current authoritative slide");
+    }catch(error){
+        const page=await cdp.eval(host,`({
+            notice:document.getElementById("notice").textContent,
+            playLabel:document.getElementById("telephoneAutoplay").textContent,
+            playDisabled:document.getElementById("telephoneAutoplay").disabled,
+            stage:document.getElementById("telephoneStepLabel").textContent,
+            album:document.getElementById("telephoneAlbumTitle").textContent,
+            timer:document.getElementById("telephonePlaybackProgress").textContent
+        })`);
+        const server=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        throw Error(error.message+" client="+JSON.stringify(page)+
+            " server="+JSON.stringify({
+                playback:server.data.playback,
+                presentation:server.data.presentation,
+                state:server.data.state,status:server.status
+            })+" exceptions="+JSON.stringify(cdp.exceptions.slice(-4)));
+    }
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').textContent==='자동 재생'"+
+        " && document.getElementById('telephoneAutoplay').disabled===false"),
+        "real host UI switches back from pause to play control after POST settles");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");

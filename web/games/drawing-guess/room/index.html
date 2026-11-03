@@ -146,6 +146,21 @@
     <p class="muted" id="telephonePresentationStatus" role="status"
       aria-live="polite">방장이 현재 공개 중인 앨범과 단계를 모든 참가자에게 표시합니다.</p>
     <p class="muted" id="telephoneRevealDescription">처음 문장이 다음 그림과 설명을 거치며 어떻게 바뀌었는지 순서대로 확인하세요.</p>
+    <div id="telephonePlaybackControls" class="toolbar" hidden
+      role="group" aria-label="앨범 자동 재생">
+      <button type="button" id="telephoneAutoplay" class="primary">자동 재생</button>
+      <label>장면 간격
+        <select id="telephonePlaybackSpeed">
+          <option value="3">3초</option>
+          <option value="5" selected>5초</option>
+          <option value="8">8초</option>
+          <option value="12">12초</option>
+          <option value="20">20초</option>
+        </select>
+      </label>
+    </div>
+    <p id="telephonePlaybackProgress" class="muted" role="status"
+      aria-live="off"></p>
     <div class="toolbar">
       <button type="button" id="telephoneAlbumPrev" class="secondary">← 이전 앨범</button>
       <strong id="telephoneAlbumTitle"></strong>

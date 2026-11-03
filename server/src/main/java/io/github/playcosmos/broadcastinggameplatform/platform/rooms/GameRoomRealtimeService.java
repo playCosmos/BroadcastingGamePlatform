@@ -79,11 +79,26 @@ public final class GameRoomRealtimeService {
      */
     public Event announceTelephonePresentation(String token,long revision)
         throws SQLException {
+        return announceTelephoneCursor(token,revision,true);
+    }
+
+    /**
+     * Internal GET-side wake-up after a server-timed autoplay transition.
+     * Any joined member can help publish the already committed public frame,
+     * but can never choose the cursor or change album state.
+     */
+    public Event announceTelephonePlayback(String token,long revision)
+        throws SQLException {
+        return announceTelephoneCursor(token,revision,false);
+    }
+
+    private Event announceTelephoneCursor(String token,long revision,
+                                          boolean requireHost)throws SQLException {
         if(revision<=0)throw new IllegalArgumentException(
             "only advanced reveal revisions can be announced");
         WriteResult result=rooms.write(connection->{
             var host=access.requireSession(connection,token);
-            if(!host.isHost())
+            if(requireHost && !host.isHost())
                 throw new Forbidden("only host may announce album presentation");
             requireConnected(connection,host.roomId(),host.memberId());
             int album,step;

@@ -13,6 +13,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomMode
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Instant;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -28,13 +29,14 @@ public final class GameRoomTelephoneService {
     public record AlbumEntry(int stage,String kind,String content,String author) {}
     public record Album(String originalAuthor,List<AlbumEntry> entries) {}
     public record Presentation(int albumIndex,int stepIndex,long revision) {}
+    public record Playback(boolean playing,int intervalSeconds,String nextAt) {}
     public record View(boolean active,String state,int stage,int stages,int seconds,
                        String stageStartedAt,int submitted,int participants,
                        String taskKind,String previousKind,String previousContent,
                        boolean mySubmitted,List<Album> albums,Mode mode,
-                       Presentation presentation) {}
+                       Presentation presentation,Playback playback) {}
     private record Match(int stage,int size,int seconds,String started,String state,
-                         Mode mode,Presentation presentation) {}
+                         Mode mode,Presentation presentation,Playback playback) {}
     private record Slot(int order,String memberId,String name) {}
 
     private final GameRoomService rooms;
@@ -116,8 +118,9 @@ public final class GameRoomTelephoneService {
             drawing(room);
             Match match=match(conn,room.roomId());
             if(match==null) return new View(false,"LOBBY",0,0,0,null,
-                0,0,null,null,null,false,List.of(),Mode.NORMAL,null);
+                0,0,null,null,null,false,List.of(),Mode.NORMAL,null,null);
             advanceExpired(conn,room,match);
+            advancePlayback(conn,room.roomId(),match(conn,room.roomId()));
             return view(conn,GameRoomService.read(conn,room.roomId()),
                 principal.memberId(),match(conn,room.roomId()));
         });
@@ -144,6 +147,9 @@ public final class GameRoomTelephoneService {
             if(albumIndex<0 || albumIndex>=match.size() ||
                 stepIndex<0 || stepIndex>=match.size())
                 throw new IllegalArgumentException("album cursor out of range");
+            if(match.playback().playing())
+                throw new GameRoomService.RoomConflict(
+                    "pause automatic slideshow before manual navigation");
             Presentation old=match.presentation();
             boolean same=old.albumIndex()==albumIndex &&
                 old.stepIndex()==stepIndex;
@@ -165,6 +171,125 @@ public final class GameRoomTelephoneService {
             }
             return view(conn,room,principal.memberId(),match(conn,room.roomId()));
         });
+    }
+
+    /**
+     * Host-controlled playback state. The server clock owns progression,
+     * including reconciliation across suspension and app restarts.
+     * PLAY from the last slide restarts at the beginning; PAUSE freezes the
+     * exact authoritative slide; SPEED changes the next interval.
+     */
+    public View playback(String token,String action,int intervalSeconds,
+                         long expectedRevision)throws SQLException {
+        if(!List.of("PLAY","PAUSE","SPEED").contains(action))
+            throw new IllegalArgumentException("invalid playback command");
+        if(intervalSeconds<3 || intervalSeconds>20)
+            throw new IllegalArgumentException("playback speed must be 3..20 seconds");
+        return rooms.write(conn->{
+            var principal=access.requireSession(conn,token);
+            Room room=GameRoomService.read(conn,principal.roomId());
+            drawing(room);
+            if(!principal.isHost() || !connected(room,principal.memberId()))
+                throw new GameRoomAccessService.Forbidden("connected host required");
+            Match match=match(conn,room.roomId());
+            if(match==null || !"REVEAL".equals(match.state()))
+                throw new GameRoomService.RoomConflict(
+                    "playback only available after complete reveal");
+            // Materialize overdue clock ticks BEFORE validating a browser
+            // command so a delayed tablet cannot pause an earlier slide.
+            advancePlayback(conn,room.roomId(),match);
+            match=match(conn,room.roomId());
+            var old=match.presentation();
+            var current=match.playback();
+            boolean unchanged=("PAUSE".equals(action)&&!current.playing())
+                ||("SPEED".equals(action)&&intervalSeconds==current.intervalSeconds())
+                ||("PLAY".equals(action)&&current.playing()
+                    && intervalSeconds==current.intervalSeconds());
+            if(unchanged)return view(conn,room,principal.memberId(),match);
+            if(expectedRevision!=old.revision())
+                throw new GameRoomService.RoomConflict("stale playback revision");
+            boolean playing=current.playing();
+            int speed=current.intervalSeconds();
+            int album=old.albumIndex(),step=old.stepIndex();
+            String nextAt=current.nextAt();
+            switch(action){
+                case "PLAY" -> {
+                    speed=intervalSeconds;
+                    playing=true;
+                    if(album==match.size()-1 && step==match.size()-1){
+                        album=0;step=0;
+                    }
+                    nextAt=Instant.now().plusSeconds(speed).toString();
+                }
+                case "PAUSE" -> {
+                    playing=false;
+                    nextAt=null;
+                }
+                case "SPEED" -> {
+                    speed=intervalSeconds;
+                    if(playing)
+                        nextAt=Instant.now().plusSeconds(speed).toString();
+                }
+                default -> throw new IllegalArgumentException("invalid playback");
+            }
+            try(var update=conn.prepareStatement("""
+                UPDATE game_room_telephone_match
+                SET reveal_album=?,reveal_step=?,
+                    reveal_revision=reveal_revision+1,
+                    reveal_playing=?,reveal_interval_seconds=?,reveal_next_at=?
+                WHERE room_id=? AND state='REVEAL' AND reveal_revision=?
+                """)){
+                update.setInt(1,album);update.setInt(2,step);
+                update.setInt(3,playing?1:0);update.setInt(4,speed);
+                update.setString(5,nextAt);update.setString(6,room.roomId());
+                update.setLong(7,old.revision());
+                if(update.executeUpdate()!=1)
+                    throw new GameRoomService.RoomConflict("playback changed");
+            }
+            return view(conn,room,principal.memberId(),
+                match(conn,room.roomId()));
+        });
+    }
+
+    /** Time-driven progression: no per-room threads or browser-owned timer. */
+    private static void advancePlayback(Connection conn,String roomId,Match match)
+        throws SQLException {
+        if(match==null || !"REVEAL".equals(match.state())
+            || !match.playback().playing())return;
+        String deadline=match.playback().nextAt();
+        if(deadline==null)throw new GameRoomService.RoomConflict(
+            "active slideshow missing deadline");
+        Instant due=Instant.parse(deadline);
+        Instant now=Instant.now();
+        if(now.isBefore(due))return;
+        int speed=match.playback().intervalSeconds();
+        long elapsed=Duration.between(due,now).getSeconds();
+        long ticks=1+elapsed/speed;
+        var old=match.presentation();
+        int size=match.size();
+        long index=(long)old.albumIndex()*size+old.stepIndex();
+        long last=(long)size*size-1;
+        long advanced=Math.min(ticks,last-index);
+        boolean continuing=index+advanced<last;
+        long next=index+advanced;
+        try(var update=conn.prepareStatement("""
+            UPDATE game_room_telephone_match
+            SET reveal_album=?,reveal_step=?,
+                reveal_revision=reveal_revision+?,
+                reveal_playing=?,reveal_next_at=?
+            WHERE room_id=? AND reveal_revision=? AND state='REVEAL'
+            """)){
+            update.setInt(1,(int)(next/size));
+            update.setInt(2,(int)(next%size));
+            update.setLong(3,Math.max(1,advanced));
+            update.setInt(4,continuing?1:0);
+            update.setString(5,continuing?
+                due.plusSeconds(ticks*speed).toString():null);
+            update.setString(6,roomId);
+            update.setLong(7,old.revision());
+            if(update.executeUpdate()!=1)
+                throw new GameRoomService.RoomConflict("playback tick conflict");
+        }
     }
 
     public View submit(String token,String text,String drawingJson)throws SQLException {
@@ -306,7 +431,8 @@ public final class GameRoomTelephoneService {
             m.started(),reveal?m.size():count(conn,room.roomId(),m.stage()),
             m.size(),slot>=0?kind:null,previousKind,previousContent,
             submitted,reveal?albums(conn,room.roomId(),m.size()):List.of(),
-            m.mode(),reveal?m.presentation():null);
+            m.mode(),reveal?m.presentation():null,
+            reveal?m.playback():null);
     }
 
     private List<Album> albums(Connection conn,String roomId,int size)
@@ -383,7 +509,8 @@ public final class GameRoomTelephoneService {
     private static Match match(Connection conn,String roomId)throws SQLException {
         try(var stmt=conn.prepareStatement("""
             SELECT stage,roster_size,duration_seconds,stage_started_at,state,
-                   mode,reveal_album,reveal_step,reveal_revision
+                   mode,reveal_album,reveal_step,reveal_revision,
+                   reveal_playing,reveal_interval_seconds,reveal_next_at
             FROM game_room_telephone_match WHERE room_id=?
             """)) {
             stmt.setString(1,roomId);
@@ -392,7 +519,9 @@ public final class GameRoomTelephoneService {
                     rows.getInt(3),rows.getString(4),rows.getString(5),
                     Mode.valueOf(rows.getString(6)),
                     new Presentation(rows.getInt(7),rows.getInt(8),
-                        rows.getLong(9))):null;
+                        rows.getLong(9)),
+                    new Playback(rows.getInt(10)==1,rows.getInt(11),
+                        rows.getString(12))):null;
             }
         }
     }

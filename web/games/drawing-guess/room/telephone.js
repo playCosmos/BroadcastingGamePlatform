@@ -6,6 +6,7 @@
     activeStroke = null,pointer = null,erasingLocal=false;
   let penColor="#25374c",penWidth=6,eraser=false;
   let submitting = false,presenting=false,isPresenter=false;
+  let lastAutoWake="";
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   const context = draw.getContext("2d");
   function visible(id,yes){$(id).hidden=!yes;}
@@ -48,15 +49,24 @@
       album.entries.length-1));
     $("telephoneAlbumTitle").textContent=(albumIndex+1)+"/"+albums.length+
       " · "+album.originalAuthor+"님의 이야기";
-    $("telephoneAlbumPrev").disabled=!isPresenter||presenting||albumIndex===0;
-    $("telephoneAlbumNext").disabled=!isPresenter||presenting||
+    const playing=Boolean(state.playback?.playing);
+    visible("telephonePlaybackControls",isPresenter);
+    $("telephoneAutoplay").disabled=!isPresenter||presenting;
+    $("telephoneAutoplay").textContent=playing?"일시정지":"자동 재생";
+    $("telephonePlaybackSpeed").disabled=!isPresenter||presenting;
+    $("telephonePlaybackSpeed").value=String(state.playback?.intervalSeconds||5);
+    $("telephoneAlbumPrev").disabled=!isPresenter||presenting||playing||albumIndex===0;
+    $("telephoneAlbumNext").disabled=!isPresenter||presenting||playing||
       albumIndex===albums.length-1;
-    $("telephoneStepPrev").disabled=!isPresenter||presenting||entryIndex===0;
-    $("telephoneStepNext").disabled=!isPresenter||presenting||
+    $("telephoneStepPrev").disabled=!isPresenter||presenting||playing||entryIndex===0;
+    $("telephoneStepNext").disabled=!isPresenter||presenting||playing||
       entryIndex===album.entries.length-1;
-    $("telephonePresentationStatus").textContent=isPresenter
-      ?"공개 진행 중 · 앨범과 단계를 변경하면 모든 참가자 화면에 반영됩니다."
-      :"방장이 공개 중인 앨범을 함께 보고 있습니다. 화면은 자동 동기화됩니다.";
+    $("telephonePresentationStatus").textContent=playing
+      ?"방장이 설정한 속도로 앨범을 자동 공개하고 있습니다."
+      :isPresenter
+        ?"발표 대기 중 · 직접 넘기거나 자동 재생을 시작할 수 있습니다."
+        :"방장이 공개 중인 앨범을 함께 보고 있습니다. 화면은 자동 동기화됩니다.";
+    updatePlaybackProgress();
     $("telephoneStepLabel").textContent=(entryIndex+1)+"/"+album.entries.length+"단계";
     const entries=$("telephoneAlbumEntries");
     entries.replaceChildren();
@@ -138,7 +148,29 @@
     if(reveal)renderAlbums();
     updateTimer();
   }
+  function updatePlaybackProgress(){
+    if(!state.active||state.state!=="REVEAL")return;
+    const play=state.playback;
+    const caption=$("telephonePlaybackProgress");
+    if(!play?.playing){
+      caption.textContent="자동 재생 일시정지 · "+
+        (play?.intervalSeconds||5)+"초 간격";
+      return;
+    }
+    const remaining=Math.max(0,Math.ceil(
+      (Date.parse(play.nextAt)-Date.now())/1000));
+    caption.textContent="자동 재생 · "+play.intervalSeconds+
+      "초 간격 · 다음 장면 "+remaining+"초 후";
+    // When a deadline is due, ask the server to materialize the next
+    // authoritative frame; no local client can invent a slide transition.
+    const wake=String(play.nextAt)+":"+state.presentation?.revision;
+    if(remaining===0 && wake!==lastAutoWake && refresh){
+      lastAutoWake=wake;
+      refresh().catch(()=>{});
+    }
+  }
   function updateTimer(){
+    updatePlaybackProgress();
     if(!state.active||state.state==="REVEAL"){
       $("telephoneDeadline").textContent="";return;
     }
@@ -254,6 +286,45 @@
       if(state.state==="REVEAL")renderAlbums();
     }
   }
+  async function playback(action,seconds){
+    if(!isPresenter||presenting||!request||
+       state.state!=="REVEAL"||!state.presentation)return;
+    presenting=true;
+    try{
+      const execute=revision=>request("/drawing/telephone/playback","POST",{
+        action,intervalSeconds:seconds,expectedRevision:revision
+      });
+      let next;
+      try{
+        next=await execute(state.presentation.revision);
+      }catch(error){
+        // A timer tick may commit between clicking Pause and this POST.
+        // Retry only safe host intents after refreshing the authoritative
+        // cursor, never using a stale browser-selected album position.
+        if(error.status!==409 || !["PAUSE","SPEED"].includes(action))
+          throw error;
+        const fresh=await request("/drawing/telephone");
+        if(fresh.state!=="REVEAL" || !fresh.presentation)throw error;
+        next=await execute(fresh.presentation.revision);
+      }
+      state=next;
+      renderAlbums();
+      if(refresh)await refresh();
+    }catch(error){
+      $("notice").textContent=error.message||"자동 재생 변경 실패";
+      if(refresh)await refresh();
+    }finally{
+      presenting=false;
+      if(state.state==="REVEAL")renderAlbums();
+    }
+  }
+  $("telephoneAutoplay").addEventListener("click",()=>{
+    playback(state.playback?.playing?"PAUSE":"PLAY",
+      Number($("telephonePlaybackSpeed").value));
+  });
+  $("telephonePlaybackSpeed").addEventListener("change",()=>{
+    playback("SPEED",Number($("telephonePlaybackSpeed").value));
+  });
   $("telephoneAlbumPrev").addEventListener("click",()=>present(albumIndex-1,0));
   $("telephoneAlbumNext").addEventListener("click",()=>present(albumIndex+1,0));
   $("telephoneStepPrev").addEventListener("click",()=>present(albumIndex,entryIndex-1));
