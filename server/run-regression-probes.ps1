@@ -29,6 +29,7 @@ $Probes = @(
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawProbe",
     "io.github.playcosmos.broadcastinggameplatform.tools.viewerdraw.ViewerDrawMapProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.yacht.YachtScoringProbe",
+    "io.github.playcosmos.broadcastinggameplatform.games.yacht.YachtPersistenceProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingGuessCoreProbe",
     "io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingGuessPersistenceProbe",
