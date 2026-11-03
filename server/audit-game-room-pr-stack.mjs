@@ -8,6 +8,7 @@
  * node server/audit-game-room-pr-stack.mjs --live
  * node server/audit-game-room-pr-stack.mjs --live-ci
  * GITHUB_TOKEN=... node server/audit-game-room-pr-stack.mjs --live-ancestry
+ * GITHUB_TOKEN=... node server/audit-game-room-pr-stack.mjs --integrated
  *
  * GITHUB_TOKEN is optional; if set, it is used only as a request header.
  */
@@ -16,7 +17,7 @@ const TIP="feature/common-game-room-r15h-cross-room-24-socket-isolation";
 const ROOT_PR=33;
 const REQUIRED_STAGES=81;
 const API="https://api.github.com/repos/"+REPOSITORY;
-const allowed=new Set(["--self-test","--live","--live-ancestry","--live-ci"]);
+const allowed=new Set(["--self-test","--live","--live-ancestry","--live-ci","--integrated"]);
 const modes=process.argv.slice(2);
 if(modes.length!==1||!allowed.has(modes[0])){
     console.error("GAME_ROOM_STACK_AUDIT_INVALID_MODE");
@@ -78,6 +79,56 @@ function audit(prs,mainSha,{tip=TIP,rootNumber=ROOT_PR,minimum=REQUIRED_STAGES}=
         draftCount:chain.filter(p=>p.draft===true).length,
         openPRCount:prs.filter(p=>p.state==="open").length
     };
+}
+
+// The pre-merge Draft chain was integrated in November 2026. Preserve its
+// original --live modes as historical preflight checks; do NOT present them
+// as an applicable post-merge audit or silently weaken their prerequisites.
+// #36, #41 and #59 are deliberately CLOSED UNMERGED sibling alternatives.
+const UNMERGED_SIBLINGS=new Set([36,41,59]);
+const INTEGRATED_TIP_PR=116;
+const COMMIT_SHA=/^[a-f0-9]{40}$/;
+
+function mergedAudit(prs,{first=ROOT_PR,last=INTEGRATED_TIP_PR,
+    excluded=UNMERGED_SIBLINGS}={}){
+    const failures=new Set(),byNumber=new Map(),stages=[];
+    for(const p of prs){
+        if(!Number.isSafeInteger(p?.number))continue;
+        if(byNumber.has(p.number))failures.add("duplicate_pr");
+        byNumber.set(p.number,p);
+    }
+    for(let n=first;n<=last;n++){
+        const p=byNumber.get(n);
+        if(excluded.has(n)){
+            // An excluded duplicate is not part of the canonical stack.
+            if(p?.merged_at!=null)failures.add("sibling_was_merged");
+            continue;
+        }
+        if(!p){failures.add("missing_pr");continue;}
+        stages.push(p);
+        if(p.state!=="closed"||typeof p.merged_at!=="string"
+            ||!Number.isFinite(Date.parse(p.merged_at)))
+            failures.add("not_merged");
+        if(!COMMIT_SHA.test(p.head?.sha||"")
+            ||!COMMIT_SHA.test(p.merge_commit_sha||""))
+            failures.add("invalid_merge_sha");
+        if(p.base?.ref!=="main"
+            ||p.base?.repo?.full_name!==REPOSITORY)
+            failures.add("not_main_base");
+    }
+    return {valid:failures.size===0,failures:[...failures].sort(),stages};
+}
+
+// Compare from the exact merge commit to the exact current main commit.
+// A merged_at timestamp alone cannot prove the merge is still reachable
+// after rebasing/force-pushing main. Both the ahead and identical results
+// are valid, but any behind/diverged or wrong merge-base result is rejected.
+function mergedReachable(compare,mergeSha){
+    return ((compare?.status==="ahead"&&Number.isSafeInteger(compare.ahead_by)
+                &&compare.ahead_by>0)
+        ||(compare?.status==="identical"&&compare.ahead_by===0))
+        &&compare.behind_by===0
+        &&compare.merge_base_commit?.sha===mergeSha;
 }
 
 // Compare each exact parent SHA to the child head. Matching PR metadata
@@ -251,7 +302,52 @@ function selfTest(){
     const missing=structuredClone(greenJobs);missing[0].steps.pop();
     const failed=structuredClone(greenJobs);failed[0].steps[0].conclusion="failure";
     if(ciJobValid(missing)||ciJobValid(failed))throw Error("bad gates accepted");
-    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+(cases.length+19));
+    // Post-integration audit: closed/merged is distinct from merely closed.
+    const d="d".repeat(40),e="e".repeat(40);
+    const merged=structuredClone(pristine).map((p,i)=>({
+        ...p,state:"closed",draft:false,
+        merged_at:"2026-11-03T08:00:00Z",
+        merge_commit_sha:i===0?d:e,
+        base:{...p.base,ref:"main"}
+    }));
+    const mergedCheck=list=>mergedAudit(list,{
+        first:1,last:2,excluded:new Set()
+    });
+    if(!mergedCheck(merged).valid)throw Error("valid integrated stack rejected");
+    const mergedCases=[
+        {name:"missing merged PR",mutate:p=>{p.pop();},
+            expected:"missing_pr"},
+        {name:"closed without merge",mutate:p=>{p[1].merged_at=null;},
+            expected:"not_merged"},
+        {name:"reopened PR",mutate:p=>{p[0].state="open";},
+            expected:"not_merged"},
+        {name:"missing merge commit",mutate:p=>{p[0].merge_commit_sha=null;},
+            expected:"invalid_merge_sha"},
+        {name:"wrong main base",mutate:p=>{p[1].base.ref="feature/foo";},
+            expected:"not_main_base"},
+        {name:"duplicate merged PR",mutate:p=>{p.push({...p[0]});},
+            expected:"duplicate_pr"}
+    ];
+    for(const {name,mutate,expected} of mergedCases){
+        const candidate=structuredClone(merged);
+        mutate(candidate);
+        const result=mergedCheck(candidate);
+        if(result.valid||!result.failures.includes(expected))
+            throw Error("integrated mutation unexpectedly accepted: "+name);
+    }
+    if(mergedAudit(merged,{first:1,last:2,excluded:new Set([1])}).valid)
+        throw Error("merged sibling accepted");
+    const reachable={status:"ahead",ahead_by:5,behind_by:0,
+        merge_base_commit:{sha:d}};
+    const identical={...reachable,status:"identical",ahead_by:0};
+    if(!mergedReachable(reachable,d)||!mergedReachable(identical,d)
+        ||mergedReachable({...reachable,status:"diverged"},d)
+        ||mergedReachable({...reachable,behind_by:1},d)
+        ||mergedReachable({...reachable,merge_base_commit:{sha:e}},d)
+        ||mergedReachable({...reachable,ahead_by:0},d))
+        throw Error("post-merge ancestry acceptance broken");
+    console.log("GAME_ROOM_STACK_AUDIT_SELFTEST_PASSED cases="+
+        (cases.length+19+mergedCases.length+7));
 }
 async function api(path){
     const token=process.env.GITHUB_TOKEN||"";
@@ -345,6 +441,68 @@ async function verifyLiveCi(prs,mainSha){
         " tip_only=true no_sequential_merge_test=true"+
         " no_external_field_acceptance=true");
 }
+// Operator-only: all 81 canonical stages must have a real merge commit
+// reachable from main. No branch-ref presence is required, so this mode
+// remains valid after safely deleting merged feature branches.
+async function closedPulls(){
+    const prs=[];
+    for(let page=1;page<=5;page++){
+        const batch=await api("/pulls?state=closed&per_page=100&page="+page);
+        if(!Array.isArray(batch)||batch.length>100)
+            throw Error("invalid closed PR collection");
+        prs.push(...batch);
+        if(batch.length<100)return prs;
+    }
+    throw Error("closed PR pagination exceeds supported audit limit");
+}
+async function integrated(){
+    // 81 compare requests require an operator token; ordinary hosted CI
+    // runs the offline negative fixtures only, never live GitHub metadata.
+    if(!process.env.GITHUB_TOKEN)
+        throw Error("authenticated GitHub access required for post-merge audit");
+    const prs=await closedPulls();
+    const main=await api("/branches/main");
+    const mainSha=main?.commit?.sha;
+    if(!COMMIT_SHA.test(mainSha||""))
+        throw Error("invalid main SHA");
+    const audit=mergedAudit(prs);
+    if(!audit.valid||audit.stages.length!==REQUIRED_STAGES){
+        console.error("GAME_ROOM_STACK_INTEGRATED_BLOCKED reasons="+
+            audit.failures.join(",")+" stages="+audit.stages.length);
+        process.exitCode=1;return;
+    }
+    for(let i=0;i<audit.stages.length;i+=3){
+        const group=audit.stages.slice(i,i+3);
+        const verified=await Promise.all(group.map(async p=>{
+            const compare=await api("/compare/"+
+                p.merge_commit_sha+"..."+mainSha+"?per_page=1");
+            return mergedReachable(compare,p.merge_commit_sha);
+        }));
+        if(verified.some(valid=>!valid))
+            throw Error("merged commit not reachable from main at stage "+i);
+    }
+    // Fail closed on changes during the long multi-request ancestry audit.
+    const latest=await closedPulls();
+    const latestAudit=mergedAudit(latest);
+    const latestByNumber=new Map(latestAudit.stages.map(p=>[p.number,p]));
+    const latestMain=await api("/branches/main");
+    if(!latestAudit.valid||latestMain?.commit?.sha!==mainSha
+        ||audit.stages.some(p=>{
+            const next=latestByNumber.get(p.number);
+            return next?.merged_at!==p.merged_at
+                ||next?.merge_commit_sha!==p.merge_commit_sha
+                ||next?.head?.sha!==p.head.sha;
+        }))
+        throw Error("integrated PR or main ref changed during audit");
+    console.log("GAME_ROOM_STACK_INTEGRATED_VALID merged="+
+        audit.stages.length+" reachable="+audit.stages.length+
+        " root="+ROOT_PR+" tip="+INTEGRATED_TIP_PR+
+        " mainSha="+mainSha);
+    console.log("GAME_ROOM_STACK_INTEGRATED_ADVISORY"+
+        " historical_premerge_modes_not_applicable=true"+
+        " real_field_acceptance_not_proven=true"+
+        " no_branch_deletion_or_release=true");
+}
 async function live(mode){
     const prs=[];
     // GitHub exposes at most 100 PRs per page. Bound pagination and fail
@@ -378,10 +536,11 @@ async function live(mode){
 }
 try{
     if(modes[0]==="--self-test")selfTest();
+    else if(modes[0]==="--integrated")await integrated();
     else await live(modes[0]);
 }catch(error){
     // Avoid echoing a potentially credential-bearing URL or request headers.
     console.error("GAME_ROOM_STACK_AUDIT_FAILED"+
-        " type="+(modes[0].startsWith("--live")?"metadata_or_validation":"selftest"));
+        " type="+(modes[0]==="--self-test"?"selftest":"metadata_or_validation"));
     process.exitCode=1;
 }
