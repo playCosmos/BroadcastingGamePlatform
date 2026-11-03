@@ -1,6 +1,6 @@
 # Yacht 게임 모듈 계획
 
-상태: **PLANNED**
+상태: **Y0 RULES / SCORING 개발 시작** (Y1~Y6 미구현, 현재 플레이 불가)
 
 게임 ID: `yacht`
 
@@ -762,7 +762,13 @@ Yacht에서 실제 중복이 발생하는 항목만 추출한다.
 
 ## 25. 개발 단계
 
-### Y0 — Rules Lock
+### Y0 — Rules Lock (구현 시작)
+
+- `games/yacht/domain/YachtScoring.java`: 독립적인 13카테고리 점수 엔진 및 불변 점수표
+- `games/yacht/YachtScoringProbe.java`: 6⁵=7,776가지 주사위 입력을 13카테고리 전체에 대해 검증하고 Joker·재보너스·Upper 62/63 경계를 별도 검증
+- 게임 카드 GAME 02는 개발 중으로 표기하며 `/admin/games/yacht/`에는 현황 안내만 표시. 게임을 플레이할 수 있는 것으로 오인시키지 않음
+- 반복 Yacht +100점은 **최종 점수 카테고리를 확정할 때 해당 턴당 1회** 부여. 중간 재굴림마다 여러 번 지급하지 않음
+
 
 - 본 문서 규칙을 기준 규칙으로 고정
 - 13카테고리 enum
