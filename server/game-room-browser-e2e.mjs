@@ -2088,6 +2088,78 @@ async function telephoneBrowserAcceptance(base,coop){
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
+
+    // R13s: a pending GET from the previous spectator identity must never
+    // invalidate the new hosted room if the old token responds with 403.
+    const switcher=pages[3];
+    const oldToken=tokens[3];
+    await cdp.eval(switcher,`(()=>{
+        const realFetch=window.fetch.bind(window);
+        window.__fencedFetch=realFetch;
+        window.__oldMemberRefreshPaused=false;
+        window.__oldMemberRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            const header=options.headers?.Authorization||"";
+            if(path==="/api/v1/room-membership/drawing" &&
+                header===${JSON.stringify("Bearer "+oldToken)} &&
+                !window.__oldMemberRefreshPaused){
+                window.__oldMemberRefreshPaused=true;
+                return new Promise(resolve=>{
+                    window.__oldMemberRelease=resolve;
+                });
+            }
+            return realFetch(url,options);
+        };
+        return true;
+    })()`);
+    await cdp.eval(switcher,"window.dispatchEvent(new Event('online'));true");
+    await poll(async()=>await cdp.eval(switcher,
+        "window.__oldMemberRefreshPaused===true"),
+        "previous room GET can remain pending during a new admission");
+    await fill(switcher,"createForm",{
+        name:"Session switch isolation",
+        displayName:"New hosted identity",
+        maxPlayers:2,maxRoomMembers:4
+    });
+    const newToken=await poll(async()=>{
+        const token=await userToken(switcher,
+            "gamecenter.drawing.room.member.v1");
+        return token && token!==oldToken?token:null;
+    },"real public host admission replaces old member token");
+    check(newToken!==oldToken,"new room uses a distinct membership credential");
+    await cdp.eval(switcher,`(()=>{
+        const old=window.__oldMemberRelease;
+        if(!old)throw Error("previous response not held");
+        old(new Response(JSON.stringify({error:"revoked previous room member"}),{
+            status:403,headers:{"Content-Type":"application/json"}
+        }));
+        window.__oldMemberRelease=null;
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(switcher,
+        "document.getElementById('roomName').textContent===" +
+        "'Session switch isolation'"),
+        "stale 403 does not remove the freshly admitted room");
+    const newState=await backend(switcher,"/me","GET",null,newToken);
+    check(newState.status===200 &&
+        newState.data.room.roomName==="Session switch isolation" &&
+        newState.data.room.roomId!==
+          (await backend(host,"/me","GET",null,tokens[0])).data.room.roomId,
+        "new room state and token cannot be replaced by stale membership");
+    check(await userToken(switcher,
+        "gamecenter.drawing.room.member.v1")===newToken,
+        "previous token's late 403 cannot erase current member identity");
+    check(await cdp.eval(switcher,
+        "!document.getElementById('admission').hidden===false"),
+        "stale request cannot send replacement host back to admission UI");
+    await cdp.eval(switcher,`(()=>{
+        window.fetch=window.__fencedFetch;
+        delete window.__fencedFetch;
+        delete window.__oldMemberRelease;
+        delete window.__oldMemberRefreshPaused;
+        return true;
+    })()`);
 }
 
 async function run(){

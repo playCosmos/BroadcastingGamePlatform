@@ -36,6 +36,7 @@
   let drawingActive=false,strokeId="",lastPoint=null,sendQueue=Promise.resolve();
   let currentPointer=null,pendingPoints=[],pointTimer=null;
   let refreshBusy=false,rerun=false,busy=false,roundWordId="";
+  let membershipGeneration=0;
   const ctx=$("canvas").getContext("2d");
   const strokes=new Map();
 
@@ -85,6 +86,7 @@
   }
 
   function invalidateSession(){
+    membershipGeneration++;
     const roomId=snapshot?.room?.roomId||"";
     try{
       localStorage.setItem(REVOKED,JSON.stringify({roomId,at:Date.now()}));
@@ -100,7 +102,9 @@
     say("참가 세션이 종료되었거나 강퇴되었습니다. 기존 세션으로는 다시 접속할 수 없습니다.",true);
   }
   function accept(secretValue){
+    membershipGeneration++;
     secret=secretValue;
+    snapshot=null;
     sessionStorage.setItem(STORAGE,secretValue);
     try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
     roomBinding="";drawingBinding="";telephone={active:false};
@@ -470,20 +474,36 @@
     }
   }
   async function refresh() {
-    if(!secret || refreshBusy){rerun=true;return;}
+    if(!secret)return;
+    if(refreshBusy){rerun=true;return;}
+    const generation=membershipGeneration,credential=secret;
+    const current=()=>generation===membershipGeneration &&
+      credential===secret;
     refreshBusy=true;
     try{
-      snapshot=await request("/drawing");
-      telephone=await request("/drawing/telephone");
+      // Both reads MUST use the same captured membership token. A stale
+      // response is never allowed to publish a previous room snapshot.
+      const nextSnapshot=await request("/drawing","GET",null,credential);
+      if(!current())return;
+      const nextTelephone=await request(
+        "/drawing/telephone","GET",null,credential);
+      if(!current())return;
+      snapshot=nextSnapshot;telephone=nextTelephone;
       render();
       window.TelephoneView.render(telephone,request,refresh,isHost(),
         snapshot?.room?.roomId,snapshot?.memberId);
-      await socketConnections();await refreshChat();
+      await socketConnections();
+      if(!current())return;
+      await refreshChat();
+      if(!current())return;
       if(isHost()){
         await refreshChannels();
+        if(!current())return;
         await refreshStreamerAssignments();
       }
     }catch(e){
+      // An old member's revoked 403 must never invalidate a newer member.
+      if(!current())return;
       if(e.status===403)invalidateSession();
       else say(e.message||"상태 조회 실패",true);
     }
