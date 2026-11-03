@@ -329,6 +329,39 @@ public final class GameRoomDrawingR5HttpProbe {
                 && "REVEAL".equals(read(albums).get("state").getAsString())
                 && read(albums).getAsJsonArray("albums").size()==3,
                 "only completed public reveal exposes full albums");
+            var presentBody="{\"albumIndex\":0,\"stepIndex\":1,"
+                +"\"expectedRevision\":0}";
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                presentBody,tb.token(),null,null,null).statusCode()==403,
+                "ordinary player cannot drive a shared gallery");
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                presentBody,ts.token(),null,null,null).statusCode()==403,
+                "spectator cannot drive the shared gallery");
+            var presented=request(client,base,ROOT+"/drawing/telephone/present",
+                "POST",presentBody,ta,null,null,null);
+            check(presented.statusCode()==200
+                && read(presented).getAsJsonObject("presentation")
+                    .get("stepIndex").getAsInt()==1,
+                "host advances the shared gallery cursor using HTTP");
+            check(read(request(client,base,ROOT+"/drawing/telephone","GET",
+                null,ts.token(),null,null,null))
+                .getAsJsonObject("presentation").get("revision").getAsLong()==1,
+                "spectator receives canonical persisted presentation revision");
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                "{\"albumIndex\":2,\"stepIndex\":1,"
+                +"\"expectedRevision\":0}",ta,null,null,null)
+                .statusCode()==409,
+                "stale host browser cannot overwrite newer presentation");
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                "{\"albumIndex\":99,\"stepIndex\":0,"
+                +"\"expectedRevision\":1}",ta,null,null,null)
+                .statusCode()==400,
+                "presentation cursor is bounded by frozen album count");
+            check(request(client,base,ROOT+"/drawing/telephone/present","POST",
+                "{\"albumIndex\":1,\"stepIndex\":0,"
+                +"\"expectedRevision\":1}",ta,null,"https://evil.example",null)
+                .statusCode()==403,
+                "cross-origin presenter requests remain CSRF protected");
             check("POST_GAME".equals(access.room(ta).state().name()),
                 "telephone mode completes shared GameRoom lifecycle");
             System.out.println("GAME_ROOM_DRAWING_HTTP_R5_PASSED checks="+checks+

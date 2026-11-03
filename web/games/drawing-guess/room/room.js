@@ -447,7 +447,7 @@
       snapshot=await request("/drawing");
       telephone=await request("/drawing/telephone");
       render();
-      window.TelephoneView.render(telephone,request,refresh);
+      window.TelephoneView.render(telephone,request,refresh,isHost());
       await socketConnections();await refreshChat();
       if(isHost()){
         await refreshChannels();

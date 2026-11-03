@@ -5,7 +5,7 @@
   let albumIndex = 0,entryIndex=0,strokes = [],baseStrokes = [],
     activeStroke = null,pointer = null,erasingLocal=false;
   let penColor="#25374c",penWidth=6,eraser=false;
-  let submitting = false;
+  let submitting = false,presenting=false,isPresenter=false;
   const draw = $("telephoneCanvas"),incoming = $("telephoneIncoming");
   const context = draw.getContext("2d");
   function visible(id,yes){$(id).hidden=!yes;}
@@ -39,15 +39,24 @@
   function renderAlbums(){
     const albums=state.albums||[];
     if(!albums.length)return;
-    albumIndex=Math.max(0,Math.min(albumIndex,albums.length-1));
+    // Unlike the previous local-only carousel, the persisted authoritative
+    // host cursor always wins (including on reconnect or a page reload).
+    albumIndex=Math.max(0,Math.min(state.presentation?.albumIndex??0,
+      albums.length-1));
     const album=albums[albumIndex];
-    entryIndex=Math.max(0,Math.min(entryIndex,album.entries.length-1));
+    entryIndex=Math.max(0,Math.min(state.presentation?.stepIndex??0,
+      album.entries.length-1));
     $("telephoneAlbumTitle").textContent=(albumIndex+1)+"/"+albums.length+
       " · "+album.originalAuthor+"님의 이야기";
-    $("telephoneAlbumPrev").disabled=albumIndex===0;
-    $("telephoneAlbumNext").disabled=albumIndex===albums.length-1;
-    $("telephoneStepPrev").disabled=entryIndex===0;
-    $("telephoneStepNext").disabled=entryIndex===album.entries.length-1;
+    $("telephoneAlbumPrev").disabled=!isPresenter||presenting||albumIndex===0;
+    $("telephoneAlbumNext").disabled=!isPresenter||presenting||
+      albumIndex===albums.length-1;
+    $("telephoneStepPrev").disabled=!isPresenter||presenting||entryIndex===0;
+    $("telephoneStepNext").disabled=!isPresenter||presenting||
+      entryIndex===album.entries.length-1;
+    $("telephonePresentationStatus").textContent=isPresenter
+      ?"공개 진행 중 · 앨범과 단계를 변경하면 모든 참가자 화면에 반영됩니다."
+      :"방장이 공개 중인 앨범을 함께 보고 있습니다. 화면은 자동 동기화됩니다.";
     $("telephoneStepLabel").textContent=(entryIndex+1)+"/"+album.entries.length+"단계";
     const entries=$("telephoneAlbumEntries");
     entries.replaceChildren();
@@ -72,8 +81,9 @@
       entries.append(card);
     }
   }
-  function render(data,send,onRefresh){
+  function render(data,send,onRefresh,host=false){
     state=data||{active:false};request=send;refresh=onRefresh;
+    isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active)return;
     const key=data.state+":"+data.stage;
@@ -225,14 +235,29 @@
     if(pointer===null && (strokes.length || state.mode==="COOP"))
       submit({strokes});
   });
-  $("telephoneAlbumPrev").addEventListener("click",()=>{
-    albumIndex--;entryIndex=0;renderAlbums();
-  });
-  $("telephoneAlbumNext").addEventListener("click",()=>{
-    albumIndex++;entryIndex=0;renderAlbums();
-  });
-  $("telephoneStepPrev").addEventListener("click",()=>{entryIndex--;renderAlbums();});
-  $("telephoneStepNext").addEventListener("click",()=>{entryIndex++;renderAlbums();});
+  async function present(album,step){
+    if(!isPresenter || presenting || !request ||
+       state.state!=="REVEAL" || !state.presentation)return;
+    presenting=true;
+    try{
+      state=await request("/drawing/telephone/present","POST",{
+        albumIndex:album,stepIndex:step,
+        expectedRevision:state.presentation.revision
+      });
+      renderAlbums();
+      if(refresh)await refresh();
+    }catch(error){
+      $("notice").textContent=error.message||"공개 화면 전환 실패";
+      if(refresh)await refresh();
+    }finally{
+      presenting=false;
+      if(state.state==="REVEAL")renderAlbums();
+    }
+  }
+  $("telephoneAlbumPrev").addEventListener("click",()=>present(albumIndex-1,0));
+  $("telephoneAlbumNext").addEventListener("click",()=>present(albumIndex+1,0));
+  $("telephoneStepPrev").addEventListener("click",()=>present(albumIndex,entryIndex-1));
+  $("telephoneStepNext").addEventListener("click",()=>present(albumIndex,entryIndex+1));
   window.setInterval(updateTimer,1000);
   window.TelephoneView={render};
 })();

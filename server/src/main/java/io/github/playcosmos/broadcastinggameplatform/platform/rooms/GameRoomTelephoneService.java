@@ -27,11 +27,14 @@ public final class GameRoomTelephoneService {
     public enum Mode { NORMAL, COOP }
     public record AlbumEntry(int stage,String kind,String content,String author) {}
     public record Album(String originalAuthor,List<AlbumEntry> entries) {}
+    public record Presentation(int albumIndex,int stepIndex,long revision) {}
     public record View(boolean active,String state,int stage,int stages,int seconds,
                        String stageStartedAt,int submitted,int participants,
                        String taskKind,String previousKind,String previousContent,
-                       boolean mySubmitted,List<Album> albums,Mode mode) {}
-    private record Match(int stage,int size,int seconds,String started,String state,Mode mode) {}
+                       boolean mySubmitted,List<Album> albums,Mode mode,
+                       Presentation presentation) {}
+    private record Match(int stage,int size,int seconds,String started,String state,
+                         Mode mode,Presentation presentation) {}
     private record Slot(int order,String memberId,String name) {}
 
     private final GameRoomService rooms;
@@ -113,10 +116,54 @@ public final class GameRoomTelephoneService {
             drawing(room);
             Match match=match(conn,room.roomId());
             if(match==null) return new View(false,"LOBBY",0,0,0,null,
-                0,0,null,null,null,false,List.of(),Mode.NORMAL);
+                0,0,null,null,null,false,List.of(),Mode.NORMAL,null);
             advanceExpired(conn,room,match);
             return view(conn,GameRoomService.read(conn,room.roomId()),
                 principal.memberId(),match(conn,room.roomId()));
+        });
+    }
+
+    /**
+     * Connected host advances the shared reveal cursor. The expected revision
+     * fences stale browser commands, while identical retries are idempotent.
+     * Room members may observe but can never change the presented frame.
+     */
+    public View present(String token,int albumIndex,int stepIndex,long expectedRevision)
+        throws SQLException {
+        return rooms.write(conn->{
+            var principal=access.requireSession(conn,token);
+            Room room=GameRoomService.read(conn,principal.roomId());
+            drawing(room);
+            if(!principal.isHost() || !connected(room,principal.memberId()))
+                throw new GameRoomAccessService.Forbidden(
+                    "connected host required for album presentation");
+            Match match=match(conn,room.roomId());
+            if(match==null || !"REVEAL".equals(match.state()))
+                throw new GameRoomService.RoomConflict(
+                    "album presentation requires completed game");
+            if(albumIndex<0 || albumIndex>=match.size() ||
+                stepIndex<0 || stepIndex>=match.size())
+                throw new IllegalArgumentException("album cursor out of range");
+            Presentation old=match.presentation();
+            boolean same=old.albumIndex()==albumIndex &&
+                old.stepIndex()==stepIndex;
+            if(same) return view(conn,room,principal.memberId(),match);
+            if(expectedRevision!=old.revision())
+                throw new GameRoomService.RoomConflict("stale album presentation");
+            try(var stmt=conn.prepareStatement("""
+                UPDATE game_room_telephone_match
+                SET reveal_album=?,reveal_step=?,reveal_revision=reveal_revision+1
+                WHERE room_id=? AND state='REVEAL' AND reveal_revision=?
+                """)) {
+                stmt.setInt(1,albumIndex);
+                stmt.setInt(2,stepIndex);
+                stmt.setString(3,room.roomId());
+                stmt.setLong(4,expectedRevision);
+                if(stmt.executeUpdate()!=1)
+                    throw new GameRoomService.RoomConflict(
+                        "album presentation changed concurrently");
+            }
+            return view(conn,room,principal.memberId(),match(conn,room.roomId()));
         });
     }
 
@@ -259,7 +306,7 @@ public final class GameRoomTelephoneService {
             m.started(),reveal?m.size():count(conn,room.roomId(),m.stage()),
             m.size(),slot>=0?kind:null,previousKind,previousContent,
             submitted,reveal?albums(conn,room.roomId(),m.size()):List.of(),
-            m.mode());
+            m.mode(),reveal?m.presentation():null);
     }
 
     private List<Album> albums(Connection conn,String roomId,int size)
@@ -335,14 +382,17 @@ public final class GameRoomTelephoneService {
 
     private static Match match(Connection conn,String roomId)throws SQLException {
         try(var stmt=conn.prepareStatement("""
-            SELECT stage,roster_size,duration_seconds,stage_started_at,state,mode
+            SELECT stage,roster_size,duration_seconds,stage_started_at,state,
+                   mode,reveal_album,reveal_step,reveal_revision
             FROM game_room_telephone_match WHERE room_id=?
             """)) {
             stmt.setString(1,roomId);
             try(var rows=stmt.executeQuery()){
                 return rows.next()?new Match(rows.getInt(1),rows.getInt(2),
                     rows.getInt(3),rows.getString(4),rows.getString(5),
-                    Mode.valueOf(rows.getString(6))):null;
+                    Mode.valueOf(rows.getString(6)),
+                    new Presentation(rows.getInt(7),rows.getInt(8),
+                        rows.getLong(9))):null;
             }
         }
     }
