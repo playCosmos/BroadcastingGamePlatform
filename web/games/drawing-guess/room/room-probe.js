@@ -82,6 +82,20 @@ has(html,'id="telephonePlaybackProgress"',"all participants see playback status"
 has(html,'id="telephonePalette"',"telephone drawing has a preset color palette");
 has(html,'id="telephoneRedo"',"telephone drawing has redo control");
 has(html,'id="telephoneDownload"',"completed gallery can download an album");
+has(html,'id="telephoneReplayTools"',"revealed picture has local replay controls");
+has(html,'id="telephoneReplay"',"drawing replay is opt-in");
+has(html,'id="telephoneReplayStatus"',"drawing replay status is accessible");
+has(telephone,'function startReplay()',"local drawing replay implementation exists");
+has(telephone,'function stopReplay(restore=true)',"local replay supports cancellation");
+has(telephone,'state.state!=="REVEAL"',"replay is forbidden before reveal");
+has(telephone,'displayedFrame.entry.kind!=="DRAWING"',"replay is forbidden on text slides");
+has(telephone,'requestAnimationFrame(step)',"native point animation without dependencies");
+has(telephone,'cancelAnimationFrame(stopped.raf)',"old animation is canceled on slide changes");
+has(telephone,'displayedFrame.entry.content===entry.content',"same snapshot preserves animation");
+has(telephone,'stopReplay(false)',"switching slides drops prior animation");
+has(telephone,'incomingDrawing(run.raw,canvas)',"animation restores canonical final image");
+has(telephone,'p.x>=0 && p.x<=1',"replayed points must be normalized");
+
 has(html,'id="telephoneDownloadStatus"',"album download has accessible status");
 has(telephone,'function composeAlbumPoster(album,index)',"export composes the full album");
 has(telephone,'album.entries.map((entry,i)',"poster includes all story stages");
