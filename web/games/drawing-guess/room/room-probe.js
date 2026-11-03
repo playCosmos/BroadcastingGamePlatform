@@ -83,6 +83,27 @@ has(html,'id="telephonePalette"',"telephone drawing has a preset color palette")
 has(html,'id="telephoneRedo"',"telephone drawing has redo control");
 has(html,'id="telephoneDownload"',"completed gallery can download an album");
 has(html,'id="telephoneReplayTools"',"revealed picture has local replay controls");
+has(html,'id="telephoneTimeline"',"reveal contains synchronized timeline");
+has(html,'id="telephoneAlbumTimeline"',"album markers exist");
+has(html,'id="telephoneStageTimeline"',"stage markers exist");
+has(html,'id="telephoneTimelineStatus"',"shared location status is accessible");
+has(html,'aria-label="공유 중인 앨범"',"album timeline accessible group");
+has(html,'aria-label="공유 중인 단계"',"stage timeline accessible group");
+has(telephone,'function renderTimeline(albums,album,playing)',"canonical gallery timeline");
+has(telephone,'albumTimelineKey=key',"same-album polling retains marker identity");
+has(telephone,'stageTimelineKey=stageKey',"same-stage polling retains marker identity");
+has(telephone,'button.dataset.album=String(index)',"album index is numeric DOM state");
+has(telephone,'button.dataset.step=String(index)',"stage index is numeric DOM state");
+has(telephone,'button.textContent=(index+1)',"untrusted author labels use textContent");
+has(telephone,'button.disabled=locked||active',"timeline prevents unauthorized navigation");
+has(telephone,'const locked=!isPresenter||presenting||playing',"auto/manual locks are shared");
+has(telephone,'state.playback?.playing)return',"auto playback denies manual timeline clicks");
+has(telephone,'button.setAttribute("aria-current"', "current marker is semantically exposed");
+has(telephone,'renderTimeline(albums,album,playing)',"all clients render host cursor");
+has(telephone,'present(index,0)',"album timeline uses existing host API");
+has(telephone,'present(albumIndex,step)',"stage timeline uses existing host API");
+has(telephone,'clearTimeline();',"new phase drops prior room timeline");
+
 has(html,'id="telephoneReplay"',"drawing replay is opt-in");
 has(html,'id="telephoneReplayStatus"',"drawing replay status is accessible");
 has(telephone,'function startReplay()',"local drawing replay implementation exists");
