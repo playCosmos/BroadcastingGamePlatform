@@ -374,15 +374,18 @@
       if (configuredRoom !== roomId) {
         memberSocket?.close();
         configuredRoom = roomId;
-        memberSocket = new WebSocket(websocketUrl
+        const socket = new WebSocket(websocketUrl
           + (websocketUrl.includes("?") ? "&" : "?")
           + "memberRoomId=" + encodeURIComponent(roomId));
-        memberSocket.addEventListener("open", () => {
-          memberSocket.send(JSON.stringify({
-            type: "room.subscribe",token,afterSequence:lastMemberSequence
-          }));
+        memberSocket = socket;
+        socket.addEventListener("open", () => {
+          if (socket === memberSocket && token && configuredRoom === roomId)
+            socket.send(JSON.stringify({
+              type: "room.subscribe",token,afterSequence:lastMemberSequence
+            }));
         });
-        memberSocket.addEventListener("message", event => {
+        socket.addEventListener("message", event => {
+          if (socket !== memberSocket || !token) return;
           try {
             const data = JSON.parse(event.data);
             if (data.sequence != null)
@@ -394,9 +397,13 @@
               refresh();
           } catch { /* invalid network event ignored */ }
         });
-        memberSocket.addEventListener("close", () => {
-          if (token && configuredRoom === roomId)
-            setTimeout(() => { configuredRoom = ""; refresh(); }, 1800);
+        socket.addEventListener("close", () => {
+          if (token && socket === memberSocket && configuredRoom === roomId)
+            setTimeout(() => {
+              if (token && socket === memberSocket && configuredRoom === roomId) {
+                configuredRoom = ""; refresh();
+              }
+            }, 1800);
         });
       }
       const yachtCode = state.yacht?.roomCode || "";
@@ -404,13 +411,20 @@
         gameSocket?.close();
         configuredYacht = yachtCode;
         if (yachtCode) {
-          gameSocket = new WebSocket(websocketUrl
+          const socket = new WebSocket(websocketUrl
             + (websocketUrl.includes("?") ? "&" : "?")
             + "yachtCode=" + encodeURIComponent(yachtCode));
-          gameSocket.addEventListener("message", () => refresh());
-          gameSocket.addEventListener("close", () => {
-            if (token && configuredYacht === yachtCode)
-              setTimeout(() => { configuredYacht = ""; refresh(); }, 1800);
+          gameSocket = socket;
+          socket.addEventListener("message", () => {
+            if (token && socket === gameSocket) refresh();
+          });
+          socket.addEventListener("close", () => {
+            if (token && socket === gameSocket && configuredYacht === yachtCode)
+              setTimeout(() => {
+                if (token && socket === gameSocket && configuredYacht === yachtCode) {
+                  configuredYacht = ""; refresh();
+                }
+              }, 1800);
           });
         }
       }
@@ -493,5 +507,20 @@
   if(roomCode)$("publicJoinRoom").elements.roomCode.value=roomCode;
   if (token) { visible("admission",false); visible("game",true); refresh(); }
   if(!token)loadPublicRooms().catch(e=>notice(e.message,true));
+  // Timer throttling in background tabs cannot be used as a reconnect clock.
+  // A foreground/online/pageshow recovery reconciles the same member token.
+  function resumeSession() {
+    if (!token) return;
+    if (memberSocket?.readyState >= WebSocket.CLOSING) configuredRoom = "";
+    if (gameSocket?.readyState >= WebSocket.CLOSING) configuredYacht = "";
+    refresh();
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (!document.hidden) resumeSession();
+  });
+  window.addEventListener("online", resumeSession);
+  window.addEventListener("pageshow", event => {
+    if (event.persisted) resumeSession();
+  });
   setInterval(() => { if (token) refresh(); }, 3000);
 })();

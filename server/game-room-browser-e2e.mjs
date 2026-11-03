@@ -210,12 +210,15 @@ async function startMemberObserver(page,roomId,memberToken,wsBase,
         const token=${JSON.stringify(memberToken)};
         const afterSequence=${JSON.stringify(afterSequence)};
         const ws=new WebSocket(url);
-        window.__roomObserver={code:-1,events:[],ws};
+        const observer={code:-1,events:[],ws};
+        window.__roomObserver=observer;
         ws.addEventListener("open",()=>{
             ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence}));
         });
-        ws.addEventListener("message",ev=>window.__roomObserver.events.push(ev.data));
-        ws.addEventListener("close",ev=>window.__roomObserver.code=ev.code);
+        // A retired observer must never mutate the newer one's counters
+        // or 1008 close code when its close event arrives late.
+        ws.addEventListener("message",ev=>observer.events.push(ev.data));
+        ws.addEventListener("close",ev=>observer.code=ev.code);
         return true;
     })()`);
 }
@@ -380,6 +383,19 @@ async function recoverMemberWssAfterAbruptDrop(mobile,viewer,hostToken,
     check(state.status===200,"guest remains joined after Canvas recovery");
     const roomId=state.data.room.roomId;
     const fragment="memberRoomId="+encodeURIComponent(roomId);
+    // Track production-created sockets in this actual browser, allowing
+    // a retired socket to deliver a deliberately late close after reconnect.
+    await cdp.eval(viewer,`(()=>{
+        const NativeSocket=window.WebSocket;
+        window.__r11Sockets=[];
+        window.WebSocket=class extends NativeSocket {
+            constructor(...args){
+                super(...args);
+                window.__r11Sockets.push(this);
+            }
+        };
+        return true;
+    })()`);
     await poll(()=>activeUpgrades(fragment).length>=2,
         "host and guest member-room sockets active prior to network cut");
     const oldIds=new Set(activeUpgrades(fragment).map(([id])=>id));
@@ -424,6 +440,48 @@ async function recoverMemberWssAfterAbruptDrop(mobile,viewer,hostToken,
         "resubscription after acknowledged cursor skips older chat");
     check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
         ===viewerToken,"chat replay does not replace guest member credential");
+
+    // R11: foreground/online recovery must replace an interrupted socket
+    // promptly without permitting a retired socket's late close callback
+    // to clear the binding of the new live socket.
+    const oldSocket=await cdp.eval(viewer,`(()=>{
+        const old=window.__r11Sockets.find(s=>
+            s.url.includes("memberRoomId=") &&
+            s.readyState===WebSocket.OPEN &&
+            s!==window.__roomObserver.ws);
+        if(!old)throw Error("missing tracked production member socket");
+        window.__r11Retired=old;
+        return true;
+    })()`);
+    check(oldSocket,"production subscriber tracked before foreground recovery");
+    const before=new Set(activeUpgrades(fragment).map(([id])=>id));
+    check(dropUpgrades(fragment)>=2,
+        "abrupt member WSS drop before foreground recovery");
+    await cdp.eval(viewer,`(()=>{
+        window.dispatchEvent(new Event("online"));
+        document.dispatchEvent(new Event("visibilitychange"));
+        return true;
+    })()`);
+    await poll(()=>activeUpgrades(fragment).some(([id])=>!before.has(id)),
+        "foreground/online signal restarts authenticated WSS transport",12000);
+    await poll(async()=>await cdp.eval(viewer,`(()=>{
+        const newer=window.__r11Sockets.find(s=>
+            s.url.includes("memberRoomId=") &&
+            s!==window.__r11Retired &&
+            s!==window.__roomObserver.ws &&
+            s.readyState===WebSocket.OPEN);
+        if(!newer)return false;
+        window.__r11Current=newer;
+        window.__r11Count=window.__r11Sockets.filter(s=>s.url.includes("memberRoomId=")).length;
+        window.__r11Retired.dispatchEvent(new Event("close"));
+        return true;
+    })()`),"retired member socket delivers deliberately late close");
+    await nap(2100);
+    check(await cdp.eval(viewer,`window.__r11Current.readyState===WebSocket.OPEN &&
+        window.__r11Sockets.filter(s=>s.url.includes("memberRoomId=")).length===window.__r11Count`),
+        "retired close cannot reset or duplicate the active member WSS");
+    check((await userToken(viewer,"gamecenter.drawing.room.member.v1"))
+        ===viewerToken,"foreground recovery preserves anonymous seat token");
 }
 
 async function mobileWssAcceptance(base,ws){
@@ -611,7 +669,17 @@ async function mobileWssAcceptance(base,ws){
         viewerToken,inkSamples,tls);
     await recoverMemberWssAfterAbruptDrop(mobile,viewer,mobileToken,
         viewerToken,tls);
-    const outsider=await backend(viewer,"/me","GET",null,viewerToken);
+    // R11 deliberately drops every room WSS upgrade, including the
+    // independent R10 observer. Restore an authenticated observer and
+    // receive its snapshot before asserting a subsequent 1008 kick.
+    const beforeKick=await backend(viewer,"/me","GET",null,viewerToken);
+    check(beforeKick.status===200,
+        "viewer membership survives recovery before 1008 kick check");
+    await startMemberObserver(viewer,beforeKick.data.room.roomId,viewerToken,tls.ws);
+    await poll(async()=>await cdp.eval(viewer,
+        "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
+        "restored kick observer has a live authenticated WSS subscription");
+    const outsider=beforeKick;
     const member=outsider.data.room.members.find(x=>
         x.displayName==="Secure Viewer");
     const kicked=await backend(mobile,"/host/kick","POST",{
@@ -756,6 +824,18 @@ async function run(){
     check(await cdp.eval(host,
         "document.getElementById('closeRoom').hidden===true"),
         "Yacht active match cannot be closed from UI");
+    const yachtGuestToken=await userToken(guest,
+        "gamecenter.yacht.member-session.v1");
+    await cdp.eval(guest,`(()=>{
+        window.dispatchEvent(new Event("online"));
+        document.dispatchEvent(new Event("visibilitychange"));
+        return true;
+    })()`);
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById('roomState').textContent==='PLAYING'"),
+        "Yacht foreground network reconciliation preserves live match");
+    check((await userToken(guest,"gamecenter.yacht.member-session.v1"))
+        ===yachtGuestToken,"Yacht foreground recovery keeps member identity");
     // Test responsive DOM with a real mobile-sized viewport, not static CSS
     await cdp.send("Emulation.setDeviceMetricsOverride",{
         width:390,height:844,deviceScaleFactor:1,mobile:true},guest.sessionId);

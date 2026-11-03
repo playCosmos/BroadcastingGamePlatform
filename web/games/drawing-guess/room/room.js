@@ -318,10 +318,15 @@
     const roomId=snapshot.room.roomId;
     if(roomId!==roomBinding){
       memberSocket?.close();roomBinding=roomId;
-      memberSocket=new WebSocket(url("memberRoomId="+encodeURIComponent(roomId)));
-      memberSocket.addEventListener("open",()=>memberSocket.send(JSON.stringify({
-        type:"room.subscribe",token:secret,afterSequence:chatSequence})));
-      memberSocket.addEventListener("message",ev=>{
+      const socket=new WebSocket(url("memberRoomId="+encodeURIComponent(roomId)));
+      memberSocket=socket;
+      socket.addEventListener("open",()=>{
+        if(socket===memberSocket && secret && roomBinding===roomId)
+          socket.send(JSON.stringify({
+            type:"room.subscribe",token:secret,afterSequence:chatSequence}));
+      });
+      socket.addEventListener("message",ev=>{
+        if(socket!==memberSocket || !secret)return;
         try {
           const data=JSON.parse(ev.data);
           if(typeof data.sequence==="number")chatSequence=Math.max(chatSequence,data.sequence);
@@ -329,9 +334,13 @@
             refreshChat().catch(()=>{});
         }catch{/* malformed wire message */}
       });
-      memberSocket.addEventListener("close",()=>{
-        if(secret&&roomBinding===roomId)
-          setTimeout(()=>{roomBinding="";refresh();},1800);
+      socket.addEventListener("close",()=>{
+        if(secret&&socket===memberSocket&&roomBinding===roomId)
+          setTimeout(()=>{
+            if(secret&&socket===memberSocket&&roomBinding===roomId){
+              roomBinding="";refresh();
+            }
+          },1800);
       });
     }
     const code=snapshot.game?.drawingCode||"";
@@ -341,15 +350,20 @@
         const socket=new WebSocket(url("drawingCode="+encodeURIComponent(code)));
         canvasSocket=socket;
         socket.addEventListener("open",()=>{
-          if(secret&&drawingBinding===code)
+          if(secret&&socket===canvasSocket&&drawingBinding===code)
             socket.send(JSON.stringify({type:"drawing.subscribe",token:secret}));
         });
-        canvasSocket.addEventListener("message",ev=>{
+        socket.addEventListener("message",ev=>{
+          if(socket!==canvasSocket || !secret)return;
           try{applyEvent(ev.data);}catch{/* invalid drawing event ignored */}
         });
-        canvasSocket.addEventListener("close",()=>{
-          if(secret&&drawingBinding===code)
-            setTimeout(()=>{drawingBinding="";refresh();},1800);
+        socket.addEventListener("close",()=>{
+          if(secret&&socket===canvasSocket&&drawingBinding===code)
+            setTimeout(()=>{
+              if(secret&&socket===canvasSocket&&drawingBinding===code){
+                drawingBinding="";refresh();
+              }
+            },1800);
         });
       }
     }
@@ -518,5 +532,21 @@
     }catch{/* storage unavailable */}
   }
   if(!secret)loadPublicRooms().catch(e=>say(e.message,true));
+  // Background tabs may throttle the 3s poll and socket retry timers.
+  // Reconcile immediately on foreground/network recovery, retaining the
+  // existing member credential and server-authoritative replay cursors.
+  function resumeSession(){
+    if(!secret)return;
+    if(memberSocket?.readyState>=WebSocket.CLOSING)roomBinding="";
+    if(canvasSocket?.readyState>=WebSocket.CLOSING)drawingBinding="";
+    refresh();
+  }
+  document.addEventListener("visibilitychange",()=>{
+    if(!document.hidden)resumeSession();
+  });
+  window.addEventListener("online",resumeSession);
+  window.addEventListener("pageshow",event=>{
+    if(event.persisted)resumeSession();
+  });
   setInterval(()=>{if(secret)refresh();},3000);
 })();
