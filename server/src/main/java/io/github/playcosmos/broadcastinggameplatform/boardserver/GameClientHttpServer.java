@@ -956,6 +956,18 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             return;
         }
+        if ("/drawing/channels".equals(suffix) && "GET".equals(method)) {
+            try {sendJson(exchange,200,Map.of(
+                "channels",sharedDrawing.channels(token)));}
+            catch(GameRoomAccessService.Forbidden denied) {
+                sendJson(exchange,403,Map.of("error","drawing member unauthorized"));
+            } catch(java.sql.SQLException failed) {
+                sendJson(exchange,500,Map.of("error","drawing storage unavailable"));
+            } catch(IllegalStateException conflict) {
+                sendJson(exchange,409,Map.of("error","drawing room unavailable"));
+            }
+            return;
+        }
         if ("/drawing/my-prompt".equals(suffix) && "GET".equals(method)) {
             try {sendJson(exchange,200,sharedDrawing.myPrompt(token));}
             catch (GameRoomAccessService.Forbidden denied) {
@@ -975,6 +987,18 @@ public final class GameClientHttpServer implements AutoCloseable {
         try {
             String action=suffix.substring("/drawing/".length());
             switch(action) {
+                case "channels/add" -> {
+                    var json=readYachtBody(exchange,Set.of("provider","channelId"));
+                    sendJson(exchange,200,Map.of("channels",sharedDrawing.addChannel(
+                        token,roomApiText(json,"provider"),
+                        roomApiText(json,"channelId"))));
+                }
+                case "channels/remove" -> {
+                    var json=readYachtBody(exchange,Set.of("provider","channelId"));
+                    sendJson(exchange,200,Map.of("channels",sharedDrawing.removeChannel(
+                        token,roomApiText(json,"provider"),
+                        roomApiText(json,"channelId"))));
+                }
                 case "start" -> {
                     var json=readYachtBody(exchange,Set.of(
                         "mode","rounds","durationSeconds"));

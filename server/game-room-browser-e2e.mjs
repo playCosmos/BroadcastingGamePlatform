@@ -529,6 +529,24 @@ async function mobileWssAcceptance(base,ws){
         "window.__roomObserver.events.some(x=>x.includes('room.snapshot'))"),
         "WSS upgrade and authenticated room replay through TLS proxy");
 
+    // R12: real production browser hosts bind incoming SOOP channel labels.
+    // Only configured provider events (not browser form values) can score.
+    await fill(mobile,"broadcastForm",{
+        provider:"SOOP",channelId:"r12-e2e-channel"
+    });
+    await poll(async()=>await cdp.eval(mobile,
+        "document.getElementById('broadcastChannels').textContent.includes('r12-e2e-channel')"),
+        "guest Drawing host configures received broadcast channel");
+    check(await cdp.eval(viewer,
+        "document.getElementById('broadcastSettings').hidden"),
+        "spectator cannot access broadcast binding controls");
+    const allowedChannels=await backend(viewer,
+        "/drawing/channels","GET",null,viewerToken);
+    check(allowedChannels.status===200 &&
+        allowedChannels.data.channels.length===1 &&
+        allowedChannels.data.channels[0].channelId==="r12-e2e-channel",
+        "spectator reads host-bound channel labels without mutation permission");
+
     await click(mobile,"ready");
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('ready').textContent.includes('취소')"),

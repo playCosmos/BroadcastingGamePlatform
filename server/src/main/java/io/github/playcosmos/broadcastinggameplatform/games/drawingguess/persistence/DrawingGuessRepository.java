@@ -490,7 +490,7 @@ public final class DrawingGuessRepository {
         var roomIds = new ArrayList<String>();
         try (var connection = database.open();
              var statement = connection.prepareStatement("""
-                 SELECT room_id
+                 SELECT room_id, updated_at
                  FROM drawing_guess_room
                  WHERE state = 'ACTIVE'
                    AND chat_guess_enabled = 1
@@ -504,10 +504,21 @@ public final class DrawingGuessRepository {
                      OR chat_channel_id = ''
                      OR chat_channel_id = ?
                    )
+                 UNION ALL
+                 SELECT native.room_id, native.updated_at
+                 FROM game_room_drawing_broadcast_binding binding
+                 JOIN game_room common ON common.room_id=binding.room_id
+                 JOIN game_room_drawing_link link ON link.room_id=common.room_id
+                 JOIN drawing_guess_room native ON native.room_id=link.drawing_room_id
+                 WHERE common.state='PLAYING' AND native.state='ACTIVE'
+                   AND native.chat_guess_enabled=1
+                   AND binding.provider=? AND binding.channel_id=?
                  ORDER BY updated_at DESC
                  """)) {
             statement.setString(1, normalizedProvider);
             statement.setString(2, normalizedChannel);
+            statement.setString(3, normalizedProvider);
+            statement.setString(4, normalizedChannel);
             try (var rows = statement.executeQuery()) {
                 while (rows.next()) {
                     roomIds.add(rows.getString(1));
