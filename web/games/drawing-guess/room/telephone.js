@@ -158,6 +158,25 @@
     run.raf=requestAnimationFrame(step);
   }
   $("telephoneReplay").addEventListener("click",startReplay);
+  // Presentation layout is local-only: no room API call and no storage.
+  function setFocus(enabled){
+    if(enabled && (!state.active || state.state!=="REVEAL"))return;
+    const active=Boolean(enabled);
+    document.body.classList.toggle("telephoneFocus",active);
+    $("telephoneFocusMode").setAttribute("aria-pressed",String(active));
+    $("telephoneFocusMode").textContent=active?"집중 보기 종료":"집중 보기";
+  }
+  $("telephoneFocusMode").addEventListener("click",()=>{
+    setFocus(!document.body.classList.contains("telephoneFocus"));
+  });
+  document.addEventListener("keydown",event=>{
+    if(event.key==="Escape" &&
+       document.body.classList.contains("telephoneFocus")){
+      event.preventDefault();
+      setFocus(false);
+      $("telephoneFocusMode").focus();
+    }
+  });
   function clearTimeline(){
     albumTimelineKey="";stageTimelineKey="";
     $("telephoneAlbumTimeline").replaceChildren();
@@ -308,6 +327,7 @@
     isPresenter=Boolean(host);
     visible("telephonePlay",Boolean(data?.active));
     if(!data?.active){
+      setFocus(false);
       clearTimeline();
       stopReplay();displayedFrame=null;
       visible("telephoneReplayTools",false);
@@ -331,6 +351,7 @@
       paint(draw,baseStrokes);
     }
     const reveal=data.state==="REVEAL";
+    if(!reveal)setFocus(false);
     const drawing=data.taskKind==="DRAWING";
     const text=data.taskKind==="TEXT";
     const input=!reveal&&!data.mySubmitted&&(drawing||text);
