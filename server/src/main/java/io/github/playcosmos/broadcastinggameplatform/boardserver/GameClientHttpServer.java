@@ -962,6 +962,10 @@ public final class GameClientHttpServer implements AutoCloseable {
         json.put("game",state.game());
         json.put("canDraw",state.canDraw());
         json.put("nextDrawerMemberId",state.nextDrawerMemberId());
+        // Stored with the room reservation before the native match exists;
+        // a recovering host must retry with these immutable settings.
+        json.put("configuredRounds",state.configuredRounds());
+        json.put("durationSeconds",state.durationSeconds());
         return json;
     }
 
