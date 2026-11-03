@@ -194,6 +194,35 @@ has(telephone,'redraw();updateTools();saveDraft();',
   "drawn/undone/erased strokes autosave");
 has(telephone,'      discardStoredDraft();',"successful submit discards tab draft");
 has(telephone,'beginDraft(data,roomId,memberId)',"authorized phase enables restore");
+has(telephone,"let actionEpoch=0,actionIdentity=\"\";","in-flight actions track an independent view generation");
+has(telephone,"const identity=data?.active","telephone session identity changes only across phase or room");
+has(telephone,"JSON.stringify([roomId,memberId,data.mode,data.state,","author and phase are part of action identity");
+has(telephone,"data.stage,data.stageStartedAt])","stage-start identity prevents old-stage action result");
+has(telephone,"if(identity!==actionIdentity){","normal same-phase refresh does not cancel submitted actions");
+has(telephone,'const key=identity;',"drawing phase identity includes the room and member");
+has(telephone,'visible("telephoneReveal",false);',"inactive room hides previous gallery");
+has(telephone,'$("telephoneAlbumEntries").replaceChildren();',
+  "room switch clears old revealed album contents from DOM");
+
+has(telephone,"actionIdentity=identity;actionEpoch++;","room and stage transitions invalidate old actions");
+has(telephone,"submitting=false;presenting=false;","new member's controls do not stay locked by an old request");
+has(telephone,"const actionCurrent=(epoch,send)=>","action continuation checks binding");
+has(telephone,"if(!actionCurrent(epoch,send))return;","network result must pass epoch check");
+has(telephone,"const next=await send(\"/drawing/telephone/submit\",\"POST\"","submit captures its initiating request");
+has(telephone,"const next=await send(\"/drawing/telephone/present\",\"POST\"","present captures initiating request");
+has(telephone,"const execute=revision=>send(\"/drawing/telephone/playback\",\"POST\"","playback retry never resolves current global member");
+has(telephone,"const fresh=await send(\"/drawing/telephone\");","409 playback uses captured author credential");
+has(telephone,"if(actionCurrent(epoch,send))","old finally or error cannot unlock new actions");
+has(telephone,"discardStoredDraft();","private draft delete only after validated submit");
+const submitOffset=telephone.indexOf('const next=await send("/drawing/telephone/submit"');
+const submitFence=telephone.indexOf('if(!actionCurrent(epoch,send))return;',submitOffset);
+ok(submitOffset>=0 && submitFence>submitOffset &&
+   telephone.indexOf('discardStoredDraft();',submitFence)>submitFence,
+  "old successful submission cannot delete new room's unsent draft");
+const playbackOffset=telephone.indexOf('const fresh=await send("/drawing/telephone");');
+ok(playbackOffset>=0 &&
+   telephone.indexOf('if(!actionCurrent(epoch,send))return;',playbackOffset)>playbackOffset,
+  "old 409 cannot retry playback across a changed member");
 has(js,'snapshot?.room?.roomId,snapshot?.memberId',
   "room controller provides authenticated draft scope");
 no(telephone,'localStorage.setItem(DRAFT_KEY',"private drafts are never persisted across tabs");
