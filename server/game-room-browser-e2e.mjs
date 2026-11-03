@@ -1378,15 +1378,25 @@ async function telephoneBrowserAcceptance(base,coop){
                         await click(page,"telephoneEraser");
                     }
                 }
-                if(i===0 && (stage===0 || coop && stage===1)){
+                if(i===0 && drawing && (stage===0 || stage===1)){
                     const originalInk=await cdp.eval(page,canvasImage);
+                    await cdp.eval(page,`(()=>{
+                        document.querySelector('#telephoneShapeTools button[data-tool="RECT"]').click();
+                        document.querySelector('#telephonePalette button[data-color="#2db47d"]').click();
+                        const select=document.getElementById("telephoneWidth");
+                        select.value="12";
+                        select.dispatchEvent(new Event("change",{bubbles:true}));
+                        return true;
+                    })()`);
                     const backup=await cdp.eval(page,`(()=>{
                         const raw=sessionStorage.getItem(
                             ${JSON.stringify(localDraftKey)});
                         return raw?JSON.parse(raw):null;
                     })()`);
                     check(backup?.kind==="DRAWING" &&
-                        backup.strokes?.length>0 &&
+                        backup.version===2 && backup.strokes?.length>0 &&
+                        backup.undo?.length>0 && backup.tool==="RECT" &&
+                        backup.color==="#2db47d" && backup.width===12 &&
                         !("previousContent" in backup) &&
                         !("baseStrokes" in backup) &&
                         !("token" in backup),
@@ -1400,6 +1410,69 @@ async function telephoneBrowserAcceptance(base,coop){
                             canvas.toDataURL()===${JSON.stringify(originalInk)} &&
                             !document.getElementById("telephoneDiscardDraft").hidden;
                     })()`),"own strokes plus immutable COOP background recover pixel-identically");
+                    check(await cdp.eval(page,`(()=>{
+                        return !document.getElementById("telephoneUndo").disabled &&
+                            document.querySelector('#telephoneShapeTools button[data-tool="RECT"]')
+                                .getAttribute("aria-pressed")==="true" &&
+                            document.getElementById("telephoneColor").value==="#2db47d" &&
+                            document.getElementById("telephoneWidth").value==="12";
+                    })()`),"reload restores author undo and current brush settings");
+                    await click(page,"telephoneUndo");
+                    check(await cdp.eval(page,canvasImage)!==originalInk,
+                        "restored undo changes only current authored ink");
+                    const beforeEmptyReload=await cdp.eval(page,`(()=>{
+                        const saved=JSON.parse(sessionStorage.getItem(
+                            ${JSON.stringify(localDraftKey)}));
+                        return saved.version===2 && saved.redo.length>0;
+                    })()`);
+                    check(beforeEmptyReload,"undo leaves a valid persistent redo stack");
+                    await cdp.navigate(page,base+"/games/drawing-guess/room/");
+                    await poll(async()=>await cdp.eval(page,
+                        "!document.getElementById('telephoneDrawingArea').hidden"+
+                        " && !document.getElementById('telephoneRedo').disabled"),
+                        "redo survives a second real reload after undo");
+                    await click(page,"telephoneRedo");
+                    check(await cdp.eval(page,canvasImage)===originalInk,
+                        "redo reconstructs exact image after reload");
+                    await click(page,"telephoneDiscardDraft");
+                    check(await cdp.eval(page,canvasImage)===before,
+                        "discard restores initial COOP canvas without modifying inherited ink");
+                    const sampleBounds=await cdp.eval(page,`(()=>{
+                        const canvas=document.getElementById("telephoneCanvas");
+                        canvas.scrollIntoView({block:"center"});
+                        const r=canvas.getBoundingClientRect();
+                        return {x:r.x,y:r.y,width:r.width,height:r.height};
+                    })()`);
+                    await touchTelephoneShape(page,sampleBounds);
+                    const newInk=await cdp.eval(page,canvasImage);
+                    const newDraft=await cdp.eval(page,`(()=>{
+                        const raw=sessionStorage.getItem(
+                            ${JSON.stringify(localDraftKey)});
+                        return raw?JSON.parse(raw):null;
+                    })()`);
+                    check(newInk!==before && newDraft?.version===2 &&
+                        newDraft.strokes.length===1,
+                        "new drawing is autosaved after explicit draft discard");
+                    await click(page,"telephoneUndo");
+                    check(await cdp.eval(page,canvasImage)===before,
+                        "single undo restores empty own overlay");
+                    const emptyDraft=await cdp.eval(page,`(()=>{
+                        const saved=JSON.parse(sessionStorage.getItem(
+                            ${JSON.stringify(localDraftKey)}));
+                        return saved.strokes.length===0 && saved.redo.length===1;
+                    })()`);
+                    check(emptyDraft,
+                        "empty current stroke list retains redo record in private storage");
+                    await cdp.navigate(page,base+"/games/drawing-guess/room/");
+                    await poll(async()=>await cdp.eval(page,
+                        "!document.getElementById('telephoneDrawingArea').hidden"+
+                        " && !document.getElementById('telephoneRedo').disabled"),
+                        "redo remains available after empty-ink reload");
+                    check(await cdp.eval(page,canvasImage)===before,
+                        "empty-ink reload preserves original inherited background");
+                    await click(page,"telephoneRedo");
+                    check(await cdp.eval(page,canvasImage)===newInk,
+                        "redo recreates one stroke after empty-ink reload");
                     const stageAfterReload=await backend(page,
                         "/drawing/telephone","GET",null,tokens[i]);
                     check(stageAfterReload.data.stage===stageBeforeReload.data.stage &&
