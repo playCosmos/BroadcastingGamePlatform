@@ -85,6 +85,27 @@ has(html,'id="telephoneDownload"',"completed gallery can download an album");
 has(html,'id="telephoneReplayTools"',"revealed picture has local replay controls");
 has(html,'id="telephoneTimeline"',"reveal contains synchronized timeline");
 has(html,'id="telephoneFocusMode"',"reveal has an opt-in focus control");
+has(html,'id="telephoneShortcutHelp"',"presenter keyboard instructions");
+has(html,'id="telephoneReveal" tabindex="-1"',"focus mode moves keyboard to reveal");
+has(telephone,'$("telephoneReveal").focus({preventScroll:true})',
+  "focus entry prepares stage shortcut target");
+has(telephone,'!focused || !isPresenter || !state.active || state.state!=="REVEAL"',
+  "only focus-mode authenticated presenter can execute shortcuts");
+has(telephone,'!state.presentation || presenting || event.repeat || event.isComposing',
+  "presenter hotkeys block stale/busy/repeated and IME events");
+has(telephone,'event.ctrlKey || event.altKey || event.metaKey || event.shiftKey',
+  "modifier shortcuts are left to browser");
+has(telephone,'event.target.closest("input,textarea,select,button,[contenteditable]")',
+  "typing and native controls retain their keyboard behavior");
+has(telephone,'ArrowLeft:[albumIndex,entryIndex-1]',"left returns one stage");
+has(telephone,'ArrowRight:[albumIndex,entryIndex+1]',"right advances one stage");
+has(telephone,'PageUp:[albumIndex-1,0]',"page up selects previous album");
+has(telephone,'PageDown:[albumIndex+1,0]',"page down selects next album");
+has(telephone,'if(playing)return;',"host manual shortcuts disabled in autoplay");
+has(telephone,'playback(playing?"PAUSE":"PLAY"',
+  "space toggles existing server-authoritative player");
+has(telephone,'present(nextAlbum,nextStep)',"keys use revision-fenced presenter API");
+
 has(html,'aria-label="앨범 집중 보기 전환"',"focus control announces its purpose");
 has(html,'aria-pressed="false"',"focus starts in accessible unpressed state");
 has(html,'body.telephoneFocus #room > .columns',"focus hides score, chat and lobby");

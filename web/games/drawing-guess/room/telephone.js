@@ -165,17 +165,50 @@
     document.body.classList.toggle("telephoneFocus",active);
     $("telephoneFocusMode").setAttribute("aria-pressed",String(active));
     $("telephoneFocusMode").textContent=active?"집중 보기 종료":"집중 보기";
+    visible("telephoneShortcutHelp",active && isPresenter);
+    if(active)$("telephoneReveal").focus({preventScroll:true});
   }
   $("telephoneFocusMode").addEventListener("click",()=>{
     setFocus(!document.body.classList.contains("telephoneFocus"));
   });
   document.addEventListener("keydown",event=>{
-    if(event.key==="Escape" &&
-       document.body.classList.contains("telephoneFocus")){
+    const focused=document.body.classList.contains("telephoneFocus");
+    if(event.key==="Escape" && focused){
       event.preventDefault();
       setFocus(false);
       $("telephoneFocusMode").focus();
+      return;
     }
+    // Browser/IME/editor shortcuts always take priority. Only a focused
+    // presenter may issue the same revision-fenced commands as host buttons.
+    if(!focused || !isPresenter || !state.active || state.state!=="REVEAL" ||
+       !state.presentation || presenting || event.repeat || event.isComposing ||
+       event.ctrlKey || event.altKey || event.metaKey || event.shiftKey)return;
+    if(event.target instanceof Element &&
+       event.target.closest("input,textarea,select,button,[contenteditable]"))return;
+    const albums=state.albums||[];
+    const album=albums[albumIndex];
+    if(!album)return;
+    const playing=Boolean(state.playback?.playing);
+    if(event.code==="Space" || event.key===" "){
+      event.preventDefault();
+      playback(playing?"PAUSE":"PLAY",Number($("telephonePlaybackSpeed").value));
+      return;
+    }
+    const commands={
+      ArrowLeft:[albumIndex,entryIndex-1],
+      ArrowRight:[albumIndex,entryIndex+1],
+      PageUp:[albumIndex-1,0],
+      PageDown:[albumIndex+1,0]
+    };
+    const target=commands[event.key];
+    if(!target)return;
+    event.preventDefault();
+    if(playing)return;
+    const [nextAlbum,nextStep]=target;
+    if(nextAlbum<0 || nextAlbum>=albums.length ||
+       nextStep<0 || nextStep>=albums[nextAlbum].entries.length)return;
+    present(nextAlbum,nextStep);
   });
   function clearTimeline(){
     albumTimelineKey="";stageTimelineKey="";
@@ -267,6 +300,8 @@
       " · "+album.originalAuthor+"님의 이야기";
     const playing=Boolean(state.playback?.playing);
     visible("telephonePlaybackControls",isPresenter);
+    visible("telephoneShortcutHelp",
+      isPresenter && document.body.classList.contains("telephoneFocus"));
     $("telephoneAutoplay").disabled=!isPresenter||presenting;
     $("telephoneAutoplay").textContent=playing?"일시정지":"자동 재생";
     $("telephonePlaybackSpeed").disabled=!isPresenter||presenting;

@@ -781,6 +781,23 @@ async function mobileWssAcceptance(base,ws){
  * form, real text/drawing controls, private handoff and slide reveal.
  * NORMAL and COOP each create an isolated room with three browser contexts.
  */
+async function sendTelephoneHotkey(page,key,options={}){
+    const keys={ArrowLeft:37,ArrowRight:39,PageUp:33,PageDown:34,
+        " ":32,Escape:27};
+    const params={
+        key,code:key===" "?"Space":key,
+        windowsVirtualKeyCode:keys[key],
+        modifiers:options.modifiers||0,
+        autoRepeat:Boolean(options.repeat)
+    };
+    await cdp.send("Input.dispatchKeyEvent",{
+        type:"keyDown",...params
+    },page.sessionId);
+    await cdp.send("Input.dispatchKeyEvent",{
+        type:"keyUp",...params,autoRepeat:false
+    },page.sessionId);
+}
+
 async function telephoneBrowserAcceptance(base,coop){
     const pages=await Promise.all(Array.from({length:4},()=>cdp.page(
         base+"/games/drawing-guess/room/")));
@@ -1391,6 +1408,149 @@ async function telephoneBrowserAcceptance(base,coop){
         "[...document.querySelectorAll('#telephoneAlbumTimeline button,'+"+
         "'#telephoneStageTimeline button')].every(button=>button.disabled)"),
         "spectators remain read-only after host jumps");
+    const hotkeyStart=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(hotkeyStart.data.presentation.albumIndex===2 &&
+        hotkeyStart.data.presentation.stepIndex===2 &&
+        !hotkeyStart.data.playback.playing,
+        "keyboard tests start on final paused album stage");
+    await sendTelephoneHotkey(host,"ArrowLeft");
+    check((await backend(host,"/drawing/telephone","GET",null,tokens[0]))
+        .data.presentation.revision===hotkeyStart.data.presentation.revision,
+        "outside focus, presenter arrow does not navigate");
+    await click(pages[3],"telephoneFocusMode");
+    check(await cdp.eval(pages[3],
+        "document.getElementById('telephoneShortcutHelp').hidden"+
+        " && document.activeElement.id==='telephoneReveal'"),
+        "spectator enters focus without presenter shortcuts");
+    await sendTelephoneHotkey(pages[3],"ArrowLeft");
+    await sendTelephoneHotkey(pages[3]," ");
+    const afterSpectatorHotkeys=await backend(host,"/drawing/telephone",
+        "GET",null,tokens[0]);
+    check(afterSpectatorHotkeys.data.presentation.revision===
+        hotkeyStart.data.presentation.revision &&
+        !afterSpectatorHotkeys.data.playback.playing,
+        "spectator focused keys cannot navigate or control autoplay");
+    await sendTelephoneHotkey(pages[3],"Escape");
+    await click(host,"telephoneFocusMode");
+    check(await cdp.eval(host,
+        "document.body.classList.contains('telephoneFocus')"+
+        " && document.activeElement.id==='telephoneReveal'"+
+        " && !document.getElementById('telephoneShortcutHelp').hidden"),
+        "presenter focus enables hotkeys and exposes shortcut guidance");
+    await sendTelephoneHotkey(host,"ArrowRight");
+    check((await backend(host,"/drawing/telephone","GET",null,tokens[0]))
+        .data.presentation.revision===hotkeyStart.data.presentation.revision,
+        "right key at final step cannot cross album boundary");
+    async function waitHotkeyCursor(album,step,increment,label){
+        await poll(async()=>{
+            const x=await backend(host,"/drawing/telephone","GET",
+                null,tokens[0]);
+            return x.data.presentation.albumIndex===album &&
+                x.data.presentation.stepIndex===step &&
+                x.data.presentation.revision===
+                    hotkeyStart.data.presentation.revision+increment;
+        },label);
+        await poll(async()=>await cdp.eval(host,
+            "document.getElementById('telephoneStepPrev').disabled===false"+
+            " || document.getElementById('telephoneStepNext').disabled===false"+
+            " || document.getElementById('telephoneAlbumNext').disabled===false"),
+            label+" presenter transaction settles");
+        // Cursor commit can precede the presenter's finally() unlock.
+        await nap(180);
+    }
+    await sendTelephoneHotkey(host,"ArrowLeft");
+    await waitHotkeyCursor(2,1,1,
+        "host ArrowLeft goes to previous stage via server");
+    await sendTelephoneHotkey(host,"ArrowRight");
+    await waitHotkeyCursor(2,2,2,
+        "host ArrowRight returns to last stage");
+    await sendTelephoneHotkey(host,"PageUp");
+    await waitHotkeyCursor(1,0,3,
+        "host PageUp selects previous album at stage one");
+    await sendTelephoneHotkey(host,"PageDown");
+    await waitHotkeyCursor(2,0,4,
+        "host PageDown selects next album at stage one");
+    await poll(async()=>await cdp.eval(pages[3],
+        "document.querySelector('#telephoneAlbumTimeline button[data-album=\"2\"]')"+
+        ".getAttribute('aria-current')==='true'"+
+        " && document.getElementById('telephoneStepLabel').textContent.startsWith('1/')"),
+        "spectator follows host keyboard-driven album cursor");
+    await sendTelephoneHotkey(host,"ArrowRight",{modifiers:2});
+    await sendTelephoneHotkey(host,"ArrowRight",{repeat:true});
+    await cdp.eval(host,`(()=>{
+        const field=document.createElement("input");
+        field.id="hotkeyTextEditor";
+        document.getElementById("telephoneReveal").append(field);
+        field.focus();
+        return true;
+    })()`);
+    await sendTelephoneHotkey(host,"ArrowRight");
+    check((await backend(host,"/drawing/telephone","GET",null,tokens[0]))
+        .data.presentation.revision===hotkeyStart.data.presentation.revision+4,
+        "modifiers, repeat and active text editor do not navigate");
+    await cdp.eval(host,`(()=>{
+        document.getElementById("hotkeyTextEditor").remove();
+        document.getElementById("telephoneReveal").focus();
+        return true;
+    })()`);
+    await cdp.eval(host,`(()=>{
+        const speed=document.getElementById("telephonePlaybackSpeed");
+        speed.value="20";
+        speed.dispatchEvent(new Event("change",{bubbles:true}));
+        return true;
+    })()`);
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.playback.intervalSeconds===20 && !x.data.playback.playing;
+    },"presenter selects slow interval to test Space without timer racing");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"),
+        "speed request unlocks before keyboard playback");
+    await cdp.eval(host,
+        "document.getElementById('telephoneReveal').focus();true");
+    const beforeSpace=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    await sendTelephoneHotkey(host," ");
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return x.data.playback.playing &&
+            x.data.presentation.revision===
+                beforeSpace.data.presentation.revision+1;
+    },"Space starts authoritative host autoplay");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"),
+        "play request completes before next keyboard shortcut");
+    await sendTelephoneHotkey(host,"ArrowRight");
+    await sendTelephoneHotkey(host,"PageUp");
+    const whilePlaying=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    check(whilePlaying.data.presentation.revision===
+        beforeSpace.data.presentation.revision+1 &&
+        whilePlaying.data.presentation.albumIndex===2 &&
+        whilePlaying.data.presentation.stepIndex===0,
+        "manual focus hotkeys do nothing while autoplay is active");
+    await sendTelephoneHotkey(host," ");
+    await poll(async()=>{
+        const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
+        return !x.data.playback.playing &&
+            x.data.presentation.revision===
+                beforeSpace.data.presentation.revision+2;
+    },"Space pauses authoritative autoplay");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('telephoneAutoplay').disabled===false"),
+        "pause request settles");
+    await sendTelephoneHotkey(host,"Escape");
+    check(await cdp.eval(host,
+        "!document.body.classList.contains('telephoneFocus')"+
+        " && document.getElementById('telephoneShortcutHelp').hidden"),
+        "Escape turns off presenter shortcuts and restores room layout");
+    const afterEscape=await backend(host,"/drawing/telephone","GET",
+        null,tokens[0]);
+    await sendTelephoneHotkey(host,"ArrowRight");
+    check((await backend(host,"/drawing/telephone","GET",null,tokens[0]))
+        .data.presentation.revision===afterEscape.data.presentation.revision,
+        "presenter hotkeys remain inactive after focus exit");
     check((await backend(host,"/me","GET",null,tokens[0]))
         .data.room.state==="POST_GAME",
         "telephone conclusion retains original game room membership");
