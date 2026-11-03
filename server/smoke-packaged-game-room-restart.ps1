@@ -14,7 +14,8 @@ param(
     [string]$YachtReportPath = "",
     [string]$YachtWsReportPath = "",
     [string]$ConsistencyReportPath = "",
-    [string]$LocalTlsReportPath = ""
+    [string]$LocalTlsReportPath = "",
+    [string]$FullGameReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -520,6 +521,22 @@ if ($LocalTlsReportPath) {
         throw "R14v output path must be absent and distinct"
     }
 }
+# R14y is strictly optional: it finishes the same disposable R14r/v match
+# only AFTER R14v and requires a new ninth sanitized evidence file.
+if ($FullGameReportPath) {
+    if (-not $LocalTlsReportPath -or $StopMode -ne "Graceful") {
+        throw "R14y full game requires actual packaged R14v local TLS acceptance"
+    }
+    $paths=@($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath,
+        $YachtReportPath,$YachtWsReportPath,$ConsistencyReportPath,
+        $LocalTlsReportPath,$FullGameReportPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if (@($paths | Select-Object -Unique).Count -ne 9 -or
+        (Test-Path -LiteralPath $FullGameReportPath)) {
+        throw "R14y nine report paths must be fresh and distinct"
+    }
+}
+$script:FullGameStage=$null
 $script:LocalTlsStages=[System.Collections.Generic.List[object]]::new()
 # R14t is an opt-in extra actual Windows packaged consistency check.
 # Its output is separate from all existing R14k..s sanitized reports.
@@ -755,6 +772,57 @@ function RunLocalTlsYacht([int]$Launch,[string]$Root,[int[]]$Ports) {
     $script:LocalTlsStages.Add($result)
     Write-Host "GAME_ROOM_R14V_PACKAGED_LOCAL_TLS_STAGE_PASSED launch=$Launch"
 }
+function RunFullPackagedYacht([string]$Root,[int[]]$Ports) {
+    if (-not $FullGameReportPath) { return }
+    $ctx=$script:YachtContext
+    Check ($null -ne $ctx) "R14y two actual Yacht players required"
+    $scratch=Join-Path $Root "r14y-full-match.json"
+    $info=[Diagnostics.ProcessStartInfo]::new()
+    $info.FileName="node"
+    $info.WorkingDirectory=$ServerRoot
+    $info.UseShellExecute=$false
+    $info.CreateNoWindow=$true
+    $info.RedirectStandardOutput=$true
+    $info.RedirectStandardError=$true
+    $info.ArgumentList.Add((Join-Path $ServerRoot "smoke-packaged-yacht-full-match.mjs"))
+    $info.ArgumentList.Add("--report=$scratch")
+    $info.Environment["BGP_R14S_LAUNCH"]="2"
+    $info.Environment["BGP_R14S_HTTP_PORT"]=[string]$Ports[2]
+    $info.Environment["BGP_R14S_HOST_TOKEN"]=$ctx.HostToken
+    $info.Environment["BGP_R14S_GUEST_TOKEN"]=$ctx.GuestToken
+    $child=[Diagnostics.Process]::Start($info)
+    Check ($null -ne $child) "R14y full-game client did not start"
+    try {
+        if (-not $child.WaitForExit(90000)) {
+            $child.Kill($true)
+            throw "R14y full-game client exceeded 90 seconds"
+        }
+        Check ($child.ExitCode -eq 0) "R14y packaged full-game client failed"
+        Check (Test-Path -LiteralPath $scratch) "R14y sanitized report missing"
+        $stage=Get-Content -LiteralPath $scratch -Raw -Encoding utf8 | ConvertFrom-Json
+        Check ($stage.kind -eq "packaged-yacht-full-match" -and
+            $stage.totalCompletedTurns -eq 26 -and
+            $stage.finalPhase -eq "FINISHED") "R14y full-match report invalid"
+        $script:FullGameStage=$stage
+    } finally { $child.Dispose() }
+}
+function WriteFullGameReport {
+    if (-not $FullGameReportPath) { return }
+    Check ($null -ne $script:FullGameStage) "R14y full-match stage must have passed"
+    $report=[ordered]@{
+        kind="packaged-yacht-full-match-evidence";schemaVersion=1
+        source="packaged-windows-listener-jvm"
+        verifiedRestarts=1;verifiedGracefulExits=2;portsReleased=$true
+        stage=$script:FullGameStage
+    }
+    $stream=[IO.File]::Open($FullGameReportPath,[IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        $writer=[IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
+        try {$writer.WriteLine(($report | ConvertTo-Json -Depth 8 -Compress))}
+        finally {$writer.Dispose()}
+    } finally {$stream.Dispose()}
+}
 function WriteLocalTlsReport {
     if (-not $LocalTlsReportPath) {return}
     Check ($script:LocalTlsStages.Count -eq 2) "R14v must verify two actual JVM lifetimes"
@@ -863,6 +931,7 @@ try {
     RunPackagedYachtPlayerWs 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunPackagedConsistency 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunLocalTlsYacht 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
+    RunFullPackagedYacht $FixtureRoot @($adminPort,$wsPort,$clientPort)
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -877,6 +946,8 @@ try {
         WriteYachtPlayerWsReport
         WriteConsistencyReport
         WriteLocalTlsReport
+        WriteFullGameReport
+        if ($FullGameReportPath) { Write-Host "GAME_ROOM_R14Y_PACKAGED_YACHT_FULL_MATCH_PASSED players=2 completed=26 postGame=true" }
         if ($LocalTlsReportPath) { Write-Host "GAME_ROOM_R14V_PACKAGED_LOCAL_TLS_WSS_PASSED players=2 snapshots=5 replay=1 dice=1" }
         if ($ConsistencyReportPath) { Write-Host "GAME_ROOM_R14T_PACKAGED_CONSISTENCY_PASSED players=2 launches=2 chatRetries=2 yachtRollRetries=1 staleRejected=2" }
         if ($YachtWsReportPath) { Write-Host "GAME_ROOM_R14S_PACKAGED_YACHT_WS_RECOVERY_PASSED players=2 launches=2 ws=6 extraTurns=4" }

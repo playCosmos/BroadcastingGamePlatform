@@ -3603,6 +3603,90 @@ async function run(){
     check(viewport.scroll<=viewport.client+2,
         "Yacht mobile viewport has no horizontal overflow: "+JSON.stringify(viewport));
     await mobileWssAcceptance(base,ws);
+    // R14y also proves that REAL Chrome tabs render the full game lifecycle,
+    // not merely that direct HTTP callers can submit 26 valid score turns.
+    const yachtHostToken=await userToken(host,
+        "gamecenter.yacht.member-session.v1");
+    const yachtPages=[host,guest],yachtTokens=[yachtHostToken,yachtGuestToken];
+    const scoreCategories=["ACES","TWOS","THREES","FOURS","FIVES","SIXES",
+        "THREE_OF_KIND","FOUR_OF_KIND","FULL_HOUSE","SMALL_STRAIGHT",
+        "LARGE_STRAIGHT","YACHT","CHANCE"];
+    let gameId="",latestVersion=-1,lastScoreCommand=null;
+    for(let completed=0;completed<26;completed++){
+        const player=completed%2,member=yachtPages[player],token=yachtTokens[player];
+        const reading=await backend(member,"/yacht","GET",null,token);
+        check(reading.status===200 && reading.data.currentPlayer===true,
+            "R14y browser game must authorize its actual active player");
+        let game=reading.data.yacht?.match;
+        check(game && game.phase==="ACTIVE" && game.completedTurns===completed &&
+            game.currentPlayer===player && game.rolls===0 &&
+            (completed===0 || game.id===gameId),
+            "R14y browser source state must advance one turn at a time");
+        if(completed===0)gameId=game.id;
+        const rolled=await backend(member,"/yacht/roll","POST",{
+            commandId:"r14y-browser-roll-"+completed,expectedVersion:game.version
+        },token);
+        check(rolled.status===200 &&
+            rolled.data.yacht?.match?.rolls===1 &&
+            rolled.data.yacht.match.version>game.version,
+            "R14y actual browser member roll must persist");
+        const eligible=rolled.data.yacht?.availableScores?.points || {};
+        const category=scoreCategories.find(id=>
+            Object.prototype.hasOwnProperty.call(eligible,id));
+        check(Boolean(category),"R14y browser must use an authorized legal score");
+        const payload={commandId:"r14y-browser-score-"+completed,
+            expectedVersion:rolled.data.yacht.match.version,
+            category:category.toLowerCase()};
+        const scored=await backend(member,"/yacht/score","POST",payload,token);
+        check(scored.status===200 &&
+            scored.data.yacht?.match?.completedTurns===completed+1 &&
+            scored.data.yacht.match.version>payload.expectedVersion &&
+            scored.data.yacht.match.currentPlayer===(completed+1)%2 &&
+            scored.data.yacht.match.phase===(completed===25?"FINISHED":"ACTIVE") &&
+            scored.data.room?.state===(completed===25?"POST_GAME":"PLAYING"),
+            "R14y browser-reachable score/room transition invalid");
+        latestVersion=scored.data.yacht.match.version;
+        if(completed===25)lastScoreCommand={member,token,payload};
+    }
+    const snapshots=await Promise.all(yachtPages.map((page,i)=>
+        backend(page,"/yacht","GET",null,yachtTokens[i])));
+    for(const snapshot of snapshots){
+        const match=snapshot.data.yacht?.match;
+        check(snapshot.status===200 &&
+            snapshot.data.room?.state==="POST_GAME" && match?.phase==="FINISHED" &&
+            match.id===gameId && match.version===latestVersion &&
+            match.completedTurns===26 && match.players.length===2 &&
+            match.players.every(p=>Object.keys(p.sheet.scores).length===13),
+            "R14y both independent browser members see 13-category final scorecards");
+    }
+    const replay=await backend(lastScoreCommand.member,"/yacht/score","POST",
+        lastScoreCommand.payload,lastScoreCommand.token);
+    check(replay.status===200 && replay.data.yacht.match.version===latestVersion,
+        "R14y final browser score replay must preserve committed version");
+    const illegal=await backend(host,"/yacht/roll","POST",{
+        commandId:"r14y-browser-post-finish-roll",
+        expectedVersion:latestVersion},yachtHostToken);
+    check(illegal.status===409,"R14y browser forbidden postgame roll");
+    await poll(async()=>{
+        const states=await Promise.all(yachtPages.map(page=>cdp.eval(page,
+            "({room:document.getElementById('roomState').textContent,"+
+            "title:document.getElementById('turnHeadline').textContent,"+
+            "scores:document.getElementById('standings').children.length,"+
+            "rollDisabled:document.getElementById('roll').disabled,"+
+            "scoreDisabled:[...document.querySelectorAll('#scoreGrid button')].every(x=>x.disabled)})")));
+        return states.every(s=>s.room==="POST_GAME" &&
+            s.title==="경기 종료" && s.scores===2 &&
+            s.rollDisabled && s.scoreDisabled);
+    },"R14y live Chrome tabs render a complete read-only Yacht endgame",20000);
+    await cdp.navigate(host,base+"/games/yacht/");
+    check(await userToken(host,"gamecenter.yacht.member-session.v1")
+        ===yachtHostToken,"R14y reload retains the authenticated host identity");
+    await poll(async()=>await cdp.eval(host,
+        "document.getElementById('roomState').textContent==='POST_GAME'"+
+        " && document.getElementById('turnHeadline').textContent==='경기 종료'"),
+        "R14y persisted completed Yacht browser state survives page reload",20000);
+    console.log("GAME_ROOM_R14Y_BROWSER_YACHT_FULL_MATCH_PASSED"+
+        " players=2 completed=26 ui=finished reload=true");
     // Isolate two sequential anonymous hosted rooms used for the canvas
     // queue race from the Drawing/Yacht fixture's per-IP creation quota.
     server.kill();
