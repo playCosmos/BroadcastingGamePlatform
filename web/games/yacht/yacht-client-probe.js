@@ -10,7 +10,8 @@ function check(value, note) {
   checks++;
   if (!value) throw new Error("Yacht R4 UI contract: " + note);
 }
-for (const field of ["createRoom","joinRoom","admission","game","lobby",
+for (const field of ["createRoom","joinRoom","publicJoinRoom",
+  "refreshPublicRooms","publicRooms","admission","game","lobby",
   "roster","ready","changeSeat","inviteControls","newInvite","copyInvite",
   "start","dice","roll","applyHolds","scoreGrid","standings",
   "chatMessages","chatForm","leaveRoom"]) {
@@ -21,13 +22,20 @@ check(html.includes('href="./yacht.css"')
   "client must use independent relative assets");
 check(!html.includes('/admin/assets/'),
   "no admin-hosted gameplay dependencies");
-for (const endpoint of ["/hosted","/join","/host/invite","/me/ready",
+for (const endpoint of ["/public/hosted","/public/join",
+  "/public/rooms?gameId=yacht","/join","/host/invite","/me/ready",
   "/me/seat","/yacht/start","/yacht/roll","/yacht/score",
   "/chat","/chat?after=-1"]) {
   check(js.includes(endpoint) || (endpoint === "/yacht/roll"
     && js.includes('command("roll"')) || (endpoint === "/yacht/score"
     && js.includes('command("score"')), "client missing " + endpoint);
 }
+check(html.includes('name="roomCode"') && html.includes('name="seatRole"'),
+  "guest room code and role controls available without login");
+check(!html.includes("관리자 로그인이 필요"),
+  "guest-hosted room must not claim an admin login prerequisite");
+check(js.includes("label.textContent=room.roomName"),
+  "public room data rendered as safe textContent");
 check(js.includes('Authorization = "Bearer " + secret'),
   "all member API commands must send bearer scope");
 check(js.includes("sessionStorage.setItem(STORE, secret)")

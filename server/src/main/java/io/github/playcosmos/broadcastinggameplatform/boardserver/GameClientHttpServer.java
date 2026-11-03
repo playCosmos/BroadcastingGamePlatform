@@ -66,6 +66,9 @@ public final class GameClientHttpServer implements AutoCloseable {
     private static final long APPROVAL_RATE_WINDOW_NANOS =
         Duration.ofMinutes(1).toNanos();
     private static final int MAX_PUBLIC_LOOKUPS_PER_WINDOW = 120;
+    private static final int MAX_PUBLIC_ROOM_RATE_KEYS=4096;
+    private static final long PUBLIC_ROOM_RATE_WINDOW_NANOS=
+        Duration.ofMinutes(10).toNanos();
     private static final int MAX_PUBLIC_LOOKUP_RATE_KEYS = 4096;
     private static final long PUBLIC_LOOKUP_RATE_WINDOW_NANOS =
         Duration.ofSeconds(10).toNanos();
@@ -97,6 +100,22 @@ public final class GameClientHttpServer implements AutoCloseable {
         approvalRequestRates = new LinkedHashMap<>();
     private final LinkedHashMap<String, PublicLookupRateWindow>
         publicLookupRates = new LinkedHashMap<>();
+    private final LinkedHashMap<String, PublicRoomRateWindow>
+        publicRoomRates = new LinkedHashMap<>();
+
+    private static final class PublicRoomRateWindow {
+        private long startedAt=System.nanoTime();
+        private int count;
+        boolean allow(long now,int limit) {
+            if(now-startedAt>=PUBLIC_ROOM_RATE_WINDOW_NANOS) {
+                startedAt=now;count=0;
+            }
+            return ++count<=limit;
+        }
+        boolean expired(long now) {
+            return now-startedAt>=PUBLIC_ROOM_RATE_WINDOW_NANOS;
+        }
+    }
 
     private static final class ApprovalRateWindow {
         private long startedAtNanos = System.nanoTime();
@@ -686,6 +705,52 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "room", publicRoomMembership(hosted.room()),
                     "token", hosted.hostCredential().token(),
                     "memberId", hosted.hostCredential().memberId()));
+                return;
+            }
+            if ("/public/rooms".equals(suffix) && "GET".equals(method)) {
+                if(!requirePublicLookupCapacity(exchange))return;
+                String query=exchange.getRequestURI().getRawQuery();
+                if(query==null || !query.matches("gameId=(?:yacht|drawing_guess)"))
+                    throw new IllegalArgumentException("gameId required");
+                String game=query.substring("gameId=".length());
+                sendJson(exchange,200,Map.of("rooms",memberRooms.publicRooms(game)));
+                return;
+            }
+            if ("/public/hosted".equals(suffix) && "POST".equals(method)) {
+                if(!requirePublicRoomRate(exchange,"host",3))return;
+                JsonObject body=readYachtBody(exchange,Set.of(
+                    "gameId","name","displayName","hostSeat",
+                    "maxPlayers","maxRoomMembers"));
+                String game=roomApiText(body,"gameId");
+                int players=roomApiInt(body,"maxPlayers");
+                if(!("yacht".equals(game)&&players>=2&&players<=6)
+                    && !("drawing_guess".equals(game)
+                        && players>=1&&players<=20))
+                    throw new IllegalArgumentException(
+                        "unsupported game player capacity");
+                var hosted=memberRooms.createPublicHostedRoom(game,
+                    roomApiText(body,"name"),roomApiText(body,"displayName"),
+                    roomApiSeat(body,"hostSeat"),players,
+                    roomApiInt(body,"maxRoomMembers"));
+                sendJson(exchange,201,Map.of(
+                    "room",publicRoomMembership(hosted.room()),
+                    "token",hosted.hostCredential().token(),
+                    "memberId",hosted.hostCredential().memberId()));
+                return;
+            }
+            if ("/public/join".equals(suffix) && "POST".equals(method)) {
+                if(!requirePublicRoomRate(exchange,"join",30))return;
+                JsonObject body=readYachtBody(exchange,Set.of(
+                    "gameId","roomCode","displayName","seatRole"));
+                var admitted=memberRooms.joinPublic(
+                    roomApiText(body,"gameId"),
+                    roomApiText(body,"roomCode"),
+                    roomApiText(body,"displayName"),
+                    roomApiSeat(body,"seatRole"));
+                sendJson(exchange,201,Map.of(
+                    "room",publicRoomMembership(memberRooms.room(admitted.token())),
+                    "token",admitted.token(),
+                    "memberId",admitted.memberId()));
                 return;
             }
             if ("/join".equals(suffix) && "POST".equals(method)) {
@@ -2835,6 +2900,33 @@ public final class GameClientHttpServer implements AutoCloseable {
             429,
             Map.of("error", "public lookup rate exceeded")
         );
+        return false;
+    }
+
+    /**
+     * Bounded per-remote abuse control, not an identity system.
+     * Limits public creates to 3/10m and public joins to 30/10m.
+     */
+    private synchronized boolean allowPublicRoomAction(
+        HttpExchange exchange,String action,int max
+    ) {
+        long now=System.nanoTime();
+        String key=action+":"+remoteAddressKey(exchange);
+        publicRoomRates.entrySet().removeIf(e->e.getValue().expired(now));
+        if(!publicRoomRates.containsKey(key)
+            && publicRoomRates.size()>=MAX_PUBLIC_ROOM_RATE_KEYS) {
+            var iterator=publicRoomRates.entrySet().iterator();
+            if(iterator.hasNext()){iterator.next();iterator.remove();}
+        }
+        return publicRoomRates.computeIfAbsent(key,
+            unused->new PublicRoomRateWindow()).allow(now,max);
+    }
+
+    private boolean requirePublicRoomRate(HttpExchange exchange,
+        String action,int max) throws IOException {
+        if(allowPublicRoomAction(exchange,action,max))return true;
+        exchange.getResponseHeaders().set("Retry-After","600");
+        sendJson(exchange,429,Map.of("error","public room rate exceeded"));
         return false;
     }
 

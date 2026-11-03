@@ -17,7 +17,8 @@ function no(text,substring,description=substring) {
   ok(!text.includes(substring),"forbidden "+description);
 }
 for(const name of [
-  "admission","createForm","joinForm","room","roomName","roomCode","roomPhase",
+  "admission","createForm","publicJoinForm","refreshPublicRooms",
+  "publicRooms","joinForm","room","roomName","roomCode","roomPhase",
   "roomCapacity","leave","lobby","members","ready","seat","hostSettings",
   "mode","rounds","duration","start","inviteBox","inviteRole","inviteUses",
   "invite","inviteOutput","copyInvite","play","roundHeading","roundDetails",
@@ -33,7 +34,11 @@ has(html,'name="maxRoomMembers"',"total participant limit");
 has(html,'type="checkbox"',"host can play or spectate");
 has(html,'aria-live="polite"',"status accessibility");
 has(html,'name="accepted"',"accepted word aliases");
-has(html,'name="invitation"',"invitation-only admission");
+has(html,'name="invitation"',"legacy invitation-only admission retained");
+has(html,'name="roomCode"',"anonymous room-code entry");
+has(html,'name="seatRole"',"same player/spectator role for guests");
+has(html,'id="publicRooms"',"public room directory");
+no(html,'관리자 로그인이 필요',"guest public room creation does not require admin");
 has(html,'id="clearCanvas"',"clear tool carried from #41");
 has(html,'<script src="./room.js" defer>',"dedicated client script");
 no(html,'drawerToken',"no bearer token in HTML");
@@ -55,12 +60,17 @@ has(js,'credentials:"same-origin"',"same-origin session mode");
 has(js,'cache:"no-store"',"game requests not cached");
 has(js,'const API="/api/v1/room-membership"',"member API exclusively");
 for(const path of [
-  '"/hosted"','"/join"','"/host/invite"','"/me/ready"','"/me/seat"',
+  '"/public/hosted"','"/public/join"','"/public/rooms?gameId=drawing_guess"',
+  '"/join"','"/host/invite"','"/me/ready"','"/me/seat"',
   '"/drawing/start"','"/drawing/round"','"/drawing/my-prompt"',
   '"/drawing/guess"','"/drawing/canvas"','"/drawing/complete-round"',
   '"/drawing/finish"','"/chat"'
 ]) has(js,path,"canonical member API "+path);
 has(js,'mode:$("mode").value',"server-defined mode submitted");
+has(js,'roomCode:code',"room admission uses typed public code");
+has(js,'seatRole:form.get("seatRole")',"guest controls own player/spectator seat");
+has(js,'details.textContent=room.roomName',"directory room name rendered as safe text");
+has(js,'await loadPublicRooms()',"user can reload public directory");
 has(js,'configuredRounds>0',"frozen startup settings recovered");
 has(js,'String(snapshot.configuredRounds)',"original round count restored");
 has(js,'String(snapshot.durationSeconds)',"original duration restored");
