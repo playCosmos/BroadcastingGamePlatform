@@ -471,9 +471,11 @@
     const form=new FormData(submitted);
     operation(async()=>{
       await request("/drawing/channels/add","POST",{
-        provider:form.get("provider"),channelId:String(form.get("channelId")).trim()
+        provider:form.get("provider"),channelId:String(form.get("channelId")).trim(),
+        grant:String(form.get("grant")||"").trim()
       });
       submitted.elements.channelId.value="";
+      submitted.elements.grant.value="";
       await refreshChannels();
       say("방송 채널을 등록했습니다. 서버에서 수신 중인 채팅만 반영됩니다.");
     });

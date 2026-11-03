@@ -57,10 +57,11 @@
 </div></section>
 <section id="broadcastSettings" class="panel" hidden>
 <h2>방송 채팅 채널 연결</h2>
-<p class="muted">현재 서버가 이미 수신 중인 방송 채널의 ID만 등록합니다. 여기서 새 방송에 연결하거나 채널 소유권을 확인하지는 않습니다. 최대 8개 채널의 정답을 하나의 경기로 통합합니다.</p>
+<p class="muted">현재 서버가 이미 수신 중인 방송 채널의 ID만 등록합니다. 등록하려면 운영자가 해당 게임룸과 채널에 발급한 일회용 승인 토큰이 필요합니다. SOOP 방송에 자동으로 연결되거나 채널 소유권을 직접 확인하는 기능은 아닙니다. 최대 8개 채널을 사용할 수 있습니다.</p>
 <form id="broadcastForm" class="toolbar">
 <label>플랫폼<select name="provider"><option value="SOOP">SOOP</option></select></label>
 <label>채널 ID<input name="channelId" maxlength="128" pattern="[A-Za-z0-9_.:-]{1,128}" required autocomplete="off"></label>
+<label>운영자 승인 토큰<input name="grant" maxlength="128" required autocomplete="off" spellcheck="false" type="password" placeholder="해당 방·채널의 일회용 토큰"></label>
 <button type="submit" class="secondary">채널 등록</button>
 </form>
 <ul id="broadcastChannels" class="members" aria-live="polite"></ul>

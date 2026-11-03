@@ -103,13 +103,21 @@ public final class PlatformServerMain {
             if (socket != null) socket.broadcastYacht(code, json);
         });
         var sharedYacht = new GameRoomYachtService(database,commonRoomAccess,yachtGame);
+        // Operator-configured SOOP stream IDs are the only sources eligible
+        // for an administrator-issued GameRoom channel grant.
+        var configuredSoop = new java.util.HashSet<String>(
+            config.soop().additionalStreamerIds());
+        if(!config.streamerId().isBlank())
+            configuredSoop.add(config.streamerId());
         var sharedDrawing = new GameRoomDrawingService(
             database,commonRoomAccess,drawingRepository,drawingGame,drawingSync,
             (drawingCode,event) -> {
                 BoardGameWebSocketServer socket=roomSocket.get();
                 if(socket!=null && drawingCode!=null)
                     socket.broadcastDrawingEvent(drawingCode,event);
-            });
+            }, source -> "SOOP".equals(source.provider())
+                && config.soop().enabled()
+                && configuredSoop.contains(source.channelId()));
 
         var websocket = new BoardGameWebSocketServer(
             config.server().clientHost(),

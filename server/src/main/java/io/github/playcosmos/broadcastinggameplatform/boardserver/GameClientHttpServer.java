@@ -778,6 +778,27 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "token", admitted.token(), "memberId", admitted.memberId()));
                 return;
             }
+            if ("/admin/drawing/channel-grants".equals(suffix)
+                && "POST".equals(method)) {
+                if(!isAdminSession(exchange)) {
+                    sendJson(exchange,401,Map.of(
+                        "error","administrator authentication required"));
+                    return;
+                }
+                if(sharedDrawing==null) {
+                    sendJson(exchange,503,Map.of("error","drawing unavailable"));
+                    return;
+                }
+                JsonObject body=readYachtBody(exchange,Set.of(
+                    "roomId","provider","channelId","expiresInSeconds"));
+                var grant=sharedDrawing.issueChannelGrant(
+                    roomApiText(body,"roomId"),roomApiText(body,"provider"),
+                    roomApiText(body,"channelId"),
+                    roomApiInt(body,"expiresInSeconds"));
+                exchange.getResponseHeaders().set("Cache-Control","no-store");
+                sendJson(exchange,201,grant);
+                return;
+            }
             String token = roomApiBearer(exchange);
             if (suffix.equals("/drawing") || suffix.startsWith("/drawing/")) {
                 if("GET".equals(method))memberRooms.heartbeat(token);
@@ -988,10 +1009,12 @@ public final class GameClientHttpServer implements AutoCloseable {
             String action=suffix.substring("/drawing/".length());
             switch(action) {
                 case "channels/add" -> {
-                    var json=readYachtBody(exchange,Set.of("provider","channelId"));
+                    var json=readYachtBody(exchange,Set.of(
+                        "provider","channelId","grant"));
                     sendJson(exchange,200,Map.of("channels",sharedDrawing.addChannel(
                         token,roomApiText(json,"provider"),
-                        roomApiText(json,"channelId"))));
+                        roomApiText(json,"channelId"),
+                        roomApiText(json,"grant"))));
                 }
                 case "channels/remove" -> {
                     var json=readYachtBody(exchange,Set.of("provider","channelId"));
