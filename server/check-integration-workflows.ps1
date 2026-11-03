@@ -31,8 +31,9 @@ $packagedLoad = "- name: R14l verify packaged JVM HTTP SQLite soak (48 rounds)"
 $packagedWs = "- name: R14m verify real packaged spectator WebSocket fanout"
 $duration = "- name: R14n verify packaged Windows listener-JVM duration trend"
 $fieldContract = "- name: R14o verify external field duration analyzer contract"
+$externalContract = "- name: R14p verify external multi-client WSS field analyzer contract"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $fieldContract, $externalContract, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -47,7 +48,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($packagedWs) -and
            $Release.IndexOf($packagedWs) -lt $Release.IndexOf($duration) -and
            $Release.IndexOf($duration) -lt $Release.IndexOf($fieldContract) -and
-           $Release.IndexOf($fieldContract) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($fieldContract) -lt $Release.IndexOf($externalContract) -and
+           $Release.IndexOf($externalContract) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -190,4 +192,23 @@ if (-not ($Package.IndexOf($duration) -lt $Package.IndexOf($fieldContract) -and
            $Release.IndexOf($fieldContract) -lt $Release.IndexOf($publish))) {
     throw "R14o: field analyzer contract must pass before distributing packages"
 }
-Write-Host "[workflow] R14o separate field duration analyzer and no-overnight-CI contract verified"
+# R14p: strictly read-only public TLS/WSS multi-member field validation.
+# Hosted CI may validate schemas but MUST NOT run an external field probe
+# or require member credentials, public endpoints or actual 24-hour uptime.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($externalContract) -or
+        -not $text.Contains("node --check ./observe-external-wss-field.mjs") -or
+        -not $text.Contains("node --check ./analyze-external-wss-field.mjs") -or
+        -not $text.Contains("node ./analyze-external-wss-field.mjs --self-test") -or
+        $text.Contains("BGP_WSS_FIELD_TOKENS_JSON") -or
+        $text.Contains("observe-external-wss-field.mjs --base=")) {
+        throw "R14p: do not connect hosted CI to public field member accounts"
+    }
+}
+if (-not ($Package.IndexOf($fieldContract) -lt $Package.IndexOf($externalContract) -and
+           $Package.IndexOf($externalContract) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($fieldContract) -lt $Release.IndexOf($externalContract) -and
+           $Release.IndexOf($externalContract) -lt $Release.IndexOf($publish))) {
+    throw "R14p: external WSS contract gate must precede publication"
+}
+Write-Host "[workflow] R14p independent external WSS multi-member field analyzer contract verified"
