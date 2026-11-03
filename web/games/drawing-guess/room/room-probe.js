@@ -3,6 +3,7 @@ const fs=require("node:fs");
 const assert=require("node:assert/strict");
 const html=fs.readFileSync("web/games/drawing-guess/room/index.html","utf8");
 const js=fs.readFileSync("web/games/drawing-guess/room/room.js","utf8");
+const telephone=fs.readFileSync("web/games/drawing-guess/room/telephone.js","utf8");
 const server=fs.readFileSync(
   "server/src/main/java/io/github/playcosmos/broadcastinggameplatform/boardserver/GameClientHttpServer.java","utf8");
 let checks=0;
@@ -78,6 +79,21 @@ has(html,'id="telephonePresentationStatus"',"host presentation status accessible
 has(html,'id="telephoneAutoplay"',"host can play/pause album slides");
 has(html,'id="telephonePlaybackSpeed"',"host can select slide interval");
 has(html,'id="telephonePlaybackProgress"',"all participants see playback status");
+has(html,'id="telephonePalette"',"telephone drawing has a preset color palette");
+has(html,'id="telephoneRedo"',"telephone drawing has redo control");
+has(html,'aria-label="빠른 펜 색상"',"color palette is accessible");
+has(telephone,'const undoHistory=[],redoHistory=[]',"local undo and redo history");
+has(telephone,'undoHistory.length>historyLimit',"bounded local edit memory");
+has(telephone,'redoHistory.length=0',"new edit invalidates redo history");
+has(telephone,'gestureBefore=strokes.slice()',"gesture records own strokes, not inherited canvas");
+has(telephone,'strokes=strokes.filter(',"cooperative eraser filters only local strokes");
+has(telephone,'redraw(){paint(draw,[...baseStrokes,...strokes])',"inherited canvas stays read-only");
+has(telephone,'draw.addEventListener("pointercancel"',"touch cancel rolls back partial edits");
+has(telephone,'draw.addEventListener("lostpointercapture"',"lost touch pointer capture rolls back");
+has(telephone,'phaseKey="";resetDraft();updateTools();return;',"room switch removes previous draft");
+has(telephone,'canEdit() && pointer===null',"drawing submission is stage-scoped");
+no(telephone,'innerHTML',"telephone never renders untrusted input as HTML");
+
 has(server,'sharedDrawing.telephone().playback(',
   "playback controls use canonical authenticated API");
 has(js,'window.TelephoneView.render(telephone,request,refresh,isHost())',
