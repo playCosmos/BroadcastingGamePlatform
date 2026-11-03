@@ -130,10 +130,21 @@ public final class GameRoomYachtR4HttpProbe {
                 "{\"commandId\":\"spectator-roll\",\"expectedVersion\":1}",
                 viewer,null).statusCode()==403,
                 "spectator cannot roll or modify server dice");
-            require(request(client,base,ROOT+"/yacht/roll","POST",
-                "{\"commandId\":\"foreign-roll\",\"expectedVersion\":1}",
-                "https://attacker.invalid",null).statusCode()==403,
-                "cross-origin command cannot bypass member authorization");
+            // Supply a valid PLAYER bearer with a genuinely foreign Origin.
+            // Missing authentication must not be what makes this case pass.
+            // Send exactly one Origin header; a second same-origin header
+            // makes the rejection dependent on getFirst()/proxy behavior.
+            var foreignRoll = HttpRequest.newBuilder(base.resolve(ROOT+"/yacht/roll"))
+                .header("Accept","application/json")
+                .header("Authorization","Bearer "+host)
+                .header("Origin","https://attacker.invalid")
+                .header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(
+                    "{\"commandId\":\"foreign-roll\",\"expectedVersion\":1}"))
+                .build();
+            require(client.send(foreignRoll,HttpResponse.BodyHandlers.ofString())
+                .statusCode()==403,
+                "valid player bearer with foreign Origin must be rejected");
             // Client cannot submit face values even with an authenticated PLAYER.
             require(request(client,base,ROOT+"/yacht/roll","POST",
                 "{\"commandId\":\"dice-injection\",\"expectedVersion\":1,\"dice\":[6,6,6,6,6]}",
@@ -244,9 +255,8 @@ public final class GameRoomYachtR4HttpProbe {
         throws Exception {
         var builder=HttpRequest.newBuilder(base.resolve(path))
             .header("Accept","application/json");
-        if(credential!=null && credential.startsWith("http"))
-            builder.header("Origin",credential);
-        else if(credential!=null)builder.header("Authorization","Bearer "+credential);
+        if(credential!=null)
+            builder.header("Authorization","Bearer "+credential);
         if(cookie!=null)builder.header("Cookie",cookie);
         if("POST".equals(method)){
             builder.header("Origin",base.toString());
