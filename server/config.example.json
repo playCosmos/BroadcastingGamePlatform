@@ -17,6 +17,7 @@
   },
   "soop": {
     "enabled": true,
-    "offlinePollSeconds": 30
+    "offlinePollSeconds": 30,
+    "additionalStreamerIds": []
   }
 }
