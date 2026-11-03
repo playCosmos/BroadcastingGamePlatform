@@ -11,7 +11,7 @@ on:
       - ".github/workflows/platform-windows-package.yml"
       - ".github/workflows/release.yml"
   pull_request:
-    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence, feature/yacht-y2-room-api, feature/common-game-room-r1-domain]
+    branches: [main, feature/yacht-y0-scoring, feature/yacht-y1-state-persistence, feature/yacht-y2-room-api, feature/common-game-room-r1-domain, feature/common-game-room-r2-auth]
     paths:
       - "server/**"
       - "web/**"

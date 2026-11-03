@@ -1,6 +1,13 @@
 package io.github.playcosmos.broadcastinggameplatform.boardserver;
 
 import io.github.playcosmos.broadcastinggameplatform.games.drawingguess.DrawingSyncService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomRealtimeService;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomService;
+import com.google.gson.Gson;
+import com.google.gson.JsonParser;
+import java.sql.SQLException;
+import java.util.UUID;
 import java.net.InetSocketAddress;
 import java.util.LinkedHashMap;
 import java.util.Locale;
@@ -14,6 +21,9 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 
 public final class BoardGameWebSocketServer extends WebSocketServer {
+    private static final Gson JSON = new Gson();
+    private static final Pattern ROOM_ID_PATTERN = Pattern.compile(
+        "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}");
     private static final Pattern CODE_PATTERN =
         Pattern.compile("[A-HJ-NP-Z2-9]{6}");
     private static final int MAX_TOTAL_CONNECTIONS = 256;
@@ -34,7 +44,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private enum ChannelKind {
         BOARD,
         DRAWING,
-        YACHT
+        YACHT,
+        MEMBER_ROOM
     }
 
     private record Channel(
@@ -96,6 +107,12 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private final Predicate<String> roomCodeValidator;
     private final DrawingSyncService drawingSync;
     private final Predicate<String> yachtCodeValidator;
+    private final GameRoomAccessService membership;
+    private final GameRoomRealtimeService realtime;
+    private final Object memberSendLock = new Object();
+    private record Subscriber(String roomId,String memberId,String token) {}
+    private final Map<WebSocket, Subscriber> roomSubscribers =
+        new ConcurrentHashMap<>();
 
     public BoardGameWebSocketServer(String host, int port) {
         this(host, port, roomCode -> true, null);
@@ -122,7 +139,17 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         String host, int port, Predicate<String> roomCodeValidator,
         DrawingSyncService drawingSync, Predicate<String> yachtCodeValidator
     ) {
+        this(host,port,roomCodeValidator,drawingSync,yachtCodeValidator,null,null);
+    }
+
+    public BoardGameWebSocketServer(
+        String host, int port, Predicate<String> roomCodeValidator,
+        DrawingSyncService drawingSync, Predicate<String> yachtCodeValidator,
+        GameRoomAccessService membership, GameRoomRealtimeService realtime
+    ) {
         super(new InetSocketAddress(host, port));
+        this.membership=membership;
+        this.realtime=realtime;
         this.yachtCodeValidator = yachtCodeValidator == null
             ? code -> false : yachtCodeValidator;
         this.roomCodeValidator = roomCodeValidator == null
@@ -140,6 +167,21 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
 
         Map<String, String> query = queryParameters(handshake);
+        String memberRoomId = query.get("memberRoomId");
+        if (memberRoomId != null) {
+            if (membership == null || realtime == null
+                || !ROOM_ID_PATTERN.matcher(memberRoomId).matches()) {
+                connection.close(1008,"invalid member room");
+                return;
+            }
+            if (!registerIfCapacity(connection,
+                new Channel(ChannelKind.MEMBER_ROOM, memberRoomId, null, false))) {
+                connection.close(1013,"room websocket capacity reached");
+            }
+            // Socket remains unprivileged until a valid room.subscribe frame.
+            // Never place bearer secrets in URL/query params or server logs.
+            return;
+        }
         String roomCode = normalizeCode(query.get("roomCode"));
         if (roomCode != null) {
             if (!roomCodeValidator.test(roomCode)) {
@@ -300,7 +342,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
         if (
             (channel.kind() == ChannelKind.BOARD
-                || channel.kind() == ChannelKind.YACHT)
+                || channel.kind() == ChannelKind.YACHT
+                || channel.kind() == ChannelKind.MEMBER_ROOM)
                 && channelConnections >= MAX_BOARD_CONNECTIONS_PER_ROOM
         ) {
             return false;
@@ -354,6 +397,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         boolean remote
     ) {
         Channel channel = channelByConnection.remove(connection);
+        Subscriber subscriber = roomSubscribers.remove(connection);
+        if (subscriber != null) publishPresence(subscriber.roomId(),subscriber.memberId());
         drawingWriteRates.remove(connection);
         int count = connectedClients.get();
         if (channel != null) {
@@ -389,6 +434,10 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             return;
         }
 
+        if (channel.kind() == ChannelKind.MEMBER_ROOM) {
+            memberRoomMessage(connection,channel,message);
+            return;
+        }
         if (channel.kind() == ChannelKind.BOARD) {
             return;
         }
@@ -447,6 +496,99 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
     public int connectedClients() {
         return connectedClients.get();
+    }
+
+    /**
+     * First member-room frame must be authenticated. The bearer secret is
+     * never accepted in the URI; later frames cannot mutate room/game state.
+     */
+    private void memberRoomMessage(WebSocket connection,Channel channel,String message) {
+        if (roomSubscribers.containsKey(connection)) {
+            connection.close(1008,"room WebSocket is read-only");
+            return;
+        }
+        try {
+            var frame=JsonParser.parseString(message).getAsJsonObject();
+            if (!frame.has("type") ||
+                !"room.subscribe".equals(frame.get("type").getAsString()) ||
+                !frame.has("token") || !frame.has("afterSequence")) {
+                connection.close(1008,"room subscribe required");
+                return;
+            }
+            String token=frame.get("token").getAsString();
+            long after=frame.get("afterSequence").getAsLong();
+            if(after < -1 || after > 999_999_999_999_999L) {
+                connection.close(1008,"invalid room event cursor");
+                return;
+            }
+            synchronized (memberSendLock) {
+                var principal=membership.authenticate(token);
+                if (!channel.code().equals(principal.roomId())
+                    || membership.room(token).members().stream().noneMatch(m ->
+                        m.memberId().equals(principal.memberId())
+                        && m.status()==io.github.playcosmos.broadcastinggameplatform
+                            .platform.rooms.GameRoomModels.MemberStatus.JOINED)) {
+                    connection.close(1008,"room membership invalid");
+                    return;
+                }
+                roomSubscribers.put(connection,
+                    new Subscriber(principal.roomId(),principal.memberId(),token));
+                var room=membership.room(token);
+                connection.send(JSON.toJson(Map.of(
+                    "type","room.snapshot",
+                    "roomId",principal.roomId(),
+                    "memberCount",room.memberCount(),
+                    "playerCount",room.playerCount(),
+                    "lastSequence",realtime.lastSequence(token))));
+                var history=realtime.events(token,after);
+                for (var event:history.events()) {
+                    if (connection.isOpen())connection.send(JSON.toJson(event));
+                }
+                publishPresence(principal.roomId(),principal.memberId());
+            }
+        } catch (GameRoomAccessService.Forbidden | SQLException
+                 | GameRoomService.RoomConflict invalid) {
+            connection.close(1008,"room subscription unauthorized");
+        } catch (RuntimeException malformed) {
+            connection.close(1008,"room subscription invalid");
+        }
+    }
+
+    /** Called after SQLite commit, serialized with subscription+replay. */
+    public boolean broadcastRoomEvent(String roomId,String json) {
+        boolean sent=false;
+        synchronized(memberSendLock) {
+            for(var entry:roomSubscribers.entrySet()) {
+                Subscriber subscriber=entry.getValue();
+                if(!subscriber.roomId().equals(roomId))continue;
+                WebSocket socket=entry.getKey();
+                if(!socket.isOpen())continue;
+                try {
+                    var principal=membership.authenticate(subscriber.token());
+                    if(!principal.memberId().equals(subscriber.memberId())
+                        || !principal.roomId().equals(roomId)) {
+                        socket.close(1008,"member session changed");
+                        continue;
+                    }
+                    socket.send(json);
+                    sent=true;
+                } catch (GameRoomAccessService.Forbidden | SQLException invalid) {
+                    socket.close(1008,"room credential expired");
+                }
+            }
+        }
+        return sent;
+    }
+
+    private void publishPresence(String roomId,String memberId) {
+        synchronized(memberSendLock) {
+            long connections=roomSubscribers.values().stream().filter(s ->
+                s.roomId().equals(roomId) && s.memberId().equals(memberId)).count();
+            String json=JSON.toJson(Map.of("type","room.presence.changed",
+                "roomId",roomId,"memberId",memberId,
+                "connected",connections>0));
+            broadcastRoomEvent(roomId,json);
+        }
     }
 
     public boolean broadcastYacht(String roomCode, String json) {
