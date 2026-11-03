@@ -13,7 +13,8 @@ param(
     [string]$WsSoakReportPath = "",
     [string]$YachtReportPath = "",
     [string]$YachtWsReportPath = "",
-    [string]$ConsistencyReportPath = ""
+    [string]$ConsistencyReportPath = "",
+    [string]$LocalTlsReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -506,6 +507,20 @@ function WriteWsFanoutReport {
 }
 # R14r: independent two-player Yacht room inside the SAME real packaged
 # Windows JVM fixture, separate from R14m's spectator-only fanout room.
+# R14v is a scoped LOCAL TLS acceptance, not operator external field.
+if ($LocalTlsReportPath) {
+    if (-not $ConsistencyReportPath -or $StopMode -ne "Graceful") {
+        throw "R14v local TLS requires full actual packaged R14r-t acceptance"
+    }
+    $paths=@($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath,
+        $YachtReportPath,$YachtWsReportPath,$ConsistencyReportPath,$LocalTlsReportPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if (@($paths | Select-Object -Unique).Count -ne 8 -or
+        (Test-Path -LiteralPath $LocalTlsReportPath)) {
+        throw "R14v output path must be absent and distinct"
+    }
+}
+$script:LocalTlsStages=[System.Collections.Generic.List[object]]::new()
 # R14t is an opt-in extra actual Windows packaged consistency check.
 # Its output is separate from all existing R14k..s sanitized reports.
 if ($ConsistencyReportPath) {
@@ -720,6 +735,45 @@ function WriteYachtPlayerWsReport {
         finally{$writer.Dispose()}
     } finally{$stream.Dispose()}
 }
+function RunLocalTlsYacht([int]$Launch,[string]$Root,[int[]]$Ports) {
+    if (-not $LocalTlsReportPath) { return }
+    $ctx=$script:YachtContext
+    Check ($null -ne $ctx) "R14v requires two actual R14r players"
+    $proxyPort=FreeLocalPort
+    Check ($proxyPort -notin $Ports) "R14v proxy port must be unique"
+    $api="http://127.0.0.1:$($Ports[2])/api/v1/room-membership"
+    $member=YachtApi $api "/me" $ctx.HostToken
+    $fixtureScript=Join-Path $ServerRoot "smoke-packaged-local-tls-client.ps1"
+    $parameters=@{Launch=$Launch;FixtureRoot=$Root;ProxyPort=$proxyPort
+        HttpPort=$Ports[2];WebSocketPort=$Ports[1]
+        RoomId=[string]$member.room.roomId
+        HostToken=$ctx.HostToken;GuestToken=$ctx.GuestToken}
+    $stage=& $fixtureScript @parameters
+    $result=$stage | ConvertFrom-Json
+    Check ($null -ne $result -and $result.launch -eq $Launch -and
+        $result.tlsVerified -eq $true) "R14v actual HTTPS/WSS client stage invalid"
+    $script:LocalTlsStages.Add($result)
+    Write-Host "GAME_ROOM_R14V_PACKAGED_LOCAL_TLS_STAGE_PASSED launch=$Launch"
+}
+function WriteLocalTlsReport {
+    if (-not $LocalTlsReportPath) {return}
+    Check ($script:LocalTlsStages.Count -eq 2) "R14v must verify two actual JVM lifetimes"
+    $report=[ordered]@{
+        kind="packaged-local-tls-wss-yacht";schemaVersion=1
+        source="packaged-windows-localhost-tls-proxy"
+        verifiedRestarts=1;verifiedGracefulExits=2
+        localTlsCertificateEphemeral=$true;noPublicNetwork=$true
+        serverJvmPackaged=$true;originalServerPortsReleased=$true
+        stages=@($script:LocalTlsStages.ToArray())
+    }
+    $stream=[IO.File]::Open($LocalTlsReportPath,[IO.FileMode]::CreateNew,
+        [IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        $writer=[IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
+        try {$writer.WriteLine(($report | ConvertTo-Json -Depth 9 -Compress))}
+        finally {$writer.Dispose()}
+    } finally {$stream.Dispose()}
+}
 $FixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ("bgp-r14e-package-" + [guid]::NewGuid().ToString("N"))
 $Process = $null
 $Checks = 0
@@ -778,6 +832,7 @@ try {
     RunPackagedYacht 1 $api "http://127.0.0.1:$clientPort"
     RunPackagedYachtPlayerWs 1 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunPackagedConsistency 1 $FixtureRoot @($adminPort,$wsPort,$clientPort)
+    RunLocalTlsYacht 1 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     if ($StopMode -eq "Graceful") {
         RequestGracefulStop $Process $FixtureRoot @($adminPort,$wsPort,$clientPort)
         $Checks += 5
@@ -807,6 +862,7 @@ try {
     RunPackagedYacht 2 $api "http://127.0.0.1:$clientPort"
     RunPackagedYachtPlayerWs 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     RunPackagedConsistency 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
+    RunLocalTlsYacht 2 $FixtureRoot @($adminPort,$wsPort,$clientPort)
     Check (-not $Process.HasExited) "restarted Windows app remains running"
     $Checks++
     if ($StopMode -eq "Graceful") {
@@ -820,6 +876,8 @@ try {
         WriteYachtRecoveryReport
         WriteYachtPlayerWsReport
         WriteConsistencyReport
+        WriteLocalTlsReport
+        if ($LocalTlsReportPath) { Write-Host "GAME_ROOM_R14V_PACKAGED_LOCAL_TLS_WSS_PASSED players=2 snapshots=5 replay=1 dice=1" }
         if ($ConsistencyReportPath) { Write-Host "GAME_ROOM_R14T_PACKAGED_CONSISTENCY_PASSED players=2 launches=2 chatRetries=2 yachtRollRetries=1 staleRejected=2" }
         if ($YachtWsReportPath) { Write-Host "GAME_ROOM_R14S_PACKAGED_YACHT_WS_RECOVERY_PASSED players=2 launches=2 ws=6 extraTurns=4" }
         if ($YachtReportPath) { Write-Host "GAME_ROOM_R14R_PACKAGED_YACHT_RECOVERY_PASSED players=2 rolls=2 chatRecovered=true restarts=1" }
