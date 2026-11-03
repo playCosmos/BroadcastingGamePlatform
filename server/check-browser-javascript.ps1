@@ -40,6 +40,18 @@ try {
         throw "real GameRoom Chrome DevTools script syntax check failed"
     }
 
+    # R15i only runs the OFFLINE deterministic integration-lineage contract.
+    # Real GitHub PR metadata is audited by explicit operator invocation,
+    # never as a release-blocking network dependency in ordinary Windows CI.
+    node --check server/audit-game-room-pr-stack.mjs
+    if ($LASTEXITCODE -ne 0) {
+        throw "R15i GameRoom stacked PR audit JavaScript syntax invalid"
+    }
+    node server/audit-game-room-pr-stack.mjs --self-test
+    if ($LASTEXITCODE -ne 0) {
+        throw "R15i GameRoom stacked PR audit negative self-test failed"
+    }
+
     if (-not (Test-Path "web/vendor/box2d-wasm/entry.js")) {
         throw "box2d-wasm entry missing"
     }

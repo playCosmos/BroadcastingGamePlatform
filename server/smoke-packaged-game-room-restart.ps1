@@ -400,6 +400,18 @@ function RunPackagedWsFanout(
                     counters = $snapshot
                 })
             }
+            if ($child.ExitCode -ne 0) {
+                # Suppress the raw worker stderr (may contain credentials).
+                # Accept only the worker's limited, token-free diagnostic line.
+                $rawError = $child.StandardError.ReadToEnd()
+                $safeError = [regex]::Match($rawError,
+                    '(?m)^GAME_ROOM_R14N_PACKAGED_WS_CLIENT_FAILED reason=([a-z_]{1,32}) phase=([a-z_]{1,32}) cycle=([0-6]) httpStatus=(0|[1-5][0-9]{2})')
+                if ($safeError.Success) {
+                    Write-Host $safeError.Value.Trim()
+                } else {
+                    Write-Host "GAME_ROOM_R14N_PACKAGED_WS_CLIENT_FAILED reason=unclassified phase=unknown cycle=0 httpStatus=0"
+                }
+            }
             Check ($child.ExitCode -eq 0) "R14n actual packaged spectator cycle failed"
             $snapshot = MeasurePackagedJvm $Launcher $Ports
             $samples.Add([ordered]@{

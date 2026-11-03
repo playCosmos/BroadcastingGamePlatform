@@ -49,6 +49,9 @@ const base="http://127.0.0.1:"+httpPort;
 const websocketUrl="ws://127.0.0.1:"+wsPort+"/?memberRoomId="+roomId;
 const pause=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 const active=[];
+// Fixed labels only: these are safe to emit on CI failure without identities.
+let diagnosticCycle=0;
+let diagnosticPhase="admission";
 const start=performance.now();
 const timeoutMs=12000;
 async function post(path,body,token){
@@ -174,20 +177,29 @@ async function main(){
     const cycleResults=[];
     let cursor=-1;
     for(let cycle=1;cycle<=cycles;cycle++){
+        diagnosticCycle=cycle;
+        diagnosticPhase="live_connect";
         const cycleStarted=performance.now();
         let items=await group(tokens,cursor);
         const liveId="r14mL"+launch+"C"+cycle+"LiveA";
+        diagnosticPhase="live_commit";
         const live=await post("/chat",{messageId:liveId,text:"R14m live fanout"},hostToken);
         if(!Number.isSafeInteger(live.sequence)||live.messageId!==liveId||
             live.sequence<=cursor)fail("live chat not durably committed");
+        diagnosticPhase="live_delivery";
         await matchAll(items,liveId,live.sequence,"live fanout");
+        diagnosticPhase="live_close";
         await shutAll(items);
         const missedId="r14mL"+launch+"C"+cycle+"ReplayB";
+        diagnosticPhase="replay_commit";
         const missed=await post("/chat",{messageId:missedId,text:"R14m replay"},hostToken);
         if(!Number.isSafeInteger(missed.sequence)||missed.messageId!==missedId||
             missed.sequence<=live.sequence)fail("replay chat cursor did not advance");
+        diagnosticPhase="replay_connect";
         items=await group(tokens,live.sequence);
+        diagnosticPhase="replay_delivery";
         await matchAll(items,missedId,missed.sequence,"durable cursor replay");
+        diagnosticPhase="replay_close";
         await shutAll(items);
         cursor=missed.sequence;
         cycleResults.push({
@@ -195,6 +207,7 @@ async function main(){
             replayEvents:spectators,cleanCloses:2*spectators,
             elapsedMs:Math.round((performance.now()-cycleStarted)*100)/100
         });
+        diagnosticPhase="cycle_pause";
         if(cycle<cycles)await pause(pauseMs);
     }
     const result={
@@ -230,10 +243,26 @@ async function main(){
 }
 try{await main();}
 catch(error){
-    // Never emit any bearer value; most failures use fixed diagnostics.
-    let safe=String(error?.message||error);
-    for(const token of [hostToken])if(token)safe=safe.split(token).join("[redacted]");
-    console.error("GAME_ROOM_R14M_PACKAGED_WS_CLIENT_FAILED "+safe);
+    // Never print raw exception text: network exceptions can include a URL,
+    // ephemeral room identifier or bearer. Report only strict fixed classes.
+    const message=String(error?.message||"");
+    const http=/^R14m packaged WS: HTTP operation failed status=([1-5][0-9]{2})$/.exec(message);
+    const reason=http?"http_status"
+        :message.includes("timed out waiting for")?"ws_event_timeout"
+        :message.includes("WS connect timeout")?"ws_connect_timeout"
+        :message.includes("WS closed before")?"ws_closed_before_snapshot"
+        :message.includes("WS unexpectedly closed")?"ws_unexpected_close"
+        :message.includes("WS transport failed")?"ws_transport_error"
+        :message.includes("WS graceful close timed out")?"ws_close_timeout"
+        :message.includes("invalid member snapshot")?"invalid_snapshot"
+        :message.includes("wrong durable event sequence")?"event_scope_error"
+        :message.includes("live chat not durably committed")?"live_commit_error"
+        :message.includes("replay chat cursor did not advance")?"replay_cursor_error"
+        :message.includes("unexpected normal socket close code")?"ws_close_code"
+        :"other";
+    console.error("GAME_ROOM_R14N_PACKAGED_WS_CLIENT_FAILED reason="+reason+
+        " phase="+diagnosticPhase+" cycle="+diagnosticCycle+
+        " httpStatus="+(http?Number(http[1]):0));
     process.exitCode=1;
 }finally{
     for(const item of active)try{item.ws.close();}catch{}
