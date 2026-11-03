@@ -51,6 +51,9 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 public final class GameClientHttpServer implements AutoCloseable {
     private static final Gson GSON = new Gson();
@@ -96,6 +99,9 @@ public final class GameClientHttpServer implements AutoCloseable {
     private final GameRoomYachtService sharedYacht;
     private final GameRoomDrawingService sharedDrawing;
     private final AtomicReference<String> adminBootstrapToken;
+    private final ScheduledExecutorService publicRoomCleanup =
+        Executors.newSingleThreadScheduledExecutor(task ->
+            Thread.ofPlatform().daemon().name("public-room-cleanup").unstarted(task));
     private final LinkedHashMap<String, ApprovalRateWindow>
         approvalRequestRates = new LinkedHashMap<>();
     private final LinkedHashMap<String, PublicLookupRateWindow>
@@ -409,6 +415,13 @@ public final class GameClientHttpServer implements AutoCloseable {
 
     public void start() {
         server.start();
+        if(memberRooms!=null)publicRoomCleanup.scheduleWithFixedDelay(()->{
+            try { memberRooms.expireIdlePublicRooms(); }
+            catch(Exception error) {
+                System.err.println("[rooms] public room cleanup failed: "
+                    + error.getMessage());
+            }
+        },5,5,TimeUnit.MINUTES);
         System.out.println(
             "[platform-public-http] listening on http://"
                 + server.getAddress().getHostString()
@@ -767,10 +780,12 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             String token = roomApiBearer(exchange);
             if (suffix.equals("/drawing") || suffix.startsWith("/drawing/")) {
+                if("GET".equals(method))memberRooms.heartbeat(token);
                 sharedDrawingApi(exchange,method,suffix,token);
                 return;
             }
             if (suffix.equals("/yacht") || suffix.startsWith("/yacht/")) {
+                if("GET".equals(method))memberRooms.heartbeat(token);
                 sharedYachtApi(exchange,method,suffix,token);
                 return;
             }
@@ -793,6 +808,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             if ("/me".equals(suffix) && "GET".equals(method)) {
                 var principal = memberRooms.authenticate(token);
+                memberRooms.heartbeat(token);
                 sendJson(exchange, 200, Map.of(
                     "room", publicRoomMembership(memberRooms.room(token)),
                     "memberId", principal.memberId(),
@@ -863,6 +879,11 @@ public final class GameClientHttpServer implements AutoCloseable {
                     readYachtBody(exchange, Set.of());
                     memberRooms.revoke(token);
                     sendJson(exchange, 200, Map.of("status", "REVOKED"));
+                }
+                case "/host/close" -> {
+                    readYachtBody(exchange,Set.of());
+                    sendJson(exchange,200,publicRoomMembership(
+                        memberRooms.closeRoom(token)));
                 }
                 case "/host/invite" -> {
                     JsonObject body = readYachtBody(exchange,
@@ -3986,6 +4007,7 @@ public final class GameClientHttpServer implements AutoCloseable {
 
     @Override
     public void close() {
+        publicRoomCleanup.shutdownNow();
         server.stop(1);
         requestExecutor.close();
     }

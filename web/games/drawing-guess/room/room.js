@@ -121,6 +121,7 @@
     $("roomCapacity").textContent="참여 "+room.memberCount+"/"+room.maxRoomMembers
       +" · 플레이어 "+room.playerCount+"/"+room.maxPlayers;
     const lobby=room.state==="OPEN_LOBBY";
+    show("closeRoom",isHost() && room.state!=="PLAYING");
     const recovering=room.state==="PLAYING" && !snapshot.nativeRoomId;
     show("lobby",lobby||recovering);
     show("hostSettings",isHost()&&(lobby||recovering));
@@ -471,6 +472,18 @@
       field.value="";await refreshChat();
     });
   });
+  $("closeRoom").addEventListener("click",()=>operation(async()=>{
+    if(!confirm("게임룸을 닫습니까? 모든 참가자의 연결과 초대권이 종료됩니다."))return;
+    await request("/host/close","POST",{});
+    secret="";snapshot=null;
+    sessionStorage.removeItem(STORAGE);
+    memberSocket?.close();canvasSocket?.close();
+    memberSocket=null;canvasSocket=null;
+    roomBinding="";drawingBinding="";
+    show("room",false);show("admission",true);
+    say("방을 닫았습니다. 이 방의 초대권은 더 이상 사용할 수 없습니다.");
+    await loadPublicRooms();
+  }));
   $("leave").addEventListener("click",()=>operation(async()=>{
     if(!confirm("게임룸을 나가시겠습니까? 방장은 먼저 방장을 위임해야 합니다."))return;
     await request("/me/leave","POST",{});

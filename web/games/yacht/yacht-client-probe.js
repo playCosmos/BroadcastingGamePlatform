@@ -14,7 +14,7 @@ for (const field of ["createRoom","joinRoom","publicJoinRoom",
   "refreshPublicRooms","publicRooms","admission","game","lobby",
   "roster","ready","changeSeat","inviteControls","newInvite","copyInvite",
   "start","dice","roll","applyHolds","scoreGrid","standings",
-  "chatMessages","chatForm","leaveRoom"]) {
+  "chatMessages","chatForm","closeRoom","leaveRoom"]) {
   check(html.includes('id="' + field + '"'), "missing field #" + field);
 }
 check(html.includes('href="./yacht.css"')
@@ -36,6 +36,10 @@ check(!html.includes("관리자 로그인이 필요"),
   "guest-hosted room must not claim an admin login prerequisite");
 check(js.includes("label.textContent=room.roomName"),
   "public room data rendered as safe textContent");
+check(js.includes('visible("closeRoom",host && room.state!=="PLAYING")'),
+  "only host can close when not playing");
+check(js.includes('request("/host/close","POST",{})'),
+  "host closes with scoped member bearer");
 check(js.includes('Authorization = "Bearer " + secret'),
   "all member API commands must send bearer scope");
 check(js.includes("sessionStorage.setItem(STORE, secret)")
