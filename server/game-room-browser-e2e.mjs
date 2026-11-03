@@ -2674,6 +2674,172 @@ async function telephoneBrowserAcceptance(base,coop){
     })()`);
 }
 
+// R13y: member actions are scoped to the room they began in, not to the
+// mutable member token or room UI of the tab when HTTP finally completes.
+// A separate server fixture avoids the anonymous hosted-room quota.
+async function memberActionSessionAcceptance(base){
+    const page=await cdp.page(base+"/games/drawing-guess/room/");
+    const other=await cdp.page(base+"/games/drawing-guess/room/");
+    await fill(page,"createForm",{
+        name:"R13y original host",displayName:"Action old host",
+        maxPlayers:2,maxRoomMembers:4
+    });
+    const tokenA=await poll(async()=>await userToken(page,
+        "gamecenter.drawing.room.member.v1"),"R13y first member admitted");
+    const codeA=await poll(async()=>{
+        const code=await getRoom(page,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(code)?code:null;
+    },"R13y first room visible");
+    await waitRoomIdle(page,"room");
+    await fill(other,"createForm",{
+        name:"R13y independently hosted target",displayName:"Other room host",
+        maxPlayers:2,maxRoomMembers:4
+    });
+    const codeB=await poll(async()=>{
+        const code=await getRoom(other,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(code)?code:null;
+    },"R13y independent room visible");
+    check(codeA!==codeB,"R13y member switch uses independent hosted rooms");
+    await cdp.eval(page,`(()=>{
+        const original=window.fetch.bind(window);
+        const bearer=${JSON.stringify("Bearer "+tokenA)};
+        window.__r13yOriginal=original;
+        window.__r13yInviteHeld=false;
+        window.__r13yInviteRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/host/invite" &&
+               options.headers?.Authorization===bearer &&
+               !window.__r13yInviteHeld){
+                window.__r13yInviteHeld=true;
+                return new Promise(resolve=>{window.__r13yInviteRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    await click(page,"invite");
+    await poll(async()=>await cdp.eval(page,"window.__r13yInviteHeld===true"),
+        "old room invite POST held before accepting another member");
+    check(await cdp.eval(page,
+        "document.getElementById('room').getAttribute('aria-busy')==='true'"),
+        "in-flight old-room action owns the original busy lock");
+    await fill(page,"publicJoinForm",{
+        roomCode:codeB,displayName:"Action moved spectator",
+        seatRole:"SPECTATOR"
+    });
+    const tokenB=await poll(async()=>{
+        const token=await userToken(page,"gamecenter.drawing.room.member.v1");
+        return token && token!==tokenA?token:null;
+    },"member admission is not blocked by old pending invite");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('roomName').textContent==="+
+        "'R13y independently hosted target'"),
+        "replacement room renders with old host invite still pending");
+    check(await cdp.eval(page,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("inviteOutput").textContent==="" && $("copyInvite").hidden &&
+            $("room").getAttribute("aria-busy")!=="true";
+    })()`),"stale invite and old operation lock cleared on admission");
+    await cdp.eval(page,`(()=>{
+        document.getElementById("notice").textContent=
+            "R13y second membership intact";
+        const release=window.__r13yInviteRelease;
+        if(!release)throw Error("old room invite not held");
+        release(new Response(JSON.stringify({token:"stale-old-invite"}),{
+            status:201,headers:{"Content-Type":"application/json"}
+        }));
+        window.__r13yInviteRelease=null;
+        return true;
+    })()`);
+    await nap(280);
+    check(await cdp.eval(page,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("inviteOutput").textContent==="" && $("copyInvite").hidden &&
+            $("notice").textContent==="R13y second membership intact" &&
+            $("room").getAttribute("aria-busy")!=="true";
+    })()`),"old invite success does not reveal token, overwrite notice or unlock wrong action");
+    check(await userToken(page,"gamecenter.drawing.room.member.v1")===tokenB,
+        "old invite result leaves new spectator bearer unchanged");
+    await cdp.eval(page,`(()=>{
+        window.fetch=window.__r13yOriginal;
+        delete window.__r13yOriginal;
+        delete window.__r13yInviteHeld;
+        delete window.__r13yInviteRelease;
+        return true;
+    })()`);
+    // Chat exercises the independent form-text cleanup fence. The pending
+    // old POST must not clear text the replacement member entered afterward.
+    await cdp.eval(page,`(()=>{
+        const original=window.fetch.bind(window);
+        const bearer=${JSON.stringify("Bearer "+tokenB)};
+        window.__r13yChatOriginal=original;
+        window.__r13yChatHeld=false;
+        window.__r13yChatRelease=null;
+        window.fetch=(url,options={})=>{
+            const path=typeof url==="string"?url:url?.url;
+            if(path==="/api/v1/room-membership/chat" &&
+               options.method==="POST" &&
+               options.headers?.Authorization===bearer &&
+               !window.__r13yChatHeld){
+                window.__r13yChatHeld=true;
+                return new Promise(resolve=>{window.__r13yChatRelease=resolve;});
+            }
+            return original(url,options);
+        };
+        return true;
+    })()`);
+    await fill(page,"chatForm",{text:"old room pending message"});
+    await poll(async()=>await cdp.eval(page,"window.__r13yChatHeld===true"),
+        "old room chat POST held before replacing the member");
+    await fill(page,"publicJoinForm",{
+        roomCode:codeA,displayName:"Action returned spectator",
+        seatRole:"SPECTATOR"
+    });
+    const tokenC=await poll(async()=>{
+        const token=await userToken(page,"gamecenter.drawing.room.member.v1");
+        return token && token!==tokenB?token:null;
+    },"member admission from a pending chat POST remains possible");
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('roomName').textContent==='R13y original host'"),
+        "third member reconciles to original room while old chat held");
+    await cdp.eval(page,`(()=>{
+        document.getElementById("chatForm").elements.text.value=
+            "new room unsent private draft";
+        document.getElementById("notice").textContent=
+            "R13y third membership intact";
+        const release=window.__r13yChatRelease;
+        if(!release)throw Error("old room chat not held");
+        release(new Response(JSON.stringify({messageId:"old-chat"}),{
+            status:201,headers:{"Content-Type":"application/json"}
+        }));
+        window.__r13yChatRelease=null;
+        return true;
+    })()`);
+    await nap(280);
+    check(await cdp.eval(page,`(()=>{
+        const $=id=>document.getElementById(id);
+        return $("chatForm").elements.text.value===
+            "new room unsent private draft" &&
+            $("notice").textContent==="R13y third membership intact" &&
+            $("room").getAttribute("aria-busy")!=="true" &&
+            $("chatList").textContent.indexOf("old room pending message")<0;
+    })()`),"late old chat completion cannot erase current draft or leak room data");
+    check(await userToken(page,"gamecenter.drawing.room.member.v1")===tokenC,
+        "old chat response cannot replace current membership");
+    await cdp.eval(page,`(()=>{
+        window.fetch=window.__r13yChatOriginal;
+        delete window.__r13yChatOriginal;
+        delete window.__r13yChatHeld;
+        delete window.__r13yChatRelease;
+        return true;
+    })()`);
+    await fill(page,"chatForm",{text:"new member chat after stale POST"});
+    await poll(async()=>await cdp.eval(page,
+        "document.getElementById('chatList').textContent.includes("+
+        "'new member chat after stale POST')"),
+        "replacement member can send real chat after old action finishes");
+}
 async function run(){
     const {base,ws}=await launchServer();
     await launchChrome();
@@ -2842,6 +3008,11 @@ async function run(){
         "normal fixture shutdown");
     const coopFixture=await launchServer();
     await telephoneBrowserAcceptance(coopFixture.base,true);
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "coop fixture shutdown");
+    const actionFixture=await launchServer();
+    await memberActionSessionAcceptance(actionFixture.base);
     check(cdp.exceptions.length===0,
         "no uncaught errors in real game browsers: "+cdp.exceptions.join(" | "));
     process.stdout.write(prefix+" checks="+checks+
