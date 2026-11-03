@@ -778,15 +778,39 @@ public final class GameClientHttpServer implements AutoCloseable {
                     "token", admitted.token(), "memberId", admitted.memberId()));
                 return;
             }
-            if ("/admin/drawing/channel-grants".equals(suffix)
-                && "POST".equals(method)) {
-                if(!isAdminSession(exchange)) {
+            if (("/admin/drawing/channel-grants".equals(suffix)
+                    && ("GET".equals(method) || "POST".equals(method)))
+                || ("/admin/drawing/channel-grants/revoke".equals(suffix)
+                    && "POST".equals(method))) {
+                if (!isAdminSession(exchange)) {
                     sendJson(exchange,401,Map.of(
                         "error","administrator authentication required"));
                     return;
                 }
                 if(sharedDrawing==null) {
                     sendJson(exchange,503,Map.of("error","drawing unavailable"));
+                    return;
+                }
+                if("GET".equals(method)) {
+                    String query=exchange.getRequestURI().getRawQuery();
+                    if(query==null ||
+                        !query.matches("roomId=[0-9a-fA-F-]{36}"))
+                        throw new IllegalArgumentException("valid roomId required");
+                    String roomId=query.substring("roomId=".length());
+                    exchange.getResponseHeaders().set("Cache-Control","no-store");
+                    sendJson(exchange,200,Map.of(
+                        "channels",sharedDrawing.operatorChannels(roomId)));
+                    return;
+                }
+                if(suffix.endsWith("/revoke")) {
+                    JsonObject body=readYachtBody(exchange,Set.of(
+                        "roomId","provider","channelId"));
+                    var list=sharedDrawing.revokeOperatorChannel(
+                        roomApiText(body,"roomId"),
+                        roomApiText(body,"provider"),
+                        roomApiText(body,"channelId"));
+                    exchange.getResponseHeaders().set("Cache-Control","no-store");
+                    sendJson(exchange,200,Map.of("channels",list));
                     return;
                 }
                 JsonObject body=readYachtBody(exchange,Set.of(

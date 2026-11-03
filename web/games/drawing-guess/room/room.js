@@ -124,6 +124,8 @@
     $("roomName").textContent=room.roomName;
     $("roomCode").textContent=room.roomCode;
     $("roomPhase").textContent=room.state;
+    show("operatorRoomId",isHost());
+    $("operatorRoomIdValue").textContent=isHost()?room.roomId:"";
     $("roomCapacity").textContent="참여 "+room.memberCount+"/"+room.maxRoomMembers
       +" · 플레이어 "+room.playerCount+"/"+room.maxPlayers;
     const lobby=room.state==="OPEN_LOBBY";
@@ -465,6 +467,15 @@
       seatRole:user()?.seatRole==="PLAYER"?"SPECTATOR":"PLAYER"});
     await refresh();
   }));
+  $("copyOperatorRoomId").addEventListener("click",async()=>{
+    if(!isHost() || !snapshot?.room?.roomId)return;
+    try {
+      await navigator.clipboard.writeText(snapshot.room.roomId);
+      say("운영자 승인용 게임룸 ID를 복사했습니다.");
+    } catch {
+      say("자동 복사를 사용할 수 없습니다. 표시된 게임룸 ID를 직접 복사하세요.");
+    }
+  });
   $("broadcastForm").addEventListener("submit",event=>{
     event.preventDefault();
     const submitted=event.currentTarget;
