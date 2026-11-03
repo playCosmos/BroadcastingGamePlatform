@@ -144,7 +144,8 @@ jobs:
           $load = Join-Path $env:RUNNER_TEMP "game-room-r14l-packaged-load.json"
           $ws = Join-Path $env:RUNNER_TEMP "game-room-r14m-packaged-ws.json"
           $duration = Join-Path $env:RUNNER_TEMP "game-room-r14n-packaged-duration.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration
+          $yacht = Join-Path $env:RUNNER_TEMP "game-room-r14r-packaged-yacht.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration -YachtReportPath $yacht
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -238,6 +239,20 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "R14q correlation syntax invalid" }
           node ./analyze-correlated-field-evidence.mjs --self-test
           if ($LASTEXITCODE -ne 0) { throw "R14q correlated field evidence self-test failed" }
+
+      - name: R14r validate actual packaged Yacht and guest chat recovery
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./analyze-packaged-yacht-recovery.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14r report analyzer syntax invalid" }
+          node ./analyze-packaged-yacht-recovery.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14r two-player Yacht analyzer mutation tests failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14r-packaged-yacht.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14r-summary.json"
+          node ./analyze-packaged-yacht-recovery.mjs "--input=$report" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14r actual packaged Yacht/game chat restart verification failed" }
+          Get-Content $summary
 
       - name: Create release archive and checksum
         shell: pwsh
