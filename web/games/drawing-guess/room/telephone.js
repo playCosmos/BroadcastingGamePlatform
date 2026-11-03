@@ -678,6 +678,50 @@
     eraser=false;
     updateTools();
   });
+  // Private authoring shortcuts are deliberately scoped to canvas focus.
+  // Do not capture document-level input, text/chat edits or presenter keys.
+  draw.addEventListener("keydown",event=>{
+    if(event.target!==draw || !canEdit() || pointer!==null ||
+       event.repeat || event.isComposing || event.altKey || event.metaKey)return;
+    const key=event.key.toLowerCase();
+    if(event.ctrlKey){
+      const redo=(key==="z" && event.shiftKey) ||
+        (key==="y" && !event.shiftKey);
+      const undo=key==="z" && !event.shiftKey;
+      if(!redo && !undo)return;
+      const button=$(redo?"telephoneRedo":"telephoneUndo");
+      if(button.disabled)return;
+      event.preventDefault();
+      button.click();
+      return;
+    }
+    if(event.shiftKey)return;
+    const commands={b:"PEN",l:"LINE",r:"RECT",o:"ELLIPSE"};
+    if(commands[key]){
+      const button=$("telephoneShapeTools").querySelector(
+        'button[data-tool="'+commands[key]+'"]');
+      if(button?.disabled===false){
+        event.preventDefault();
+        button.click();
+      }
+      return;
+    }
+    if(key==="e"){
+      if(!eraser && !$("telephoneEraser").disabled){
+        event.preventDefault();
+        $("telephoneEraser").click();
+      }
+      return;
+    }
+    const widths={"1":"3","2":"6","3":"12"};
+    if(widths[key]){
+      const select=$("telephoneWidth");
+      if(select.disabled)return;
+      event.preventDefault();
+      select.value=widths[key];
+      select.dispatchEvent(new Event("change",{bubbles:true}));
+    }
+  });
   function eraseOwnStroke(p){
     // Only the current author's unsubmitted overlay is mutable in COOP.
     const near=stroke=>(stroke.points||[]).some(q=>
@@ -689,6 +733,7 @@
     if(!canEdit() || pointer!==null || event.isPrimary===false ||
       (strokes.length>=100 && !(eraser&&state.mode==="COOP")))return;
     event.preventDefault();
+    draw.focus({preventScroll:true});
     draw.setPointerCapture(event.pointerId);
     gestureBefore=strokes.slice();
     pointer=event.pointerId;
