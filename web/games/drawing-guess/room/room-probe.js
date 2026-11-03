@@ -79,6 +79,27 @@ has(html,'id="telephonePresentationStatus"',"host presentation status accessible
 has(html,'id="telephoneAutoplay"',"host can play/pause album slides");
 has(html,'id="telephonePlaybackSpeed"',"host can select slide interval");
 has(html,'id="telephonePlaybackProgress"',"all participants see playback status");
+has(html,'id="telephoneStageTime"',"telephone stages show a timing region");
+has(html,'id="telephoneStageTimeProgress"',"stage progress bar exists");
+has(html,'id="telephoneTimeAlert"',"time thresholds have polite live alerts");
+has(html,'id="telephoneDeadline" aria-live="off"',"per-second timer is not announced");
+has(html,'telephoneStageTime[data-urgency="last10"]',"final ten seconds visually emphasized");
+has(telephone,'function resetDeadline()',"timer state reset is centralized");
+has(telephone,'const key=String(state.stage)+":"+state.stageStartedAt+":"+duration',
+  "timer alerts and wake attempts are scoped to server stage deadline");
+has(telephone,'const percent=Math.max(0,Math.min(100,until/(duration*1000)*100))',
+  "stage percent is bounded and server-deadline derived");
+has(telephone,'remaining<=10?"last10":remaining<=30?"last30":"normal"',
+  "stage urgency bands are explicit");
+has(telephone,'urgency!==deadlineAlert',"screen reader threshold does not repeat each second");
+has(telephone,'!state.mySubmitted && state.taskKind',"threshold warning excludes submitted members");
+has(telephone,'deadlineWakeAttempts<3',"deadline wake-up attempts bounded");
+has(telephone,'now>=nextDeadlineWakeAt',"deadline retry has minimum backoff");
+has(telephone,'const dueKey=deadlineKey',"stale wake result cannot reset newer stage");
+has(telephone,'Promise.resolve().then(()=>refresh())',"deadline only re-reads authorized room");
+has(telephone,'if(!state.active || state.state==="REVEAL")',"reveal and inactive hide countdown");
+no(telephone,'"/drawing/telephone/advance"',"browser cannot advance server stage");
+
 has(html,'id="telephonePalette"',"telephone drawing has a preset color palette");
 has(html,'id="telephoneRedo"',"telephone drawing has redo control");
 has(html,'id="telephoneDownload"',"completed gallery can download an album");
