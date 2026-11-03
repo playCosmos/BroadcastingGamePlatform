@@ -143,6 +143,12 @@ class CDP{
             "page navigation "+url);
     }
 }
+async function waitRoomIdle(page,element){
+    await poll(async()=>await cdp.eval(page,
+        `document.getElementById(${JSON.stringify(element)})
+        ?.getAttribute("aria-busy")!=="true"`),
+        "room action completed: "+element);
+}
 async function fill(page,form,values){
     return cdp.eval(page,`(()=>{const f=document.getElementById(${JSON.stringify(form)});
         if(!f)throw Error("missing form");
@@ -342,6 +348,7 @@ async function mobileWssAcceptance(base,ws){
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('ready').textContent.includes('취소')"),
         "mobile host ready action");
+    await waitRoomIdle(mobile,"room");
     await cdp.eval(mobile,`(()=>{
         document.getElementById("mode").value="STREAMER_DRAWER";
         document.getElementById("rounds").value="1";
@@ -351,6 +358,7 @@ async function mobileWssAcceptance(base,ws){
     await poll(async()=>await cdp.eval(mobile,
         "document.getElementById('promptForm').hidden===false"),
         "streamer host may author the drawing prompt");
+    await waitRoomIdle(mobile,"room");
     await fill(mobile,"promptForm",{answer:"turtle",accepted:""});
     try {
         await poll(async()=>await cdp.eval(mobile,
