@@ -241,6 +241,15 @@ async function launchTlsProxy(base,ws){
     if(generated.status!==0)
         throw Error("keytool failed to create throwaway TLS certificate: "+
             generated.stderr);
+    const caCertPath=join(userDir,"game-room-e2e-ca.pem");
+    const exported=spawnSync("keytool",[
+        "-exportcert","-rfc","-alias","game-room-e2e",
+        "-keystore",certPath,"-storepass",password,
+        "-file",caCertPath
+    ],{encoding:"utf8",windowsHide:true});
+    if(exported.status!==0)
+        throw Error("keytool failed to export disposable TLS trust anchor: "+
+            exported.stderr);
     const upstreamHttp=new URL(base);
     const upstreamWs=new URL(ws);
     tlsProxy=https.createServer({
@@ -300,8 +309,57 @@ async function launchTlsProxy(base,ws){
     const port=tlsProxy.address().port;
     return {
         base:"https://127.0.0.1:"+port,
-        ws:"wss://127.0.0.1:"+port+"/"
+        ws:"wss://127.0.0.1:"+port+"/",
+        caCertPath
     };
+}
+
+/**
+ * R14i field CLI acceptance, using the real HTTPS/WSS proxy and certificate
+ * trust anchor. The field script must NOT mutate members/chats, skip TLS
+ * verification or leak bearer strings into output/report.
+ */
+async function externalWssReadOnlyAcceptance(tls,roomId,token){
+    const report=join(userDir,"r14i-readonly.jsonl");
+    const args=[resolve("smoke-external-game-room-wss.mjs"),
+        "--base="+tls.base,"--room-id="+roomId,"--rounds=3",
+        "--interval-ms=350","--report="+report];
+    const child=spawn(process.execPath,args,{
+        cwd:process.cwd(),windowsHide:true,
+        env:{...process.env,BGP_WSS_PROBE_TOKEN:token,
+            NODE_EXTRA_CA_CERTS:tls.caCertPath},
+        stdio:["ignore","pipe","pipe"]
+    });
+    let output="";
+    for(const stream of [child.stdout,child.stderr])
+        stream.on("data",chunk=>{
+            output+=String(chunk);
+            if(output.length>12000)output=output.slice(-12000);
+        });
+    let watchdog;
+    try{
+        const code=await Promise.race([
+            new Promise((resolve,reject)=>{
+                child.once("error",reject);
+                child.once("close",resolve);
+            }),
+            new Promise((resolve,reject)=>{
+                watchdog=setTimeout(()=>{
+                    child.kill();
+                    reject(Error("read-only field WSS probe exceeded CI timeout"));
+                },30000);
+            })
+        ]);
+        check(code===0,"read-only external TLS/WSS probe passed: "+output);
+    } finally {clearTimeout(watchdog);}
+    const metrics=await readFile(report,"utf8");
+    const records=metrics.trim().split("\n").map(line=>JSON.parse(line));
+    check(records.filter(x=>x.kind==="sample").length===3 &&
+        records.some(x=>x.kind==="summary" && x.rounds===3),
+        "read-only field probe records three real WSS snapshots and latency summary");
+    check(output.includes("GAME_ROOM_R14I_EXTERNAL_WSS_PASSED rounds=3") &&
+        !output.includes(token) && !metrics.includes(token),
+        "real certificate-validated WSS probe never prints or persists bearer");
 }
 
 /** Real CDP touch events (not synthetic JS PointerEvents). */
@@ -622,6 +680,7 @@ async function mobileWssAcceptance(base,ws){
             "; tlsUpgrades="+activeUpgrades("memberRoomId="+
                 state.data.room.roomId).length);
     }
+    await externalWssReadOnlyAcceptance(tls,state.data.room.roomId,viewerToken);
 
     // R12c: a guest host cannot claim a broadcast simply by typing its ID.
     // The real test server has no operator-provisioned SOOP streamer.
