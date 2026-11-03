@@ -2,7 +2,7 @@
 
 방송 채팅/후원 이벤트를 게임 모듈에 연결하는 방송용 게임 플랫폼입니다.
 
-현재 `main`에는 **Board**, **Drawing Guess**, **Yacht** 및 공통 GameRoom 기반이 통합되어 있습니다. Yacht는 Yahtzee 계열 규칙의 **R4 독립 멀티플레이 Beta**를 제공하며, R14w까지의 게임룸 기능과 자동 검증이 병합되었습니다. **코드 병합은 운영 배포·릴리스 승인을 의미하지 않습니다.** 방송 도구로 **Viewer Draw**의 Random/Number Draw가 구현되어 있습니다. 기존 Roulette/Lotto/Ticket 제품 전체는 이 저장소로 이전하지 않습니다.
+현재 `main`에는 **Board**, **Drawing Guess**, **Yacht** 및 공통 GameRoom 기반이 통합되어 있습니다. Yacht는 Yahtzee 계열 규칙의 **R4 독립 멀티플레이 Beta**를 제공하며, R15h까지의 게임룸 기능이 `main`에 통합되었으며, 각 단계의 정확한 HEAD에서 Windows 자동 검증을 통과했습니다. **코드 병합은 운영 배포·릴리스 승인을 의미하지 않습니다.** 방송 도구로 **Viewer Draw**의 Random/Number Draw가 구현되어 있습니다. 기존 Roulette/Lotto/Ticket 제품 전체는 이 저장소로 이전하지 않습니다.
 
 ## 1차 목표
 
@@ -61,7 +61,7 @@ Yacht 계획은 `docs/games/YACHT.md`, Drawing Guess 계획은 `docs/games/DRAWI
 - Viewer Draw: Core + Number Draw + Marble Map Maker V1 + Browser Box2D-WASM Marble Draw + Camera/Rank/Minimap/FastForward/Stuck Recovery IMPLEMENTED
 - Drawing Guess: D0~D6 IMPLEMENTED (Canvas, Sync, Score/Core, Room/Persistence, SOOP Chat Guess, Broadcast Overlay, restart/history recovery)
 - Yacht: Y0 점수 · Y1 영속화 · Y2 API, 공통 R4 멀티플레이 Beta `main` 병합. Y4 OBS·Y5 방송 입력·Y6 종합 안정화의 별도 수용 기준은 후속
-- 공통 GameRoom: R1~R14w `main` 병합 및 단계별 Windows 자동 검증 완료; 브라우저 입장·채팅·관전·복구·퇴장·폐쇄·Windows 패키징 TLS 신뢰 검증 포함. 실제 외부망·실기기·운영자 인수 검증은 미완료
+- 공통 GameRoom: R1~R15h `main` 통합; 회원·플레이어/관전자 정원, Telephone, 다중 방송인, 복구, 패키지 TLS/WSS, 6인 Yacht/20회원 및 인증 회원 단일 WebSocket 테스트 포함. 기존 IP당 24소켓 제한 유지. 실제 WAN/NAT·공인 CA·물리 실기기·운영자 인수 및 릴리스 승인 검증은 별도
 - CHZZK Provider: PLANNED
 - Viewer Draw Chat Entry: SOOP IMPLEMENTED / PROVIDER EXPANSION PENDING
 - Viewer Draw Finish Slow Motion/Podium + Goldberg Machine: PLANNED
