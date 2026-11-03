@@ -115,8 +115,23 @@ jobs:
         shell: pwsh
         run: |
           $classPath = @("target/test-classes", "target/classes", "target/probe-dependencies/*") -join [IO.Path]::PathSeparator
-          java -cp $classPath io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomWebSocketEnduranceR14gProbe --rounds=24
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14j-soak.jsonl"
+          java -cp $classPath io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomWebSocketEnduranceR14gProbe --rounds=24 "--report=$report"
           if ($LASTEXITCODE -ne 0) { throw "R14h extended WebSocket endurance failed: $LASTEXITCODE" }
+
+      - name: R14j validate and summarize soak metrics
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./analyze-game-room-soak.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14j analyzer JavaScript invalid" }
+          node ./analyze-game-room-soak.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14j analyzer contract self-test failed" }
+          $report = Join-Path $env:RUNNER_TEMP "game-room-r14j-soak.jsonl"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14j-summary.json"
+          node ./analyze-game-room-soak.mjs "--input=$report" "--summary=$summary" --min-rounds=24
+          if ($LASTEXITCODE -ne 0) { throw "R14j telemetry missing, corrupt, or out-of-order" }
+          Get-Content $summary
 
       - name: R14e packaged GameRoom startup and crash-restart
         shell: pwsh
