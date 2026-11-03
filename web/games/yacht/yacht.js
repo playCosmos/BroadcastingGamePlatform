@@ -72,9 +72,13 @@
   async function operation(callback) {
     if (busy) return;
     busy = true;
+    $("game").setAttribute("aria-busy","true");
     try { await callback(); }
     catch (error) { notice(error.message || "요청에 실패했습니다.", true); }
-    finally { busy = false; }
+    finally {
+      busy = false;
+      $("game").removeAttribute("aria-busy");
+    }
   }
 
   async function loadPublicRooms() {

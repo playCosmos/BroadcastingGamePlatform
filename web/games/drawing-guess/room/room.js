@@ -73,8 +73,14 @@
   function operation(action){
     if(busy)return;
     busy=true;
+    // Show assistive technology that a room mutation is still in flight.
+    // Subsequent commands must not race the preceding server write.
+    $("room").setAttribute("aria-busy","true");
     Promise.resolve().then(action).catch(e=>say(e.message||"요청 실패",true))
-      .finally(()=>{busy=false;});
+      .finally(()=>{
+        busy=false;
+        $("room").removeAttribute("aria-busy");
+      });
   }
 
   function invalidateSession(){
