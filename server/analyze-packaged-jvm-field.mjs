@@ -5,6 +5,8 @@
  * "Success" requires a terminal completion record; a killed sampler fails.
  */
 import {readFile,stat,writeFile} from "node:fs/promises";
+import {resolve} from "node:path";
+import {fileURLToPath} from "node:url";
 const fail=message=>{throw Error("R14o invalid field JVM observation: "+message);};
 const validInt=(v,min=0)=>Number.isSafeInteger(v)&&v>=min;
 const valid=(v)=>typeof v==="number"&&Number.isFinite(v)&&v>=0;
@@ -229,5 +231,9 @@ async function main(){
         " durationSeconds="+summary.observedDurationSeconds+
         " listenerJvmVerified=true");
 }
-try{await main();}
-catch(error){console.error(String(error.message||error));process.exitCode=1;}
+// Shared strict validators for R14q: import does not execute CLI side effects.
+export {parse,analyze,fixture};
+if(process.argv[1]&&fileURLToPath(import.meta.url)===resolve(process.argv[1])){
+    try{await main();}
+    catch(error){console.error(String(error.message||error));process.exitCode=1;}
+}

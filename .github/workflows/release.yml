@@ -228,6 +228,17 @@ jobs:
           node ./analyze-external-wss-field.mjs --self-test
           if ($LASTEXITCODE -ne 0) { throw "R14p external field data contract failed" }
 
+      - name: R14q verify combined JVM and external WSS field correlation
+        working-directory: server
+        shell: pwsh
+        run: |
+          # Only synthetic 24h/negative fixtures. Never fetch operator
+          # traces, public addresses, credentials or real field clients.
+          node --check ./analyze-correlated-field-evidence.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14q correlation syntax invalid" }
+          node ./analyze-correlated-field-evidence.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14q correlated field evidence self-test failed" }
+
       - name: Create release archive and checksum
         shell: pwsh
         run: |
