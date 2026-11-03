@@ -44,6 +44,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private enum ChannelKind {
         BOARD,
         DRAWING,
+        MEMBER_DRAWING,
         YACHT,
         MEMBER_ROOM
     }
@@ -113,6 +114,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private record Subscriber(String roomId,String memberId,String token) {}
     private final Map<WebSocket, Subscriber> roomSubscribers =
         new ConcurrentHashMap<>();
+    private final Map<WebSocket, Subscriber> drawingSubscribers =
+        new ConcurrentHashMap<>();
 
     public BoardGameWebSocketServer(String host, int port) {
         this(host, port, roomCode -> true, null);
@@ -150,6 +153,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         super(new InetSocketAddress(host, port));
         this.membership=membership;
         this.realtime=realtime;
+        if (membership!=null)membership.setMemberRevocationListener(this::disconnectMember);
         this.yachtCodeValidator = yachtCodeValidator == null
             ? code -> false : yachtCodeValidator;
         this.roomCodeValidator = roomCodeValidator == null
@@ -208,6 +212,25 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             && drawingSync != null
             && drawingSync.isActive(drawingCode)
         ) {
+            String ownerRoom;
+            try {
+                ownerRoom=drawingSync.memberRoomIdForCode(drawingCode);
+            } catch(RuntimeException failed) {
+                connection.close(1008,"drawing scope unavailable");
+                return;
+            }
+            if(ownerRoom!=null) {
+                if(membership==null || query.containsKey("drawerToken")) {
+                    connection.close(1008,"member Canvas authentication required");
+                    return;
+                }
+                if(!registerIfCapacity(connection,
+                    new Channel(ChannelKind.MEMBER_DRAWING,drawingCode,null,false))) {
+                    connection.close(1013,"drawing connection capacity reached");
+                }
+                // No replay before member authentication.
+                return;
+            }
             String drawerToken = query.get("drawerToken");
             boolean canWrite = drawerToken != null
                 && drawingSync.isAuthorizedDrawer(
@@ -349,7 +372,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             return false;
         }
         if (
-            channel.kind() == ChannelKind.DRAWING
+            (channel.kind() == ChannelKind.DRAWING
+                || channel.kind() == ChannelKind.MEMBER_DRAWING)
                 && channelConnections >= MAX_DRAWING_CONNECTIONS_PER_CODE
         ) {
             return false;
@@ -398,6 +422,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     ) {
         Channel channel = channelByConnection.remove(connection);
         Subscriber subscriber = roomSubscribers.remove(connection);
+        drawingSubscribers.remove(connection);
         if (subscriber != null) publishPresence(subscriber.roomId(),subscriber.memberId());
         drawingWriteRates.remove(connection);
         int count = connectedClients.get();
@@ -436,6 +461,10 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
         if (channel.kind() == ChannelKind.MEMBER_ROOM) {
             memberRoomMessage(connection,channel,message);
+            return;
+        }
+        if (channel.kind() == ChannelKind.MEMBER_DRAWING) {
+            memberDrawingMessage(connection,channel,message);
             return;
         }
         if (channel.kind() == ChannelKind.BOARD) {
@@ -554,6 +583,66 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         }
     }
 
+    /** First frame must present a valid, joined R2 membership token. */
+    private void memberDrawingMessage(
+        WebSocket connection,Channel channel,String message
+    ) {
+        if(drawingSubscribers.containsKey(connection)) {
+            connection.close(1008,"member Canvas WebSocket is read-only");
+            return;
+        }
+        try {
+            var frame=JsonParser.parseString(message).getAsJsonObject();
+            if(!frame.has("type")
+                || !"drawing.subscribe".equals(frame.get("type").getAsString())
+                || !frame.has("token")) {
+                connection.close(1008,"drawing subscribe required");
+                return;
+            }
+            String token=frame.get("token").getAsString();
+            synchronized(memberSendLock) {
+                String roomId=drawingSync.memberRoomIdForCode(channel.code());
+                var principal=membership.authenticate(token);
+                if(roomId==null || !roomId.equals(principal.roomId())
+                    || !isJoined(token,principal.memberId())) {
+                    connection.close(1008,"Canvas membership invalid");
+                    return;
+                }
+                drawingSubscribers.put(connection,
+                    new Subscriber(roomId,principal.memberId(),token));
+                for(String event:drawingSync.history(channel.code()))
+                    if(connection.isOpen())connection.send(event);
+            }
+        } catch(SQLException | RuntimeException invalid) {
+            connection.close(1008,"Canvas subscription unauthorized");
+        }
+    }
+
+    private boolean isJoined(String token,String memberId)throws SQLException {
+        return membership.room(token).members().stream().anyMatch(m->
+            m.memberId().equals(memberId)
+                && m.status()==io.github.playcosmos.broadcastinggameplatform
+                    .platform.rooms.GameRoomModels.MemberStatus.JOINED);
+    }
+
+    /** Called only after the R2 membership transaction commits. */
+    public void disconnectMember(String roomId,String memberId) {
+        synchronized(memberSendLock) {
+            for(var entry:roomSubscribers.entrySet()) {
+                var subscriber=entry.getValue();
+                if(subscriber.roomId().equals(roomId)
+                    && subscriber.memberId().equals(memberId))
+                    entry.getKey().close(1008,"room membership revoked");
+            }
+            for(var entry:drawingSubscribers.entrySet()) {
+                var subscriber=entry.getValue();
+                if(subscriber.roomId().equals(roomId)
+                    && subscriber.memberId().equals(memberId))
+                    entry.getKey().close(1008,"Canvas membership revoked");
+            }
+        }
+    }
+
     /** Called after SQLite commit, serialized with subscription+replay. */
     public boolean broadcastRoomEvent(String roomId,String json) {
         boolean sent=false;
@@ -566,7 +655,8 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 try {
                     var principal=membership.authenticate(subscriber.token());
                     if(!principal.memberId().equals(subscriber.memberId())
-                        || !principal.roomId().equals(roomId)) {
+                        || !principal.roomId().equals(roomId)
+                        || !isJoined(subscriber.token(),subscriber.memberId())) {
                         socket.close(1008,"member session changed");
                         continue;
                     }
@@ -646,20 +736,37 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         return broadcastDrawing(drawingCode,json);
     }
 
-    private boolean broadcastDrawing(String drawingCode, String json) {
-        boolean sent = false;
-        for (var entry : channelByConnection.entrySet()) {
-            Channel channel = entry.getValue();
-            if (
-                channel.kind() != ChannelKind.DRAWING
-                || !drawingCode.equals(channel.code())
-            ) {
-                continue;
+    private boolean broadcastDrawing(String drawingCode,String json) {
+        boolean sent=false;
+        synchronized(memberSendLock) {
+            for(var entry:channelByConnection.entrySet()) {
+                Channel channel=entry.getValue();
+                if(!drawingCode.equals(channel.code())
+                    || (channel.kind()!=ChannelKind.DRAWING
+                        && channel.kind()!=ChannelKind.MEMBER_DRAWING))continue;
+                WebSocket socket=entry.getKey();
+                if(!socket.isOpen())continue;
+                if(channel.kind()==ChannelKind.MEMBER_DRAWING) {
+                    Subscriber subscriber=drawingSubscribers.get(socket);
+                    if(subscriber==null)continue;
+                    try {
+                        var principal=membership.authenticate(subscriber.token());
+                        if(!principal.roomId().equals(subscriber.roomId())
+                            || !principal.memberId().equals(subscriber.memberId())
+                            || !isJoined(subscriber.token(),subscriber.memberId())
+                            || !subscriber.roomId().equals(
+                                drawingSync.memberRoomIdForCode(drawingCode))) {
+                            socket.close(1008,"Canvas membership changed");
+                            continue;
+                        }
+                    } catch(SQLException | RuntimeException denied) {
+                        socket.close(1008,"Canvas membership revoked");
+                        continue;
+                    }
+                }
+                socket.send(json);
+                sent=true;
             }
-            WebSocket connection = entry.getKey();
-            if (!connection.isOpen()) continue;
-            connection.send(json);
-            sent = true;
         }
         return sent;
     }

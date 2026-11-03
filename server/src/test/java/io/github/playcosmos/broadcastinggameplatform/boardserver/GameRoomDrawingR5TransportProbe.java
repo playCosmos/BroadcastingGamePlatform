@@ -72,6 +72,9 @@ public final class GameRoomDrawingR5TransportProbe {
             throw new AssertionError("missing WS event "+marker+
                 " close="+closed.get()+" pending="+inbox.size());
         }
+        boolean noMessage()throws Exception {
+            return inbox.poll(300,TimeUnit.MILLISECONDS)==null;
+        }
         void expectPolicyClose()throws Exception {
             for(int n=0;n<40;n++){
                 if(closed.get()==1008)return;
@@ -204,9 +207,20 @@ public final class GameRoomDrawingR5TransportProbe {
             var observer1=new Observer();
             var drawOne=connect(client,URI.create(wsBase+"drawingCode="+code),observer1);
             sockets.add(drawOne);
+            check(observer1.noMessage(),"Canvas history never sent before authentication");
+            drawOne.sendText(drawSubscribe(host),true).get(3,TimeUnit.SECONDS);
             var observer2=new Observer();
             var drawTwo=connect(client,URI.create(wsBase+"drawingCode="+code),observer2);
             sockets.add(drawTwo);
+            drawTwo.sendText(drawSubscribe(viewerToken),true).get(3,TimeUnit.SECONDS);
+            var anonymous=new Observer();
+            var anonymousSocket=connect(client,URI.create(wsBase+"drawingCode="+code),
+                anonymous);
+            sockets.add(anonymousSocket);
+            anonymousSocket.sendText("{\"type\":\"canvas.clear\",\"payload\":{}}",true)
+                .get(3,TimeUnit.SECONDS);
+            anonymous.expectPolicyClose();
+            check(true,"Canvas observer must subscribe with authenticated member");
 
             var unauthorized=post(client,base,API+"/drawing/canvas",
                 event("canvas.clear","{}"),viewerToken);
@@ -253,16 +267,24 @@ public final class GameRoomDrawingR5TransportProbe {
             var replay=new Observer();
             var reconnect=connect(client,URI.create(wsBase+"drawingCode="+code),replay);
             sockets.add(reconnect);
+            check(replay.noMessage(),"unauthenticated reconnect cannot replay history");
+            reconnect.sendText(drawSubscribe(guestToken),true).get(3,TimeUnit.SECONDS);
             check(replay.expect("canvas.clear").contains("\"sequence\":1") &&
                 replay.expect("canvas.stroke.begin").contains("\"sequence\":2") &&
                 replay.expect("canvas.stroke.points").contains("\"sequence\":3") &&
                 replay.expect("canvas.stroke.end").contains("\"sequence\":4"),
                 "reconnected browser replays persisted Canvas in strict order");
 
-            drawTwo.sendText("{\"type\":\"canvas.clear\",\"payload\":{}}",true)
+            var cannotWrite=new Observer();
+            var writeSocket=connect(client,URI.create(wsBase+"drawingCode="+code),
+                cannotWrite);
+            sockets.add(writeSocket);
+            writeSocket.sendText(drawSubscribe(guestToken),true).get(3,TimeUnit.SECONDS);
+            cannotWrite.expect("canvas.clear");
+            writeSocket.sendText("{\"type\":\"canvas.clear\",\"payload\":{}}",true)
                 .get(3,TimeUnit.SECONDS);
-            observer2.expectPolicyClose();
-            check(true,"unauthenticated drawing spectator WS cannot inject Canvas");
+            cannotWrite.expectPolicyClose();
+            check(true,"authenticated drawing spectator WS cannot inject Canvas");
 
             check(post(client,base,API+"/chat",
                 "{\"messageId\":\"r5-live-chat\",\"text\":\"kiwi\"}",viewerToken)
@@ -284,6 +306,17 @@ public final class GameRoomDrawingR5TransportProbe {
                 "drawer cannot self-award answer points");
 
             access.kick(host,viewer.memberId());
+            observer2.expectPolicyClose();
+            b.expectPolicyClose();
+            check(true,"kick immediately closes both room and drawing channels");
+            var refused=new Observer();
+            var refusedSocket=connect(client,URI.create(wsBase+"drawingCode="+code),
+                refused);
+            sockets.add(refusedSocket);
+            refusedSocket.sendText(drawSubscribe(viewerToken),true)
+                .get(3,TimeUnit.SECONDS);
+            refused.expectPolicyClose();
+            check(true,"kicked member cannot replay Canvas through fresh browser");
             check(send(client,base,API+"/drawing","GET",null,viewerToken)
                 .statusCode()==403,"kicked spectator loses room state access");
             check(post(client,base,API+"/drawing/guess",
@@ -295,8 +328,8 @@ public final class GameRoomDrawingR5TransportProbe {
             check(post(client,base,API+"/chat",
                 "{\"messageId\":\"r5-valid-chat\",\"text\":\"hello\"}",host)
                 .statusCode()==201,"other members continue chatting after kick");
-            b.expectPolicyClose();
-            check(true,"previously subscribed member socket closes after revocation");
+            check(a.closed.get()==-1,
+                "unaffected host member channel survives spectator kick");
 
             System.out.println("GAME_ROOM_DRAWING_R5_LIVE_TRANSPORT_PASSED checks="+checks+
                 " participants=3 sockets=concurrent canvas=ordered-replayed"+
@@ -315,6 +348,9 @@ public final class GameRoomDrawingR5TransportProbe {
         }
     }
 
+    private static String drawSubscribe(String token) {
+        return "{\"type\":\"drawing.subscribe\",\"token\":\""+token+"\"}";
+    }
     private static String subscribe(String token,int after) {
         return "{\"type\":\"room.subscribe\",\"token\":\""+token+
             "\",\"afterSequence\":"+after+"}";

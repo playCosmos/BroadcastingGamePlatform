@@ -2,6 +2,7 @@
   "use strict";
   const API="/api/v1/room-membership";
   const STORAGE="gamecenter.drawing.room.member.v1";
+  const REVOKED="gamecenter.drawing.room.revoked.v1";
   const $=id=>document.getElementById(id);
   const show=(id,yes)=>{$(id).hidden=!yes;};
   const say=(message,error=false)=>{
@@ -21,7 +22,11 @@
       headers,credentials:"same-origin",cache:"no-store",
       ...(body!==null?{body:JSON.stringify(body)}:{})});
     const json=await response.json().catch(()=>({error:"서버 응답을 읽을 수 없습니다."}));
-    if(!response.ok)throw new Error(json.error||"HTTP "+response.status);
+    if(!response.ok){
+      const error=new Error(json.error||"HTTP "+response.status);
+      error.status=response.status;
+      throw error;
+    }
     return json;
   };
   let secret=sessionStorage.getItem(STORAGE)||"";
@@ -40,9 +45,24 @@
       .finally(()=>{busy=false;});
   }
 
+  function invalidateSession(){
+    const roomId=snapshot?.room?.roomId||"";
+    try{
+      localStorage.setItem(REVOKED,JSON.stringify({roomId,at:Date.now()}));
+    }catch{/* browser persistence may be disabled */}
+    secret="";
+    snapshot=null;
+    sessionStorage.removeItem(STORAGE);
+    memberSocket?.close();canvasSocket?.close();
+    memberSocket=null;canvasSocket=null;
+    roomBinding="";drawingBinding="";
+    show("room",false);show("admission",true);
+    say("참가 세션이 종료되었거나 강퇴되었습니다. 기존 세션으로는 다시 접속할 수 없습니다.",true);
+  }
   function accept(secretValue){
     secret=secretValue;
     sessionStorage.setItem(STORAGE,secretValue);
+    try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
     roomBinding="";drawingBinding="";
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
@@ -279,7 +299,12 @@
     if(code!==drawingBinding){
       canvasSocket?.close();drawingBinding=code;canvasSequence=0;strokes.clear();redraw();
       if(code){
-        canvasSocket=new WebSocket(url("drawingCode="+encodeURIComponent(code)));
+        const socket=new WebSocket(url("drawingCode="+encodeURIComponent(code)));
+        canvasSocket=socket;
+        socket.addEventListener("open",()=>{
+          if(secret&&drawingBinding===code)
+            socket.send(JSON.stringify({type:"drawing.subscribe",token:secret}));
+        });
         canvasSocket.addEventListener("message",ev=>{
           try{applyEvent(ev.data);}catch{/* invalid drawing event ignored */}
         });
@@ -296,7 +321,10 @@
     try{
       snapshot=await request("/drawing");
       render();await socketConnections();await refreshChat();
-    }catch(e){say(e.message||"상태 조회 실패",true);}
+    }catch(e){
+      if(e.status===403)invalidateSession();
+      else say(e.message||"상태 조회 실패",true);
+    }
     finally{
       refreshBusy=false;
       if(rerun){rerun=false;setTimeout(refresh,200);}
@@ -406,5 +434,11 @@
   const invite=new URLSearchParams(location.hash.slice(1)).get("invite");
   if(invite)$("joinForm").elements.invitation.value=invite;
   if(secret){show("admission",false);show("room",true);refresh();}
+  else {
+    try{
+      if(localStorage.getItem(REVOKED))
+        say("이전 참가 세션이 종료되었습니다. 새 참가 시에도 서버의 입장 정책이 적용됩니다.",true);
+    }catch{/* storage unavailable */}
+  }
   setInterval(()=>{if(secret)refresh();},3000);
 })();

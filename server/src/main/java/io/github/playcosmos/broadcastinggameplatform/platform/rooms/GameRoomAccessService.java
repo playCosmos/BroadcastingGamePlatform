@@ -38,6 +38,22 @@ public final class GameRoomAccessService {
     private static final int MAX_INVITE_USES = 256;
     private final GameRoomService rooms;
     private final Clock clock;
+    private volatile java.util.function.BiConsumer<String,String> memberRevocationListener=
+        (roomId,memberId)->{};
+
+    /** Optional server transport hook, invoked only after committed revocation. */
+    public void setMemberRevocationListener(
+        java.util.function.BiConsumer<String,String> listener
+    ) {
+        memberRevocationListener=java.util.Objects.requireNonNull(listener);
+    }
+
+    private void notifyMemberRevoked(String roomId,String memberId) {
+        try {memberRevocationListener.accept(roomId,memberId);}
+        catch(RuntimeException failure) {
+            System.err.println("[room-auth] websocket revocation signal failed");
+        }
+    }
 
     public static final class Forbidden extends SecurityException {
         public Forbidden(String reason) { super(reason); }
@@ -213,7 +229,8 @@ public final class GameRoomAccessService {
             || grace.compareTo(Duration.ofHours(1)) > 0) {
             throw new IllegalArgumentException("invalid disconnect grace");
         }
-        return mutate(token, (connection, principal, room, member) -> {
+        Principal leaving=authenticate(token);
+        Room result=mutate(token, (connection, principal, room, member) -> {
             if (member.status() != MemberStatus.JOINED) {
                 throw new GameRoomService.RoomConflict("not connected");
             }
@@ -227,6 +244,8 @@ public final class GameRoomAccessService {
             }
             return true;
         });
+        notifyMemberRevoked(leaving.roomId(),leaving.memberId());
+        return result;
     }
 
     public Room ready(String token, boolean desired) throws SQLException {
@@ -273,7 +292,8 @@ public final class GameRoomAccessService {
     }
 
     public Room leave(String token) throws SQLException {
-        return mutate(token, (connection, principal, room, member) -> {
+        Principal leaving=authenticate(token);
+        Room result=mutate(token, (connection, principal, room, member) -> {
             if (principal.isHost()) {
                 throw new GameRoomService.RoomConflict("transfer host before leaving");
             }
@@ -295,6 +315,8 @@ public final class GameRoomAccessService {
             revokeMember(connection, member.memberId());
             return true;
         });
+        notifyMemberRevoked(leaving.roomId(),leaving.memberId());
+        return result;
     }
 
     public Room capacity(String hostToken, int players, int total)
@@ -345,7 +367,7 @@ public final class GameRoomAccessService {
     }
 
     public Room kick(String hostToken, String targetMemberId) throws SQLException {
-        return rooms.write(connection -> {
+        Room result=rooms.write(connection -> {
             Principal host = requireHost(connection, hostToken);
             Room room = GameRoomService.read(connection, host.roomId());
             Member target = member(room, targetMemberId);
@@ -389,11 +411,14 @@ public final class GameRoomAccessService {
             rooms.bump(connection, room);
             return GameRoomService.read(connection, room.roomId());
         });
+        notifyMemberRevoked(result.roomId(),targetMemberId);
+        return result;
     }
 
     /** Rotate credentials without opening another member seat or grace period. */
     public Credential rotate(String token) throws SQLException {
-        return rooms.write(connection -> {
+        Principal previous=authenticate(token);
+        Credential rotated=rooms.write(connection -> {
             Principal principal = requireSession(connection, token);
             String oldHash = hashToken(token);
             String next = secret();
@@ -407,9 +432,12 @@ public final class GameRoomAccessService {
             }
             return insertSession(connection, next, principal.roomId(), principal.memberId());
         });
+        notifyMemberRevoked(previous.roomId(),previous.memberId());
+        return rotated;
     }
 
     public void revoke(String token) throws SQLException {
+        Principal previous=authenticate(token);
         rooms.write(connection -> {
             requireSession(connection, token);
             try (var stmt = connection.prepareStatement("""
@@ -422,6 +450,7 @@ public final class GameRoomAccessService {
             }
             return null;
         });
+        notifyMemberRevoked(previous.roomId(),previous.memberId());
     }
 
     public void revokeInvite(String hostToken, String inviteToken)
