@@ -31,6 +31,7 @@
   };
   let secret=sessionStorage.getItem(STORAGE)||"";
   let snapshot=null,memberSocket=null,canvasSocket=null,wsBase="";
+  let telephone={active:false};
   let roomBinding="",drawingBinding="",chatSequence=-1,canvasSequence=0;
   let drawingActive=false,strokeId="",lastPoint=null,sendQueue=Promise.resolve();
   let currentPointer=null,pendingPoints=[],pointTimer=null;
@@ -89,7 +90,7 @@
       localStorage.setItem(REVOKED,JSON.stringify({roomId,at:Date.now()}));
     }catch{/* browser persistence may be disabled */}
     secret="";
-    snapshot=null;
+    snapshot=null;telephone={active:false};
     sessionStorage.removeItem(STORAGE);
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
@@ -101,7 +102,7 @@
     secret=secretValue;
     sessionStorage.setItem(STORAGE,secretValue);
     try{localStorage.removeItem(REVOKED);}catch{/* storage unavailable */}
-    roomBinding="";drawingBinding="";
+    roomBinding="";drawingBinding="";telephone={active:false};
     memberSocket?.close();canvasSocket?.close();
     memberSocket=null;canvasSocket=null;
     chatSequence=-1;canvasSequence=0;
@@ -130,11 +131,13 @@
       +" · 플레이어 "+room.playerCount+"/"+room.maxPlayers;
     const lobby=room.state==="OPEN_LOBBY";
     show("closeRoom",isHost() && room.state!=="PLAYING");
-    const recovering=room.state==="PLAYING" && !snapshot.nativeRoomId;
+    const recovering=room.state==="PLAYING" && !snapshot.nativeRoomId
+      && !telephone.active;
     show("lobby",lobby||recovering);
     show("hostSettings",isHost()&&(lobby||recovering));
     show("inviteBox",isHost()&&(lobby||room.state==="PLAYING"));
-    show("broadcastSettings",isHost()&&(lobby||room.state==="PLAYING"));
+    show("broadcastSettings",isHost()&&(lobby||
+      (room.state==="PLAYING"&&!telephone.active)));
     show("streamerAssignBox",isHost()&&lobby);
     $("start").disabled=room.playerCount<1
       || room.members.some(m=>m.seatRole==="PLAYER"
@@ -440,7 +443,10 @@
     refreshBusy=true;
     try{
       snapshot=await request("/drawing");
-      render();await socketConnections();await refreshChat();
+      telephone=await request("/drawing/telephone");
+      render();
+      window.TelephoneView.render(telephone,request,refresh);
+      await socketConnections();await refreshChat();
       if(isHost()){
         await refreshChannels();
         await refreshStreamerAssignments();
@@ -546,6 +552,13 @@
     });
   });
   $("start").addEventListener("click",()=>operation(async()=>{
+    if($("mode").value==="TELEPHONE_CHAIN"){
+      telephone=await request("/drawing/telephone/start","POST",{
+        durationSeconds:Number($("duration").value)
+      });
+      say("전화 그림이 시작됐습니다. 모두 첫 문장을 작성하세요.");
+      await refresh();return;
+    }
     const rotateStreamers=$("mode").value==="STREAMER_ROTATION";
     snapshot=await request("/drawing/start","POST",{
       mode:rotateStreamers?"ROTATING_DRAWER":$("mode").value,

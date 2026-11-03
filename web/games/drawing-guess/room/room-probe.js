@@ -70,6 +70,11 @@ has(js,'mode:rotateStreamers?"ROTATING_DRAWER":$("mode").value,',
   "new streamer rotation opt-in maps to authoritative native rotating mode");
 has(js,'streamerRotation:rotateStreamers',"server receives explicit multi-streamer intent");
 has(html,'<option value="STREAMER_ROTATION">',"host can choose streamer turns");
+has(html,'<option value="TELEPHONE_CHAIN">',"telephone chain phase mode is available");
+has(html,'id="telephoneReveal"',"album reveal panel exists");
+has(js,'request("/drawing/telephone/start"',"telephone stage start uses authenticated room bearer");
+has(js,'request("/drawing/telephone")',"telephone state follows member authentication");
+has(server,'sharedDrawing.telephone().submit(',"server accepts separate private telephone submissions");
 has(js,'"/drawing/streamers/assign"',"host mapping endpoint is member-authenticated");
 has(js,'await refreshStreamerAssignments()',"approved channel roster refresh");
 has(js,'roomCode:code',"room admission uses typed public code");
