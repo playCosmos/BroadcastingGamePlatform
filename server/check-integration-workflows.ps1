@@ -29,8 +29,9 @@ $telemetry = "- name: R14j validate and summarize soak metrics"
 $processTelemetry = "- name: R14k validate packaged EXE resource samples"
 $packagedLoad = "- name: R14l verify packaged JVM HTTP SQLite soak (48 rounds)"
 $packagedWs = "- name: R14m verify real packaged spectator WebSocket fanout"
+$duration = "- name: R14n verify packaged Windows listener-JVM duration trend"
 $publish = "- name: Create or update GitHub Release"
-foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $publish)) {
+foreach ($required in @($sourceGuard, $releaseBranch, $gate, $regression, $extended, $telemetry, $packaged, $graceful, $processTelemetry, $packagedLoad, $packagedWs, $duration, $publish)) {
     if (-not $Release.Contains($required)) {
         throw "R14d: release workflow must contain the gate: $required"
     }
@@ -43,7 +44,8 @@ if (-not ($Release.IndexOf($regression) -lt $Release.IndexOf($gate) -and
            $Release.IndexOf($graceful) -lt $Release.IndexOf($processTelemetry) -and
            $Release.IndexOf($processTelemetry) -lt $Release.IndexOf($packagedLoad) -and
            $Release.IndexOf($packagedLoad) -lt $Release.IndexOf($packagedWs) -and
-           $Release.IndexOf($packagedWs) -lt $Release.IndexOf($publish))) {
+           $Release.IndexOf($packagedWs) -lt $Release.IndexOf($duration) -and
+           $Release.IndexOf($duration) -lt $Release.IndexOf($publish))) {
     throw "R14d: the real browser suite must run before any release publish step"
 }
 if (-not $Package.Contains("run: ./server/check-integration-workflows.ps1")) {
@@ -149,4 +151,24 @@ if (-not $Package.Contains("Upload R14m packaged WS fanout metrics") -or
     -not $Package.Contains("game-room-r14m-summary.json")) {
     throw "R14m: sanitized packaged WS fanout data must remain inspectable"
 }
-Write-Host "[workflow] R14m packaged spectator fanout/replay publication guards verified"
+# R14n: actual packaged Windows listener-JVM multi-cycle spectator duration,
+# sampled while a child WebSocket client repeats connect/commit/replay.
+foreach ($text in @($Package, $Release)) {
+    if (-not $text.Contains($duration) -or
+        -not $text.Contains("-WsSoakCycles 6 -WsSoakReportPath") -or
+        -not $text.Contains("node ./analyze-packaged-ws-duration.mjs --self-test") -or
+        -not $text.Contains('node ./analyze-packaged-ws-duration.mjs "--input=$duration" "--summary=$summary"')) {
+        throw "R14n: both workflows must require packaged JVM duration trend acceptance"
+    }
+}
+if (-not ($Package.IndexOf($packagedWs) -lt $Package.IndexOf($duration) -and
+           $Package.IndexOf($duration) -lt $Package.IndexOf("- name: Upload Windows package") -and
+           $Release.IndexOf($packagedWs) -lt $Release.IndexOf($duration) -and
+           $Release.IndexOf($duration) -lt $Release.IndexOf($publish))) {
+    throw "R14n: duration trend must be verified before distribution"
+}
+if (-not $Package.Contains("Upload R14n packaged JVM duration metrics") -or
+    -not $Package.Contains("game-room-r14n-summary.json")) {
+    throw "R14n: bounded nonsecret JVM duration observations must be inspectable"
+}
+Write-Host "[workflow] R14n packaged JVM duration trend acceptance guards verified"

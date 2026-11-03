@@ -17,10 +17,27 @@ const wsPort=Number(env.BGP_R14M_WS_PORT);
 const code=env.BGP_R14M_ROOM_CODE||"";
 const roomId=env.BGP_R14M_ROOM_ID||"";
 const hostToken=env.BGP_R14M_HOST_TOKEN||"";
-const reportArg=process.argv.slice(2);
-if(reportArg.length!==1||!reportArg[0].startsWith("--report=")||
-    reportArg[0].length<10)fail("new report path required");
-const reportPath=reportArg[0].slice("--report=".length);
+// R14n optionally extends the SAME credential set through multiple actual
+// concurrent-spectator cycles. The default R14m single-cycle contract stays
+// unchanged; no additional test room or spectator identities are required.
+const options=new Map();
+for(const arg of process.argv.slice(2)){
+    const pos=arg.indexOf("=");
+    if(!arg.startsWith("--")||pos<3)fail("invalid option");
+    const key=arg.slice(2,pos);
+    if(!["report","cycles","pause-ms","soak-report"].includes(key)||
+        options.has(key)||!arg.slice(pos+1))fail("invalid/repeated option");
+    options.set(key,arg.slice(pos+1));
+}
+const reportPath=options.get("report")||"";
+const cycles=options.has("cycles")?Number(options.get("cycles")):1;
+const pauseMs=options.has("pause-ms")?Number(options.get("pause-ms")):0;
+const soakReport=options.get("soak-report")||"";
+if(!reportPath||!Number.isSafeInteger(cycles)||cycles<1||cycles>12||
+    (cycles===1&&(pauseMs!==0||soakReport))||
+    (cycles>1&&(cycles<3||!Number.isSafeInteger(pauseMs)||
+        pauseMs<2000||pauseMs>60000||!soakReport||soakReport===reportPath)))
+    fail("single R14m cycle or R14n 3..12 cycles with a unique report and 2..60s pause required");
 if(![1,2].includes(launch)||spectators!==12 ||
    !Number.isSafeInteger(httpPort)||httpPort<1024||httpPort>65535||
    !Number.isSafeInteger(wsPort)||wsPort<1024||wsPort>65535||
@@ -154,30 +171,59 @@ async function main(){
         tokens.push(joined.token);
     }
     if(new Set(tokens).size!==spectators)fail("duplicated spectator credentials");
-    let items=await group(tokens,-1);
-    const liveId="r14mL"+launch+"LiveA";
-    const live=await post("/chat",{messageId:liveId,text:"R14m live fanout"},hostToken);
-    if(!Number.isSafeInteger(live.sequence)||live.messageId!==liveId)
-        fail("live chat not durably committed");
-    await matchAll(items,liveId,live.sequence,"live fanout");
-    await shutAll(items);
-    const missedId="r14mL"+launch+"ReplayB";
-    const missed=await post("/chat",{messageId:missedId,text:"R14m replay"},hostToken);
-    if(!Number.isSafeInteger(missed.sequence)||missed.messageId!==missedId||
-        missed.sequence<=live.sequence)fail("replay chat cursor did not advance");
-    items=await group(tokens,live.sequence);
-    await matchAll(items,missedId,missed.sequence,"durable cursor replay");
-    await shutAll(items);
+    const cycleResults=[];
+    let cursor=-1;
+    for(let cycle=1;cycle<=cycles;cycle++){
+        const cycleStarted=performance.now();
+        let items=await group(tokens,cursor);
+        const liveId="r14mL"+launch+"C"+cycle+"LiveA";
+        const live=await post("/chat",{messageId:liveId,text:"R14m live fanout"},hostToken);
+        if(!Number.isSafeInteger(live.sequence)||live.messageId!==liveId||
+            live.sequence<=cursor)fail("live chat not durably committed");
+        await matchAll(items,liveId,live.sequence,"live fanout");
+        await shutAll(items);
+        const missedId="r14mL"+launch+"C"+cycle+"ReplayB";
+        const missed=await post("/chat",{messageId:missedId,text:"R14m replay"},hostToken);
+        if(!Number.isSafeInteger(missed.sequence)||missed.messageId!==missedId||
+            missed.sequence<=live.sequence)fail("replay chat cursor did not advance");
+        items=await group(tokens,live.sequence);
+        await matchAll(items,missedId,missed.sequence,"durable cursor replay");
+        await shutAll(items);
+        cursor=missed.sequence;
+        cycleResults.push({
+            cycle,handshakes:2*spectators,liveEvents:spectators,
+            replayEvents:spectators,cleanCloses:2*spectators,
+            elapsedMs:Math.round((performance.now()-cycleStarted)*100)/100
+        });
+        if(cycle<cycles)await pause(pauseMs);
+    }
     const result={
         kind:"packaged-ws-client",schemaVersion:1,launch,
         spectators,joined:spectators,handshakes:2*spectators,
         snapshots:2*spectators,liveEvents:spectators,
         replayEvents:spectators,cleanCloses:2*spectators,
         liveSequenceBeforeReplay:true,
-        elapsedMs:Math.round((performance.now()-start)*100)/100
+        elapsedMs:cycleResults[0].elapsedMs
     };
     await writeFile(reportPath,JSON.stringify(result)+"\n",
         {encoding:"utf8",flag:"wx"});
+    if(cycles>1){
+        const duration=Math.round((performance.now()-start)*100)/100;
+        const extended={
+            kind:"packaged-ws-duration-client",schemaVersion:1,
+            launch,spectators,cycles,pauseMs,durationMs:duration,
+            handshakes:2*spectators*cycles,
+            liveEvents:spectators*cycles,
+            replayEvents:spectators*cycles,
+            cleanCloses:2*spectators*cycles,
+            cycleResults
+        };
+        await writeFile(soakReport,JSON.stringify(extended)+"\n",
+            {encoding:"utf8",flag:"wx"});
+        console.log("GAME_ROOM_R14N_PACKAGED_WS_DURATION_CLIENT_PASSED"+
+            " launch="+launch+" cycles="+cycles+
+            " handshakes="+extended.handshakes+" durationMs="+duration);
+    }
     console.log("GAME_ROOM_R14M_PACKAGED_WS_CLIENT_PASSED"+
         " launch="+launch+" spectators="+spectators+
         " handshakes="+2*spectators+" live="+spectators+" replay="+spectators);

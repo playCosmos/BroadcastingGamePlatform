@@ -214,7 +214,8 @@ jobs:
           $report = Join-Path $env:RUNNER_TEMP "game-room-r14k-packaged-exe.json"
           $load = Join-Path $env:RUNNER_TEMP "game-room-r14l-packaged-load.json"
           $ws = Join-Path $env:RUNNER_TEMP "game-room-r14m-packaged-ws.json"
-          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws
+          $duration = Join-Path $env:RUNNER_TEMP "game-room-r14n-packaged-duration.json"
+          ./server/smoke-packaged-game-room-restart.ps1 -StopMode Graceful -TelemetryPath $report -LoadRounds 24 -LoadReportPath $load -WsSpectators 12 -WsReportPath $ws -WsSoakCycles 6 -WsSoakReportPath $duration
 
       - name: R14k validate packaged EXE resource samples
         working-directory: server
@@ -281,6 +282,32 @@ jobs:
           path: |
             ${{ runner.temp }}/game-room-r14m-packaged-ws.json
             ${{ runner.temp }}/game-room-r14m-summary.json
+          if-no-files-found: ignore
+          retention-days: 14
+
+      - name: R14n verify packaged Windows listener-JVM duration trend
+        working-directory: server
+        shell: pwsh
+        run: |
+          node --check ./analyze-packaged-ws-duration.mjs
+          if ($LASTEXITCODE -ne 0) { throw "R14n analyzer syntax invalid" }
+          node ./analyze-packaged-ws-duration.mjs --self-test
+          if ($LASTEXITCODE -ne 0) { throw "R14n mutation self-test failed" }
+          $duration = Join-Path $env:RUNNER_TEMP "game-room-r14n-packaged-duration.json"
+          $summary = Join-Path $env:RUNNER_TEMP "game-room-r14n-summary.json"
+          node ./analyze-packaged-ws-duration.mjs "--input=$duration" "--summary=$summary"
+          if ($LASTEXITCODE -ne 0) { throw "R14n real packaged listener JVM duration measurements invalid" }
+          Get-Content $summary
+
+      # Bounded Windows loopback duration trend only, not a 24-hour field soak.
+      - name: Upload R14n packaged JVM duration metrics
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: GameRoom-R14n-Packaged-JVM-Duration
+          path: |
+            ${{ runner.temp }}/game-room-r14n-packaged-duration.json
+            ${{ runner.temp }}/game-room-r14n-summary.json
           if-no-files-found: ignore
           retention-days: 14
 

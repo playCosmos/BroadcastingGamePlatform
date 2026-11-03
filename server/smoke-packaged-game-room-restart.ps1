@@ -7,7 +7,10 @@ param(
     [string]$LoadReportPath = "",
     [ValidateSet(0,12)]
     [int]$WsSpectators = 0,
-    [string]$WsReportPath = ""
+    [string]$WsReportPath = "",
+    [ValidateSet(0,6)]
+    [int]$WsSoakCycles = 0,
+    [string]$WsSoakReportPath = ""
 )
 $ErrorActionPreference = "Stop"
 if ($TelemetryPath -and $StopMode -ne "Graceful") { throw "R14k telemetry requires the graceful packaged process test" }
@@ -38,6 +41,20 @@ if ($WsSpectators -gt 0) {
     }
 } elseif ($WsReportPath) {
     throw "R14m report path requires 12 spectators"
+}
+if ($WsSoakCycles -gt 0) {
+    if ($WsSpectators -ne 12 -or $LoadRounds -lt 2 -or
+        [string]::IsNullOrWhiteSpace($WsSoakReportPath)) {
+        throw "R14n bounded duration soak requires R14m 12 spectators and its distinct report"
+    }
+    $paths = @($TelemetryPath,$LoadReportPath,$WsReportPath,$WsSoakReportPath) |
+        ForEach-Object { [IO.Path]::GetFullPath($_) }
+    if ($paths.Count -ne @($paths | Select-Object -Unique).Count -or
+        (Test-Path -LiteralPath $WsSoakReportPath)) {
+        throw "R14n report output must be new and distinct"
+    }
+} elseif ($WsSoakReportPath) {
+    throw "R14n report path requires -WsSoakCycles 6"
 }
 
 # Exercise the shipped EXE, not just a Java self-check.
@@ -296,6 +313,7 @@ function WriteLoadTelemetry {
 # temporary host credential only through inherited environment, never args.
 # Node's per-launch scratch output is inside the disposable fixture root.
 $script:WsRunRecords = [System.Collections.Generic.List[object]]::new()
+$script:WsSoakRecords = [System.Collections.Generic.List[object]]::new()
 function MeasurePackagedJvm([System.Diagnostics.Process]$Launcher, [int[]]$Ports) {
     $jvm = ResolveListenerJvm $Launcher $Ports
     try {
@@ -322,19 +340,92 @@ function RunPackagedWsFanout(
         "BGP_R14M_WS_PORT","BGP_R14M_ROOM_CODE","BGP_R14M_ROOM_ID",
         "BGP_R14M_HOST_TOKEN"
     )
-    try {
-        $env:BGP_R14M_LAUNCH = [string]$Launch
-        $env:BGP_R14M_SPECTATORS = [string]$WsSpectators
-        $env:BGP_R14M_HTTP_PORT = [string]$Ports[2]
-        $env:BGP_R14M_WS_PORT = [string]$Ports[1]
-        $env:BGP_R14M_ROOM_CODE = $RoomCode
-        $env:BGP_R14M_ROOM_ID = $RoomId
-        $env:BGP_R14M_HOST_TOKEN = $HostToken
-        node (Join-Path $ServerRoot "smoke-packaged-websocket-fanout.mjs") "--report=$scratch"
-        Check ($LASTEXITCODE -eq 0) "R14m real packaged WS fanout failed"
-    } finally {
-        foreach ($key in $keys) {
-            Remove-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+    $values = @{
+        BGP_R14M_LAUNCH = [string]$Launch
+        BGP_R14M_SPECTATORS = [string]$WsSpectators
+        BGP_R14M_HTTP_PORT = [string]$Ports[2]
+        BGP_R14M_WS_PORT = [string]$Ports[1]
+        BGP_R14M_ROOM_CODE = $RoomCode
+        BGP_R14M_ROOM_ID = $RoomId
+        BGP_R14M_HOST_TOKEN = $HostToken
+    }
+    if ($WsSoakCycles -gt 0) {
+        # R14n: run the existing client asynchronously. While it repeatedly
+        # authenticates spectators and replays chat, the parent samples ONLY
+        # the actual packaged listener-JVM. A separate disposable report
+        # holds per-cycle counts, not credentials.
+        $soakScratch = Join-Path $Root ("r14n-ws-" + $Launch + ".json")
+        $info = [Diagnostics.ProcessStartInfo]::new()
+        $info.FileName = "node"
+        $info.WorkingDirectory = $ServerRoot
+        $info.UseShellExecute = $false
+        $info.CreateNoWindow = $true
+        $info.RedirectStandardOutput = $true
+        $info.RedirectStandardError = $true
+        $info.ArgumentList.Add((Join-Path $ServerRoot "smoke-packaged-websocket-fanout.mjs"))
+        $info.ArgumentList.Add("--report=$scratch")
+        $info.ArgumentList.Add("--cycles=$WsSoakCycles")
+        $info.ArgumentList.Add("--pause-ms=6000")
+        $info.ArgumentList.Add("--soak-report=$soakScratch")
+        foreach ($key in $values.Keys) { $info.Environment[$key] = $values[$key] }
+        $child = [Diagnostics.Process]::Start($info)
+        Check ($null -ne $child) "R14n spectator worker could not start"
+        $watch = [Diagnostics.Stopwatch]::StartNew()
+        $samples = [System.Collections.Generic.List[object]]::new()
+        try {
+            $snapshot = MeasurePackagedJvm $Launcher $Ports
+            $samples.Add([ordered]@{elapsedMs=0; counters=$snapshot})
+            while (-not $child.WaitForExit(5000)) {
+                Check (-not $Launcher.HasExited) "R14n packaged JVM exited under sustained spectators"
+                if ($watch.Elapsed.TotalSeconds -gt 240) {
+                    throw "R14n bounded spectator worker exceeded 4-minute safety limit"
+                }
+                $snapshot = MeasurePackagedJvm $Launcher $Ports
+                $samples.Add([ordered]@{
+                    elapsedMs = [Math]::Round($watch.Elapsed.TotalMilliseconds,2)
+                    counters = $snapshot
+                })
+            }
+            Check ($child.ExitCode -eq 0) "R14n actual packaged spectator cycle failed"
+            $snapshot = MeasurePackagedJvm $Launcher $Ports
+            $samples.Add([ordered]@{
+                elapsedMs = [Math]::Round($watch.Elapsed.TotalMilliseconds,2)
+                counters = $snapshot
+            })
+            Write-Host $child.StandardOutput.ReadToEnd().Trim()
+        } finally {
+            if (-not $child.HasExited) {
+                $child.Kill($true)
+                [void]$child.WaitForExit(12000)
+            }
+            $child.Dispose()
+        }
+        $soak = Get-Content -LiteralPath $soakScratch -Raw -Encoding utf8 | ConvertFrom-Json
+        Check ($soak.kind -eq "packaged-ws-duration-client" -and
+            $soak.launch -eq $Launch -and $soak.cycles -eq $WsSoakCycles -and
+            $soak.spectators -eq 12) "R14n client cycle report incomplete"
+        $script:WsSoakRecords.Add([ordered]@{
+            launch = $Launch
+            cycles = [int]$soak.cycles
+            pauseMs = [int]$soak.pauseMs
+            durationMs = [double]$soak.durationMs
+            spectators = [int]$soak.spectators
+            handshakes = [int]$soak.handshakes
+            liveEvents = [int]$soak.liveEvents
+            replayEvents = [int]$soak.replayEvents
+            cleanCloses = [int]$soak.cleanCloses
+            cycleResults = @($soak.cycleResults)
+            samples = @($samples.ToArray())
+        })
+    } else {
+        try {
+            foreach ($key in $values.Keys) { Set-Item -Path "Env:$key" -Value $values[$key] }
+            node (Join-Path $ServerRoot "smoke-packaged-websocket-fanout.mjs") "--report=$scratch"
+            Check ($LASTEXITCODE -eq 0) "R14m real packaged WS fanout failed"
+        } finally {
+            foreach ($key in $keys) {
+                Remove-Item -Path "Env:$key" -ErrorAction SilentlyContinue
+            }
         }
     }
     $client = Get-Content -LiteralPath $scratch -Raw -Encoding utf8 | ConvertFrom-Json
@@ -356,6 +447,31 @@ function RunPackagedWsFanout(
         before = $start
         after = $end
     })
+}
+function WriteWsDurationReport {
+    if ($WsSoakCycles -eq 0) { return }
+    Check ($script:WsSoakRecords.Count -eq 2) "R14n expected two complete packaged JVM traces"
+    $report = [ordered]@{
+        kind = "packaged-ws-duration"
+        schemaVersion = 1
+        source = "packaged-windows-listener-jvm"
+        cyclesPerLaunch = $WsSoakCycles
+        spectatorsPerLaunch = 12
+        sampleIntervalMs = 5000
+        listenerOwnerVerified = $true
+        jvmModuleVerified = $true
+        verifiedRestarts = 1
+        verifiedGracefulExits = 2
+        portsReleased = $true
+        roomRecovered = $true
+        launches = @($script:WsSoakRecords.ToArray())
+    }
+    $stream = [IO.File]::Open($WsSoakReportPath,[IO.FileMode]::CreateNew,[IO.FileAccess]::Write,[IO.FileShare]::None)
+    try {
+        $writer = [IO.StreamWriter]::new($stream,[Text.UTF8Encoding]::new($false))
+        try { $writer.WriteLine(($report | ConvertTo-Json -Depth 10 -Compress)) }
+        finally { $writer.Dispose() }
+    } finally { $stream.Dispose() }
 }
 function WriteWsFanoutReport {
     if ($WsSpectators -eq 0) { return }
@@ -470,6 +586,8 @@ try {
         WriteProcessTelemetry
         WriteLoadTelemetry
         WriteWsFanoutReport
+        WriteWsDurationReport
+        if ($WsSoakCycles -gt 0) { Write-Host "GAME_ROOM_R14N_PACKAGED_WS_DURATION_PASSED launches=2 cyclesPerLaunch=6 spectators=12" }
         if ($WsSpectators -gt 0) { Write-Host "GAME_ROOM_R14M_PACKAGED_WS_FANOUT_PASSED launches=2 spectators=12 liveEvents=24 replayEvents=24" }
         if ($LoadRounds -gt 0) { Write-Host "GAME_ROOM_R14L_PACKAGED_HTTP_SOAK_PASSED roundsPerLaunch=$LoadRounds restarts=1 gracefulExits=2" }
         Write-Host "GAME_ROOM_R14H_PACKAGED_GRACEFUL_EXIT_PASSED checks=$Checks shutdowns=2 ports=3"
