@@ -1,6 +1,6 @@
 # R14u — Operator-only external HTTPS/WSS two-player Yacht field test
 
-**Parent:** R14t Draft PR #102 (verified HEAD `939b6aff63636859b0d76767652ec51adf5e3079`). R14u is a separate stacked Draft, unmerged/unreleased.
+**Status:** R14u is integrated in the GameRoom R1–R15h stack on `main` (postmerge verification `ab5ea863`). This document describes an **operator-only, unreleased external field procedure**, not evidence that any external field run occurred.
 
 ## What this tests
 
@@ -34,6 +34,8 @@ After successful preflight, **explicitly approve the one real dice roll and two 
     Remove-Item Env:BGP_R14U_EXPLICIT_WRITE_CONSENT
     Remove-Item Env:BGP_R14U_PLAYER_TOKENS_JSON
     Remove-Item Env:BGP_R14U_TEST_ROOM_ID
+
+The `--mode=run` client **atomically reserves the new report path before sending its first chat or dice command**. If the destination exists or cannot be created, it refuses to issue any game writes. An interrupted/failed run can leave a **zero-byte incomplete file**: retain it only as failed-run evidence, never run the report analyzer against it as a passing result, and choose a different report path for another separately approved disposable-room test.
 
 If HTTPS and WSS terminate at different approved origins, specify `--wss=wss://fully-approved-host/path` and ensure it matches the server-advertised endpoint **exactly**. Certificate/hostname verification cannot be disabled. If the test fails during/after a write, the disposable room **may already have received chat or a dice mutation**; do not blindly rerun the same room. Inspect state and create fresh disposable accounts/room if necessary. Never use public production bearer tokens.
 
