@@ -3695,6 +3695,7 @@ public final class GameClientHttpServer implements AutoCloseable {
 
     private static boolean isAllowedAdminAsset(String relative) {
         return "index.html".equals(relative)
+            || "tts/index.html".equals(relative)
             || relative.startsWith("assets/")
             || relative.startsWith("games/board/")
             || relative.startsWith("games/drawing-guess/")
