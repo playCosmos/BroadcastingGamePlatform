@@ -34,7 +34,9 @@ public final class TtsHttpApiProbe {
             List.of(new FakeEngine()),
             new TtsPreferencesStore(root.resolve("tts-settings.json")))) {
             Path web = root.resolve("web");
-            Files.createDirectories(web.resolve("admin"));
+            Files.createDirectories(web.resolve("admin/tts"));
+            Files.writeString(web.resolve("admin/tts/index.html"),
+                "<h1>Private TTS laboratory fixture</h1>");
             Files.writeString(web.resolve("index.html"), "Platform probe");
             Files.writeString(web.resolve("admin/index.html"), "Admin probe");
             int clientPort = freePort();
@@ -72,6 +74,13 @@ public final class TtsHttpApiProbe {
                 require(response.statusCode() == 401,
                     "unauthenticated TTS reads must be rejected: " + path);
             }
+            var unauthPage = client.send(HttpRequest.newBuilder(
+                base.resolve("/admin/tts/")).GET().build(),
+                HttpResponse.BodyHandlers.ofString());
+            require(unauthPage.statusCode() != 200
+                && !unauthPage.body().contains("Private TTS laboratory fixture"),
+                "unauthenticated administrator page must remain private");
+
             String payload = """
                 {"text":"private admin speech","voiceId":"http-tts/Voice","rate":0,"volume":80}
                 """;
@@ -92,6 +101,15 @@ public final class TtsHttpApiProbe {
             String cookie = bootstrap.headers().firstValue("Set-Cookie")
                 .orElseThrow().split(";", 2)[0];
 
+            for (String pagePath : List.of(
+                    "/admin/tts/", "/admin/tts/index.html")) {
+                var page = client.send(HttpRequest.newBuilder(
+                    base.resolve(pagePath)).header("Cookie", cookie)
+                    .GET().build(), HttpResponse.BodyHandlers.ofString());
+                require(page.statusCode() == 200
+                    && page.body().contains("Private TTS laboratory fixture"),
+                    "authenticated voice lab page must be accessible: " + pagePath);
+            }
             var voices = client.send(HttpRequest.newBuilder(
                 base.resolve("/api/v1/tts/voices")).header("Cookie", cookie)
                 .GET().build(), HttpResponse.BodyHandlers.ofString());
