@@ -122,7 +122,9 @@ async function scenario(mode) {
       }
       if (url === "/api/v1/tts/status") {
         return respond({ queued: 16, activeJobId: "prior",
-          retainedAudioBytes: 4 * 1048576, maxRetainedAudioBytes: 16 * 1048576 });
+          retainedAudioBytes: 4 * 1048576, maxRetainedAudioBytes: 16 * 1048576,
+          engineSyntheses: 2, previewReuses: 3,
+          synthesisFailures: 1, lastSynthesisMillis: 100 });
       }
       if (url === "/api/v1/tts/speak" && options.method === "POST") {
         return respond({ id: "mock-job" });
@@ -204,6 +206,8 @@ async function scenario(mode) {
   await submit({ preventDefault() {} });
   assert.ok(getElement("ttsQueueStatus").textContent.includes("4.0/16 MiB"),
     "queue status must show bounded preview memory usage");
+  assert.match(getElement("ttsQueueStatus").textContent, /미리듣기 재사용 3건/,
+    "administrator should see the bounded preview reuse diagnostics");
   if (mode === "bfcache") {
     assert.equal(loaded, 0, "the abandoned poll must not play audio");
     assert.match(getElement("speechResult").textContent, /서버에서 처리 중/,
