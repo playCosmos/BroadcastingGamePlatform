@@ -13,6 +13,9 @@ import io.github.playcosmos.broadcastinggameplatform.operations.FileLog;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.ChatMessageEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEvent;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsEngineRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopMultiBroadcastProvider;
@@ -317,6 +320,11 @@ public final class PlatformServerMain {
         );
 
         var adminAuthStore = new AdminAuthStore(database);
+        // Standalone speech preview only; no game/provider/chat subscriptions.
+        var ttsPreferences = TtsPreferencesStore.loadOrDefault(
+            root.resolve("tts-settings.json"));
+        var ttsService = new TtsService(
+            TtsEngineRegistry.installed(root), ttsPreferences);
         var clientHttp = new GameClientHttpServer(
             config,
             root,
@@ -332,7 +340,8 @@ public final class PlatformServerMain {
             commonRoomAccess,
             roomRealtime,
             sharedYacht,
-            sharedDrawing
+            sharedDrawing,
+            ttsService
         );
         var http = new BoardGameHttpServer(
             config,
@@ -396,6 +405,7 @@ public final class PlatformServerMain {
             lifecycleExecutor.shutdownNow();
             try { http.close(); } catch (Exception ignored) {}
             try { clientHttp.close(); } catch (Exception ignored) {}
+            try { ttsService.close(); } catch (Exception ignored) {}
             try { websocket.stop(2000); }
             catch (InterruptedException error) { Thread.currentThread().interrupt(); }
             catch (Exception ignored) {}

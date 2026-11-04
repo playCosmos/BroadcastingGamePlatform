@@ -1,0 +1,30 @@
+:root{color-scheme:dark}
+body{background:#090d12;color:#eaf0f7;font-family:system-ui,-apple-system,"Segoe UI",sans-serif}
+.tts-shell{max-width:1080px;margin:0 auto;padding:clamp(16px,3vw,40px)}
+.tts-header{display:flex;align-items:end;justify-content:space-between;gap:24px;margin-bottom:26px;flex-wrap:wrap}
+.tts-header h1{margin:8px 0;font-size:clamp(26px,3vw,38px)}
+.tts-eyebrow{letter-spacing:.16em;color:#9fc1e5;font-size:12px;font-weight:800}
+.tts-back{color:#d4e6f6;text-decoration:none;border:1px solid #414d5e;border-radius:9px;padding:10px 16px}
+.tts-muted,.tts-note{color:#aab8c8;line-height:1.6}
+.tts-note{font-size:13px;margin-top:20px}
+.tts-card{background:#131a23;border:1px solid #334051;border-radius:15px;padding:clamp(18px,2.5vw,26px);margin-bottom:17px}
+.tts-card h2{font-size:19px;margin:0 0 12px}
+.tts-section-heading{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.tts-card label{display:flex;flex-direction:column;gap:9px;font-size:13px;font-weight:750}
+.tts-fields{display:grid;grid-template-columns:2fr 1fr 1fr;gap:16px;margin:20px 0}
+.tts-card select,.tts-card textarea{width:100%;box-sizing:border-box;background:#0c1118;color:#f4f8fd;border:1px solid #465365;border-radius:9px;padding:11px 13px;font:inherit}
+.tts-card textarea{resize:vertical;min-height:90px;line-height:1.6}
+.tts-card input[type="range"]{width:100%;accent-color:#80bfff}
+.tts-card button{background:#293341;color:#edf4fb;border:1px solid #49596b;border-radius:9px;padding:11px 17px;font:inherit;font-weight:750;cursor:pointer}
+.tts-card button.tts-primary{background:#345775;border-color:#5e8cbb}
+.tts-card button:disabled{opacity:.5;cursor:not-allowed}
+.tts-card button:not(:disabled):hover,.tts-back:hover{filter:brightness(1.15)}
+.tts-actions{display:flex;align-items:center;gap:11px;flex-wrap:wrap;margin-top:17px}
+#speechPreview{width:100%;margin-top:12px}
+@media(max-width:720px){.tts-fields{grid-template-columns:1fr}.tts-card{padding:16px}}
+
+.tts-catalog-filters{display:grid;grid-template-columns:1fr 1fr;gap:12px;max-width:520px;margin-top:17px}
+.tts-catalog-filters select{min-width:0;margin-top:5px}
+.tts-voice-details{display:block;color:#9db2c7;font-size:12px;font-weight:500;line-height:1.5;min-height:18px}
+.tts-default-status{border-top:1px solid #303e4c;padding-top:12px;margin:18px 0 0;font-size:13px}
+@media(max-width:520px){.tts-catalog-filters{grid-template-columns:1fr}}
