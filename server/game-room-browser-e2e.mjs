@@ -3638,12 +3638,53 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
         // Synchronize the actual current-turn UI without weakening server
         // version checks or retrying any write.
         await waitRoomIdle(host,"game");
-        await poll(async()=>await cdp.eval(host,
-            "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
-            " && document.getElementById('roomState').textContent==='PLAYING'"+
-            " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
-            " && document.getElementById('roll').disabled===false"),
-            "R15h B host UI is idle and on current turn",20000);
+        try {
+            await poll(async()=>await cdp.eval(host,
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('roomState').textContent==='PLAYING'"+
+                " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+                " && document.getElementById('roll').disabled===false"),
+                "R15h B host UI is idle and on current turn",20000);
+        } catch {
+            // Diagnose current-turn timeout without exposing member
+            // credentials, room IDs, response bodies, chat or dice.
+            const [view,serverRead]=await Promise.allSettled([
+                cdp.eval(host,`(()=>{
+                    const game=document.getElementById("game");
+                    const state=document.getElementById("roomState");
+                    const start=document.getElementById("start");
+                    const roll=document.getElementById("roll");
+                    const turn=document.getElementById("turnDetail");
+                    return {
+                        busy:game?.getAttribute("aria-busy")==="true",
+                        gameVisible:game?.hidden===false,
+                        roomPlaying:state?.textContent==="PLAYING",
+                        roomWaiting:state?.textContent==="WAITING",
+                        startEnabled:start?.disabled===false,
+                        rollEnabled:roll?.disabled===false,
+                        myTurn:turn?.textContent?.includes("나의 턴입니다.")===true
+                    };
+                })()`),
+                backend(host,"/yacht","GET",null,tokens[0])
+            ]);
+            const read=serverRead.status==="fulfilled"?serverRead.value:null;
+            const match=read?.data?.yacht?.match;
+            const safeInt=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+            throw Error("timeout waiting for R15h B host UI is idle and on current turn; "+
+                "sanitizedDiagnostic="+JSON.stringify({
+                    ui:view.status==="fulfilled"?view.value:null,
+                    httpStatus:safeInt(read?.status),
+                    matchPresent:Boolean(match),
+                    phaseActive:match?.phase==="ACTIVE",
+                    currentPlayer:read?.data?.currentPlayer===true,
+                    version:safeInt(match?.version),
+                    round:safeInt(match?.round),
+                    completedTurns:safeInt(match?.completedTurns),
+                    rolls:safeInt(match?.rolls),
+                    recentHttpStatuses:cdp.network.slice(-5).map(x=>
+                        safeInt(x.status))
+                }));
+        }
         const before=await backend(host,"/yacht","GET",null,tokens[0]);
         const match=before.data.yacht?.match;
         check(before.status===200&&before.data.currentPlayer===true
