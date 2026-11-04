@@ -139,6 +139,7 @@ const R15F_SOCKET_AUDIT_SCRIPT = String.raw`(()=>{
 class CDP{
     constructor(url){
         this.nextId=0;this.pending=new Map();this.exceptions=[];this.network=[];
+        this.browserContexts=new Set();
         this.socket=new WebSocket(url);
         this.ready=new Promise((resolve,reject)=>{
             this.socket.addEventListener("open",resolve,{once:true});
@@ -177,6 +178,7 @@ class CDP{
     async page(url,{auditWebSockets=false}={}){
         const {browserContextId}=await this.send("Target.createBrowserContext",{
             disposeOnDetach:true});
+        this.browserContexts.add(browserContextId);
         const {targetId}=await this.send("Target.createTarget",{
             url:"about:blank",browserContextId});
         const {sessionId}=await this.send("Target.attachToTarget",{
@@ -190,6 +192,15 @@ class CDP{
         const page={browserContextId,targetId,sessionId};
         await this.navigate(page,url);
         return page;
+    }
+    // Previous fixtures share this long-lived Chrome process. Disposing their
+    // isolated contexts releases background timers, sockets and renderer
+    // resources before the explicit 20-tab/24-WS capacity acceptance.
+    async disposePageContexts(){
+        for(const browserContextId of this.browserContexts){
+            await this.send("Target.disposeBrowserContext",{browserContextId});
+            this.browserContexts.delete(browserContextId);
+        }
     }
     async eval(page,expression){
         const result=await this.send("Runtime.evaluate",{
@@ -3638,12 +3649,53 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
         // Synchronize the actual current-turn UI without weakening server
         // version checks or retrying any write.
         await waitRoomIdle(host,"game");
-        await poll(async()=>await cdp.eval(host,
-            "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
-            " && document.getElementById('roomState').textContent==='PLAYING'"+
-            " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
-            " && document.getElementById('roll').disabled===false"),
-            "R15h B host UI is idle and on current turn",20000);
+        try {
+            await poll(async()=>await cdp.eval(host,
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('roomState').textContent==='PLAYING'"+
+                " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+                " && document.getElementById('roll').disabled===false"),
+                "R15h B host UI is idle and on current turn",20000);
+        } catch {
+            // Diagnose current-turn timeout without exposing member
+            // credentials, room IDs, response bodies, chat or dice.
+            const [view,serverRead]=await Promise.allSettled([
+                cdp.eval(host,`(()=>{
+                    const game=document.getElementById("game");
+                    const state=document.getElementById("roomState");
+                    const start=document.getElementById("start");
+                    const roll=document.getElementById("roll");
+                    const turn=document.getElementById("turnDetail");
+                    return {
+                        busy:game?.getAttribute("aria-busy")==="true",
+                        gameVisible:game?.hidden===false,
+                        roomPlaying:state?.textContent==="PLAYING",
+                        roomWaiting:state?.textContent==="WAITING",
+                        startEnabled:start?.disabled===false,
+                        rollEnabled:roll?.disabled===false,
+                        myTurn:turn?.textContent?.includes("나의 턴입니다.")===true
+                    };
+                })()`),
+                backend(host,"/yacht","GET",null,tokens[0])
+            ]);
+            const read=serverRead.status==="fulfilled"?serverRead.value:null;
+            const match=read?.data?.yacht?.match;
+            const safeInt=value=>Number.isSafeInteger(value)&&value>=0?value:null;
+            throw Error("timeout waiting for R15h B host UI is idle and on current turn; "+
+                "sanitizedDiagnostic="+JSON.stringify({
+                    ui:view.status==="fulfilled"?view.value:null,
+                    httpStatus:safeInt(read?.status),
+                    matchPresent:Boolean(match),
+                    phaseActive:match?.phase==="ACTIVE",
+                    currentPlayer:read?.data?.currentPlayer===true,
+                    version:safeInt(match?.version),
+                    round:safeInt(match?.round),
+                    completedTurns:safeInt(match?.completedTurns),
+                    rolls:safeInt(match?.rolls),
+                    recentHttpStatuses:cdp.network.slice(-5).map(x=>
+                        safeInt(x.status))
+                }));
+        }
         const before=await backend(host,"/yacht","GET",null,tokens[0]);
         const match=before.data.yacht?.match;
         check(before.status===200&&before.data.currentPlayer===true
@@ -3829,15 +3881,63 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
         "R15a independent Chrome member credentials");
     // Seven independent real Chrome pages should each create exactly one
     // authenticated member socket, no redundant public Yacht socket.
-    await poll(async()=>{
-        const live=await Promise.all(pages.map(p=>cdp.eval(p,
-            "(()=>{const a=window.__r15fSocketAudit;return a && "+
-            "a.connections.length===1 && "+
-            "a.connections[0].kind==='member' && "+
-            "a.connections[0].opened && !a.connections[0].closed && "+
-            "a.connections[0].subscriptions.length===1;})()")));
-        return live.every(Boolean);
-    },"R15f seven independent Chrome member sockets established",22000);
+    try {
+        await poll(async()=>{
+            const live=await Promise.all(pages.map(p=>cdp.eval(p,
+                "(()=>{const a=window.__r15fSocketAudit;return a && "+
+                "a.connections.length===1 && "+
+                "a.connections[0].kind==='member' && "+
+                "a.connections[0].opened && !a.connections[0].closed && "+
+                "a.connections[0].subscriptions.length===1;})()")));
+            return live.every(Boolean);
+        },"R15f seven independent Chrome member sockets established",22000);
+    } catch {
+        // Preserve this strict socket assertion until evidence distinguishes
+        // a failed connection, a legitimate reconnect and duplicate live WS.
+        // Snapshot only bounded booleans and numeric counters. No URLs,
+        // session tokens, room IDs, event bodies or browser exception text.
+        const snapshots=await Promise.all(pages.map(async(page,index)=>{
+            try {
+                const state=await cdp.eval(page,`(()=>{
+                    const a=window.__r15fSocketAudit;
+                    const connections=a?.connections||[];
+                    const members=connections.filter(c=>c.kind==="member");
+                    const live=members.filter(c=>
+                        c.opened&&!c.closed&&c.socket.readyState===1);
+                    const game=document.getElementById("game");
+                    const roster=document.getElementById("roster");
+                    return {
+                        auditPresent:!!a,
+                        gameVisible:game?.hidden===false,
+                        gameBusy:game?.getAttribute("aria-busy")==="true",
+                        rosterCount:roster?.children.length??null,
+                        totalSockets:connections.length,
+                        memberSockets:members.length,
+                        activeMembers:live.length,
+                        nonMemberSockets:connections.length-members.length,
+                        openedMembers:members.filter(c=>c.opened).length,
+                        closedMembers:members.filter(c=>c.closed).length,
+                        connectingMembers:members.filter(c=>
+                            c.socket.readyState===0).length,
+                        subscribedMembers:members.filter(c=>
+                            c.subscriptions.length===1).length,
+                        closeCodes:members.map(c=>
+                            Number.isSafeInteger(c.closeCode)?c.closeCode:null)
+                    };
+                })()`);
+                return {index,...state};
+            } catch {
+                return {index,unavailable:true};
+            }
+        }));
+        throw Error("timeout waiting for R15f seven independent Chrome "+
+            "member sockets established; sanitizedSocketDiagnostic="+
+            JSON.stringify({
+                pages:snapshots,
+                recentHttpStatuses:cdp.network.slice(-8).map(x=>
+                    Number.isSafeInteger(x.status)?x.status:null)
+            }));
+    }
     // R15g: convert the previous thirteen HTTP-only spectator identities into
     // thirteen genuine independent Chrome/Edge browser contexts. Each joins
     // via the production invitation form, creates a real authenticated
@@ -4430,6 +4530,10 @@ async function run(){
     server.kill();
     await poll(()=>server.exitCode!==null || server.signalCode!==null,
         "R14c Yacht lifecycle fixture shutdown");
+    // The earlier scenarios' tabs are no longer used. Without this teardown,
+    // their renderer contexts remain resident even after the Java fixtures
+    // stop and can compete with the next 20-real-browser stress scenario.
+    await cdp.disposePageContexts();
     const sixPlayerFixture=await launchServer();
     await sixPlayerBrowserCapacityAcceptance(sixPlayerFixture.base,sixPlayerFixture.ws);
     check(cdp.exceptions.length===0,
