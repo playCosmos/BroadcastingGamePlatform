@@ -1,7 +1,8 @@
 # Platform TTS Foundation — multi-voice, standalone first
 
-Status: **TTS foundation complete for v0.1.1 / administrator manual preview only**. The existing Board, Drawing Guess,
-Viewer Draw and planned Yacht modules are **not wired** to TTS.
+Status: **Standalone TTS foundation port under review / administrator manual preview only**.
+Board, Yacht, Drawing Guess and Viewer Draw are existing independent modules in current `main`,
+but none is wired to TTS. The historical v0.1.1 TTS branch is not a current platform release.
 
 ## Motivation
 
