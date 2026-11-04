@@ -11,6 +11,8 @@ async function scenario(mode) {
   let now = 0;
   let polls = 0;
   let loaded = 0;
+  let revoked = 0;
+  const lifecycle = {};
   const makeElement = () => ({
     value: "",
     disabled: false,
@@ -45,10 +47,12 @@ async function scenario(mode) {
       getElementById: getElement,
       createElement: makeElement
     },
-    window: { addEventListener() {} },
+    window: {
+      addEventListener(name, handler) { lifecycle[name] = handler; }
+    },
     URL: {
       createObjectURL() { return "blob:tts-probe"; },
-      revokeObjectURL() {}
+      revokeObjectURL() { revoked++; }
     },
     Date: { now: () => now },
     setTimeout(handler, milliseconds) {
@@ -75,7 +79,17 @@ async function scenario(mode) {
       }
       if (url === "/api/v1/tts/jobs/mock-job") {
         polls++;
-        return respond({ status: mode === "expired"
+        if (mode === "bfcache" && polls === 1) {
+          lifecycle.pagehide({ persisted: true });
+          assert.equal(getElement("speakButton").disabled, true,
+            "the pending preview must still be disabled on pagehide");
+          lifecycle.pageshow({ persisted: true });
+          assert.equal(getElement("speakButton").disabled, false,
+            "BFCache restoration must immediately unlock the preview button");
+          return respond({ status: "QUEUED" });
+        }
+        return respond({ status: mode === "bfcache" ? "READY"
+          : mode === "expired"
           ? (polls < 3 ? "QUEUED" : "EXPIRED")
           : mode === "raced" ? "READY"
           : (polls <= 85 ? "QUEUED" : "READY") });
@@ -94,7 +108,21 @@ async function scenario(mode) {
   await submit({ preventDefault() {} });
   assert.ok(getElement("ttsQueueStatus").textContent.includes("4.0/16 MiB"),
     "queue status must show bounded preview memory usage");
-  if (mode === "ready") {
+  if (mode === "bfcache") {
+    assert.equal(loaded, 0, "the abandoned poll must not play audio");
+    assert.match(getElement("speechResult").textContent, /서버에서 처리 중/,
+      "restoration must not falsely claim the server job was cancelled");
+    assert.equal(getElement("speakButton").disabled, false);
+    await submit({ preventDefault() {} });
+    assert.equal(loaded, 1, "the restored form must support another preview");
+    assert.match(getElement("speechResult").textContent, /완료/);
+    lifecycle.pagehide({ persisted: true });
+    lifecycle.pageshow({ persisted: true });
+    assert.equal(revoked, 0,
+      "a BFCache transition must preserve previously synthesized audio");
+    lifecycle.pagehide({ persisted: false });
+    assert.equal(revoked, 1, "normal navigation must release the WAV object URL");
+  } else if (mode === "ready") {
     assert.equal(polls, 86, "valid queued synthesis must outlive old 70-poll cap");
     assert.ok(now > 38_500 && now < 10 * 60 * 1000,
       "polling should permit bounded long queue waits");
@@ -112,7 +140,8 @@ async function scenario(mode) {
   await scenario("ready");
   await scenario("expired");
   await scenario("raced");
-  console.log("TTS administrator long-queue and cache-expiry probes passed.");
+  await scenario("bfcache");
+  console.log("TTS administrator queue, cache-expiry and BFCache recovery probes passed.");
 })().catch(error => {
   console.error(error);
   process.exitCode = 1;
