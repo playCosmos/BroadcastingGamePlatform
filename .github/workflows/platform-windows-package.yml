@@ -83,6 +83,15 @@ jobs:
         shell: pwsh
         run: ./run-regression-probes.ps1
 
+      - name: Smoke native Windows SAPI when desktop voices exist
+        working-directory: server
+        shell: pwsh
+        run: |
+          $cp = "target/test-classes" + [IO.Path]::PathSeparator +
+            "target/classes" + [IO.Path]::PathSeparator + "target/probe-dependencies/*"
+          java -cp $cp io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsRealEngineSmoke windows-sapi-optional
+          if ($LASTEXITCODE -ne 0) { throw "Windows SAPI smoke failed" }
+
       - name: Real GameRoom Chrome Edge browser E2E
         shell: pwsh
         run: ./server/smoke-game-room-browser.ps1
@@ -109,6 +118,9 @@ jobs:
 
           @(
             "web/index.html",
+            "web/admin/tts/index.html",
+            "web/admin/assets/tts-admin.js",
+            "web/admin/assets/tts-admin.css",
             "web/assets/platform.css",
             "web/admin/index.html",
             "web/admin/assets/platform-admin.js",
