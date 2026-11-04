@@ -70,6 +70,7 @@ public final class TtsService implements AutoCloseable {
     private static final long AUDIO_RETENTION_NANOS = TimeUnit.MINUTES.toNanos(15);
     private final List<TtsEngine> engines;
     private final TtsPreferencesStore preferences;
+    private final TtsVoiceProfileStore voiceProfiles;
     private final LongSupplier monotonicNanos;
     private final ArrayBlockingQueue<Entry> pending =
         new ArrayBlockingQueue<>(QUEUE_CAPACITY);
@@ -109,15 +110,26 @@ public final class TtsService implements AutoCloseable {
     }
 
     public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences) {
-        this(engines, preferences, System::nanoTime);
+        this(engines, preferences, new TtsVoiceProfileStore(null), System::nanoTime);
+    }
+
+    public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
+                      TtsVoiceProfileStore voiceProfiles) {
+        this(engines, preferences, voiceProfiles, System::nanoTime);
     }
 
     // Package-private clock seam keeps retention tests deterministic.
     TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
                LongSupplier monotonicNanos) {
+        this(engines, preferences, new TtsVoiceProfileStore(null), monotonicNanos);
+    }
+
+    private TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
+                       TtsVoiceProfileStore voiceProfiles, LongSupplier monotonicNanos) {
         Objects.requireNonNull(engines, "engines");
         this.engines = List.copyOf(engines);
         this.preferences = preferences;
+        this.voiceProfiles = Objects.requireNonNull(voiceProfiles, "voiceProfiles");
         this.monotonicNanos = Objects.requireNonNull(monotonicNanos, "monotonicNanos");
         if (this.engines.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("null engine");
@@ -143,6 +155,20 @@ public final class TtsService implements AutoCloseable {
         // Voice may have been uninstalled. Preserve its identifier so the UI
         // can display a missing-voice warning without silently replacing it.
         return preferences.save(next);
+    }
+
+    public List<TtsVoiceProfileStore.Profile> profiles() {
+        return voiceProfiles.list();
+    }
+
+    public List<TtsVoiceProfileStore.Profile> saveProfile(
+        TtsVoiceProfileStore.Profile profile
+    ) throws IOException {
+        return voiceProfiles.save(profile);
+    }
+
+    public boolean deleteProfile(String name) throws IOException {
+        return voiceProfiles.delete(name);
     }
 
     public List<Voice> voices() {
