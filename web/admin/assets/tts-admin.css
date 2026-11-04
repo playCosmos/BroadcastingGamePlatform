@@ -33,3 +33,9 @@ body{background:#090d12;color:#eaf0f7;font-family:system-ui,-apple-system,"Segoe
 .tts-profiles h3{margin:0 0 8px;font-size:17px}
 .tts-profile-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}
 @media(max-width:720px){.tts-profile-fields{grid-template-columns:1fr}}
+
+.tts-pack-fields{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin:18px 0}
+.tts-card .tts-ack{display:flex;flex-direction:row;align-items:center;gap:10px;font-weight:550}
+.tts-ack input{width:18px;height:18px;accent-color:#80bfff;flex-shrink:0}
+.tts-pack-fields input{min-width:0}
+@media(max-width:720px){.tts-pack-fields{grid-template-columns:1fr}}

@@ -16,6 +16,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEve
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoiceProfileStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoicePackStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsEngineRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
@@ -326,8 +327,10 @@ public final class PlatformServerMain {
             root.resolve("tts-settings.json"));
         var ttsProfiles = new TtsVoiceProfileStore(
             root.resolve("tts-profiles.json"));
+        var ttsPacks = new TtsVoicePackStore(root);
         var ttsService = new TtsService(
-            TtsEngineRegistry.installed(root), ttsPreferences, ttsProfiles);
+            TtsEngineRegistry.installed(root, ttsPacks),
+            ttsPreferences, ttsProfiles, ttsPacks);
         var clientHttp = new GameClientHttpServer(
             config,
             root,

@@ -71,6 +71,7 @@ public final class TtsService implements AutoCloseable {
     private final List<TtsEngine> engines;
     private final TtsPreferencesStore preferences;
     private final TtsVoiceProfileStore voiceProfiles;
+    private final TtsVoicePackStore voicePacks;
     private final LongSupplier monotonicNanos;
     private final ArrayBlockingQueue<Entry> pending =
         new ArrayBlockingQueue<>(QUEUE_CAPACITY);
@@ -110,26 +111,33 @@ public final class TtsService implements AutoCloseable {
     }
 
     public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences) {
-        this(engines, preferences, new TtsVoiceProfileStore(null), System::nanoTime);
+        this(engines, preferences, new TtsVoiceProfileStore(null), null, System::nanoTime);
     }
 
     public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
                       TtsVoiceProfileStore voiceProfiles) {
-        this(engines, preferences, voiceProfiles, System::nanoTime);
+        this(engines, preferences, voiceProfiles, null, System::nanoTime);
+    }
+
+    public TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
+                      TtsVoiceProfileStore voiceProfiles, TtsVoicePackStore voicePacks) {
+        this(engines, preferences, voiceProfiles, voicePacks, System::nanoTime);
     }
 
     // Package-private clock seam keeps retention tests deterministic.
     TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
                LongSupplier monotonicNanos) {
-        this(engines, preferences, new TtsVoiceProfileStore(null), monotonicNanos);
+        this(engines, preferences, new TtsVoiceProfileStore(null), null, monotonicNanos);
     }
 
     private TtsService(List<TtsEngine> engines, TtsPreferencesStore preferences,
-                       TtsVoiceProfileStore voiceProfiles, LongSupplier monotonicNanos) {
+                       TtsVoiceProfileStore voiceProfiles, TtsVoicePackStore voicePacks,
+                       LongSupplier monotonicNanos) {
         Objects.requireNonNull(engines, "engines");
         this.engines = List.copyOf(engines);
         this.preferences = preferences;
         this.voiceProfiles = Objects.requireNonNull(voiceProfiles, "voiceProfiles");
+        this.voicePacks = voicePacks;
         this.monotonicNanos = Objects.requireNonNull(monotonicNanos, "monotonicNanos");
         if (this.engines.stream().anyMatch(Objects::isNull)) {
             throw new IllegalArgumentException("null engine");
@@ -169,6 +177,41 @@ public final class TtsService implements AutoCloseable {
 
     public boolean deleteProfile(String name) throws IOException {
         return voiceProfiles.delete(name);
+    }
+
+    private TtsVoicePackStore requiredPackStore() {
+        if (voicePacks == null) throw new IllegalStateException("pack management unavailable");
+        return voicePacks;
+    }
+
+    public TtsVoicePackStore.Inventory packInventory() throws IOException {
+        return requiredPackStore().inventory();
+    }
+
+    public TtsVoicePackStore.Verification verifyPack(String model) throws IOException {
+        return requiredPackStore().verify(model);
+    }
+
+    public TtsVoicePackStore.Inventory registerPack(
+        TtsVoicePackStore.Registration requested
+    ) throws IOException {
+        var state = requiredPackStore().register(requested);
+        refreshVoices();
+        return state;
+    }
+
+    public TtsVoicePackStore.Inventory setPackEnabled(String model, boolean enabled)
+        throws IOException {
+        var state = requiredPackStore().setEnabled(model, enabled);
+        refreshVoices();
+        return state;
+    }
+
+    public TtsVoicePackStore.Inventory unregisterPack(String model)
+        throws IOException {
+        var state = requiredPackStore().unregister(model);
+        refreshVoices();
+        return state;
     }
 
     public List<Voice> voices() {
