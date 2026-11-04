@@ -26,12 +26,32 @@ public final class TtsVoicePackProbe {
             Files.writeString(voices.resolve("model-b.onnx.json"),
                 "{\"language\":{\"code\":\"en_US\"}}");
 
+            // More unrelated filenames than the inventory limit must not
+            // hide an otherwise valid ONNX candidate.
+            for (int i = 0; i < 70; i++) {
+                Files.writeString(voices.resolve("000-note-" + i + ".txt"), "ignored");
+            }
             var store = new TtsVoicePackStore(root);
             require(store.mode().equals("LEGACY"), "legacy mode before initial registry");
             require(store.allowed("model-a") && store.allowed("model-b"),
                 "existing manually installed voices must remain available");
             require(store.inventory().packs().size() == 2,
-                "both safe local file pairs appear in inventory");
+                "unrelated files must not hide valid ONNX pairs");
+            // An intermediate tts directory symlink must never implicitly
+            // restore legacy discovery from a different storage tree.
+            Path redirected = root.resolve("redirected");
+            Files.createDirectories(redirected);
+            try {
+                Files.createSymbolicLink(redirected.resolve("tts"),
+                    root.resolve("tts"));
+                var unsafe = new TtsVoicePackStore(redirected);
+                require("INVALID".equals(unsafe.mode())
+                    && !unsafe.allowed("model-a")
+                    && unsafe.inventory().packs().isEmpty(),
+                    "symlinked pack root must fail closed");
+            } catch (java.io.IOException | UnsupportedOperationException denied) {
+                // Windows runners may not permit creating symbolic links.
+            }
             bad(() -> store.register(new TtsVoicePackStore.Registration(
                 "model-a", "1.0", "MIT", "0".repeat(64), true)),
                 "expected checksum mismatch");
