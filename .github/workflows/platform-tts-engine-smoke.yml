@@ -47,6 +47,12 @@ jobs:
         working-directory: server
         run: mvn --batch-mode --no-transfer-progress -DskipTests package
 
+      - name: Check local Piper registry integrity and symlink boundary
+        working-directory: server
+        run: |
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoicePackProbe
+
       - name: Synthesize and validate real eSpeak NG WAV
         working-directory: server
         run: |

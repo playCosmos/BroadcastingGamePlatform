@@ -47,7 +47,10 @@ public final class TtsVoicePackProbe {
                     root.resolve("tts"));
                 linkCreated = true;
             } catch (java.io.IOException | UnsupportedOperationException denied) {
-                // Windows runners may not permit creating symbolic links.
+                // Windows runners may not permit creating symbolic links;
+                // Linux CI must exercise this trust boundary, not skip it.
+                if (!System.getProperty("os.name").toLowerCase(
+                    java.util.Locale.ROOT).contains("win")) throw denied;
             }
             if (linkCreated) {
                 var unsafe = new TtsVoicePackStore(redirected);
