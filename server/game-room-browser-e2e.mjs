@@ -139,6 +139,7 @@ const R15F_SOCKET_AUDIT_SCRIPT = String.raw`(()=>{
 class CDP{
     constructor(url){
         this.nextId=0;this.pending=new Map();this.exceptions=[];this.network=[];
+        this.browserContexts=new Set();
         this.socket=new WebSocket(url);
         this.ready=new Promise((resolve,reject)=>{
             this.socket.addEventListener("open",resolve,{once:true});
@@ -177,6 +178,7 @@ class CDP{
     async page(url,{auditWebSockets=false}={}){
         const {browserContextId}=await this.send("Target.createBrowserContext",{
             disposeOnDetach:true});
+        this.browserContexts.add(browserContextId);
         const {targetId}=await this.send("Target.createTarget",{
             url:"about:blank",browserContextId});
         const {sessionId}=await this.send("Target.attachToTarget",{
@@ -190,6 +192,15 @@ class CDP{
         const page={browserContextId,targetId,sessionId};
         await this.navigate(page,url);
         return page;
+    }
+    // Previous fixtures share this long-lived Chrome process. Disposing their
+    // isolated contexts releases background timers, sockets and renderer
+    // resources before the explicit 20-tab/24-WS capacity acceptance.
+    async disposePageContexts(){
+        for(const browserContextId of this.browserContexts){
+            await this.send("Target.disposeBrowserContext",{browserContextId});
+            this.browserContexts.delete(browserContextId);
+        }
     }
     async eval(page,expression){
         const result=await this.send("Runtime.evaluate",{
@@ -4519,6 +4530,10 @@ async function run(){
     server.kill();
     await poll(()=>server.exitCode!==null || server.signalCode!==null,
         "R14c Yacht lifecycle fixture shutdown");
+    // The earlier scenarios' tabs are no longer used. Without this teardown,
+    // their renderer contexts remain resident even after the Java fixtures
+    // stop and can compete with the next 20-real-browser stress scenario.
+    await cdp.disposePageContexts();
     const sixPlayerFixture=await launchServer();
     await sixPlayerBrowserCapacityAcceptance(sixPlayerFixture.base,sixPlayerFixture.ws);
     check(cdp.exceptions.length===0,
