@@ -56,7 +56,8 @@ public final class TtsHttpApiProbe {
             server = new GameClientHttpServer(
                 config, root, room, runtime, new AdminAuthStore(db),
                 new PlatformEventBus(), new ProviderRegistry(),
-                new ViewerDrawService(db), drawingSync, drawings, tts);
+                new ViewerDrawService(db), drawingSync, drawings,
+                null, null, null, null, null, tts);
             server.start();
             URI base = URI.create("http://127.0.0.1:" + clientPort);
             var client = HttpClient.newBuilder()
