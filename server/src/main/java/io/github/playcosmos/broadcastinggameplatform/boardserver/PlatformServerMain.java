@@ -15,6 +15,7 @@ import io.github.playcosmos.broadcastinggameplatform.platform.events.DonationEve
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsService;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsPreferencesStore;
+import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsVoiceProfileStore;
 import io.github.playcosmos.broadcastinggameplatform.platform.tts.TtsEngineRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.SoopBroadcastProvider;
@@ -323,8 +324,10 @@ public final class PlatformServerMain {
         // Standalone speech preview only; no game/provider/chat subscriptions.
         var ttsPreferences = TtsPreferencesStore.loadOrDefault(
             root.resolve("tts-settings.json"));
+        var ttsProfiles = new TtsVoiceProfileStore(
+            root.resolve("tts-profiles.json"));
         var ttsService = new TtsService(
-            TtsEngineRegistry.installed(root), ttsPreferences);
+            TtsEngineRegistry.installed(root), ttsPreferences, ttsProfiles);
         var clientHttp = new GameClientHttpServer(
             config,
             root,

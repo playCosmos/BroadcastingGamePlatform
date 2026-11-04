@@ -57,13 +57,31 @@
         </div>
       </form>
       <p class="tts-muted tts-default-status" id="defaultsStatus" role="status">기본 음성 설정을 읽는 중입니다.</p>
+      <section class="tts-profiles" aria-labelledby="profiles-heading">
+        <h3 id="profiles-heading">저장된 음성 프로필</h3>
+        <p class="tts-muted">엔진 음성·속도·음량을 이름별로 저장합니다. 프로필 적용은 서버 기본값을 변경하지 않습니다.</p>
+        <div class="tts-profile-fields">
+          <label for="profileChoice">저장된 프로필
+            <select id="profileChoice" disabled><option value="">저장된 프로필 없음</option></select>
+          </label>
+          <label for="profileName">프로필 이름 (최대 40자)
+            <input id="profileName" type="text" maxlength="40" placeholder="예: 한국어 안내">
+          </label>
+        </div>
+        <div class="tts-actions">
+          <button id="applyProfile" type="button" disabled>선택 프로필 적용</button>
+          <button id="saveProfile" type="button" disabled>현재 설정을 프로필로 저장</button>
+          <button id="deleteProfile" type="button" disabled>선택 프로필 삭제</button>
+        </div>
+        <p class="tts-muted" id="profilesStatus" role="status" aria-live="polite">음성 프로필을 불러오는 중입니다.</p>
+      </section>
     </section>
     <section class="tts-card" aria-labelledby="preview-heading">
       <h2 id="preview-heading">음성 미리듣기</h2>
       <p id="speechResult" class="tts-muted" role="status" aria-live="polite">문장을 생성하면 아래에서 직접 재생할 수 있습니다.</p>
       <audio controls preload="none" id="speechPreview" hidden></audio>
     </section>
-    <p class="tts-note">현재는 관리자 수동 테스트 전용입니다. 채팅·후원·게임 이벤트 연결, OBS 자동 낭독 및 음성 팩 설치 기능은 구현하지 않았습니다. Windows 내장 음성 외에도 별도로 설치된 eSpeak NG와 Piper의 음성을 사용할 수 있습니다. Piper의 ONNX 모델 및 대응 JSON 파일은 서버의 tts/voices 폴더에 직접 배치해야 합니다. 지원 음성이 없으면 합성할 수 없습니다.</p>
+    <p class="tts-note">현재는 관리자 수동 테스트 전용입니다. 음성 프로필은 로컬 tts-profiles.json에 저장됩니다. 채팅·후원·게임 이벤트 연결, OBS 자동 낭독 및 음성 팩 설치 기능은 구현하지 않았습니다. Windows 내장 음성 외에도 별도로 설치된 eSpeak NG와 Piper의 음성을 사용할 수 있습니다. Piper의 ONNX 모델 및 대응 JSON 파일은 서버의 tts/voices 폴더에 직접 배치해야 합니다. 지원 음성이 없으면 합성할 수 없습니다.</p>
     <script src="/admin/assets/tts-admin.js" defer></script>
   </main>
 </body>
