@@ -17,6 +17,7 @@
   let saved = { voiceId: "", rate: 0, volume: 80 };
   let currentAudioUrl = null;
   let pollGeneration = 0;
+  let pendingSubmission = false;
   let voiceLoadGeneration = 0;
   // A 16-slot queue plus an active 30-second synthesis can take >8 minutes.
   const JOB_WAIT_LIMIT_MS = 10 * 60 * 1000;
@@ -213,6 +214,7 @@
     event.preventDefault();
     if (!voices.value) return;
     const generation = ++pollGeneration;
+    pendingSubmission = true;
     submit.disabled = true;
     status("음성 생성 요청 중…");
     try {
@@ -230,7 +232,10 @@
     } catch (error) {
       if (generation === pollGeneration) status("TTS 실패: " + error.message);
     } finally {
-      if (generation === pollGeneration) submit.disabled = !voices.value;
+      if (generation === pollGeneration) {
+        pendingSubmission = false;
+        submit.disabled = !voices.value;
+      }
       await updateQueue();
     }
   });
@@ -290,9 +295,21 @@
   $("volumeChoice").addEventListener("input", () => {
     $("volumeValue").value = $("volumeChoice").value + "%";
   });
-  window.addEventListener("pagehide", () => {
+  window.addEventListener("pagehide", event => {
+    // Stop old polling on navigation; a BFCache snapshot retains its WAV URL.
     pollGeneration++;
-    if (currentAudioUrl) URL.revokeObjectURL(currentAudioUrl);
+    if (!event.persisted && currentAudioUrl) {
+      URL.revokeObjectURL(currentAudioUrl);
+      currentAudioUrl = null;
+    }
+  });
+  window.addEventListener("pageshow", event => {
+    if (!event.persisted || !pendingSubmission) return;
+    // The old promise's generation-guarded finally cannot re-enable this
+    // restored button. Do not imply that the server-side job was cancelled.
+    pendingSubmission = false;
+    submit.disabled = !catalog.some(voice => voice.id === voices.value);
+    status("이전 음성 요청의 화면 대기가 중단되었습니다. 서버에서 처리 중일 수 있습니다.");
   });
 
   (async () => {
