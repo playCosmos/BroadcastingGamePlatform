@@ -5,7 +5,7 @@
  * The hosted CI MUST NEVER execute this client or supply its credentials.
  */
 import {randomUUID} from "node:crypto";
-import {open,stat} from "node:fs/promises";
+import {open} from "node:fs/promises";
 import {performance} from "node:perf_hooks";
 
 const error=message=>{throw Error("R14u field probe: "+message)};
@@ -48,8 +48,8 @@ if(mode==="run"){
         error("run requires exact disposable-room write consent in environment");
     if(!reportPath||reportPath.includes("\0")||reportPath.length>1024)
         error("a fresh local report path is required for run");
-    try{await stat(reportPath);error("report path must not already exist");}
-    catch(e){if(e?.code!=="ENOENT")throw e;}
+    // Destination existence is checked atomically by open("wx") only
+    // after the authenticated TLS/WSS preflight, before any game POST.
 }else if(reportPath||process.env.BGP_R14U_EXPLICIT_WRITE_CONSENT){
     error("preflight does not create reports or accept write consent");
 }
@@ -303,8 +303,11 @@ async function main(){
         " snapshots=3 live=3 replay=1 diceRoll=1 tls=verified");
 }
 try{await main();}
-catch{
-    // Never print credential, endpoint, room ID, message content or stack.
+catch(e){
+    // Error-code-only marker proves the exclusive-create guard was reached.
+    // Never print credential, endpoint, room ID, path, message or stack.
+    if(e?.code==="EEXIST")
+        console.error("GAME_ROOM_R14U_REPORT_DESTINATION_EXISTS");
     console.error("GAME_ROOM_R14U_EXTERNAL_TWO_PLAYER_FIELD_FAILED");
     process.exitCode=1;
 }finally{
