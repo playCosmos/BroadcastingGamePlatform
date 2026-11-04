@@ -5,7 +5,7 @@
  * The hosted CI MUST NEVER execute this client or supply its credentials.
  */
 import {randomUUID} from "node:crypto";
-import {stat,writeFile} from "node:fs/promises";
+import {open,stat} from "node:fs/promises";
 import {performance} from "node:perf_hooks";
 
 const error=message=>{throw Error("R14u field probe: "+message)};
@@ -41,6 +41,7 @@ if(!Array.isArray(tokens)||tokens.length!==2||tokens[0]===tokens[1]||
         !/^[a-zA-Z0-9_-]{30,200}$/.test(x)))
     error("two different member bearer credentials required");
 const reportPath=options.get("report");
+let reportHandle=null;
 if(mode==="run"){
     if(process.env.BGP_R14U_EXPLICIT_WRITE_CONSENT!==
         "I_APPROVE_DISPOSABLE_ROOM_CHAT_AND_DICE_ROLL")
@@ -203,6 +204,12 @@ async function main(){
             " tls=verified websocketSnapshots=2 writes=0");
         return;
     }
+    // Reserve the write-once report BEFORE any chat or Yacht mutation.
+    // A concurrent file creation, permission error or missing directory
+    // must fail closed rather than committing game writes without evidence.
+    // A failed/interrupted run may leave an EMPTY, intentionally invalid
+    // report file; never treat it as successful field acceptance.
+    reportHandle=await open(reportPath,"wx",0o600);
     // This is intentionally a destructive TEST ROOM exercise. No room
     // creation, kick, moderation, close, player seat changes or score commit.
     const liveId="r14u"+randomUUID().replaceAll("-","");
@@ -288,8 +295,10 @@ async function main(){
         delayMs,elapsedMs:Math.round((performance.now()-started)*100)/100,
         observedUtc:new Date().toISOString()
     };
-    await writeFile(reportPath,JSON.stringify(report)+"\n",
-        {encoding:"utf8",flag:"wx"});
+    await reportHandle.writeFile(JSON.stringify(report)+"\n","utf8");
+    await reportHandle.sync();
+    await reportHandle.close();
+    reportHandle=null;
     console.log("GAME_ROOM_R14U_EXTERNAL_TWO_PLAYER_FIELD_PASSED"+
         " snapshots=3 live=3 replay=1 diceRoll=1 tls=verified");
 }
@@ -299,6 +308,8 @@ catch{
     console.error("GAME_ROOM_R14U_EXTERNAL_TWO_PLAYER_FIELD_FAILED");
     process.exitCode=1;
 }finally{
+    // Cleanup must not leak filesystem paths or endpoint details to logs.
+    if(reportHandle)try{await reportHandle.close();}catch{}
     for(const connection of sockets)
         try{connection.socket.close();}catch{}
 }
