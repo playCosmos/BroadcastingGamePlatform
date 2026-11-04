@@ -41,16 +41,20 @@ public final class TtsVoicePackProbe {
             // restore legacy discovery from a different storage tree.
             Path redirected = root.resolve("redirected");
             Files.createDirectories(redirected);
+            boolean linkCreated = false;
             try {
                 Files.createSymbolicLink(redirected.resolve("tts"),
                     root.resolve("tts"));
+                linkCreated = true;
+            } catch (java.io.IOException | UnsupportedOperationException denied) {
+                // Windows runners may not permit creating symbolic links.
+            }
+            if (linkCreated) {
                 var unsafe = new TtsVoicePackStore(redirected);
                 require("INVALID".equals(unsafe.mode())
                     && !unsafe.allowed("model-a")
                     && unsafe.inventory().packs().isEmpty(),
                     "symlinked pack root must fail closed");
-            } catch (java.io.IOException | UnsupportedOperationException denied) {
-                // Windows runners may not permit creating symbolic links.
             }
             bad(() -> store.register(new TtsVoicePackStore.Registration(
                 "model-a", "1.0", "MIT", "0".repeat(64), true)),
