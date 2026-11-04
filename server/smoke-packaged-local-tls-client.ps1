@@ -98,6 +98,52 @@ try {
         $clientInfo.Environment["BGP_R14U_EXPLICIT_WRITE_CONSENT"]=
             "I_APPROVE_DISPOSABLE_ROOM_CHAT_AND_DICE_ROLL"
     }
+    if($Launch -eq 2){
+        # Exercise the actual exclusive-create guard AFTER authenticated TLS
+        # preflight, against THIS isolated packaged server and room. A preexisting
+        # report must be preserved and cause zero explicit chat/dice mutations.
+        $api="http://127.0.0.1:$HttpPort/api/v1/room-membership"
+        $headers=@{Authorization="Bearer $HostToken"}
+        $beforeYacht=Invoke-RestMethod -Uri "$api/yacht" -Headers $headers
+        $beforeChat=Invoke-RestMethod -Uri "$api/chat?after=0" -Headers $headers
+        $occupied=Join-Path $FixtureRoot "r14v-existing-report-collision.json"
+        $sentinel="R14v exclusive report collision sentinel"
+        [IO.File]::WriteAllText($occupied,$sentinel,[Text.UTF8Encoding]::new($false))
+        if(-not $clientInfo.ArgumentList.Remove("--report=$raw")){
+            throw "R14v expected positive report argument missing"
+        }
+        $clientInfo.ArgumentList.Add("--report=$occupied")
+        try{
+            $negative=[Diagnostics.Process]::Start($clientInfo)
+            if($null -eq $negative){throw "R14v negative R14u client not started"}
+            try{
+                if(-not $negative.WaitForExit(60000)){
+                    $negative.Kill($true)
+                    throw "R14v negative client exceeded 60 seconds"
+                }
+                $errorMarkers=$negative.StandardError.ReadToEnd()
+                if($negative.ExitCode -eq 0 -or
+                   -not $errorMarkers.Contains("GAME_ROOM_R14U_REPORT_DESTINATION_EXISTS") -or
+                   -not $errorMarkers.Contains("GAME_ROOM_R14U_EXTERNAL_TWO_PLAYER_FIELD_FAILED")){
+                    throw "R14v existing report was not rejected by atomic exclusive create"
+                }
+            }finally{$negative.Dispose()}
+        }finally{
+            $clientInfo.ArgumentList.Remove("--report=$occupied") | Out-Null
+            $clientInfo.ArgumentList.Add("--report=$raw")
+        }
+        $afterYacht=Invoke-RestMethod -Uri "$api/yacht" -Headers $headers
+        $afterChat=Invoke-RestMethod -Uri "$api/chat?after=0" -Headers $headers
+        if((Get-Content -LiteralPath $occupied -Raw -Encoding utf8) -cne $sentinel -or
+           $beforeYacht.yacht.match.id -ne $afterYacht.yacht.match.id -or
+           $beforeYacht.yacht.match.version -ne $afterYacht.yacht.match.version -or
+           $beforeYacht.yacht.match.rolls -ne $afterYacht.yacht.match.rolls -or
+           $beforeYacht.yacht.match.completedTurns -ne $afterYacht.yacht.match.completedTurns -or
+           @($beforeChat.messages).Count -ne @($afterChat.messages).Count){
+            throw "R14v report conflict changed file or committed chat/Yacht state"
+        }
+        Write-Host "GAME_ROOM_R14V_EXISTING_REPORT_REJECTED_NO_GAME_WRITES"
+    }
     $client=[Diagnostics.Process]::Start($clientInfo)
     if($null -eq $client){throw "R14v actual HTTPS/WSS probe did not start"}
     try {
