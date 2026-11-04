@@ -3870,15 +3870,63 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
         "R15a independent Chrome member credentials");
     // Seven independent real Chrome pages should each create exactly one
     // authenticated member socket, no redundant public Yacht socket.
-    await poll(async()=>{
-        const live=await Promise.all(pages.map(p=>cdp.eval(p,
-            "(()=>{const a=window.__r15fSocketAudit;return a && "+
-            "a.connections.length===1 && "+
-            "a.connections[0].kind==='member' && "+
-            "a.connections[0].opened && !a.connections[0].closed && "+
-            "a.connections[0].subscriptions.length===1;})()")));
-        return live.every(Boolean);
-    },"R15f seven independent Chrome member sockets established",22000);
+    try {
+        await poll(async()=>{
+            const live=await Promise.all(pages.map(p=>cdp.eval(p,
+                "(()=>{const a=window.__r15fSocketAudit;return a && "+
+                "a.connections.length===1 && "+
+                "a.connections[0].kind==='member' && "+
+                "a.connections[0].opened && !a.connections[0].closed && "+
+                "a.connections[0].subscriptions.length===1;})()")));
+            return live.every(Boolean);
+        },"R15f seven independent Chrome member sockets established",22000);
+    } catch {
+        // Preserve this strict socket assertion until evidence distinguishes
+        // a failed connection, a legitimate reconnect and duplicate live WS.
+        // Snapshot only bounded booleans and numeric counters. No URLs,
+        // session tokens, room IDs, event bodies or browser exception text.
+        const snapshots=await Promise.all(pages.map(async(page,index)=>{
+            try {
+                const state=await cdp.eval(page,`(()=>{
+                    const a=window.__r15fSocketAudit;
+                    const connections=a?.connections||[];
+                    const members=connections.filter(c=>c.kind==="member");
+                    const live=members.filter(c=>
+                        c.opened&&!c.closed&&c.socket.readyState===1);
+                    const game=document.getElementById("game");
+                    const roster=document.getElementById("roster");
+                    return {
+                        auditPresent:!!a,
+                        gameVisible:game?.hidden===false,
+                        gameBusy:game?.getAttribute("aria-busy")==="true",
+                        rosterCount:roster?.children.length??null,
+                        totalSockets:connections.length,
+                        memberSockets:members.length,
+                        activeMembers:live.length,
+                        nonMemberSockets:connections.length-members.length,
+                        openedMembers:members.filter(c=>c.opened).length,
+                        closedMembers:members.filter(c=>c.closed).length,
+                        connectingMembers:members.filter(c=>
+                            c.socket.readyState===0).length,
+                        subscribedMembers:members.filter(c=>
+                            c.subscriptions.length===1).length,
+                        closeCodes:members.map(c=>
+                            Number.isSafeInteger(c.closeCode)?c.closeCode:null)
+                    };
+                })()`);
+                return {index,...state};
+            } catch {
+                return {index,unavailable:true};
+            }
+        }));
+        throw Error("timeout waiting for R15f seven independent Chrome "+
+            "member sockets established; sanitizedSocketDiagnostic="+
+            JSON.stringify({
+                pages:snapshots,
+                recentHttpStatuses:cdp.network.slice(-8).map(x=>
+                    Number.isSafeInteger(x.status)?x.status:null)
+            }));
+    }
     // R15g: convert the previous thirteen HTTP-only spectator identities into
     // thirteen genuine independent Chrome/Edge browser contexts. Each joins
     // via the production invitation form, creates a real authenticated
