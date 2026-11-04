@@ -68,6 +68,12 @@ public final class TtsVoicePackStore {
         Path root = applicationRoot.toAbsolutePath().normalize();
         directory = root.resolve("tts/voices");
         manifest = root.resolve("tts/voice-packs.json");
+        // The tts parent must not redirect reads to a different filesystem
+        // tree. Missing manifest is LEGACY only under the expected root.
+        if (Files.isSymbolicLink(directory.getParent())) {
+            mode = "INVALID";
+            return;
+        }
         if (!Files.exists(manifest, LinkOption.NOFOLLOW_LINKS)) return;
         mode = "INVALID";
         try {
@@ -105,9 +111,13 @@ public final class TtsVoicePackStore {
         var result = new ArrayList<Candidate>();
         var found = new java.util.HashSet<String>();
         if (Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)
-            && !Files.isSymbolicLink(directory)) {
+            && !Files.isSymbolicLink(directory)
+            && !Files.isSymbolicLink(directory.getParent())) {
             try (Stream<Path> files = Files.list(directory)) {
-                for (Path file : files.sorted(Comparator.comparing(Path::toString))
+                // Non-model files must not occupy the bounded ONNX inventory.
+                for (Path file : files.filter(f ->
+                    f.getFileName().toString().endsWith(".onnx"))
+                    .sorted(Comparator.comparing(Path::toString))
                     .limit(MAX_PACKS + 1L).toList()) {
                     String name = file.getFileName().toString();
                     if (!name.endsWith(".onnx")) continue;
@@ -265,7 +275,9 @@ public final class TtsVoicePackStore {
     }
 
     private boolean safePair(String model) {
-        if (!validModelName(model) || Files.isSymbolicLink(directory)
+        if (!validModelName(model)
+            || Files.isSymbolicLink(directory)
+            || Files.isSymbolicLink(directory.getParent())
             || !Files.isDirectory(directory, LinkOption.NOFOLLOW_LINKS)) return false;
         Path onnx = directory.resolve(model + ".onnx");
         Path json = directory.resolve(model + ".onnx.json");
