@@ -49,11 +49,13 @@ public final class TtsPiperPerformanceProbe {
         run("legacy", engine, voice);
         packs.register(new TtsVoicePackStore.Registration(
             MODEL, "1.0.0", "MIT", trustedHash, true));
-        engine.invalidateVoiceCatalog();
-        if (engine.voices().stream().noneMatch(v -> v.id().equals(voice))) {
+        // Closing the LEGACY TtsService closes its PiperEngine permanently.
+        // Each mode gets a fresh engine, as independent production services do.
+        var managedEngine = new PiperEngine(root.resolve("tts/voices"), packs);
+        if (managedEngine.voices().stream().noneMatch(v -> v.id().equals(voice))) {
             throw new IllegalStateException("managed Piper voice missing");
         }
-        run("managed", engine, voice);
+        run("managed", managedEngine, voice);
         if (!"MANAGED".equals(packs.mode())
             || !packs.verify(MODEL).match()) {
             throw new IllegalStateException("managed benchmark checksum validation failed");

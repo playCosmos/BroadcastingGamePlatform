@@ -15,6 +15,8 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
@@ -24,12 +26,17 @@ import java.util.stream.Stream;
  * application-owned tts/voices directory. Nothing is downloaded/executed
  * from that directory, and model files are never served to HTTP clients.
  */
-public final class PiperEngine implements TtsService.TtsEngine {
+public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
     private static final int MAX_MODELS = 64;
     private static final int MAX_CONFIG_BYTES = 256 * 1024;
     private static final int MAX_WAV_BYTES = 5 * 1024 * 1024;
     private final Path voicesDirectory;
     private final TtsVoicePackStore packStore;
+    private final PiperWarmWorker warmWorker;
+    private final Runnable beforeColdLaunch;
+    private final Object coldLifecycle = new Object();
+    private final Set<Process> activeColdProcesses = new HashSet<>();
+    private volatile boolean closed;
     private volatile Map<String, ModelVoice> catalog = Map.of();
     private volatile long cachedAt;
 
@@ -41,14 +48,52 @@ public final class PiperEngine implements TtsService.TtsEngine {
     }
 
     public PiperEngine(Path voicesDirectory, TtsVoicePackStore packStore) {
+        this(voicesDirectory, packStore, PiperWarmWorker.configuredPython());
+    }
+
+    // Explicit dependency seam for opt-in real engine integration probes.
+    PiperEngine(Path voicesDirectory, TtsVoicePackStore packStore, Path warmPython) {
+        this(voicesDirectory, packStore, warmPython, () -> {});
+    }
+
+    // Regression seam: pause after warm failure but before cold process startup.
+    PiperEngine(Path voicesDirectory, TtsVoicePackStore packStore, Path warmPython,
+                Runnable beforeColdLaunch) {
         this.voicesDirectory = voicesDirectory.toAbsolutePath().normalize();
         this.packStore = packStore;
+        this.beforeColdLaunch = Objects.requireNonNull(beforeColdLaunch);
+        this.warmWorker = warmPython == null ? null : new PiperWarmWorker(warmPython);
     }
 
     @Override public String id() { return "piper"; }
 
     @Override public synchronized void invalidateVoiceCatalog() {
         cachedAt = 0;
+        if (warmWorker != null) warmWorker.invalidate();
+    }
+
+    @Override public void close() {
+        List<Process> active;
+        synchronized (coldLifecycle) {
+            if (closed) return;
+            closed = true;
+            // Every cold process is registered under this same lock at start.
+            // New starts are impossible after this snapshot.
+            active = List.copyOf(activeColdProcesses);
+        }
+        try {
+            for (Process process : active) TtsProcessCleanup.terminate(process);
+        } finally {
+            if (warmWorker != null) warmWorker.close();
+        }
+    }
+
+    int activeColdProcessesForProbe() {
+        synchronized (coldLifecycle) { return activeColdProcesses.size(); }
+    }
+
+    boolean warmWorkerRunning() {
+        return warmWorker != null && warmWorker.running();
     }
 
     @Override
@@ -166,6 +211,7 @@ public final class PiperEngine implements TtsService.TtsEngine {
         String filename = selected.model().getFileName().toString();
         String stem = filename.substring(0, filename.length() - 5);
         if (packStore != null && !packStore.allowed(stem)) {
+            if (warmWorker != null) warmWorker.invalidate();
             throw new IllegalArgumentException("Piper voice pack unavailable");
         }
         // Re-check the trust boundary after discovery, before execution.
@@ -177,6 +223,39 @@ public final class PiperEngine implements TtsService.TtsEngine {
             || !Files.isRegularFile(selected.config())) {
             throw new IllegalStateException("Piper model unavailable");
         }
+        double lengthScale = Math.max(.65, Math.min(1.8,
+            1.0 - rate * .045));
+        if (warmWorker != null) {
+            try {
+                return scalePcm16Wav(warmWorker.synthesize(
+                    selected.model(), selected.config(), text,
+                    selected.speaker(), lengthScale), volume);
+            } catch (Exception | LinkageError failure) {
+                // Shutdown must not start a new cold subprocess after the
+                // resident one has deliberately been terminated.
+                if (warmWorker.isClosed()) {
+                    throw new IllegalStateException("Piper engine closed");
+                }
+                // Recover by returning to the proven per-request CLI. Never
+                // retry using a pack revoked while a worker was running.
+                warmWorker.invalidate();
+                if (packStore != null && !packStore.allowed(stem)) {
+                    throw new IllegalArgumentException("Piper voice pack unavailable");
+                }
+                System.err.println("[tts] Piper warm worker failed; using cold fallback: "
+                    + failure.getClass().getSimpleName());
+            }
+        }
+        // Default one-shot path already checked the managed pack above.
+        // Only a warm-worker failure needs a fresh fallback-boundary recheck.
+        return synthesizeCold(selected, text, rate, volume, warmWorker != null);
+    }
+
+    private byte[] synthesizeCold(ModelVoice selected, String text, int rate,
+                                  int volume, boolean recheckPack) throws Exception {
+        // close() can race with warm-worker fallback before reaching here;
+        // the final launch below is always fenced under coldLifecycle.
+        if (closed) throw new IllegalStateException("Piper engine closed");
         Path wav = Files.createTempFile("bgp-piper-output-", ".wav");
         try {
             // Piper length_scale: >1 slower, <1 faster.
@@ -192,10 +271,28 @@ public final class PiperEngine implements TtsService.TtsEngine {
                 command.add("--speaker");
                 command.add(selected.speaker().toString());
             }
-            Process process = new ProcessBuilder(command)
-                .redirectOutput(ProcessBuilder.Redirect.DISCARD)
-                .redirectError(ProcessBuilder.Redirect.DISCARD)
-                .start();
+            // Test-only latch can pause exactly at the formerly vulnerable
+            // warm-to-cold transition. No production delay or retry is added.
+            beforeColdLaunch.run();
+            // On fallback, validate again after a failed warm attempt. Avoid
+            // double-hashing every default one-shot MANAGED request. Never
+            // hold the shutdown lock during potentially slow model hashing.
+            if (recheckPack && packStore != null) {
+                String name = selected.model().getFileName().toString();
+                String stem = name.substring(0, name.length() - 5);
+                if (!packStore.allowed(stem)) {
+                    throw new IllegalArgumentException("Piper voice pack unavailable");
+                }
+            }
+            Process process;
+            synchronized (coldLifecycle) {
+                if (closed) throw new IllegalStateException("Piper engine closed");
+                process = new ProcessBuilder(command)
+                    .redirectOutput(ProcessBuilder.Redirect.DISCARD)
+                    .redirectError(ProcessBuilder.Redirect.DISCARD)
+                    .start();
+                activeColdProcesses.add(process);
+            }
             try {
                 long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(30);
                 TtsProcessInput.write(process,
@@ -213,7 +310,13 @@ public final class PiperEngine implements TtsService.TtsEngine {
                 byte[] data = Files.readAllBytes(wav);
                 return scalePcm16Wav(data, volume);
             } finally {
-                TtsProcessCleanup.terminate(process);
+                try {
+                    TtsProcessCleanup.terminate(process);
+                } finally {
+                    synchronized (coldLifecycle) {
+                        activeColdProcesses.remove(process);
+                    }
+                }
             }
         } finally {
             Files.deleteIfExists(wav);
