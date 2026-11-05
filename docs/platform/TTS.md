@@ -241,6 +241,48 @@ copies, process memory, or the total server heap.
   the affected job FAILED without killing the worker; following jobs
   continue. Irrecoverable process-level failures are not masked.
 
+## Optional Piper performance benchmark (Linux CI only)
+
+The native-engine workflow measures a real, checksum-verified Piper ONNX voice
+(`en_US-lessac-low`, `piper-tts==1.8.0`) on an **ephemeral Ubuntu runner**.
+This is instrumentation, not a new production synthesis backend or release.
+Its inputs and output WAVs are kept in the temporary runner filesystem and
+are deleted by a cleanup step, including on failures.
+
+- The Java `TtsPiperPerformanceProbe` uses the platform's actual
+  `PiperEngine` and `TtsService`, with five separate synthesis requests in
+  **LEGACY** manually discovered mode and five more in **MANAGED** registered
+  mode. The latter uses an externally pinned ONNX SHA-256 and per-request
+  model/config checks. The service's `previewReuses` must remain zero for
+  both modes. Summary lines starting with `PIPER_PERF_` are published to the
+  workflow step summary.
+- A separate Python-only diagnostic, `tts_benchmark_warm_piper.py`, loads the
+  same ONNX model once and measures five warm syntheses without repeated
+  subprocess startup or model load. It publishes `PIPER_WARM_MODEL_PERF` to
+  the same CI summary. Python benchmark code is **not** used by the runtime.
+- Java timings include queueing, Piper process launch, model loading,
+  phonemization, inference and WAV file I/O. Metrics include per-mode
+  first/mean/median/p95/max request times, approximate sampled native child
+  process and JVM RSS, JVM used heap, and retained WAV bytes. A five-sample
+  `p95` is the maximum order statistic, **not** a stable population percentile.
+  The Python comparison separately reports model load time, warm-inference
+  latency and peak Python process RSS.
+
+**Limitations:** These are short sequential samples on a shared CI runner.
+LEGACY executes before MANAGED, so differences may reflect host scheduling,
+filesystem caching, JVM heap growth and process startup rather than checksum
+overhead. Periodic `/proc` RSS sampling can miss a short native peak;
+heap observations are not a GC-normalized leak measurement. The warm Python
+path is not a like-for-like end-to-end server benchmark. No measured reduction
+in platform latency is implied without a persistent-worker design and
+side-by-side production-equivalent testing. A future resident Piper worker
+must retain per-request integrity checks, bounded RSS, timeout/crash recovery,
+concurrency isolation and idle eviction; this benchmark **does not** enable one.
+
+Results apply only to the pinned test voice and runner, not private Haemi/RVC
+models, the user's Windows host, audio quality, or public player/OBS traffic.
+Benchmark output contains summary statistics, not speech text or WAV bytes.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/
