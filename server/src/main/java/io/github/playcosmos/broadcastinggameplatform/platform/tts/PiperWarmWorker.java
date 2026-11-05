@@ -295,7 +295,9 @@ final class PiperWarmWorker implements AutoCloseable {
         // Interrupt a long-running native inference before waiting for its
         // synchronized response reader. Shutdown must not wait 30 seconds.
         Process running = process;
-        if (running != null && running.isAlive()) running.destroyForcibly();
+        // Snapshot and kill descendants BEFORE the parent. Killing the parent
+        // directly can reparent helpers, making them invisible to cleanup.
+        if (running != null) TtsProcessCleanup.terminate(running);
         synchronized (this) { terminate(); }
     }
 }
