@@ -272,15 +272,16 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
             // Test-only latch can pause exactly at the formerly vulnerable
             // warm-to-cold transition. No production delay or retry is added.
             beforeColdLaunch.run();
+            // Hashing a large model can be slow: never hold the shutdown lock
+            // while verifying the managed allowlist. close() must remain prompt.
+            String name = selected.model().getFileName().toString();
+            String stem = name.substring(0, name.length() - 5);
+            if (packStore != null && !packStore.allowed(stem)) {
+                throw new IllegalArgumentException("Piper voice pack unavailable");
+            }
             Process process;
             synchronized (coldLifecycle) {
                 if (closed) throw new IllegalStateException("Piper engine closed");
-                // Do not bypass a pack revoked between warm failure and fallback.
-                String name = selected.model().getFileName().toString();
-                String stem = name.substring(0, name.length() - 5);
-                if (packStore != null && !packStore.allowed(stem)) {
-                    throw new IllegalArgumentException("Piper voice pack unavailable");
-                }
                 process = new ProcessBuilder(command)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)
