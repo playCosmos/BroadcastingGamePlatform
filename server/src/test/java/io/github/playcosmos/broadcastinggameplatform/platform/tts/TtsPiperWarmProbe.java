@@ -4,7 +4,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Optional real-model Piper worker validation on an isolated CI runner only. */
 public final class TtsPiperWarmProbe {
@@ -101,8 +103,87 @@ public final class TtsPiperWarmProbe {
             require(!failing.warmWorkerRunning(), "bad warm process cannot linger");
         }
 
+        verifyChildTreeCleanup(root, python, model, config);
+        verifyNoColdLaunchAfterClose(root, store, voice, javaExecutable);
+
         System.out.println("PIPER_WARM_LIFECYCLE_PASSED revocation=true"
-            + " idle_exit=true crash_restart=true fallback=true");
+            + " idle_exit=true crash_restart=true fallback=true"
+            + " descendant_cleanup=true cold_shutdown_fenced=true");
+    }
+
+    /** Regression: Python launches an inherited-stdio child before close(). */
+    private static void verifyChildTreeCleanup(Path root, Path python, Path model,
+                                                Path config) throws Exception {
+        Path wrapper = Files.createTempFile(root, "tts-python-tree-", ".sh");
+        String escaped = python.toString().replace("'", "'\"'\"'");
+        Files.writeString(wrapper, "#!/bin/sh\nsleep 90 &\nexec '" + escaped
+            + "' \"$@\"\n", StandardCharsets.UTF_8);
+        require(wrapper.toFile().setExecutable(true), "test wrapper must be executable");
+        List<ProcessHandle> children = List.of();
+        try (var worker = new PiperWarmWorker(wrapper)) {
+            require(validWav(worker.synthesize(model, config,
+                "The process tree should close.", null, 1.0)),
+                "tree-test Piper must return a real WAV");
+            long pid = worker.processIdForProbe();
+            require(pid > 0, "tree-test parent missing");
+            children = ProcessHandle.of(pid).orElseThrow().descendants().toList();
+            require(!children.isEmpty(), "tree-test did not spawn its inherited child");
+            worker.close();
+            for (var child : children) {
+                require(!child.isAlive(), "tree-test orphan child survived shutdown");
+            }
+        } finally {
+            for (var child : children) {
+                if (child.isAlive()) child.destroyForcibly();
+            }
+            Files.deleteIfExists(wrapper);
+        }
+        System.out.println("PIPER_WARM_CHILD_TREE_PASSED");
+    }
+
+    /** Regression: close() lands exactly between warm failure and cold launch. */
+    private static void verifyNoColdLaunchAfterClose(Path root,
+            TtsVoicePackStore store, String voice, String javaExecutable)
+            throws Exception {
+        CountDownLatch atColdLaunch = new CountDownLatch(1);
+        CountDownLatch resume = new CountDownLatch(1);
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        Runnable gate = () -> {
+            atColdLaunch.countDown();
+            try {
+                if (!resume.await(10, TimeUnit.SECONDS)) {
+                    throw new IllegalStateException("cold launch gate timed out");
+                }
+            } catch (InterruptedException interrupted) {
+                Thread.currentThread().interrupt();
+                throw new IllegalStateException("cold launch gate interrupted", interrupted);
+            }
+        };
+        try (var engine = new PiperEngine(root.resolve("tts/voices"), store,
+                 Path.of(javaExecutable), gate)) {
+            require(engine.voices().stream().anyMatch(v -> voice.equals(v.id())),
+                "fallback race must discover the managed voice");
+            Thread caller = Thread.ofVirtual().start(() -> {
+                try {
+                    engine.synthesize(voice, "Close before cold fallback.", 0, 80);
+                } catch (Throwable error) { failure.set(error); }
+            });
+            try {
+                require(atColdLaunch.await(20, TimeUnit.SECONDS),
+                    "failed warm process did not reach cold fallback");
+                engine.close();
+            } finally {
+                resume.countDown();
+            }
+            caller.join(5000);
+            require(!caller.isAlive(), "cold fallback was not terminated");
+            require(failure.get() instanceof IllegalStateException
+                && failure.get().getMessage().contains("closed"),
+                "closed engine attempted a cold fallback");
+            require(engine.activeColdProcessesForProbe() == 0,
+                "closed engine retained a cold child process");
+        }
+        System.out.println("PIPER_COLD_SHUTDOWN_RACE_PASSED");
     }
 
     private static boolean validWav(byte[] wav) {
