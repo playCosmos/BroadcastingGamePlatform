@@ -105,6 +105,7 @@ public final class TtsPiperWarmProbe {
 
         verifyChildTreeCleanup(root, python, model, config);
         verifyNoColdLaunchAfterClose(root, store, voice, javaExecutable);
+        verifyActiveColdCleanup(root, store, voice);
 
         System.out.println("PIPER_WARM_LIFECYCLE_PASSED revocation=true"
             + " idle_exit=true crash_restart=true fallback=true"
@@ -184,6 +185,39 @@ public final class TtsPiperWarmProbe {
                 "closed engine retained a cold child process");
         }
         System.out.println("PIPER_COLD_SHUTDOWN_RACE_PASSED");
+    }
+
+    /** Regression: close() also terminates an already-running cold subprocess. */
+    private static void verifyActiveColdCleanup(Path root,
+            TtsVoicePackStore store, String voice) throws Exception {
+        AtomicReference<Throwable> failure = new AtomicReference<>();
+        try (var engine = new PiperEngine(root.resolve("tts/voices"), store,
+                 (Path) null)) {
+            require(engine.voices().stream().anyMatch(v -> voice.equals(v.id())),
+                "cold shutdown test must discover Piper voice");
+            Thread caller = Thread.ofVirtual().start(() -> {
+                try {
+                    engine.synthesize(voice,
+                        "A deliberately long Piper cold synthesis request. ".repeat(35),
+                        0, 80);
+                } catch (Throwable error) { failure.set(error); }
+            });
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(20);
+            while (engine.activeColdProcessesForProbe() == 0
+                    && caller.isAlive() && System.nanoTime() < deadline) {
+                Thread.sleep(10);
+            }
+            require(engine.activeColdProcessesForProbe() > 0,
+                "cold synthesis finished before active-process shutdown test");
+            engine.close();
+            caller.join(5000);
+            require(!caller.isAlive(), "active cold subprocess resisted shutdown");
+            require(engine.activeColdProcessesForProbe() == 0,
+                "closed engine retained active cold process");
+            require(failure.get() != null,
+                "active cold synthesis should not complete after forced shutdown");
+        }
+        System.out.println("PIPER_COLD_ACTIVE_SHUTDOWN_PASSED");
     }
 
     private static boolean validWav(byte[] wav) {
