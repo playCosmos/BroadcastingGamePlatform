@@ -553,6 +553,18 @@ public final class TtsService implements AutoCloseable {
             }
         }
         worker.interrupt();
+        // Optional native workers must not survive platform shutdown. Close
+        // after releasing guard so a failed/blocked adapter cannot deadlock
+        // the TTS queue or another game subsystem.
+        for (var engine : engines) {
+            if (engine instanceof AutoCloseable closable) {
+                try { closable.close(); }
+                catch (Exception | LinkageError error) {
+                    System.err.println("[tts] engine shutdown failed: "
+                        + engine.id() + " (" + error.getClass().getSimpleName() + ")");
+                }
+            }
+        }
         try { worker.join(1500); }
         catch (InterruptedException error) {
             Thread.currentThread().interrupt();
