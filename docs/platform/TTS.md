@@ -283,6 +283,40 @@ Results apply only to the pinned test voice and runner, not private Haemi/RVC
 models, the user's Windows host, audio quality, or public player/OBS traffic.
 Benchmark output contains summary statistics, not speech text or WAV bytes.
 
+## Experimental opt-in persistent Piper worker (not released)
+
+The one-shot Piper CLI remains the default. To opt into the model-resident
+Python worker, an operator must set `BGP_TTS_PIPER_WARM_PYTHON` to an absolute
+file path of a trusted Python executable in a separately installed `piper-tts`
+environment. Example (Linux): `/opt/piper-venv/bin/python`.
+Neither the platform nor this CI workflow installs an engine for operators.
+Do not enable this setting without host-side voice, memory and timeout tests.
+
+- One resident ONNX model, one serialized request and a fixed isolated
+  `python -I -u -c` child; binary length-framed WAV travels over private
+  stdio, not HTTP. No operator scripts, arbitrary files, model downloads,
+  public endpoints, game events, chat/provider inputs or OBS speech wiring.
+- Per-request model and config hashes, managed registration/enablement and
+  directory restrictions are checked before synthesis. Modified or revoked
+  packs evict the worker and fail closed, without bypass via cold fallback.
+- Shared 30-second startup/request timeout, 60-second idle eviction,
+  process restart on model switch/crash, and forced child termination on
+  server shutdown. Ordinary worker failure falls back to the existing
+  one-shot Piper CLI only when the validated model remains authorized.
+- Piper remains ineligible for cross-request WAV reuse. The experimental
+  worker has **no OS-enforced memory hard cap** and stays disabled by default.
+
+The temporary Linux native CI worker probe exercises 100 real outputs,
+revocation, idle eviction, crash recovery and fallback. A separate 1,000-
+request same-process ONNX soak samples child/JVM RSS and post-GC JVM heap
+every 100 syntheses; checks >64 MiB child RSS growth and >32 MiB retained
+JVM heap growth against the warmed checkpoint **only for the pinned
+small test voice**. It also checks A→B→A process reaping, in-flight close,
+request timeout and exact WAV framing. A passing soak is neither a memory
+quota nor proof of long-term leak freedom. No actual Windows operator
+environment, private Haemi/RVC model, voice quality or field deployment
+is certified by this Linux runner evidence.
+
 ## End-to-end validation and final acceptance
 
 - The regular Windows package CI compiles the server, runs TTS queue/WAV/
