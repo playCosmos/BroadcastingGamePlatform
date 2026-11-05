@@ -246,13 +246,15 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
                     + failure.getClass().getSimpleName());
             }
         }
-        return synthesizeCold(selected, text, rate, volume);
+        // Default one-shot path already checked the managed pack above.
+        // Only a warm-worker failure needs a fresh fallback-boundary recheck.
+        return synthesizeCold(selected, text, rate, volume, warmWorker != null);
     }
 
     private byte[] synthesizeCold(ModelVoice selected, String text, int rate,
-                                  int volume) throws Exception {
-        // This check is repeated under coldLifecycle when launching: close()
-        // can race with the failing warm-worker path before reaching here.
+                                  int volume, boolean recheckPack) throws Exception {
+        // close() can race with warm-worker fallback before reaching here;
+        // the final launch below is always fenced under coldLifecycle.
         if (closed) throw new IllegalStateException("Piper engine closed");
         Path wav = Files.createTempFile("bgp-piper-output-", ".wav");
         try {
@@ -272,12 +274,15 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
             // Test-only latch can pause exactly at the formerly vulnerable
             // warm-to-cold transition. No production delay or retry is added.
             beforeColdLaunch.run();
-            // Hashing a large model can be slow: never hold the shutdown lock
-            // while verifying the managed allowlist. close() must remain prompt.
-            String name = selected.model().getFileName().toString();
-            String stem = name.substring(0, name.length() - 5);
-            if (packStore != null && !packStore.allowed(stem)) {
-                throw new IllegalArgumentException("Piper voice pack unavailable");
+            // On fallback, validate again after a failed warm attempt. Avoid
+            // double-hashing every default one-shot MANAGED request. Never
+            // hold the shutdown lock during potentially slow model hashing.
+            if (recheckPack && packStore != null) {
+                String name = selected.model().getFileName().toString();
+                String stem = name.substring(0, name.length() - 5);
+                if (!packStore.allowed(stem)) {
+                    throw new IllegalArgumentException("Piper voice pack unavailable");
+                }
             }
             Process process;
             synchronized (coldLifecycle) {
