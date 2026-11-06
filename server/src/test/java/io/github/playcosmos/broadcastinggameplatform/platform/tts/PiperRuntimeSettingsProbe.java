@@ -54,6 +54,25 @@ public final class PiperRuntimeSettingsProbe {
             engine.close();
             reject(() -> engine.configureRuntime(true, 30),
                 "closed engine must reject reconfiguration");
+            require("CLOSED".equals(engine.runtime().state())
+                && !engine.warmWorkerRunning(),
+                "closing the engine must release all resident workers");
+
+            // Java rejects Piper's -I/-u/-c arguments: an actual failed
+            // subprocess startup must increment failure telemetry exactly once.
+            Path model = root.resolve("tts/voices/startup-failure.onnx");
+            Path config = root.resolve("tts/voices/startup-failure.onnx.json");
+            Files.createDirectories(model.getParent());
+            Files.writeString(model, "fake model", StandardCharsets.UTF_8);
+            Files.writeString(config, "{}", StandardCharsets.UTF_8);
+            try (var unable = new PiperWarmWorker(javaExe)) {
+                boolean rejected = false;
+                try { unable.synthesize(model, config, "test", null, 1.0); }
+                catch (Exception expected) { rejected = true; }
+                require(rejected && unable.metrics().failed() == 1
+                    && unable.metrics().launched() == 0,
+                    "startup failures must be counted without a model launch");
+            }
 
             Files.writeString(policy, "{broken", StandardCharsets.UTF_8);
             var corrupt = new PiperRuntimeSettingsStore(root, true);
@@ -64,6 +83,16 @@ public final class PiperRuntimeSettingsProbe {
                 "broken file cannot be silently overwritten");
             require("{broken".equals(Files.readString(policy)),
                 "invalid policy preserved for manual repair");
+            if (!System.getProperty("os.name", "").toLowerCase().contains("win")) {
+                Path linkedRoot = root.resolve("linked-policy-root");
+                Path target = root.resolve("linked-policy-target");
+                Files.createDirectories(linkedRoot);
+                Files.createDirectories(target);
+                Files.createSymbolicLink(linkedRoot.resolve("tts"), target);
+                var linked = new PiperRuntimeSettingsStore(linkedRoot, true);
+                require(linked.invalid() && !linked.get().enabled(),
+                    "symlinked policy parent without a file must fail closed");
+            }
             System.out.println("Piper runtime settings persistence and fail-closed probe passed.");
         } finally {
             try (var files = Files.walk(root)) {

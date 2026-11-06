@@ -146,29 +146,26 @@ final class PiperWarmWorker implements AutoCloseable {
         long deadline = System.nanoTime() + requestNanos;
         if (process == null) {
             long starting = System.nanoTime();
-            process = new ProcessBuilder(
-                python.toString(), "-I", "-u", "-c", SCRIPT,
-                requestedModel.toString(), requestedConfig.toString())
-                .redirectError(ProcessBuilder.Redirect.DISCARD).start();
-            model = requestedModel;
-            config = requestedConfig;
-            fingerprint = nextFingerprint;
-            // close() may run concurrently with a blocked native startup.
-            // A process created after its initial shutdown snapshot must not
-            // survive by escaping the shutdown path.
-            if (closed) {
-                terminate();
-                throw new IllegalStateException("Piper worker closed");
-            }
             try {
+                process = new ProcessBuilder(
+                    python.toString(), "-I", "-u", "-c", SCRIPT,
+                    requestedModel.toString(), requestedConfig.toString())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                model = requestedModel;
+                config = requestedConfig;
+                fingerprint = nextFingerprint;
+                // Shutdown can race a native startup. Do not leave the
+                // subprocess alive after close() has been requested.
+                if (closed) throw new IllegalStateException("Piper worker closed");
                 int ready = boundedIO(() -> process.getInputStream().read(), deadline);
                 if (ready != 'R') throw new IOException("Piper worker startup failed");
                 launched++;
                 lastStartupMs = TimeUnit.NANOSECONDS.toMillis(
                     System.nanoTime() - starting);
-            } catch (Exception failed) {
+            } catch (Exception startupFailure) {
+                failed++;
                 terminate();
-                throw failed;
+                throw startupFailure;
             }
         }
         // Fixed field order and JSON escaping via Gson rather than interpolating
@@ -258,8 +255,9 @@ final class PiperWarmWorker implements AutoCloseable {
     Metrics metrics() {
         Process current = process;
         boolean alive = current != null && current.isAlive();
-        String currentModel = model == null || !alive ? null
-            : model.getFileName().toString().replaceFirst("\\.onnx$", "");
+        Path modelSnapshot = model;
+        String currentModel = modelSnapshot == null || !alive ? null
+            : modelSnapshot.getFileName().toString().replaceFirst("\\.onnx$", "");
         String state = closed ? "CLOSED"
             : !alive ? "IDLE" : active ? "SYNTHESIZING" : "READY";
         Long rss = alive ? residentKiB(current.pid()) : null;

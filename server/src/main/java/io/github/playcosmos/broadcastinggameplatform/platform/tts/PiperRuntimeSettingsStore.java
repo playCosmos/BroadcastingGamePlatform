@@ -35,10 +35,13 @@ public final class PiperRuntimeSettingsStore {
             .resolve("tts/piper-runtime.json");
         this.defaultEnabled = defaultEnabled;
         current = new Settings(defaultEnabled, 60);
-        if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return;
         try {
-            if (Files.isSymbolicLink(file) || Files.isSymbolicLink(file.getParent())
-                || !Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
+            // The directory is part of the trust boundary even when the
+            // policy file is absent. A linked parent must fail closed.
+            if (Files.isSymbolicLink(file.getParent()) || Files.isSymbolicLink(file))
+                throw new IOException("unsafe Piper runtime policy path");
+            if (!Files.exists(file, LinkOption.NOFOLLOW_LINKS)) return;
+            if (!Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)
                 || Files.size(file) > MAX_BYTES) {
                 throw new IOException("unsafe Piper runtime policy");
             }

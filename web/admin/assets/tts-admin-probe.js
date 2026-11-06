@@ -246,9 +246,24 @@ async function scenario(mode) {
   assert.equal(profileDeletes, 1);
   assert.equal(getElement("profileChoice").value, "Unavailable",
     "deleting a profile must update the select list");
+  // Queue refreshes must not overwrite in-progress administrator edits.
+  getElement("piperRuntimeEnabled").checked = true;
+  getElement("piperRuntimeEnabled").events.change();
+  getElement("piperIdleSeconds").value = "222";
+  getElement("piperIdleSeconds").events.input();
   const submit = getElement("speechForm").events.submit;
   assert.equal(typeof submit, "function", "voice form submit must be bound");
   await submit({ preventDefault() {} });
+  assert.equal(getElement("piperRuntimeEnabled").checked, true,
+    "queue polling must preserve unsaved enablement");
+  assert.equal(getElement("piperIdleSeconds").value, "222",
+    "queue polling must preserve unsaved runtime timeout");
+  assert.equal(runtimeWrites, 1,
+    "polling must not submit operator policy edits");
+  await getElement("reloadPiperRuntime").events.click();
+  assert.equal(getElement("piperRuntimeEnabled").checked, false,
+    "explicit runtime reload may discard unsaved edits");
+  assert.equal(getElement("piperIdleSeconds").value, 120);
   assert.ok(getElement("ttsQueueStatus").textContent.includes("4.0/16 MiB"),
     "queue status must show bounded preview memory usage");
   assert.match(getElement("ttsQueueStatus").textContent, /미리듣기 재사용 3건/,

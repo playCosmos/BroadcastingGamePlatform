@@ -414,7 +414,9 @@
     await updateQueue();
   });
 
-  function renderPiperRuntime(info) {
+  let piperRuntimeDirty = false;
+
+  function renderPiperRuntime(info, resetForm = false) {
     $("piperWorkerState").textContent = {
       READY: "준비됨", SYNTHESIZING: "합성 중", IDLE: "대기 (미실행)",
       CLOSED: "종료됨", DISABLED: "비활성", UNAVAILABLE: "엔진 없음"
@@ -427,9 +429,13 @@
     $("piperWorkerCounts").textContent = info.completed + " / " + info.failed;
     $("piperWorkerRecovery").textContent = info.launched + " / "
       + info.timedOut + " / " + info.fallbacks;
-    $("piperRuntimeEnabled").checked = Boolean(info.enabled);
-    $("piperIdleSeconds").value = info.idleSeconds;
-    const editable = info.available && !info.invalidSettings;
+    if (!piperRuntimeDirty || resetForm) {
+      $("piperRuntimeEnabled").checked = Boolean(info.enabled);
+      $("piperIdleSeconds").value = info.idleSeconds;
+      piperRuntimeDirty = false;
+    }
+    // Disabling an existing policy remains possible if host Python vanishes.
+    const editable = !info.invalidSettings;
     $("piperRuntimeEnabled").disabled = !editable;
     $("piperIdleSeconds").disabled = !editable;
     $("savePiperRuntime").disabled = !editable;
@@ -449,7 +455,12 @@
     }
   }
 
-  $("reloadPiperRuntime").addEventListener("click", loadPiperRuntime);
+  $("piperRuntimeEnabled").addEventListener("change", () => { piperRuntimeDirty = true; });
+  $("piperIdleSeconds").addEventListener("input", () => { piperRuntimeDirty = true; });
+  $("reloadPiperRuntime").addEventListener("click", async () => {
+    piperRuntimeDirty = false;
+    await loadPiperRuntime();
+  });
   $("savePiperRuntime").addEventListener("click", async () => {
     const enabled = $("piperRuntimeEnabled").checked;
     const idleSeconds = Number($("piperIdleSeconds").value);
@@ -459,11 +470,13 @@
     }
     $("savePiperRuntime").disabled = true;
     try {
-      renderPiperRuntime(await json("/api/v1/tts/piper/runtime", {
+      const saved = await json("/api/v1/tts/piper/runtime", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled, idleSeconds })
-      }));
+      });
+      piperRuntimeDirty = false;
+      renderPiperRuntime(saved, true);
       $("piperRuntimeStatus").textContent =
         "워커 운영 설정을 저장했습니다. 실행 중이던 모델은 해제됩니다.";
     } catch (error) {

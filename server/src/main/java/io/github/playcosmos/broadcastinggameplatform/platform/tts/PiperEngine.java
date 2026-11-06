@@ -107,26 +107,28 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
     /** Administrator policy: Python executable is operator-owned, never accepted via API. */
     public RuntimeInfo configureRuntime(boolean enabled, int idleSeconds)
         throws IOException {
-        PiperWarmWorker prior;
         synchronized (coldLifecycle) {
             if (closed) throw new IllegalStateException("Piper engine closed");
             var next = new PiperRuntimeSettingsStore.Settings(enabled, idleSeconds);
             if (enabled && warmPython == null)
                 throw new IllegalArgumentException("Piper Python environment not configured");
+            // Only publish a replacement after the previous worker is fully
+            // terminated. Holding the lifecycle lock prevents close() from
+            // returning before retirement or overlapping two warm workers.
             PiperWarmWorker replacement = enabled
                 ? new PiperWarmWorker(warmPython, TimeUnit.SECONDS.toNanos(idleSeconds))
                 : null;
             try {
                 runtimeSettings.save(next);
+                PiperWarmWorker prior = warmWorker;
+                if (prior != null) prior.close();
+                warmWorker = replacement;
+                fallbackCount.set(0);
             } catch (IOException | RuntimeException failure) {
                 if (replacement != null) replacement.close();
                 throw failure;
             }
-            prior = warmWorker;
-            warmWorker = replacement;
-            fallbackCount.set(0);
         }
-        if (prior != null) prior.close();
         return runtime();
     }
 
