@@ -76,11 +76,24 @@ final class PiperWarmWorker implements AutoCloseable {
     private final long requestNanos;
     private final Thread reaper;
     private volatile Process process;
-    private Path model;
+    private volatile Path model;
     private Path config;
     private String fingerprint;
-    private long lastUsedNanos;
+    private volatile long lastUsedNanos;
     private volatile boolean closed;
+    private volatile boolean active;
+    private volatile long launched;
+    private volatile long completed;
+    private volatile long failed;
+    private volatile long timedOut;
+    private volatile long lastStartupMs;
+    private volatile long lastSynthMs;
+    private volatile long totalSynthMs;
+
+    /** No executable path, PID or user speech leaves this private subprocess boundary. */
+    record Metrics(String state, String model, Long rssKiB,
+                   long launched, long completed, long failed, long timedOut,
+                   long lastStartupMs, long lastSynthMs, long averageSynthMs) {}
 
     PiperWarmWorker(Path python) {
         this(python, IDLE_NANOS);
@@ -132,26 +145,27 @@ final class PiperWarmWorker implements AutoCloseable {
         }
         long deadline = System.nanoTime() + requestNanos;
         if (process == null) {
-            process = new ProcessBuilder(
-                python.toString(), "-I", "-u", "-c", SCRIPT,
-                requestedModel.toString(), requestedConfig.toString())
-                .redirectError(ProcessBuilder.Redirect.DISCARD).start();
-            model = requestedModel;
-            config = requestedConfig;
-            fingerprint = nextFingerprint;
-            // close() may run concurrently with a blocked native startup.
-            // A process created after its initial shutdown snapshot must not
-            // survive by escaping the shutdown path.
-            if (closed) {
-                terminate();
-                throw new IllegalStateException("Piper worker closed");
-            }
+            long starting = System.nanoTime();
             try {
+                process = new ProcessBuilder(
+                    python.toString(), "-I", "-u", "-c", SCRIPT,
+                    requestedModel.toString(), requestedConfig.toString())
+                    .redirectError(ProcessBuilder.Redirect.DISCARD).start();
+                model = requestedModel;
+                config = requestedConfig;
+                fingerprint = nextFingerprint;
+                // Shutdown can race a native startup. Do not leave the
+                // subprocess alive after close() has been requested.
+                if (closed) throw new IllegalStateException("Piper worker closed");
                 int ready = boundedIO(() -> process.getInputStream().read(), deadline);
                 if (ready != 'R') throw new IOException("Piper worker startup failed");
-            } catch (Exception failed) {
+                launched++;
+                lastStartupMs = TimeUnit.NANOSECONDS.toMillis(
+                    System.nanoTime() - starting);
+            } catch (Exception startupFailure) {
+                failed++;
                 terminate();
-                throw failed;
+                throw startupFailure;
             }
         }
         // Fixed field order and JSON escaping via Gson rather than interpolating
@@ -163,6 +177,8 @@ final class PiperWarmWorker implements AutoCloseable {
         byte[] command = (request.toString() + "\n").getBytes(StandardCharsets.UTF_8);
         if (command.length > 8 * 1024)
             throw new IllegalArgumentException("Piper command exceeds size limit");
+        long synthesisStarted = System.nanoTime();
+        active = true;
         try {
             boundedIO(() -> {
                 process.getOutputStream().write(command);
@@ -173,10 +189,17 @@ final class PiperWarmWorker implements AutoCloseable {
                 process.getInputStream()), deadline);
             if (closed) throw new IOException("Piper worker stopped during synthesis");
             lastUsedNanos = System.nanoTime();
+            completed++;
+            lastSynthMs = TimeUnit.NANOSECONDS.toMillis(
+                lastUsedNanos - synthesisStarted);
+            totalSynthMs += lastSynthMs;
             return response;
-        } catch (Exception failed) {
+        } catch (Exception problem) {
+            failed++;
             terminate();
-            throw failed;
+            throw problem;
+        } finally {
+            active = false;
         }
     }
 
@@ -201,6 +224,7 @@ final class PiperWarmWorker implements AutoCloseable {
             if (remaining == 0) throw new TimeoutException("Piper deadline");
             return task.get(remaining, TimeUnit.NANOSECONDS);
         } catch (TimeoutException timeout) {
+            timedOut++;
             task.cancel(true);
             worker.interrupt();
             terminate();
@@ -227,6 +251,36 @@ final class PiperWarmWorker implements AutoCloseable {
     }
 
     boolean isClosed() { return closed; }
+
+    Metrics metrics() {
+        Process current = process;
+        boolean alive = current != null && current.isAlive();
+        Path modelSnapshot = model;
+        String currentModel = modelSnapshot == null || !alive ? null
+            : modelSnapshot.getFileName().toString().replaceFirst("\\.onnx$", "");
+        String state = closed ? "CLOSED"
+            : !alive ? "IDLE" : active ? "SYNTHESIZING" : "READY";
+        Long rss = alive ? residentKiB(current.pid()) : null;
+        return new Metrics(state, currentModel, rss, launched,
+            completed, failed, timedOut, lastStartupMs, lastSynthMs,
+            completed == 0 ? 0L : totalSynthMs / completed);
+    }
+
+    private static Long residentKiB(long pid) {
+        // Linux /proc provides reliable per-child resident memory. A missing
+        // provider (including native Windows) is reported as unknown.
+        try {
+            Path proc = Path.of("/proc", Long.toString(pid), "status");
+            for (String line : Files.readAllLines(proc, StandardCharsets.UTF_8)) {
+                if (line.startsWith("VmRSS:")) {
+                    return Long.parseLong(line.substring(6).trim().split("\\s+")[0]);
+                }
+            }
+        } catch (IOException | RuntimeException unsupported) {
+            // Do not guess native memory from JVM process size.
+        }
+        return null;
+    }
 
     // Package-private observability for native soak/crash/cleanup tests only;
     // do not expose process IDs or native memory to the HTTP API.

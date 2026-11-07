@@ -192,6 +192,33 @@ public final class TtsService implements AutoCloseable {
         return voiceProfiles.delete(name);
     }
 
+    private PiperEngine piperEngine() {
+        return engines.stream().filter(PiperEngine.class::isInstance)
+            .map(PiperEngine.class::cast).findFirst().orElse(null);
+    }
+
+    public PiperEngine.RuntimeInfo piperRuntime() {
+        PiperEngine engine = piperEngine();
+        return engine == null ? new PiperEngine.RuntimeInfo(
+            false, false, false, 60, "UNAVAILABLE", null, null,
+            0, 0, 0, 0, 0, 0, 0, 0) : engine.runtime();
+    }
+
+    public PiperEngine.RuntimeInfo configurePiperRuntime(
+        boolean enabled, int idleSeconds
+    ) throws IOException {
+        PiperEngine engine = piperEngine();
+        if (engine == null) throw new IllegalStateException("Piper engine unavailable");
+        return engine.configureRuntime(enabled, idleSeconds);
+    }
+
+    public PiperEngine.RuntimeInfo releasePiperRuntime() {
+        PiperEngine engine = piperEngine();
+        if (engine == null) throw new IllegalStateException("Piper engine unavailable");
+        engine.releaseRuntime();
+        return engine.runtime();
+    }
+
     private TtsVoicePackStore requiredPackStore() {
         if (voicePacks == null) throw new IllegalStateException("pack management unavailable");
         return voicePacks;

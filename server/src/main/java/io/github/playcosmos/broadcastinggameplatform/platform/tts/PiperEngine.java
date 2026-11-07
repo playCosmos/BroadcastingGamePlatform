@@ -18,6 +18,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Stream;
 
 /**
@@ -32,13 +33,23 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
     private static final int MAX_WAV_BYTES = 5 * 1024 * 1024;
     private final Path voicesDirectory;
     private final TtsVoicePackStore packStore;
-    private final PiperWarmWorker warmWorker;
+    private final Path warmPython;
+    private final PiperRuntimeSettingsStore runtimeSettings;
+    private volatile PiperWarmWorker warmWorker;
+    private final AtomicLong fallbackCount = new AtomicLong();
     private final Runnable beforeColdLaunch;
     private final Object coldLifecycle = new Object();
     private final Set<Process> activeColdProcesses = new HashSet<>();
     private volatile boolean closed;
     private volatile Map<String, ModelVoice> catalog = Map.of();
     private volatile long cachedAt;
+
+    public record RuntimeInfo(
+        boolean available, boolean enabled, boolean invalidSettings,
+        int idleSeconds, String state, String model, Long rssKiB,
+        long launched, long completed, long failed, long timedOut,
+        long fallbacks, long lastStartupMs, long lastSynthMs, long averageSynthMs
+    ) {}
 
     record ModelVoice(TtsService.Voice voice, Path model, Path config,
         Integer speaker) {}
@@ -62,29 +73,93 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
         this.voicesDirectory = voicesDirectory.toAbsolutePath().normalize();
         this.packStore = packStore;
         this.beforeColdLaunch = Objects.requireNonNull(beforeColdLaunch);
-        this.warmWorker = warmPython == null ? null : new PiperWarmWorker(warmPython);
+        this.warmPython = warmPython;
+        Path parent = this.voicesDirectory.getParent();
+        Path root = parent != null && "tts".equals(parent.getFileName().toString())
+            ? parent.getParent() : parent;
+        this.runtimeSettings = new PiperRuntimeSettingsStore(
+            Objects.requireNonNull(root, "application root"), warmPython != null);
+        var policy = runtimeSettings.get();
+        this.warmWorker = warmPython != null && policy.enabled()
+            ? new PiperWarmWorker(warmPython,
+                TimeUnit.SECONDS.toNanos(policy.idleSeconds())) : null;
+    }
+
+    public RuntimeInfo runtime() {
+        var policy = runtimeSettings.get();
+        PiperWarmWorker current = warmWorker;
+        PiperWarmWorker.Metrics metrics = current == null ? null : current.metrics();
+        return new RuntimeInfo(warmPython != null, !closed && current != null,
+            runtimeSettings.invalid(), policy.idleSeconds(),
+            closed ? "CLOSED" : metrics == null ? "DISABLED" : metrics.state(),
+            metrics == null ? null : metrics.model(),
+            metrics == null ? null : metrics.rssKiB(),
+            metrics == null ? 0L : metrics.launched(),
+            metrics == null ? 0L : metrics.completed(),
+            metrics == null ? 0L : metrics.failed(),
+            metrics == null ? 0L : metrics.timedOut(),
+            fallbackCount.get(),
+            metrics == null ? 0L : metrics.lastStartupMs(),
+            metrics == null ? 0L : metrics.lastSynthMs(),
+            metrics == null ? 0L : metrics.averageSynthMs());
+    }
+
+    /** Administrator policy: Python executable is operator-owned, never accepted via API. */
+    public RuntimeInfo configureRuntime(boolean enabled, int idleSeconds)
+        throws IOException {
+        synchronized (coldLifecycle) {
+            if (closed) throw new IllegalStateException("Piper engine closed");
+            var next = new PiperRuntimeSettingsStore.Settings(enabled, idleSeconds);
+            if (enabled && warmPython == null)
+                throw new IllegalArgumentException("Piper Python environment not configured");
+            // Only publish a replacement after the previous worker is fully
+            // terminated. Holding the lifecycle lock prevents close() from
+            // returning before retirement or overlapping two warm workers.
+            PiperWarmWorker replacement = enabled
+                ? new PiperWarmWorker(warmPython, TimeUnit.SECONDS.toNanos(idleSeconds))
+                : null;
+            try {
+                runtimeSettings.save(next);
+                PiperWarmWorker prior = warmWorker;
+                if (prior != null) prior.close();
+                warmWorker = replacement;
+                fallbackCount.set(0);
+            } catch (IOException | RuntimeException failure) {
+                if (replacement != null) replacement.close();
+                throw failure;
+            }
+        }
+        return runtime();
+    }
+
+    /** Release resident model without modifying the persisted runtime policy. */
+    public void releaseRuntime() {
+        PiperWarmWorker current = warmWorker;
+        if (current != null) current.invalidate();
     }
 
     @Override public String id() { return "piper"; }
 
     @Override public synchronized void invalidateVoiceCatalog() {
         cachedAt = 0;
-        if (warmWorker != null) warmWorker.invalidate();
+        PiperWarmWorker current = warmWorker;
+        if (current != null) current.invalidate();
     }
 
     @Override public void close() {
         List<Process> active;
+        PiperWarmWorker resident;
         synchronized (coldLifecycle) {
             if (closed) return;
             closed = true;
-            // Every cold process is registered under this same lock at start.
-            // New starts are impossible after this snapshot.
             active = List.copyOf(activeColdProcesses);
+            resident = warmWorker;
+            warmWorker = null;
         }
         try {
             for (Process process : active) TtsProcessCleanup.terminate(process);
         } finally {
-            if (warmWorker != null) warmWorker.close();
+            if (resident != null) resident.close();
         }
     }
 
@@ -93,7 +168,8 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
     }
 
     boolean warmWorkerRunning() {
-        return warmWorker != null && warmWorker.running();
+        PiperWarmWorker current = warmWorker;
+        return current != null && current.running();
     }
 
     @Override
@@ -211,7 +287,8 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
         String filename = selected.model().getFileName().toString();
         String stem = filename.substring(0, filename.length() - 5);
         if (packStore != null && !packStore.allowed(stem)) {
-            if (warmWorker != null) warmWorker.invalidate();
+            PiperWarmWorker revocationWorker = warmWorker;
+            if (revocationWorker != null) revocationWorker.invalidate();
             throw new IllegalArgumentException("Piper voice pack unavailable");
         }
         // Re-check the trust boundary after discovery, before execution.
@@ -225,34 +302,34 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
         }
         double lengthScale = Math.max(.65, Math.min(1.8,
             1.0 - rate * .045));
-        if (warmWorker != null) {
+        PiperWarmWorker current = warmWorker;
+        if (current != null) {
             try {
-                return scalePcm16Wav(warmWorker.synthesize(
+                return scalePcm16Wav(current.synthesize(
                     selected.model(), selected.config(), text,
                     selected.speaker(), lengthScale), volume);
             } catch (Exception | LinkageError failure) {
-                // Shutdown must not start a new cold subprocess after the
-                // resident one has deliberately been terminated.
-                if (warmWorker.isClosed()) {
-                    throw new IllegalStateException("Piper engine closed");
+                // Shutdown/configuration changes cannot launch a cold fallback.
+                if (closed || current.isClosed() || current != warmWorker) {
+                    throw new IllegalStateException("Piper engine closed or reconfigured");
                 }
-                // Recover by returning to the proven per-request CLI. Never
-                // retry using a pack revoked while a worker was running.
-                warmWorker.invalidate();
+                // A crash may fall back only if the model remains authorized.
+                current.invalidate();
                 if (packStore != null && !packStore.allowed(stem)) {
                     throw new IllegalArgumentException("Piper voice pack unavailable");
                 }
+                fallbackCount.incrementAndGet();
                 System.err.println("[tts] Piper warm worker failed; using cold fallback: "
                     + failure.getClass().getSimpleName());
             }
         }
         // Default one-shot path already checked the managed pack above.
         // Only a warm-worker failure needs a fresh fallback-boundary recheck.
-        return synthesizeCold(selected, text, rate, volume, warmWorker != null);
+        return synthesizeCold(selected, text, rate, volume, current);
     }
 
     private byte[] synthesizeCold(ModelVoice selected, String text, int rate,
-                                  int volume, boolean recheckPack) throws Exception {
+                                  int volume, PiperWarmWorker fallbackFrom) throws Exception {
         // close() can race with warm-worker fallback before reaching here;
         // the final launch below is always fenced under coldLifecycle.
         if (closed) throw new IllegalStateException("Piper engine closed");
@@ -277,7 +354,7 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
             // On fallback, validate again after a failed warm attempt. Avoid
             // double-hashing every default one-shot MANAGED request. Never
             // hold the shutdown lock during potentially slow model hashing.
-            if (recheckPack && packStore != null) {
+            if (fallbackFrom != null && packStore != null) {
                 String name = selected.model().getFileName().toString();
                 String stem = name.substring(0, name.length() - 5);
                 if (!packStore.allowed(stem)) {
@@ -287,6 +364,9 @@ public final class PiperEngine implements TtsService.TtsEngine, AutoCloseable {
             Process process;
             synchronized (coldLifecycle) {
                 if (closed) throw new IllegalStateException("Piper engine closed");
+                // Reconfiguration and cold subprocess launch share the lifecycle lock.
+                if (fallbackFrom != null && fallbackFrom != warmWorker)
+                    throw new IllegalStateException("Piper worker reconfigured");
                 process = new ProcessBuilder(command)
                     .redirectOutput(ProcessBuilder.Redirect.DISCARD)
                     .redirectError(ProcessBuilder.Redirect.DISCARD)

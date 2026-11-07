@@ -17,6 +17,15 @@ async function scenario(mode) {
   let packVerified = 0;
   let packMode = "LEGACY";
   let packState = "UNMANAGED";
+  let runtimeWrites = 0;
+  let runtimeReleases = 0;
+  let piperRuntime = {
+    available: true, enabled: true, invalidSettings: false,
+    idleSeconds: 60, state: "READY", model: "en_US-lessac-low",
+    rssKiB: 240612, launched: 1, completed: 5, failed: 0,
+    timedOut: 0, fallbacks: 0, lastStartupMs: 1300,
+    lastSynthMs: 110, averageSynthMs: 115
+  };
   let profileDeletes = 0;
   let serverProfiles = [{
     name: "Unavailable", voiceId: "missing/Old", rate: -3, volume: 40
@@ -72,6 +81,24 @@ async function scenario(mode) {
       return 1;
     },
     fetch: async (url, options = {}) => {
+      if (url === "/api/v1/tts/piper/runtime") {
+        if (options.method === "PUT") {
+          const changed = JSON.parse(options.body);
+          assert.equal(typeof changed.enabled, "boolean");
+          assert.ok(Number.isInteger(changed.idleSeconds));
+          piperRuntime = { ...piperRuntime, ...changed, state: "IDLE",
+            rssKiB: null, model: null };
+          runtimeWrites++;
+        }
+        return respond({ ...piperRuntime });
+      }
+      if (url === "/api/v1/tts/piper/runtime/release") {
+        assert.equal(options.method, "POST");
+        runtimeReleases++;
+        piperRuntime = { ...piperRuntime, state: "IDLE",
+          rssKiB: null, model: null };
+        return respond({ ...piperRuntime });
+      }
       if (url === "/api/v1/tts/packs/verify") {
         packVerified++;
         return respond({ model: "test-voice", match: true });
@@ -154,7 +181,25 @@ async function scenario(mode) {
   };
   const source = fs.readFileSync(path.join(__dirname, "tts-admin.js"), "utf8");
   vm.runInNewContext(source, sandbox, { filename: "tts-admin.js" });
-  for (let i = 0; i < 32; i++) await Promise.resolve();
+  // Startup performs several authenticated reads in sequence, including
+  // the optional native runtime panel. Drain those async hops deterministically.
+  for (let i = 0; i < 128; i++) await Promise.resolve();
+  assert.match(getElement("piperWorkerMemory").textContent, /235.0 MiB/,
+    "live Piper child RSS must appear in worker monitor");
+  assert.match(getElement("piperWorkerLatency").textContent, /115ms/,
+    "Piper average synthesis latency must be visible");
+  await getElement("releasePiperRuntime").events.click();
+  assert.equal(runtimeReleases, 1, "release must call authenticated runtime API");
+  assert.equal(getElement("piperWorkerMemory").textContent, "측정 불가",
+    "unknown process memory must not be guessed");
+  getElement("piperRuntimeEnabled").checked = false;
+  getElement("piperIdleSeconds").value = "120";
+  await getElement("savePiperRuntime").events.click();
+  assert.equal(runtimeWrites, 1, "operator settings must use an authenticated PUT");
+  assert.equal(getElement("piperRuntimeEnabled").checked, false);
+  assert.equal(getElement("piperIdleSeconds").value, 120);
+  assert.equal(getElement("releasePiperRuntime").disabled, true,
+    "disabled runtime must not offer a spurious release");
   assert.equal(getElement("packModel").value, "test-voice",
     "local Piper inventory should appear in admin catalog");
   assert.equal(getElement("packRegister").disabled, false);
@@ -201,9 +246,24 @@ async function scenario(mode) {
   assert.equal(profileDeletes, 1);
   assert.equal(getElement("profileChoice").value, "Unavailable",
     "deleting a profile must update the select list");
+  // Queue refreshes must not overwrite in-progress administrator edits.
+  getElement("piperRuntimeEnabled").checked = true;
+  getElement("piperRuntimeEnabled").events.change();
+  getElement("piperIdleSeconds").value = "222";
+  getElement("piperIdleSeconds").events.input();
   const submit = getElement("speechForm").events.submit;
   assert.equal(typeof submit, "function", "voice form submit must be bound");
   await submit({ preventDefault() {} });
+  assert.equal(getElement("piperRuntimeEnabled").checked, true,
+    "queue polling must preserve unsaved enablement");
+  assert.equal(getElement("piperIdleSeconds").value, "222",
+    "queue polling must preserve unsaved runtime timeout");
+  assert.equal(runtimeWrites, 1,
+    "polling must not submit operator policy edits");
+  await getElement("reloadPiperRuntime").events.click();
+  assert.equal(getElement("piperRuntimeEnabled").checked, false,
+    "explicit runtime reload may discard unsaved edits");
+  assert.equal(getElement("piperIdleSeconds").value, 120);
   assert.ok(getElement("ttsQueueStatus").textContent.includes("4.0/16 MiB"),
     "queue status must show bounded preview memory usage");
   assert.match(getElement("ttsQueueStatus").textContent, /미리듣기 재사용 3건/,

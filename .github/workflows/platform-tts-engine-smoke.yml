@@ -48,6 +48,12 @@ jobs:
         working-directory: server
         run: mvn --batch-mode --no-transfer-progress -DskipTests package
 
+      - name: Verify Piper policy safety and worker startup telemetry
+        working-directory: server
+        run: |
+          java -cp 'target/test-classes:target/classes:target/probe-dependencies/*' \
+            io.github.playcosmos.broadcastinggameplatform.platform.tts.PiperRuntimeSettingsProbe
+
       - name: Check local Piper registry integrity and symlink boundary
         working-directory: server
         run: |
