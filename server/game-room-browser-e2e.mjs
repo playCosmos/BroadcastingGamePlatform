@@ -2319,22 +2319,74 @@ async function telephoneBrowserAcceptance(base,coop){
     check((await backend(host,"/drawing/telephone","GET",null,tokens[0]))
         .data.presentation.revision===hotkeyStart.data.presentation.revision,
         "right key at final step cannot cross album boundary");
+    // An enabled control from the PREVIOUS cursor is not proof that the
+    // current presenter transaction has settled. Check the exact rendered
+    // cursor and the presenter's unlocked, focused controls before sending
+    // another synthetic hotkey. No arbitrary sleep or command retries.
+    async function hotkeyPresenterUi(){
+        return cdp.eval(host,`(()=>{
+            const selected=(selector,attribute)=>{
+                const item=document.querySelector(selector);
+                return item?Number(item.dataset[attribute]):null;
+            };
+            const enabled=id=>{
+                const item=document.getElementById(id);
+                return Boolean(item && !item.disabled);
+            };
+            return {
+                album:selected('#telephoneAlbumTimeline button[aria-current="true"]',
+                    'album'),
+                step:selected('#telephoneStageTimeline button[aria-current="step"]',
+                    'step'),
+                focused:document.body.classList.contains('telephoneFocus') &&
+                    document.activeElement?.id==='telephoneReveal',
+                shortcutHelpVisible:
+                    !document.getElementById('telephoneShortcutHelp').hidden,
+                autoplayEnabled:enabled('telephoneAutoplay'),
+                stepPrevEnabled:enabled('telephoneStepPrev'),
+                stepNextEnabled:enabled('telephoneStepNext'),
+                albumPrevEnabled:enabled('telephoneAlbumPrev'),
+                albumNextEnabled:enabled('telephoneAlbumNext')
+            };
+        })()`);
+    }
     async function waitHotkeyCursor(album,step,increment,label){
-        await poll(async()=>{
-            const x=await backend(host,"/drawing/telephone","GET",
-                null,tokens[0]);
-            return x.data.presentation.albumIndex===album &&
-                x.data.presentation.stepIndex===step &&
-                x.data.presentation.revision===
-                    hotkeyStart.data.presentation.revision+increment;
-        },label);
-        await poll(async()=>await cdp.eval(host,
-            "document.getElementById('telephoneStepPrev').disabled===false"+
-            " || document.getElementById('telephoneStepNext').disabled===false"+
-            " || document.getElementById('telephoneAlbumNext').disabled===false"),
-            label+" presenter transaction settles");
-        // Cursor commit can precede the presenter's finally() unlock.
-        await nap(180);
+        const expectedRevision=hotkeyStart.data.presentation.revision+increment;
+        try{
+            await poll(async()=>{
+                const x=await backend(host,"/drawing/telephone","GET",
+                    null,tokens[0]);
+                return x.data.presentation.albumIndex===album &&
+                    x.data.presentation.stepIndex===step &&
+                    x.data.presentation.revision===expectedRevision;
+            },label);
+            await poll(async()=>{
+                const ui=await hotkeyPresenterUi();
+                return ui.album===album && ui.step===step && ui.focused &&
+                    ui.shortcutHelpVisible && ui.autoplayEnabled;
+            },label+" presenter cursor rendered and transaction unlocked");
+        }catch(error){
+            // Failure-only, secret-free evidence. Deliberately exclude bearer,
+            // room/member IDs, messages, speech text, IPs and canvas contents.
+            let authoritative={available:false};
+            let ui={available:false};
+            try{
+                const x=await backend(host,"/drawing/telephone","GET",
+                    null,tokens[0]);
+                authoritative={
+                    status:x.status,
+                    album:x.data?.presentation?.albumIndex??null,
+                    step:x.data?.presentation?.stepIndex??null,
+                    revision:x.data?.presentation?.revision??null,
+                    playing:Boolean(x.data?.playback?.playing)
+                };
+            }catch{}
+            try{ui=await hotkeyPresenterUi();}catch{}
+            throw Error(String(error)+" telephoneHotkey="+JSON.stringify({
+                expected:{album,step,revision:expectedRevision},
+                authoritative,ui
+            }));
+        }
     }
     await sendTelephoneHotkey(host,"ArrowLeft");
     await waitHotkeyCursor(2,1,1,
