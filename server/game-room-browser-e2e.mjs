@@ -2518,8 +2518,24 @@ async function telephoneBrowserAcceptance(base,coop){
         };
         return true;
     })()`);
-    // A true old-room WebSocket chat event starts an independent asynchronous
-    // room-A chat read. Hold it while the browser adopts room B.
+    // Start the room-state GET BEFORE holding the separate WebSocket chat
+    // read. Holding chat first can accidentally suspend refresh() itself,
+    // whose refreshBusy guard then defers the 'online' refresh indefinitely.
+    // This test needs two genuinely independent in-flight old-member reads.
+    await cdp.eval(switcher,"window.dispatchEvent(new Event('online'));true");
+    try{
+        await poll(async()=>await cdp.eval(switcher,
+            "window.__oldMemberRefreshPaused===true"),
+            "previous room GET can remain pending during a new admission");
+    }catch(error){
+        // Failure-only state, no room identifiers, tokens, chat or text.
+        const pending=await cdp.eval(switcher,
+            "({oldRoomGetHeld:Boolean(window.__oldMemberRefreshPaused),"+
+            "oldChatHeld:Boolean(window.__oldChatHeld)})");
+        throw Error(String(error)+" pendingOldReads="+JSON.stringify(pending));
+    }
+    // A true old-room WebSocket event now starts an independent asynchronous
+    // chat GET while the original room-state GET is still suspended.
     const oldChatPosted=await backend(host,"/chat","POST",{
         messageId:"r13t-old-chat-"+Date.now().toString(36),
         text:"Private old-room chat must never appear in new room"
@@ -2529,10 +2545,6 @@ async function telephoneBrowserAcceptance(base,coop){
     await poll(async()=>await cdp.eval(switcher,
         "window.__oldChatHeld===true"),
         "old-room WebSocket triggers an independently pending chat GET",12000);
-    await cdp.eval(switcher,"window.dispatchEvent(new Event('online'));true");
-    await poll(async()=>await cdp.eval(switcher,
-        "window.__oldMemberRefreshPaused===true"),
-        "previous room GET can remain pending during a new admission");
     await fill(switcher,"createForm",{
         name:"Session switch isolation",
         displayName:"New hosted identity",
