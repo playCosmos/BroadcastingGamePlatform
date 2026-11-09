@@ -521,7 +521,16 @@
     notice("참가 역할을 변경했습니다.");await refresh();
   }));
   $("start").addEventListener("click",()=>operation(async({send,current})=>{
-    const next=await send("/yacht/start","POST",{});
+    let next;
+    try {
+      next=await send("/yacht/start","POST",{});
+    } catch(error) {
+      // A failed reply can follow a committed OPEN_LOBBY -> PLAYING freeze.
+      // Read the authoritative state before offering host recovery, without
+      // waiting for the periodic poll or retrying the state-changing POST.
+      if(current())await refresh().catch(()=>{});
+      throw error;
+    }
     if(!current())return;
     state=next;
     notice("경기가 시작됐습니다.");render();await refresh();
