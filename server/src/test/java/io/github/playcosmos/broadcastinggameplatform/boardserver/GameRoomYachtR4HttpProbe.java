@@ -10,6 +10,9 @@ import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomReal
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomYachtService;
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
+import java.io.ByteArrayOutputStream;
+import java.io.PrintStream;
+import java.nio.charset.StandardCharsets;
 import java.net.ServerSocket;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -475,19 +478,42 @@ public final class GameRoomYachtR4HttpProbe {
             try(var connection=db.open();var statement=connection.createStatement()){
                 statement.execute(trigger);
             }
+            var capturedErrors=new ByteArrayOutputStream();
+            var originalErr=System.err;
             try {
-                var failed=request(client,base,ROOT+"/yacht/start","POST",
-                    "{}",host,null);
-                require(failed.statusCode()==500,
-                    "R15h injected "+stage+" database failure is not hidden");
-                require(!failed.body().contains("probe forced"),
-                    "R15h injected SQL error detail not exposed over HTTP");
+                try(var capture=new PrintStream(
+                    capturedErrors,true,StandardCharsets.UTF_8)) {
+                    System.setErr(capture);
+                    try {
+                        var failed=request(client,base,ROOT+"/yacht/start","POST",
+                            "{}",host,null);
+                        require(failed.statusCode()==500,
+                            "R15h injected "+stage+" database failure is not hidden");
+                        require(!failed.body().contains("probe forced"),
+                            "R15h injected SQL error detail not exposed over HTTP");
+                    } finally {
+                        System.setErr(originalErr);
+                    }
+                }
             } finally {
                 try(var connection=db.open();
                     var statement=connection.createStatement()){
                     statement.execute("DROP TRIGGER IF EXISTS probe_yacht_start_failure");
                 }
             }
+            // Only a fixed stage and SQLite numeric result code may be logged.
+            // The SQL driver message contains the synthetic 'probe forced' text
+            // and must never escape into operator telemetry.
+            String diagnostic=capturedErrors.toString(StandardCharsets.UTF_8);
+            require(diagnostic.lines().filter(line -> line.matches(
+                "\\[game-room-yacht\\] start_sql_failure stage="
+                    + stage + " code=-?[0-9]+")).count()==1,
+                "R15h "+stage+" failure reports one bounded SQL stage/code");
+            require(!diagnostic.contains("probe forced")
+                && !diagnostic.contains(roomId)
+                && !diagnostic.contains(host)
+                && !diagnostic.contains(guest),
+                "R15h "+stage+" diagnostic contains no credential or raw SQL");
             var interrupted=asState(request(client,base,ROOT+"/yacht","GET",
                 null,host,null));
             require("PLAYING".equals(interrupted.getAsJsonObject("room")
