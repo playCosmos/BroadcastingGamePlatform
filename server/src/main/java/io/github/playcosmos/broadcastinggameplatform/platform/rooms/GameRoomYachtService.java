@@ -59,80 +59,96 @@ public final class GameRoomYachtService {
      * changes are possible in the meantime.
      */
     public State start(String token) throws SQLException {
-        var principal = access.authenticate(token);
-        if (!principal.isHost()) throw new GameRoomAccessService.Forbidden(
-            "only current host may start Yacht");
-        var frozen = rooms.write(connection -> {
-            var current = access.requireSession(connection,token);
-            if (!current.isHost() || !current.memberId().equals(principal.memberId())) {
-                throw new GameRoomAccessService.Forbidden("host changed");
-            }
-            Room room = GameRoomService.read(connection,principal.roomId());
-            requireYacht(room);
-            Member host = requireMember(room,principal.memberId());
-            if (host.status()!=MemberStatus.JOINED) {
-                throw new GameRoomAccessService.Forbidden("host is offline");
-            }
-            if (room.state() != RoomState.OPEN_LOBBY
-                && room.state() != RoomState.PLAYING) {
-                throw new GameRoomService.RoomConflict("Yacht room cannot start");
-            }
-            List<Member> players = playingMembers(room);
-            if (players.size() < 2 || players.size() > 6) {
-                throw new GameRoomService.RoomConflict("Yacht needs 2 to 6 players");
-            }
-            if (room.state() == RoomState.OPEN_LOBBY) {
-                if (players.stream().anyMatch(m -> m.status() != MemberStatus.JOINED
-                    || !m.ready())) {
-                    throw new GameRoomService.RoomConflict(
-                        "all connected players must be ready");
+        // Fixed stage labels only. Never log member/room IDs, tokens, raw SQL,
+        // statement bindings, exception messages or native match state.
+        String stage = "authenticate";
+        try {
+            var principal = access.authenticate(token);
+            if (!principal.isHost()) throw new GameRoomAccessService.Forbidden(
+                "only current host may start Yacht");
+            stage = "freeze";
+            var frozen = rooms.write(connection -> {
+                var current = access.requireSession(connection,token);
+                if (!current.isHost() || !current.memberId().equals(principal.memberId())) {
+                    throw new GameRoomAccessService.Forbidden("host changed");
                 }
-                try(var stmt=connection.prepareStatement("""
-                    UPDATE game_room SET state='PLAYING' WHERE room_id=? AND version=?
-                    """)) {
-                    stmt.setString(1,room.roomId());
-                    stmt.setLong(2,room.version());
-                    if(stmt.executeUpdate()!=1)
-                        throw new GameRoomService.RoomConflict("room version conflict");
+                Room room = GameRoomService.read(connection,principal.roomId());
+                requireYacht(room);
+                Member host = requireMember(room,principal.memberId());
+                if (host.status()!=MemberStatus.JOINED) {
+                    throw new GameRoomAccessService.Forbidden("host is offline");
                 }
-                rooms.bump(connection,room);
-            }
-            return room;
-        });
-        String existing = linkedCode(frozen.roomId());
-        if (existing == null) {
-            var players = new ArrayList<YachtRoomService.Participant>();
-            for (Member m : playingMembers(frozen)) {
-                players.add(new YachtRoomService.Participant(
-                    m.memberId(),m.displayName()));
-            }
-            var created = yacht.create("common-yacht-" + frozen.roomId(),
-                frozen.roomName(),players);
-            if (created.match().phase() == YachtMatchState.Phase.READY) {
-                yacht.command(created.roomCode(),"activate",
-                    new YachtRoomService.Command(
-                        "common-start-" + frozen.roomId(),0,null,null));
-            }
-            // A concurrent retry can reach this commit after the first
-            // writer; SQLite prevents two different native match bindings.
-            rooms.write(connection -> {
-                try(var stmt=connection.prepareStatement("""
-                    INSERT INTO game_room_yacht_link(room_id,yacht_room_code,created_at)
-                    VALUES(?,?,?) ON CONFLICT(room_id) DO NOTHING
-                    """)) {
-                    stmt.setString(1,frozen.roomId());
-                    stmt.setString(2,created.roomCode());
-                    stmt.setString(3,Instant.now().toString());
-                    stmt.executeUpdate();
+                if (room.state() != RoomState.OPEN_LOBBY
+                    && room.state() != RoomState.PLAYING) {
+                    throw new GameRoomService.RoomConflict("Yacht room cannot start");
                 }
-                return null;
+                List<Member> players = playingMembers(room);
+                if (players.size() < 2 || players.size() > 6) {
+                    throw new GameRoomService.RoomConflict("Yacht needs 2 to 6 players");
+                }
+                if (room.state() == RoomState.OPEN_LOBBY) {
+                    if (players.stream().anyMatch(m -> m.status() != MemberStatus.JOINED
+                        || !m.ready())) {
+                        throw new GameRoomService.RoomConflict(
+                            "all connected players must be ready");
+                    }
+                    try(var stmt=connection.prepareStatement("""
+                        UPDATE game_room SET state='PLAYING' WHERE room_id=? AND version=?
+                        """)) {
+                        stmt.setString(1,room.roomId());
+                        stmt.setLong(2,room.version());
+                        if(stmt.executeUpdate()!=1)
+                            throw new GameRoomService.RoomConflict("room version conflict");
+                    }
+                    rooms.bump(connection,room);
+                }
+                return room;
             });
-            String actual = linkedCode(frozen.roomId());
-            if (!created.roomCode().equals(actual)) {
-                throw new GameRoomService.RoomConflict("Yacht binding conflict");
+            stage = "lookup";
+            String existing = linkedCode(frozen.roomId());
+            if (existing == null) {
+                var players = new ArrayList<YachtRoomService.Participant>();
+                for (Member m : playingMembers(frozen)) {
+                    players.add(new YachtRoomService.Participant(
+                        m.memberId(),m.displayName()));
+                }
+                stage = "create";
+                var created = yacht.create("common-yacht-" + frozen.roomId(),
+                    frozen.roomName(),players);
+                if (created.match().phase() == YachtMatchState.Phase.READY) {
+                    stage = "activate";
+                    yacht.command(created.roomCode(),"activate",
+                        new YachtRoomService.Command(
+                            "common-start-" + frozen.roomId(),0,null,null));
+                }
+                // A concurrent retry can reach this commit after the first
+                // writer; SQLite prevents two different native match bindings.
+                stage = "link";
+                rooms.write(connection -> {
+                    try(var stmt=connection.prepareStatement("""
+                        INSERT INTO game_room_yacht_link(room_id,yacht_room_code,created_at)
+                        VALUES(?,?,?) ON CONFLICT(room_id) DO NOTHING
+                        """)) {
+                        stmt.setString(1,frozen.roomId());
+                        stmt.setString(2,created.roomCode());
+                        stmt.setString(3,Instant.now().toString());
+                        stmt.executeUpdate();
+                    }
+                    return null;
+                });
+                stage = "verify";
+                String actual = linkedCode(frozen.roomId());
+                if (!created.roomCode().equals(actual)) {
+                    throw new GameRoomService.RoomConflict("Yacht binding conflict");
+                }
             }
+            stage = "state";
+            return state(token);
+        } catch (SQLException failed) {
+            System.err.println("[game-room-yacht] start_sql_failure stage="
+                + stage + " code=" + failed.getErrorCode());
+            throw failed;
         }
-        return state(token);
     }
 
     /**
