@@ -93,6 +93,10 @@ function correlate(jvmRecords,wssRecords,minDuration=86400,
         const peak=k=>j.length?Math.max(...j.map(r=>r.counters[k])):null;
         const cpuDelta=j.length>=2?
             round(j.at(-1).counters.cpuMs-j[0].counters.cpuMs):null;
+        // A failed authenticated snapshot has no latency measurement.
+        // Never represent an entirely failed WSS window as a healthy 0 ms.
+        const observedP95=w.filter(r=>r.snapshotP95Ms!==null)
+            .map(r=>r.snapshotP95Ms);
         windows.push({
             index:i+1,
             fromUtc:new Date(from).toISOString(),
@@ -104,9 +108,8 @@ function correlate(jvmRecords,wssRecords,minDuration=86400,
             wssSnapshots:w.reduce((acc,r)=>acc+r.snapshots,0),
             wssCleanCloses:w.reduce((acc,r)=>acc+r.cleanCloses,0),
             wssFailures,
-            worstRoundP95SnapshotMs:w.length?
-                Math.max(...w.filter(r=>r.snapshotP95Ms!==null)
-                    .map(r=>r.snapshotP95Ms),0):null,
+            worstRoundP95SnapshotMs:observedP95.length?
+                Math.max(...observedP95):null,
             jvmWorkingSetPeakBytes:peak("workingSetBytes"),
             jvmPrivateBytesPeak:peak("privateBytes"),
             jvmThreadPeak:peak("threadCount"),
@@ -162,6 +165,33 @@ function selfTest(){
         !errors.wssAllProbeChecksPassed&&
         errors.failuresWithinSharedWindow===1,
         "complete report with observed failures was mislabeled clean");
+    // Every round may authenticate members but fail its WSS snapshot.
+    // Complete failure-bearing reports remain valid evidence, but they
+    // provide no latency samples and must never be summarized as 0 ms.
+    const failSnapshots=row=>{
+        row.snapshots=0;row.cleanCloses=0;
+        row.snapshotFailures=row.memberChecks;row.closeFailures=0;
+        row.snapshotP50Ms=null;row.snapshotP95Ms=null;
+    };
+    const noSnapshots=wssFixture(120,20);
+    for(const row of noSnapshots.slice(1,-1))failSnapshots(row);
+    noSnapshots.at(-1).failures=4*(noSnapshots.length-2);
+    const none=correlate(jvmFixture(120,20),noSnapshots,60,60);
+    requireFact(none.wssTotalFailures===28&&
+        !none.wssAllProbeChecksPassed&&
+        none.windows.every(w=>w.wssRounds>0&&
+            w.worstRoundP95SnapshotMs===null),
+        "zero successful snapshots must have unknown latency, not 0 ms");
+    const mixed=wssFixture(120,20);
+    for(const row of mixed.slice(1,-1))
+        if(row.elapsedSeconds>=60)failSnapshots(row);
+    mixed.at(-1).failures=16;
+    const partial=correlate(jvmFixture(120,20),mixed,60,60);
+    requireFact(partial.windows.length===2&&
+        partial.windows[0].worstRoundP95SnapshotMs===60&&
+        partial.windows[1].worstRoundP95SnapshotMs===null&&
+        partial.wssTotalFailures===16,
+        "valid earlier latency must not mask later all-failed window");
     const mutations=[
         (j,w)=>j.pop(),
         (j,w)=>w.pop(),
@@ -203,7 +233,7 @@ function selfTest(){
     catch{defaultRejected=true;}
     requireFact(defaultRejected,"short reports accepted as full-day evidence");
     console.log("GAME_ROOM_R14Q_FIELD_CORRELATION_SELFTEST_PASSED cases="+
-        (mutations.length+4));
+        (mutations.length+6));
 }
 async function main(){
     const argv=process.argv.slice(2);
