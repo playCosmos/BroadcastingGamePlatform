@@ -232,6 +232,9 @@ public final class GameRoomYachtR4HttpProbe {
                 +" spectator=midgame host_ready=true"
                 +" roll_hold_score=player_authorized dice=server_only"
                 +" duplicate_command=stable recovery=sqlite");
+            // R15h failure-mode acceptance: every persisted two-phase
+            // start boundary must remain recoverable using the same host.
+            interruptedYachtStartRecoveryAcceptance(client,base,access,db);
             sixPlayerCapacityAcceptance(client,base,access);
         } finally {
             if(web!=null)web.close();
@@ -412,6 +415,114 @@ public final class GameRoomYachtR4HttpProbe {
         System.out.println("GAME_ROOM_R14Z_SIX_PLAYER_CAPACITY_PASSED"+
             " players=6 spectators=14 members=20 turns=78"+
             " scoresPerPlayer=13 postGame=true");
+    }
+
+    /**
+     * Deterministic failure injection for all three persisted Yacht startup
+     * stages. Uses disposable probe SQLite only; no runtime fault hooks.
+     * A failed start may leave the shared room PLAYING without a native link.
+     * The same host must be able to resume without creating a second match.
+     */
+    private static void interruptedYachtStartRecoveryAcceptance(
+        HttpClient client, URI base, GameRoomAccessService access,
+        BoardGameDatabase db) throws Exception {
+        for (String stage : new String[]{"create","activate","link"}) {
+            String name="R15h interrupted startup "+stage;
+            var hosted=request(client,base,ROOT+"/hosted","POST",
+                "{\"gameId\":\"yacht\",\"name\":\""+name+
+                "\",\"displayName\":\"Host\",\"hostSeat\":\"PLAYER\""+
+                ",\"maxPlayers\":2,\"maxRoomMembers\":3}",
+                null,"BGP_ADMIN_SESSION=yacht-r4-admin");
+            require(hosted.statusCode()==201,
+                "R15h creates isolated room for "+stage);
+            var created=parse(hosted);
+            String host=created.get("token").getAsString();
+            String roomId=created.getAsJsonObject("room").get("roomId").getAsString();
+            String invite=access.invite(host,
+                io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                    .GameRoomModels.SeatRole.PLAYER,1,Duration.ofMinutes(10))
+                .token();
+            var admitted=request(client,base,ROOT+"/join","POST",
+                "{\"invitation\":\""+invite+"\",\"displayName\":\"Guest\"}",
+                null,null);
+            require(admitted.statusCode()==201,
+                "R15h guest joins before "+stage+" failure");
+            String guest=parse(admitted).get("token").getAsString();
+            require(request(client,base,ROOT+"/me/ready","POST",
+                "{\"ready\":true}",host,null).statusCode()==200
+                && request(client,base,ROOT+"/me/ready","POST",
+                    "{\"ready\":true}",guest,null).statusCode()==200,
+                "R15h players ready before "+stage+" failure");
+            String trigger=switch(stage) {
+                case "create" -> """
+                    CREATE TRIGGER probe_yacht_start_failure
+                    BEFORE INSERT ON yacht_match
+                    BEGIN SELECT RAISE(ABORT,'probe forced create failure'); END
+                    """;
+                case "activate" -> """
+                    CREATE TRIGGER probe_yacht_start_failure
+                    BEFORE UPDATE OF phase ON yacht_match
+                    WHEN NEW.phase='ACTIVE'
+                    BEGIN SELECT RAISE(ABORT,'probe forced activate failure'); END
+                    """;
+                case "link" -> """
+                    CREATE TRIGGER probe_yacht_start_failure
+                    BEFORE INSERT ON game_room_yacht_link
+                    BEGIN SELECT RAISE(ABORT,'probe forced link failure'); END
+                    """;
+                default -> throw new AssertionError("unknown failure stage");
+            };
+            try(var connection=db.open();var statement=connection.createStatement()){
+                statement.execute(trigger);
+            }
+            try {
+                var failed=request(client,base,ROOT+"/yacht/start","POST",
+                    "{}",host,null);
+                require(failed.statusCode()==500,
+                    "R15h injected "+stage+" database failure is not hidden");
+                require(!failed.body().contains("probe forced"),
+                    "R15h injected SQL error detail not exposed over HTTP");
+            } finally {
+                try(var connection=db.open();
+                    var statement=connection.createStatement()){
+                    statement.execute("DROP TRIGGER IF EXISTS probe_yacht_start_failure");
+                }
+            }
+            var interrupted=asState(request(client,base,ROOT+"/yacht","GET",
+                null,host,null));
+            require("PLAYING".equals(interrupted.getAsJsonObject("room")
+                .get("state").getAsString())
+                && (!interrupted.has("yacht") || interrupted.get("yacht").isJsonNull()),
+                "R15h "+stage+" failure leaves retriable frozen room without link");
+            var resumed=asState(request(client,base,ROOT+"/yacht/start","POST",
+                "{}",host,null));
+            var match=resumed.getAsJsonObject("yacht").getAsJsonObject("match");
+            require("ACTIVE".equals(match.get("phase").getAsString())
+                && match.getAsJsonArray("players").size()==2,
+                "R15h host resumes "+stage+" with original player roster");
+            String matchId=match.get("id").getAsString();
+            var repeated=asState(request(client,base,ROOT+"/yacht/start","POST",
+                "{}",host,null));
+            require(matchId.equals(repeated.getAsJsonObject("yacht")
+                .getAsJsonObject("match").get("id").getAsString()),
+                "R15h repeated "+stage+" recovery reuses same match");
+            try(var connection=db.open();
+                var nativeRooms=connection.prepareStatement(
+                    "SELECT COUNT(*) FROM yacht_room WHERE create_key=?");
+                var link=connection.prepareStatement(
+                    "SELECT COUNT(*) FROM game_room_yacht_link WHERE room_id=?")){
+                nativeRooms.setString(1,"common-yacht-"+roomId);
+                link.setString(1,roomId);
+                try(var nativeRows=nativeRooms.executeQuery();
+                    var linkRows=link.executeQuery()){
+                    require(nativeRows.next() && nativeRows.getInt(1)==1
+                        && linkRows.next() && linkRows.getInt(1)==1,
+                        "R15h "+stage+" recovery has exactly one match and link");
+                }
+            }
+        }
+        System.out.println("GAME_ROOM_R15H_PARTIAL_START_RECOVERY_PASSED"
+            +" stages=create,activate,link match=unique auth=host");
     }
 
     private static com.google.gson.JsonObject parse(HttpResponse<String> response) {
