@@ -127,8 +127,10 @@ check(js.includes('type:"room.subscribe",token:credential,afterSequence:lastMemb
 // while a frozen player is in DISCONNECTED_GRACE (whose ready flag is reset).
 // Exercise the actual UI disable expression, not a duplicate hand-written
 // implementation, and preserve stricter pregame admission checks.
-const startDisabledExpression=js.match(/\\$\\("start"\\)\\.disabled\\s*=\\s*([\\s\\S]*?);/);
+const startDisabledExpression=js.match(/\$\("start"\)\.disabled\s*=\s*([\s\S]*?);/);
 check(Boolean(startDisabledExpression),"Yacht host start predicate exists");
+check(js.includes('$("start").hidden = !host || (!pregame && !interruptedStart);'),
+  "only the host sees the normal-start or interrupted-recovery control");
 const startDisabled=Function("joined","room","pregame",
   "return ("+startDisabledExpression[1]+");");
 const activePlayer={seatRole:"PLAYER",status:"JOINED",ready:true};
@@ -142,7 +144,7 @@ check(startDisabled(true,{playerCount:2,members:[activePlayer,waitingPlayer]},tr
 check(!startDisabled(true,{playerCount:2,members:[activePlayer,gracePlayer]},false),
   "interrupted PLAYING host retry remains enabled with grace player");
 check(startDisabled(false,{playerCount:2,members:[activePlayer,gracePlayer]},false),
-  "non-connected or non-host UI cannot retry");
+  "disconnected host cannot retry");
 check(startDisabled(true,{playerCount:1,members:[activePlayer,gracePlayer]},false),
   "recovery cannot proceed with fewer than two occupied player seats");
 check(!startDisabled(true,occupied,true),
