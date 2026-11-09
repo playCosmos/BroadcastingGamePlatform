@@ -123,5 +123,31 @@ check(js.includes('data.type.startsWith("yacht.")')
     "Yacht and room events share one socket but preserve independent cursors");
 check(js.includes('type:"room.subscribe",token:credential,afterSequence:lastMemberSequence'),
     "single socket must remain authenticated and reconnect with room cursor");
+// R15h: The backend allows a host to finish an interrupted PLAYING start
+// while a frozen player is in DISCONNECTED_GRACE (whose ready flag is reset).
+// Exercise the actual UI disable expression, not a duplicate hand-written
+// implementation, and preserve stricter pregame admission checks.
+const startDisabledExpression=js.match(/\$\("start"\)\.disabled\s*=\s*([\s\S]*?);/);
+check(Boolean(startDisabledExpression),"Yacht host start predicate exists");
+check(js.includes('$("start").hidden = !host || (!pregame && !interruptedStart);'),
+  "only the host sees the normal-start or interrupted-recovery control");
+const startDisabled=Function("joined","room","pregame",
+  "return ("+startDisabledExpression[1]+");");
+const activePlayer={seatRole:"PLAYER",status:"JOINED",ready:true};
+const gracePlayer={seatRole:"PLAYER",status:"DISCONNECTED_GRACE",ready:false};
+const waitingPlayer={seatRole:"PLAYER",status:"JOINED",ready:false};
+const occupied={playerCount:2,members:[activePlayer,activePlayer]};
+check(startDisabled(true,{playerCount:2,members:[activePlayer,gracePlayer]},true),
+  "lobby start rejects disconnected grace and unready player");
+check(startDisabled(true,{playerCount:2,members:[activePlayer,waitingPlayer]},true),
+  "lobby start still requires every joined player ready");
+check(!startDisabled(true,{playerCount:2,members:[activePlayer,gracePlayer]},false),
+  "interrupted PLAYING host retry remains enabled with grace player");
+check(startDisabled(false,{playerCount:2,members:[activePlayer,gracePlayer]},false),
+  "disconnected host cannot retry");
+check(startDisabled(true,{playerCount:1,members:[activePlayer,gracePlayer]},false),
+  "recovery cannot proceed with fewer than two occupied player seats");
+check(!startDisabled(true,occupied,true),
+  "fully ready joined lobby remains startable");
 console.log("YACHT_R4_CLIENT_PASSED checks=" + checks
   + " independent=true token=per-tab role=member chat=safe");

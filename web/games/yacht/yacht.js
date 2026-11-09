@@ -250,9 +250,12 @@
     $("inviteRole").querySelector('option[value="PLAYER"]').disabled = !pregame;
     if (!pregame) $("inviteRole").value = "SPECTATOR";
     $("start").hidden = !host || (!pregame && !interruptedStart);
+    // Ready/connected is a lobby admission rule, not a recovery rule.
+    // During an interrupted PLAYING startup, disconnected-grace players
+    // retain their frozen seats; the server authorizes host-only retry.
     $("start").disabled = !joined || room.playerCount < 2
-      || room.members.some(m => m.seatRole === "PLAYER"
-        && (m.status !== "JOINED" || !m.ready));
+      || (pregame && room.members.some(m => m.seatRole === "PLAYER"
+        && (m.status !== "JOINED" || !m.ready)));
     $("ready").hidden = !pregame || me?.seatRole !== "PLAYER";
     $("ready").textContent = me?.ready ? "준비 취소" : "준비하기";
     $("changeSeat").hidden = !pregame;

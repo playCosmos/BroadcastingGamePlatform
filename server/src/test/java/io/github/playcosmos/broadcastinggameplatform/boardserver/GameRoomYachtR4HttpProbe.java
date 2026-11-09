@@ -520,6 +520,20 @@ public final class GameRoomYachtR4HttpProbe {
                 .get("state").getAsString())
                 && (!interrupted.has("yacht") || interrupted.get("yacht").isJsonNull()),
                 "R15h "+stage+" failure leaves retriable frozen room without link");
+            if ("link".equals(stage)) {
+                // The shared room is already PLAYING, so the disconnected
+                // player retains their seat but disconnect clears ready.
+                // Host retry must recover the same frozen two-player match.
+                var graceful=access.disconnect(guest,Duration.ofMinutes(5));
+                require(graceful.playerCount()==2
+                    && graceful.members().stream().anyMatch(m ->
+                        m.seatRole()==io.github.playcosmos.broadcastinggameplatform
+                            .platform.rooms.GameRoomModels.SeatRole.PLAYER
+                        && m.status()==io.github.playcosmos.broadcastinggameplatform
+                            .platform.rooms.GameRoomModels.MemberStatus.DISCONNECTED_GRACE
+                        && !m.ready()),
+                    "R15h grace player still occupies frozen match seat");
+            }
             var resumed=asState(request(client,base,ROOT+"/yacht/start","POST",
                 "{}",host,null));
             var match=resumed.getAsJsonObject("yacht").getAsJsonObject("match");
