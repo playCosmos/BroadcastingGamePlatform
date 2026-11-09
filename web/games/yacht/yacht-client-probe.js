@@ -149,5 +149,72 @@ check(startDisabled(true,{playerCount:1,members:[activePlayer,gracePlayer]},fals
   "recovery cannot proceed with fewer than two occupied player seats");
 check(!startDisabled(true,occupied,true),
   "fully ready joined lobby remains startable");
-console.log("YACHT_R4_CLIENT_PASSED checks=" + checks
-  + " independent=true token=per-tab role=member chat=safe");
+// A failed Yacht start can commit PLAYING before the HTTP 500 response.
+// Test the actual shipped click callback, without copying its implementation.
+// Each synthetic failed POST must trigger at most one authoritative GET.
+const startClick=js.match(/\$\("start"\)\.addEventListener\("click",\(\)=>operation\(async\(\{send,current\}\)=>\{([\s\S]*?)\n  \}\)\);/);
+check(Boolean(startClick),"Yacht start click handler remains testable");
+function invokeStart({send,refresh,current=()=>true,notice=()=>{},render=()=>{}}) {
+  const execute=Function("send","refresh","current","notice","render",
+    "let state=null;return (async()=>{"+startClick[1]+"})().then(()=>state);");
+  return execute(send,refresh,current,notice,render);
+}
+async function startFailureReconciliationAcceptance(){
+  const original=new Error("synthetic startup 500");
+  const order=[];
+  try{
+    await invokeStart({
+      send:async(path,method)=>{
+        check(path==="/yacht/start" && method==="POST",
+          "start still calls the same authenticated POST");
+        order.push("post");throw original;
+      },
+      refresh:async()=>{order.push("get");}
+    });
+    throw Error("failed start unexpectedly succeeded");
+  }catch(error){
+    check(error===original,"failed start retains the original HTTP error");
+  }
+  check(order.join(",")==="post,get",
+    "failed start performs one immediate GET without retrying the POST");
+  const stale=[];
+  try{
+    await invokeStart({
+      send:async()=>{stale.push("post");throw original;},
+      current:()=>false,
+      refresh:async()=>{stale.push("get");}
+    });
+    throw Error("stale start unexpectedly succeeded");
+  }catch(error){
+    check(error===original,"stale session retains original rejected command");
+  }
+  check(stale.join(",")==="post",
+    "replaced membership cannot refresh using the stale start callback");
+  const badRead=[];
+  try{
+    await invokeStart({
+      send:async()=>{badRead.push("post");throw original;},
+      refresh:async()=>{badRead.push("get");throw Error("GET failed");}
+    });
+    throw Error("failed read masked failed start");
+  }catch(error){
+    check(error===original,"GET failure must not override the original POST error");
+  }
+  check(badRead.join(",")==="post,get",
+    "failed GET cannot trigger a second start POST");
+  const success=[];
+  const next={room:{state:"PLAYING"},yacht:{match:{phase:"ACTIVE"}}};
+  const committed=await invokeStart({
+    send:async()=>{success.push("post");return next;},
+    refresh:async()=>{success.push("get");},
+    render:()=>{success.push("render");},
+    notice:()=>{success.push("notice");}
+  });
+  check(committed===next && success.join(",")==="post,notice,render,get",
+    "successful start preserves state/render and exactly one GET");
+  console.log("YACHT_R4_CLIENT_PASSED checks=" + checks
+    + " independent=true token=per-tab role=member chat=safe");
+}
+startFailureReconciliationAcceptance().catch(error=>{
+  console.error(error);process.exitCode=1;
+});
