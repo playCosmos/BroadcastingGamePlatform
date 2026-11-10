@@ -4227,7 +4227,9 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
                                 serverYachtCommandSqlFailure:null
                     }));
             }
-            check(true,"R15a browser-authenticated roll "+turn);
+            check(next.status===200 && next.data.yacht?.match?.rolls===1
+                && next.data.yacht.match.version>match.version,
+                "R15a browser-authenticated roll "+turn);
         }
         const prediction=next.data.yacht?.availableScores?.points||{};
         const category=categories.find(key=>
