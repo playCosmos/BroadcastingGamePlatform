@@ -19,6 +19,15 @@ let server,chrome,cdp,userDir,tlsProxy,checks=0;
 // Failure diagnostics are an allowlist of fixed start stages and numeric SQL
 // driver codes. Never print Java stderr, SQL, room IDs or member credentials.
 let serverYachtStartSqlFailure=null,serverYachtStartSqlFailureSequence=0;
+// Only an API command SQL error is useful for the first-roll failure.
+// Keep numeric driver code only, and never retain a Java exception/log body.
+let serverYachtCommandSqlFailure=null,serverYachtCommandSqlFailureSequence=0;
+const safeYachtCommandSqlFailure=line=>{
+    const match=/^\[game-room-yacht\] api_sql_failure operation=command code=(-?\d{1,10})$/.exec(line);
+    if(!match)return null;
+    const code=Number(match[1]);
+    return Number.isSafeInteger(code)?{code}:null;
+};
 const safeYachtStartSqlFailure=line=>{
     const match=/^\[game-room-yacht\] start_sql_failure stage=(authenticate|freeze|lookup|create|activate|link|verify|state) code=(-?\d{1,10})$/.exec(line);
     if(!match)return null;
@@ -72,9 +81,20 @@ check(safeYachtStartSqlFailure(
     safeYachtStartSqlFailure(
     "[game-room-yacht] start_sql_failure stage=link code=not-a-number")===null,
     "R15h rejects non-allowlisted or secret-containing server log lines");
+check(safeYachtCommandSqlFailure(
+    "[game-room-yacht] api_sql_failure operation=command code=517")?.code===517,
+    "R15a captures numeric command SQL code");
+check(safeYachtCommandSqlFailure(
+    "[game-room-yacht] api_sql_failure operation=start code=517")===null
+    && safeYachtCommandSqlFailure(
+        "[game-room-yacht] api_sql_failure operation=command code=517 token")===null
+    && safeYachtCommandSqlFailure(
+        "[game-room-yacht] api_sql_failure operation=command code=not-a-number")===null,
+    "R15a rejects unrelated or secret-bearing command diagnostic");
 async function launchServer(){
     let output="";
     serverYachtStartSqlFailure=null;serverYachtStartSqlFailureSequence=0;
+    serverYachtCommandSqlFailure=null;serverYachtCommandSqlFailureSequence=0;
     server=spawn("java",["-cp",cp,
         "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomBrowserE2EServer"],
         {cwd:process.cwd(),stdio:["ignore","pipe","pipe"],windowsHide:true});
@@ -94,9 +114,15 @@ async function launchServer(){
             pending=lines.pop().slice(-4096);
             for(const line of lines){
                 const diagnostic=safeYachtStartSqlFailure(line);
-                if(!diagnostic)continue;
-                serverYachtStartSqlFailure=diagnostic;
-                serverYachtStartSqlFailureSequence++;
+                if(diagnostic){
+                    serverYachtStartSqlFailure=diagnostic;
+                    serverYachtStartSqlFailureSequence++;
+                }
+                const commandFailure=safeYachtCommandSqlFailure(line);
+                if(commandFailure){
+                    serverYachtCommandSqlFailure=commandFailure;
+                    serverYachtCommandSqlFailureSequence++;
+                }
             }
         });
     }
@@ -4155,6 +4181,7 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
                 " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
                 " && !document.getElementById('roll').disabled"),
                 "R15a active player "+index+" has an idle, current turn UI");
+            const sqlFailureCountBeforeRoll=serverYachtCommandSqlFailureSequence;
             await click(page,"roll");
             try {
                 next=await poll(async()=>{
@@ -4177,14 +4204,29 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
                     turn,index,dom,http:snapshot.status,
                     serverTurns:current?.completedTurns,
                     serverRolls:current?.rolls,serverVersion:current?.version,
-                    browserHttpErrors:cdp.network.slice(-5).map(x=>x.status)
+                    browserHttpErrors:cdp.network.slice(-5).map(x=>x.status),
+                    // Only a fresh allowlisted numeric SQL code for this roll.
+                    commandSqlFailureSinceClick:
+                        serverYachtCommandSqlFailureSequence>sqlFailureCountBeforeRoll?
+                            serverYachtCommandSqlFailure:null
                 }));
             }
         } else {
+            const sqlFailureCountBeforeRoll=serverYachtCommandSqlFailureSequence;
             next=await backend(page,"/yacht/roll","POST",{
                 commandId:"r15a-browser-roll-"+turn,
                 expectedVersion:match.version
             },token);
+            if(next.status!==200 || next.data.yacht?.match?.rolls!==1
+                || !(next.data.yacht.match.version>match.version)){
+                throw Error("R15a browser-authenticated roll "+turn
+                    +"; sanitizedDiagnostic="+JSON.stringify({
+                        turn,httpStatus:next.status,
+                        commandSqlFailureSinceRequest:
+                            serverYachtCommandSqlFailureSequence>sqlFailureCountBeforeRoll?
+                                serverYachtCommandSqlFailure:null
+                    }));
+            }
             check(next.status===200 && next.data.yacht?.match?.rolls===1
                 && next.data.yacht.match.version>match.version,
                 "R15a browser-authenticated roll "+turn);
