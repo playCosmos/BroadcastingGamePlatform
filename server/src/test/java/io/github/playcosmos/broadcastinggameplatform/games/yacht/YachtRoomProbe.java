@@ -243,7 +243,7 @@ public final class YachtRoomProbe {
                 try (var writer = concurrent.prepareStatement("""
                     UPDATE yacht_match SET updated_at=? WHERE match_id=?
                     """)) {
-                    writer.setString(1,java.time.Instant.now().toString());
+                    writer.setString(1,"2099-01-01T00:00:00Z");
                     writer.setString(2,matchId);
                     require(writer.executeUpdate()==1,
                         "second SQLite connection commits after stale read");
@@ -252,7 +252,7 @@ public final class YachtRoomProbe {
                 try (var upgrade = stale.prepareStatement("""
                     UPDATE yacht_match SET updated_at=? WHERE match_id=?
                     """)) {
-                    upgrade.setString(1,java.time.Instant.now().toString());
+                    upgrade.setString(1,"2099-01-02T00:00:00Z");
                     upgrade.setString(2,matchId);
                     upgrade.executeUpdate();
                 } catch (SQLException failed) {
