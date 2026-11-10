@@ -192,10 +192,11 @@ function selfTest(){
             Date.parse(drifted[i].observedUtc)+delay*1000).toISOString();
     }
     drifted.at(-1).completedDurationSeconds+=288;
-    let driftAccepted=false;
-    try{analyze(drifted);}catch{driftAccepted=true;}
-    if(!driftAccepted)
-        fail("progressively delayed 24-hour observation was accepted");
+    let driftRejection="";
+    try{analyze(drifted);}
+    catch(error){driftRejection=String(error?.message||error);}
+    if(!driftRejection.includes("resource snapshot missed its scheduled observation window"))
+        fail("24-hour drift was not rejected by the schedule-lateness guard");
     const mutations=[
         x=>x.pop(),
         x=>x.splice(3,1),
