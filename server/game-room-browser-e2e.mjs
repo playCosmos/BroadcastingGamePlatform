@@ -78,9 +78,13 @@ async function launchServer(){
     server=spawn("java",["-cp",cp,
         "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomBrowserE2EServer"],
         {cwd:process.cwd(),stdio:["ignore","pipe","pipe"],windowsHide:true});
+    const fixtureServer=server;
     for(const stream of [server.stdout,server.stderr]){
         let pending="";
         stream.on("data",chunk=>{
+            // A retired JVM's pending stderr must not contaminate the next
+            // fixture's start-stage diagnosis after a server replacement.
+            if(server!==fixtureServer)return;
             const data=String(chunk);
             output+=data;
             if(output.length>30000)output=output.slice(-30000);
