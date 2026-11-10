@@ -11,6 +11,7 @@ import java.util.ConcurrentModificationException;
 import java.util.List;
 import java.util.NoSuchElementException;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -197,6 +198,8 @@ public final class YachtRoomProbe {
             require(broadcastFailure.events(another.roomCode(), 0).size() == 1,
                 "event is replayable after WebSocket outage");
 
+            verifyImmediateWriterReservation(db, participants);
+
             System.out.println("YACHT_Y2_PASSED checks=" + checks
                 + " two_player_turns=26 idempotency=durable"
                 + " concurrent=exclusive events=replayable"
@@ -208,6 +211,73 @@ public final class YachtRoomProbe {
                 });
             }
         }
+    }
+
+
+    /**
+     * Deterministic WAL read-then-write upgrade regression. A deferred Yacht
+     * command reads match state before invoking its RNG callback, allowing a
+     * competing JDBC writer to commit and invalidate the reader snapshot.
+     * BEGIN IMMEDIATE must instead hold the writer reservation from the first
+     * read through the command commit, without retrying the RNG.
+     */
+    private static void verifyImmediateWriterReservation(
+        BoardGameDatabase db, List<YachtRoomService.Participant> participants
+    ) throws Exception {
+        var setup = new YachtRoomService(db, () -> 1, (code, event) -> {});
+        var room = setup.create("snapshot0001", "Snapshot Upgrade Guard", participants);
+        var active = setup.command(room.roomCode(), "activate", cmd("snapshotstart", 0));
+        var writerAboutToExecute = new CountDownLatch(1);
+        var writerFinished = new CountDownLatch(1);
+        var writerError = new AtomicReference<Throwable>();
+        var writerThread = new AtomicReference<Thread>();
+        var rngCalls = new AtomicInteger();
+        var concurrent = new YachtRoomService(db, () -> {
+            if (rngCalls.getAndIncrement() == 0) {
+                var peer = Thread.ofVirtual().start(() -> {
+                    try (var connection = db.open();
+                         var statement = connection.prepareStatement("""
+                             UPDATE yacht_match SET updated_at=updated_at
+                             WHERE match_id=?
+                             """)) {
+                        statement.setString(1, active.match().id());
+                        writerAboutToExecute.countDown();
+                        statement.executeUpdate();
+                    } catch (Throwable failure) {
+                        writerError.compareAndSet(null, failure);
+                    } finally {
+                        writerFinished.countDown();
+                    }
+                });
+                writerThread.set(peer);
+                try {
+                    require(writerAboutToExecute.await(3, TimeUnit.SECONDS),
+                        "competing writer reached SQL execution");
+                    require(!writerFinished.await(600, TimeUnit.MILLISECONDS),
+                        "Yacht must hold writer reservation before RNG");
+                } catch (InterruptedException interrupted) {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException(interrupted);
+                }
+            }
+            return 1;
+        }, (code, event) -> {});
+        YachtRoomService.RoomState advanced;
+        try {
+            advanced = concurrent.command(room.roomCode(), "roll",
+                cmd("snapshotroll", active.match().version()));
+        } finally {
+            Thread peer = writerThread.get();
+            if (peer != null) peer.join(7000);
+        }
+        require(writerFinished.getCount() == 0 && writerError.get() == null,
+            "competing writer commits after Yacht completes");
+        require(advanced.match().version() == active.match().version() + 1
+            && advanced.match().rolls() == 1 && rngCalls.get() == 5,
+            "immediate transaction commits one roll without SQL snapshot failure");
+        require(setup.state(room.roomCode()).match().version()
+                == advanced.match().version(),
+            "competing writer cannot overwrite committed Yacht state");
     }
 
     private static YachtRoomService.Command cmd(String id, long version) {
