@@ -18,7 +18,7 @@ const cp=process.env.GAME_ROOM_PROBE_CLASSPATH
 let server,chrome,cdp,userDir,tlsProxy,checks=0;
 // Failure diagnostics are an allowlist of fixed start stages and numeric SQL
 // driver codes. Never print Java stderr, SQL, room IDs or member credentials.
-let serverYachtStartSqlFailures=[];
+let serverYachtStartSqlFailure=null,serverYachtStartSqlFailureSequence=0;
 const safeYachtStartSqlFailure=line=>{
     const match=/^\[game-room-yacht\] start_sql_failure stage=(authenticate|freeze|lookup|create|activate|link|verify|state) code=(-?\d{1,10})$/.exec(line);
     if(!match)return null;
@@ -74,7 +74,7 @@ check(safeYachtStartSqlFailure(
     "R15h rejects non-allowlisted or secret-containing server log lines");
 async function launchServer(){
     let output="";
-    serverYachtStartSqlFailures=[];
+    serverYachtStartSqlFailure=null;serverYachtStartSqlFailureSequence=0;
     server=spawn("java",["-cp",cp,
         "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomBrowserE2EServer"],
         {cwd:process.cwd(),stdio:["ignore","pipe","pipe"],windowsHide:true});
@@ -91,9 +91,8 @@ async function launchServer(){
             for(const line of lines){
                 const diagnostic=safeYachtStartSqlFailure(line);
                 if(!diagnostic)continue;
-                serverYachtStartSqlFailures.push(diagnostic);
-                if(serverYachtStartSqlFailures.length>16)
-                    serverYachtStartSqlFailures.shift();
+                serverYachtStartSqlFailure=diagnostic;
+                serverYachtStartSqlFailureSequence++;
             }
         });
     }
@@ -3743,7 +3742,7 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
         await poll(async()=>await cdp.eval(host,
             "document.getElementById('start').disabled===false"),
             "R15h room B can start two-player Yacht");
-        const sqlFailureCountBeforeStart=serverYachtStartSqlFailures.length;
+        const sqlFailureCountBeforeStart=serverYachtStartSqlFailureSequence;
         await click(host,"start");
         await poll(async()=>await cdp.eval(host,
             "document.getElementById('roomState').textContent==='PLAYING'"),
@@ -3799,8 +3798,9 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
                     // Fresh server-local, bounded stage and numeric code ONLY.
                     // null means no captured SQLException stage, not that
                     // the HTTP 500 has been explained or made harmless.
-                    startSqlFailureSinceClick:serverYachtStartSqlFailures
-                        .slice(sqlFailureCountBeforeStart).at(-1)||null,
+                    startSqlFailureSinceClick:
+                        serverYachtStartSqlFailureSequence>sqlFailureCountBeforeStart?
+                            serverYachtStartSqlFailure:null,
                     recentHttpStatuses:cdp.network.slice(-5).map(x=>
                         safeInt(x.status))
                 }));
