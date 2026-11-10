@@ -507,8 +507,11 @@ public final class GameRoomYachtR4HttpProbe {
             String diagnostic=capturedErrors.toString(StandardCharsets.UTF_8);
             require(diagnostic.lines().filter(line -> line.matches(
                 "\\[game-room-yacht\\] start_sql_failure stage="
-                    + stage + " code=-?[0-9]+")).count()==1,
-                "R15h "+stage+" failure reports one bounded SQL stage/code");
+                    + stage + " code=-?[0-9]+")).count()==1
+                && diagnostic.lines().filter(line -> line.matches(
+                    "\\[game-room-yacht\\] api_sql_failure operation=start"
+                        + " code=-?[0-9]+")).count()==1,
+                "R15h "+stage+" failure reports bounded start and API SQL codes");
             require(!diagnostic.contains("probe forced")
                 && !diagnostic.contains(roomId)
                 && !diagnostic.contains(host)
@@ -546,6 +549,69 @@ public final class GameRoomYachtR4HttpProbe {
             require(matchId.equals(repeated.getAsJsonObject("yacht")
                 .getAsJsonObject("match").get("id").getAsString()),
                 "R15h repeated "+stage+" recovery reuses same match");
+            if ("link".equals(stage)) {
+                // Real authenticated command failure, not a mocked handler.
+                // Before-update SQLite abort guarantees no roll has committed.
+                try(var connection=db.open();
+                    var statement=connection.createStatement()) {
+                    statement.execute("""
+                        CREATE TRIGGER probe_yacht_roll_sql_failure
+                        BEFORE UPDATE OF version ON yacht_match
+                        WHEN NEW.version > OLD.version
+                        BEGIN SELECT RAISE(ABORT,'probe forced roll failure'); END
+                        """);
+                }
+                long beforeVersion=match.get("version").getAsLong();
+                String rollBody="{\\"commandId\\":\\"r15h-roll-sql-probe\\","
+                    + "\\"expectedVersion\\":" + beforeVersion + "}";
+                var rollErrors=new ByteArrayOutputStream();
+                var previousErr=System.err;
+                try {
+                    try(var capture=new PrintStream(
+                        rollErrors,true,StandardCharsets.UTF_8)) {
+                        System.setErr(capture);
+                        try {
+                            var rejected=request(client,base,ROOT+"/yacht/roll",
+                                "POST",rollBody,host,null);
+                            require(rejected.statusCode()==500
+                                && rejected.body().contains("Yacht server error")
+                                && !rejected.body().contains("probe forced"),
+                                "R15a injected command SQL failure is generic HTTP 500");
+                        } finally { System.setErr(previousErr); }
+                    }
+                } finally {
+                    try(var connection=db.open();
+                        var statement=connection.createStatement()) {
+                        statement.execute(
+                            "DROP TRIGGER IF EXISTS probe_yacht_roll_sql_failure");
+                    }
+                }
+                String rollDiagnostic=rollErrors.toString(StandardCharsets.UTF_8);
+                require(rollDiagnostic.lines().filter(line -> line.matches(
+                    "\\[game-room-yacht\\] api_sql_failure operation=command"
+                        + " code=-?[0-9]+")).count()==1
+                    && !rollDiagnostic.contains("probe forced")
+                    && !rollDiagnostic.contains(roomId)
+                    && !rollDiagnostic.contains(host)
+                    && !rollDiagnostic.contains(guest),
+                    "R15a SQL failure exposes only bounded operation and code");
+                var afterFailure=asState(request(client,base,ROOT+"/yacht",
+                    "GET",null,host,null));
+                require(afterFailure.getAsJsonObject("yacht")
+                    .getAsJsonObject("match").get("version").getAsLong()
+                    ==beforeVersion,
+                    "R15a rejected roll did not commit a new version");
+                var rolled=asState(request(client,base,ROOT+"/yacht/roll",
+                    "POST",rollBody,host,null));
+                require(rolled.getAsJsonObject("yacht").getAsJsonObject("match")
+                    .get("version").getAsLong()==beforeVersion+1,
+                    "R15a retry of uncommitted roll commits one version");
+                var replay=asState(request(client,base,ROOT+"/yacht/roll",
+                    "POST",rollBody,host,null));
+                require(replay.getAsJsonObject("yacht").getAsJsonObject("match")
+                    .get("version").getAsLong()==beforeVersion+1,
+                    "R15a command replay remains idempotent");
+            }
             try(var connection=db.open();
                 var nativeRooms=connection.prepareStatement(
                     "SELECT COUNT(*) FROM yacht_room WHERE create_key=?");

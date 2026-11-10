@@ -1286,8 +1286,10 @@ public final class GameClientHttpServer implements AutoCloseable {
             sendJson(exchange,503,Map.of("error","Yacht membership unavailable"));
             return;
         }
+        String sqlOperation="other";
         try {
             if ("/yacht".equals(suffix) && "GET".equals(method)) {
+                sqlOperation="state";
                 sendJson(exchange,200,sharedYachtView(sharedYacht.state(token)));
                 return;
             }
@@ -1297,6 +1299,7 @@ public final class GameClientHttpServer implements AutoCloseable {
                 return;
             }
             if ("/yacht/start".equals(suffix)) {
+                sqlOperation="start";
                 readYachtBody(exchange,Set.of());
                 sendJson(exchange,200,sharedYachtView(sharedYacht.start(token)));
                 return;
@@ -1339,6 +1342,7 @@ public final class GameClientHttpServer implements AutoCloseable {
             }
             var command=new YachtRoomService.Command(commandId,
                 body.get("expectedVersion").getAsLong(),held,category);
+            sqlOperation="command";
             sendJson(exchange,200,sharedYachtView(
                 sharedYacht.command(token,action,command)));
         } catch (GameRoomAccessService.Forbidden denied) {
@@ -1350,6 +1354,10 @@ public final class GameClientHttpServer implements AutoCloseable {
         } catch (IllegalArgumentException | JsonParseException invalid) {
             sendJson(exchange,400,Map.of("error","invalid Yacht member action"));
         } catch (java.sql.SQLException failed) {
+            // Fixed operation class and numeric SQLite driver code only.
+            // Never log exception text, SQL, room/member IDs or credentials.
+            System.err.println("[game-room-yacht] api_sql_failure operation="
+                + sqlOperation + " code=" + failed.getErrorCode());
             sendJson(exchange,500,Map.of("error","Yacht server error"));
         }
     }
