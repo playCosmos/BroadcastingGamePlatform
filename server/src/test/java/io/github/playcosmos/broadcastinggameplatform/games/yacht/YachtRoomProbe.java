@@ -197,6 +197,8 @@ public final class YachtRoomProbe {
             require(broadcastFailure.events(another.roomCode(), 0).size() == 1,
                 "event is replayable after WebSocket outage");
 
+            verifyImmediateWriterReservation(db, participants);
+
             System.out.println("YACHT_Y2_PASSED checks=" + checks
                 + " two_player_turns=26 idempotency=durable"
                 + " concurrent=exclusive events=replayable"
@@ -208,6 +210,67 @@ public final class YachtRoomProbe {
                 });
             }
         }
+    }
+
+
+    /**
+     * A DEFERRED Yacht transaction reads its match before rolling. A second
+     * JDBC connection can then take the SQLite writer reservation, producing
+     * an unsafe WAL read-to-write upgrade. An IMMEDIATE transaction must keep
+     * that second writer out until the original mutation completes.
+     *
+     * The zero-timeout competing BEGIN is deterministic: it neither sleeps
+     * nor relies on JVM/Windows thread scheduling.
+     */
+    private static void verifyImmediateWriterReservation(
+        BoardGameDatabase db, List<YachtRoomService.Participant> participants
+    ) throws Exception {
+        var setup = new YachtRoomService(db, () -> 1, (code, event) -> {});
+        var room = setup.create("snapshot0001", "Snapshot Upgrade Guard", participants);
+        var active = setup.command(room.roomCode(), "activate", cmd("snapshotstart", 0));
+        var rngCalls = new AtomicInteger();
+        var competing = new YachtRoomService(db, () -> {
+            if (rngCalls.getAndIncrement() == 0) {
+                try (var connection = db.open();
+                     var control = connection.createStatement()) {
+                    control.execute("PRAGMA busy_timeout=0");
+                    boolean otherWriterAcquired = false;
+                    try {
+                        control.execute("BEGIN IMMEDIATE");
+                        otherWriterAcquired = true;
+                    } catch (java.sql.SQLException busy) {
+                        require((busy.getErrorCode() & 0xff) == 5,
+                            "competing writer rejected with SQLITE_BUSY");
+                    } finally {
+                        if (otherWriterAcquired) control.execute("ROLLBACK");
+                    }
+                    require(!otherWriterAcquired,
+                        "Yacht must acquire writer slot before reading match state");
+                } catch (java.sql.SQLException unexpected) {
+                    throw new IllegalStateException("Yacht writer guard probe failed",
+                        unexpected);
+                }
+            }
+            return 1;
+        }, (code, event) -> {});
+        var advanced = competing.command(room.roomCode(), "roll",
+            cmd("snapshotroll", active.match().version()));
+        require(advanced.match().version() == active.match().version() + 1
+            && advanced.match().rolls() == 1 && rngCalls.get() == 5,
+            "immediate mutation persists exactly one roll");
+        // After the native command commits, another physical JDBC writer must
+        // be free to mutate without leaked transactions or writer locks.
+        try (var connection = db.open();
+             var writer = connection.prepareStatement("""
+                 UPDATE yacht_match SET updated_at=updated_at WHERE match_id=?
+                 """)) {
+            writer.setString(1, active.match().id());
+            require(writer.executeUpdate() == 1,
+                "writer reservation released after native Yacht commit");
+        }
+        require(setup.state(room.roomCode()).match().version()
+                == advanced.match().version(),
+            "external write does not change committed Yacht version");
     }
 
     private static YachtRoomService.Command cmd(String id, long version) {
