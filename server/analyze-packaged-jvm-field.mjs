@@ -65,6 +65,13 @@ function analyze(records,minDurationSeconds=86400){
         const scheduled=Math.min(h.durationSeconds,i*h.intervalSeconds);
         if(s.elapsedSeconds<scheduled-0.1)
             fail("resource snapshot occurred before its scheduled interval");
+        // Count and consecutive-gap checks alone miss progressive drift:
+        // every poll can be slightly late while the last one is minutes
+        // past its intended schedule. Bound absolute lateness as in R14p,
+        // with a five-minute cap for sparse hourly observation intervals.
+        const maxLateness=Math.max(60,Math.min(2*h.intervalSeconds,300));
+        if(s.elapsedSeconds>scheduled+maxLateness)
+            fail("resource snapshot missed its scheduled observation window");
         const utc=Date.parse(s.observedUtc);
         if(previousUtc!==null && utc<previousUtc-10000)
             fail("wall clock moved backwards beyond ten seconds");
@@ -163,6 +170,33 @@ function selfTest(){
     if(analyze(normal,60).observedSamples!==7)fail("valid short fixture rejected");
     const field=fixture(86400,3600);
     if(analyze(field).observedSamples!==25)fail("24-hour acceptance fixture rejected");
+    // A bounded late collector is acceptable; it still spans the requested
+    // duration, keeps the exact expected sample count and valid UTC clocks.
+    const bounded=fixture();
+    for(const row of bounded.slice(2,-1)){
+        row.elapsedSeconds+=40;
+        row.observedUtc=new Date(Date.parse(row.observedUtc)+40000).toISOString();
+    }
+    bounded.at(-1).completedDurationSeconds+=40;
+    if(analyze(bounded,60).observedSamples!==7)
+        fail("bounded late JVM observations rejected");
+    // Adversarial 24-hour trace: a small per-round drift stays inside the
+    // original max-gap constraint, but shifts the final sample by minutes.
+    // Keep UTC and monotonic elapsed clocks mutually consistent so this
+    // is a scheduling-contract test, not just a clock-skew rejection.
+    const drifted=fixture(86400,60);
+    for(let i=1;i<drifted.length-1;i++){
+        const delay=(i-1)*0.2;
+        drifted[i].elapsedSeconds+=delay;
+        drifted[i].observedUtc=new Date(
+            Date.parse(drifted[i].observedUtc)+delay*1000).toISOString();
+    }
+    drifted.at(-1).completedDurationSeconds+=288;
+    let driftRejection="";
+    try{analyze(drifted);}
+    catch(error){driftRejection=String(error?.message||error);}
+    if(!driftRejection.includes("resource snapshot missed its scheduled observation window"))
+        fail("24-hour drift was not rejected by the schedule-lateness guard");
     const mutations=[
         x=>x.pop(),
         x=>x.splice(3,1),
@@ -201,7 +235,7 @@ function selfTest(){
     try{analyze(normal);}catch{premature=true;}
     if(!premature)fail("short fixture passed default 24-hour requirement");
     console.log("GAME_ROOM_R14O_FIELD_ANALYZER_SELFTEST_PASSED cases="+
-        (mutations.length+3));
+        (mutations.length+5));
 }
 async function main(){
     const args=process.argv.slice(2);
