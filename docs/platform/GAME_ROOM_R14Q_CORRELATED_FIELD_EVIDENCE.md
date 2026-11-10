@@ -1,6 +1,6 @@
 # R14q — Correlating Windows JVM and external WSS field observations
 
-**Parent:** R14p Draft PR #98, verified head 68d0f1cf2b31f4d8f160923ca82ae21ed1bd1f43. R14q remains a separate stacked Draft, with no merge/release and no production changes.
+**Status (2026-11-10):** R14p and R14q were integrated into `main` via merged PRs #98 and #99. The R14q missing-latency aggregation defect was corrected in merged PR #141. These tools have synthetic CI coverage; no operator public-WAN/24-hour field acceptance or release authorization is implied.
 
 ## Goal
 
@@ -31,7 +31,7 @@ The write-once, operator-local sanitized JSON summary records:
 
 - independently validated total JVM samples and external WSS rounds;
 - actual shared UTC start/end, overlap duration, paired time windows;
-- per-time-window JVM working-set/private memory, thread/handle peaks and CPU delta, alongside external member checks, WSS snapshots, clean closes, failures and worst round p95 latency;
+- per-time-window JVM working-set/private memory, thread/handle peaks and CPU delta, alongside external member checks, WSS snapshots, clean closes, failures and worst round p95 latency. If all authenticated snapshots fail in a window, p95 is **`null` (no measurement)**, not `0 ms`;
 - whole-report JVM first/last/min/peak and observed resource deltas, plus WSS total failures and the **independent** zero-failure predicate.
 
 **full source completeness is NOT service availability.** A complete external WSS report can have nonzero failures; R14q does not discard them or label them as a success. Conversely, zero observed failures means only these discrete checks succeeded; it cannot prove uninterrupted 24-hour connectivity between poll instants. Correlated high memory/handle values and connection errors within the same hour are **contemporaneous observations only**, not evidence of causation or leak freedom. The summary explicitly states that same-deployment identity is not cryptographically verified.
@@ -44,4 +44,4 @@ Windows package CI and manual release workflow run only JavaScript syntax checks
 
 A later stage should separately validate **real chat writes, durable replay, actual game actions and continuous user sessions** on isolated test systems. R14p is a periodic, read-mostly reachability probe, and R14q adds no load. Actual operator acceptance still requires physical Windows PC, external network/CA proxy, test members, clock-sync verification, 24h reports, installer signing, upgrade/rollback and tray interaction evidence.
 
-Do not merge or release these staged Draft PRs as an unintended side effect of field observation.
+Do not trigger a release, alter production configuration, or close field acceptance #122 as an unintended side effect of analyzing operator observations.

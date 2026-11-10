@@ -1,6 +1,6 @@
 # R14o — Real Windows 24-hour JVM observation (field runbook)
 
-Parent: R14n Draft PR #96 at CI-verified SHA 0d31d0e863698697bc918e7b8efcfb3b46cfa0f3. R14o is stacked Draft only, not merged or released. No new runtime dependency, production endpoint or database migration.
+**Status (2026-11-10):** R14o entered `main` through merged PR #97; the observation/analyzer tooling is included in the current code. GitHub Windows synthetic CI has passed, but no operator-provided, physical 24-hour observation or release acceptance is recorded. No new runtime dependency, production endpoint or database migration.
 
 ## Purpose and security boundary
 
@@ -31,7 +31,7 @@ After the full 24 hours, analyze the completed **local** JSONL file; the summary
     node ./server/analyze-packaged-jvm-field.mjs --self-test
     node ./server/analyze-packaged-jvm-field.mjs "--input=$report" "--summary=D:\GameRoomField\r14o-summary.json"
 
-Default analysis rejects observations shorter than 86,400 seconds. A success requires a complete exact-length sequence of samples with valid provenance, strictly ordered monotonic elapsed timestamps/CPU, sensible resource counters, no excessive missing sample windows and a completion footer for the same JVM. It reports first/last/min/peak, per-hour observed resource changes and hourly peaks. **It does not assess leak freedom** or guarantee service uptime.
+Default analysis rejects observations shorter than 86,400 seconds. A success requires a complete exact-length sequence of samples with valid provenance, strictly ordered monotonic elapsed timestamps/CPU, sensible resource counters, no excessive missing sample windows **or progressively late samples relative to scheduled timestamps** (bounded absolute lateness: at least 60 seconds, at most five minutes), and a completion footer for the same JVM. It reports first/last/min/peak, per-hour observed resource changes and hourly peaks. **It does not assess leak freedom** or guarantee service uptime.
 
 For a **one-minute smoke only**, use different fresh paths and override the analyzer minimum explicitly:
 
