@@ -76,12 +76,16 @@ public final class YachtRoomService {
         String fingerprint = digest(GSON.toJson(
             List.of(match.name(), participants)));
         synchronized (MUTATION_LOCK) {
-            try (var connection = database.open()) {
-                connection.setAutoCommit(false);
+            try (var connection = database.open();
+                 var control = connection.createStatement()) {
+                // Reserve the SQLite writer slot before reading any state.
+                // A deferred read upgraded after another WAL commit can fail
+                // with SQLITE_BUSY_SNAPSHOT instead of honoring busy_timeout.
+                control.execute("BEGIN IMMEDIATE");
+                boolean committed = false;
                 try {
                     RoomState existing = findCreated(connection, key, fingerprint);
                     if (existing != null) {
-                        connection.rollback();
                         return existing;
                     }
                     String code = allocateCode(connection);
@@ -109,15 +113,17 @@ public final class YachtRoomService {
                     }
                     Event event = event("yacht.room.created", code, match);
                     insertEvent(connection, event);
-                    connection.commit();
+                    control.execute("COMMIT");
+                    committed = true;
                     notifyAfterCommit(event);
                     return view(code, match);
                 } catch (Exception failed) {
-                    connection.rollback();
                     if (failed instanceof SQLException sql) throw sql;
                     if (failed instanceof RuntimeException runtime) throw runtime;
                     throw new SQLException("failed to create Yacht room", failed);
-                } finally { connection.setAutoCommit(true); }
+                } finally {
+                    if (!committed) control.execute("ROLLBACK");
+                }
             }
         }
     }
@@ -185,14 +191,18 @@ public final class YachtRoomService {
             command.held() == null ? "-" : command.held(),
             command.category() == null ? "-" : command.category())));
         synchronized (MUTATION_LOCK) {
-            try (var connection = database.open()) {
-                connection.setAutoCommit(false);
+            try (var connection = database.open();
+                 var control = connection.createStatement()) {
+                // Reserve the SQLite writer slot before reading any state.
+                // A deferred read upgraded after another WAL commit can fail
+                // with SQLITE_BUSY_SNAPSHOT instead of honoring busy_timeout.
+                control.execute("BEGIN IMMEDIATE");
+                boolean committed = false;
                 try {
                     String matchId = matchId(connection, normalized);
                     RoomState replayed = findCommand(connection, normalized,
                         matchId, commandId, hash);
                     if (replayed != null) {
-                        connection.rollback();
                         return replayed;
                     }
                     RoomState prior = roomState(connection, normalized);
@@ -251,15 +261,17 @@ public final class YachtRoomService {
                         insert.setLong(5, next.version());
                         insert.executeUpdate();
                     }
-                    connection.commit();
+                    control.execute("COMMIT");
+                    committed = true;
                     notifyAfterCommit(event);
                     return view(normalized, next);
                 } catch (Exception failed) {
-                    connection.rollback();
                     if (failed instanceof SQLException sql) throw sql;
                     if (failed instanceof RuntimeException runtime) throw runtime;
                     throw new SQLException("Yacht command failed", failed);
-                } finally { connection.setAutoCommit(true); }
+                } finally {
+                    if (!committed) control.execute("ROLLBACK");
+                }
             }
         }
     }
