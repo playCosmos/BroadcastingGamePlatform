@@ -562,8 +562,8 @@ public final class GameRoomYachtR4HttpProbe {
                         """);
                 }
                 long beforeVersion=match.get("version").getAsLong();
-                String rollBody="{\\"commandId\\":\\"r15h-roll-sql-probe\\","
-                    + "\\"expectedVersion\\":" + beforeVersion + "}";
+                String rollBody="{\"commandId\":\"r15h-roll-sql-probe\","
+                    + "\"expectedVersion\":" + beforeVersion + "}";
                 var rollErrors=new ByteArrayOutputStream();
                 var previousErr=System.err;
                 try {
