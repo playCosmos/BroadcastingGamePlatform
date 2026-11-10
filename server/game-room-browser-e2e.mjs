@@ -16,6 +16,16 @@ const cp=process.env.GAME_ROOM_PROBE_CLASSPATH
     ||["target/test-classes","target/classes","target/probe-dependencies/*"].join(
         process.platform==="win32"?";":":");
 let server,chrome,cdp,userDir,tlsProxy,checks=0;
+// Failure diagnostics are an allowlist of fixed start stages and numeric SQL
+// driver codes. Never print Java stderr, SQL, room IDs or member credentials.
+let serverYachtStartSqlFailures=[];
+const safeYachtStartSqlFailure=line=>{
+    const match=/^\[game-room-yacht\] start_sql_failure stage=(authenticate|freeze|lookup|create|activate|link|verify|state) code=(-?\d{1,10})$/.exec(line);
+    if(!match)return null;
+    const code=Number(match[2]);
+    return Number.isSafeInteger(code)?
+        {stage:match[1],code}:null;
+};
 const tlsConnections=new Set();
 const upgradedSockets=new Map();
 let nextUpgradeId=0;
@@ -47,15 +57,44 @@ function check(value,label){
     checks++;
     if(!value)throw Error("browser acceptance failed: "+label);
 }
+// The diagnostic extractor must not accept raw SQL, free-form messages,
+// tokens, IDs or unrecognized stage labels from the child process.
+check(safeYachtStartSqlFailure(
+    "[game-room-yacht] start_sql_failure stage=link code=19")?.code===19,
+    "R15h only captures numeric SQL code and fixed stage");
+check(safeYachtStartSqlFailure(
+    "[game-room-yacht] start_sql_failure stage=link code=19")?.stage==="link",
+    "R15h captures correct fixed SQL stage");
+check(safeYachtStartSqlFailure(
+    "[game-room-yacht] start_sql_failure stage=link code=19 credential")===null&&
+    safeYachtStartSqlFailure(
+    "[game-room-yacht] start_sql_failure stage=unknown code=19")===null&&
+    safeYachtStartSqlFailure(
+    "[game-room-yacht] start_sql_failure stage=link code=not-a-number")===null,
+    "R15h rejects non-allowlisted or secret-containing server log lines");
 async function launchServer(){
     let output="";
+    serverYachtStartSqlFailures=[];
     server=spawn("java",["-cp",cp,
         "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomBrowserE2EServer"],
         {cwd:process.cwd(),stdio:["ignore","pipe","pipe"],windowsHide:true});
     for(const stream of [server.stdout,server.stderr]){
+        let pending="";
         stream.on("data",chunk=>{
-            output+=String(chunk);
+            const data=String(chunk);
+            output+=data;
             if(output.length>30000)output=output.slice(-30000);
+            // Process complete log lines even when chunks split a diagnostic.
+            // Store only bounded, allowlisted stage/code metadata.
+            const lines=(pending+data).split(/\r?\n/);
+            pending=lines.pop().slice(-4096);
+            for(const line of lines){
+                const diagnostic=safeYachtStartSqlFailure(line);
+                if(!diagnostic)continue;
+                serverYachtStartSqlFailures.push(diagnostic);
+                if(serverYachtStartSqlFailures.length>16)
+                    serverYachtStartSqlFailures.shift();
+            }
         });
     }
     const matched=await poll(()=>{
@@ -3704,6 +3743,7 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
         await poll(async()=>await cdp.eval(host,
             "document.getElementById('start').disabled===false"),
             "R15h room B can start two-player Yacht");
+        const sqlFailureCountBeforeStart=serverYachtStartSqlFailures.length;
         await click(host,"start");
         await poll(async()=>await cdp.eval(host,
             "document.getElementById('roomState').textContent==='PLAYING'"),
@@ -3756,6 +3796,11 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
                     round:safeInt(match?.round),
                     completedTurns:safeInt(match?.completedTurns),
                     rolls:safeInt(match?.rolls),
+                    // Fresh server-local, bounded stage and numeric code ONLY.
+                    // null means no captured SQLException stage, not that
+                    // the HTTP 500 has been explained or made harmless.
+                    startSqlFailureSinceClick:serverYachtStartSqlFailures
+                        .slice(sqlFailureCountBeforeStart).at(-1)||null,
                     recentHttpStatuses:cdp.network.slice(-5).map(x=>
                         safeInt(x.status))
                 }));
