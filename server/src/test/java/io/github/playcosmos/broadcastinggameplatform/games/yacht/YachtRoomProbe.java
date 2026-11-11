@@ -6,6 +6,7 @@ import io.github.playcosmos.broadcastinggameplatform.games.yacht.domain.YachtSco
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.ConcurrentModificationException;
 import java.util.List;
@@ -197,6 +198,7 @@ public final class YachtRoomProbe {
             require(broadcastFailure.events(another.roomCode(), 0).size() == 1,
                 "event is replayable after WebSocket outage");
 
+            verifyDeferredUpgradeSnapshotFailure(db, participants);
             verifyImmediateWriterReservation(db, participants);
 
             System.out.println("YACHT_Y2_PASSED checks=" + checks
@@ -212,6 +214,60 @@ public final class YachtRoomProbe {
         }
     }
 
+
+    /**
+     * Control case: the same SQLite JDBC driver must reproduce a stale WAL
+     * read-to-write upgrade on a disposable DB before the positive immediate
+     * writer-reservation guard. This intentionally uses a raw DEFERRED
+     * transaction; production Yacht code must NOT use it.
+     */
+    private static void verifyDeferredUpgradeSnapshotFailure(
+        BoardGameDatabase db, List<YachtRoomService.Participant> participants
+    ) throws Exception {
+        var setup = new YachtRoomService(db, () -> 1, (code, event) -> {});
+        var room = setup.create("snapshotbaseline001",
+            "Deferred WAL Control", participants);
+        String matchId = room.match().id();
+        try (var stale = db.open(); var concurrent = db.open();
+             var begin = stale.createStatement()) {
+            begin.execute("BEGIN");
+            try {
+                try (var query = stale.prepareStatement(
+                    "SELECT version FROM yacht_match WHERE match_id=?")) {
+                    query.setString(1,matchId);
+                    try (var rows = query.executeQuery()) {
+                        require(rows.next() && rows.getLong(1)==0,
+                            "deferred transaction first establishes old WAL snapshot");
+                    }
+                }
+                try (var writer = concurrent.prepareStatement("""
+                    UPDATE yacht_match SET updated_at=? WHERE match_id=?
+                    """)) {
+                    writer.setString(1,"2099-01-01T00:00:00Z");
+                    writer.setString(2,matchId);
+                    require(writer.executeUpdate()==1,
+                        "second SQLite connection commits after stale read");
+                }
+                SQLException snapshotFailure = null;
+                try (var upgrade = stale.prepareStatement("""
+                    UPDATE yacht_match SET updated_at=? WHERE match_id=?
+                    """)) {
+                    upgrade.setString(1,"2099-01-02T00:00:00Z");
+                    upgrade.setString(2,matchId);
+                    upgrade.executeUpdate();
+                } catch (SQLException failed) {
+                    snapshotFailure = failed;
+                }
+                require(snapshotFailure!=null
+                        && (snapshotFailure.getErrorCode() & 0xff)==5,
+                    "deferred read-to-write upgrade fails with SQLite busy family");
+            } finally {
+                begin.execute("ROLLBACK");
+            }
+        }
+        require(setup.state(room.roomCode()).match().version()==0,
+            "negative-control failed write never mutates native Yacht version");
+    }
 
     /**
      * A DEFERRED Yacht transaction reads its match before rolling. A second
