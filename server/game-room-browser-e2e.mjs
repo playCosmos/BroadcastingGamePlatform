@@ -341,15 +341,21 @@ async function startMemberObserver(page,roomId,memberToken,wsBase,
         const token=${JSON.stringify(memberToken)};
         const afterSequence=${JSON.stringify(afterSequence)};
         const ws=new WebSocket(url);
-        const observer={code:-1,events:[],ws};
+        const observer={
+            code:-1,events:[],ws,opened:false,errored:false,closed:false
+        };
         window.__roomObserver=observer;
         ws.addEventListener("open",()=>{
+            observer.opened=true;
             ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence}));
         });
         // A retired observer must never mutate the newer one's counters
         // or 1008 close code when its close event arrives late.
         ws.addEventListener("message",ev=>observer.events.push(ev.data));
-        ws.addEventListener("close",ev=>observer.code=ev.code);
+        ws.addEventListener("error",()=>observer.errored=true);
+        ws.addEventListener("close",ev=>{
+            observer.closed=true;observer.code=ev.code;
+        });
         return true;
     })()`);
 }
@@ -2228,9 +2234,37 @@ async function telephoneBrowserAcceptance(base,coop){
     await startMemberObserver(pages[3],
         (await backend(host,"/me","GET",null,tokens[0])).data.room.roomId,
         tokens[3],memberWs);
-    await poll(async()=>await cdp.eval(pages[3],
-        "window.__roomObserver?.events.some(e=>e.includes('room.snapshot'))"),
-        "authenticated spectator listens before autonomous slide progression");
+    try{
+        await poll(async()=>await cdp.eval(pages[3],
+            "window.__roomObserver?.events.some(e=>e.includes('room.snapshot'))"),
+            "authenticated spectator listens before autonomous slide progression");
+    }catch{
+        // Failure-only bounded, boolean/numeric transport state: no URL,
+        // room ID, token, payload, SQL or raw WebSocket error messages.
+        const observer=await cdp.eval(pages[3],`(()=>{
+            const x=window.__roomObserver;
+            const state=x?.ws?.readyState;
+            const code=x?.code;
+            const received=x?.events?.length;
+            return {
+                observerPresent:!!x,
+                opened:x?.opened===true,errored:x?.errored===true,
+                closed:x?.closed===true,
+                socketState:Number.isInteger(state)&&state>=0&&state<=3?
+                    state:null,
+                closeCode:Number.isInteger(code)&&code>=-1&&code<=4999?
+                    code:null,
+                receivedMessages:Number.isSafeInteger(received)&&received>=0?
+                    Math.min(received,10000):null,
+                snapshotSeen:x?.events?.some(e=>
+                    e.includes("room.snapshot"))===true,
+                pageReady:document.readyState==="complete"
+            };
+        })()`).catch(()=>null);
+        throw Error("timeout waiting for authenticated spectator listens "+
+            "before autonomous slide progression; sanitizedObserverDiagnostic="+
+            JSON.stringify(observer));
+    }
     await click(host,"telephoneAutoplay");
     await poll(async()=>{
         const x=await backend(host,"/drawing/telephone","GET",null,tokens[0]);
