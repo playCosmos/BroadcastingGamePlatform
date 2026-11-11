@@ -246,7 +246,7 @@ public final class GameRoomR3TransportProbe {
                 // This already-subscribed host socket must also fail as
                 // temporary server unavailability, not false revocation.
                 check(!ws.broadcastRoomEvent(roomId,
-                    "{\\"type\\":\\"room.probe\\",\\"transportOnly\\":true}"),
+                    "{\"type\":\"room.probe\",\"transportOnly\":true}"),
                     "SQL outage does not broadcast unverified member event");
                 recovery.expectCloseCode(1013);
             } finally {
@@ -265,11 +265,11 @@ public final class GameRoomR3TransportProbe {
             restoredSocket=connect(client,socketUri,restored);
             restoredSocket.sendText(subscribe(token,-1),true)
                 .get(3,TimeUnit.SECONDS);
-            restored.expect("\\"type\\":\\"room.snapshot\\"");
+            restored.expect("\"type\":\"room.snapshot\"");
             check(ws.broadcastRoomEvent(roomId,
-                "{\\"type\\":\\"room.probe\\",\\"transportOnly\\":true}"),
+                "{\"type\":\"room.probe\",\"transportOnly\":true}"),
                 "restored valid member can receive server room broadcast");
-            restored.expect("\\"type\\":\\"room.probe\\"");
+            restored.expect("\"type\":\"room.probe\"");
 
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
