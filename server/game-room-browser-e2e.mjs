@@ -342,12 +342,14 @@ async function startMemberObserver(page,roomId,memberToken,wsBase,
         const afterSequence=${JSON.stringify(afterSequence)};
         const ws=new WebSocket(url);
         const observer={
-            code:-1,events:[],ws,opened:false,errored:false,closed:false
+            code:-1,events:[],ws,opened:false,subscribeSent:false,
+            errored:false,closed:false
         };
         window.__roomObserver=observer;
         ws.addEventListener("open",()=>{
             observer.opened=true;
             ws.send(JSON.stringify({type:"room.subscribe",token,afterSequence}));
+            observer.subscribeSent=true;
         });
         // A retired observer must never mutate the newer one's counters
         // or 1008 close code when its close event arrives late.
@@ -2241,29 +2243,61 @@ async function telephoneBrowserAcceptance(base,coop){
     }catch{
         // Failure-only bounded, boolean/numeric transport state: no URL,
         // room ID, token, payload, SQL or raw WebSocket error messages.
-        const observer=await cdp.eval(pages[3],`(()=>{
-            const x=window.__roomObserver;
-            const state=x?.ws?.readyState;
-            const code=x?.code;
-            const received=x?.events?.length;
-            return {
-                observerPresent:!!x,
-                opened:x?.opened===true,errored:x?.errored===true,
-                closed:x?.closed===true,
-                socketState:Number.isInteger(state)&&state>=0&&state<=3?
-                    state:null,
-                closeCode:Number.isInteger(code)&&code>=-1&&code<=4999?
-                    code:null,
-                receivedMessages:Number.isSafeInteger(received)&&received>=0?
-                    Math.min(received,10000):null,
-                snapshotSeen:x?.events?.some(e=>
-                    e.includes("room.snapshot"))===true,
-                pageReady:document.readyState==="complete"
-            };
-        })()`).catch(()=>null);
+        const [observerStatus,restStatus]=await Promise.allSettled([
+            cdp.eval(pages[3],`(()=>{
+                const x=window.__roomObserver;
+                const state=x?.ws?.readyState;
+                const code=x?.code;
+                const received=x?.events?.length;
+                return {
+                    observerPresent:!!x,
+                    opened:x?.opened===true,
+                    subscribeSent:x?.subscribeSent===true,
+                    errored:x?.errored===true,
+                    closed:x?.closed===true,
+                    socketState:Number.isInteger(state)&&state>=0&&state<=3?
+                        state:null,
+                    closeCode:Number.isInteger(code)&&code>=-1&&code<=4999?
+                        code:null,
+                    receivedMessages:Number.isSafeInteger(received)&&received>=0?
+                        Math.min(received,10000):null,
+                    snapshotSeen:x?.events?.some(e=>
+                        e.includes("room.snapshot"))===true,
+                    pageReady:document.readyState==="complete"
+                };
+            })()`),
+            // Independent post-failure HTTP authentication check, bounded
+            // to 2.5 seconds. Never log the response body or credentials.
+            cdp.eval(pages[3],`(async()=>{
+                try{
+                    const response=await fetch(
+                        "/api/v1/room-membership/me",{
+                            method:"GET",
+                            headers:{Authorization:"Bearer "+
+                                ${JSON.stringify(tokens[3])}},
+                            signal:AbortSignal.timeout(2500)
+                        });
+                    const httpStatus=Number.isSafeInteger(response.status)
+                        && response.status>=100&&response.status<=599
+                        ?response.status:null;
+                    if(!response.ok)return {httpStatus,memberJoined:null};
+                    const body=await response.json();
+                    const members=body?.room?.members;
+                    const joined=Array.isArray(members)
+                        && members.some(m=>m.memberId===body.memberId
+                            && m.status==="JOINED");
+                    return {httpStatus,memberJoined:joined};
+                }catch{return {httpStatus:null,memberJoined:null};}
+            })()`)
+        ]);
         throw Error("timeout waiting for authenticated spectator listens "+
             "before autonomous slide progression; sanitizedObserverDiagnostic="+
-            JSON.stringify(observer));
+            JSON.stringify({
+                socket:observerStatus.status==="fulfilled"?
+                    observerStatus.value:null,
+                membership:restStatus.status==="fulfilled"?
+                    restStatus.value:null
+            }));
     }
     await click(host,"telephoneAutoplay");
     await poll(async()=>{
