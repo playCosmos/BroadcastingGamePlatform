@@ -85,7 +85,8 @@ public final class GameRoomR3TransportProbe {
         GameClientHttpServer httpServer=null;
         BoardGameWebSocketServer ws=null;
         WebSocket hostSocket=null,guestSocket=null,illegalSocket=null,
-                  recoverySocket=null,boardSocket=null,sqlFailureSocket=null;
+                  recoverySocket=null,boardSocket=null,sqlFailureSocket=null,
+                  restoredSocket=null;
         try {
             Path web=root.resolve("web");
             Files.createDirectories(web);
@@ -242,6 +243,12 @@ public final class GameRoomR3TransportProbe {
                 sqlFailure.expectCloseCode(1013);
                 check(sqlFailure.noMessage(),
                     "SQL outage never delivers authenticated room snapshot");
+                // This already-subscribed host socket must also fail as
+                // temporary server unavailability, not false revocation.
+                check(!ws.broadcastRoomEvent(roomId,
+                    "{\\"type\\":\\"room.probe\\",\\"transportOnly\\":true}"),
+                    "SQL outage does not broadcast unverified member event");
+                recovery.expectCloseCode(1013);
             } finally {
                 try(var connection=db.open();
                     var statement=connection.createStatement()){
@@ -254,6 +261,15 @@ public final class GameRoomR3TransportProbe {
                 "/api/v1/room-membership/me"),"GET",null,null,token);
             check(afterSql.statusCode()==200,
                 "member REST credential remains valid after SQL fixture restore");
+            var restored=new Observer();
+            restoredSocket=connect(client,socketUri,restored);
+            restoredSocket.sendText(subscribe(token,-1),true)
+                .get(3,TimeUnit.SECONDS);
+            restored.expect("\\"type\\":\\"room.snapshot\\"");
+            check(ws.broadcastRoomEvent(roomId,
+                "{\\"type\\":\\"room.probe\\",\\"transportOnly\\":true}"),
+                "restored valid member can receive server room broadcast");
+            restored.expect("\\"type\\":\\"room.probe\\"");
 
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
@@ -262,7 +278,7 @@ public final class GameRoomR3TransportProbe {
         } finally {
             for(var client:new WebSocket[]{hostSocket,guestSocket,illegalSocket,
                                           recoverySocket,boardSocket,
-                                          sqlFailureSocket}){
+                                          sqlFailureSocket,restoredSocket}){
                 if(client!=null)try{client.abort();}catch(RuntimeException ignored){}
             }
             if(httpServer!=null)httpServer.close();
