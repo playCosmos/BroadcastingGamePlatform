@@ -667,8 +667,13 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                     }
                     socket.send(json);
                     sent=true;
-                } catch (GameRoomAccessService.Forbidden | SQLException invalid) {
+                } catch (GameRoomAccessService.Forbidden invalid) {
                     socket.close(1008,"room credential expired");
+                } catch (SQLException databaseFailure) {
+                    // A committed member may still be authorized. The
+                    // database is temporarily unavailable, not revoked.
+                    // Never expose exception text, tokens, or room IDs.
+                    socket.close(1013,"room delivery temporarily unavailable");
                 }
             }
         }
