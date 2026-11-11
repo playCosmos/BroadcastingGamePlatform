@@ -61,19 +61,22 @@ public final class GameRoomR3TransportProbe {
             return inbox.poll(300,TimeUnit.MILLISECONDS)==null;
         }
         void expectClose()throws Exception {
+            expectCloseCode(1008);
+        }
+        void expectCloseCode(int expected)throws Exception {
             // JDK HttpClient WebSocket onClose delivery can lag behind the
             // server's close frame on heavily scheduled Windows CI runners.
-            // Keep the same strict 1008 check, only extend the bounded wait.
+            // Assert the actual code, never accept arbitrary closure.
             long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(8);
             while(System.nanoTime()<deadline){
                 int code=closeCode.get();
-                if(code==1008)return;
+                if(code==expected)return;
                 if(code>0)throw new AssertionError(
-                    "expected WebSocket 1008, received "+code);
+                    "expected WebSocket "+expected+", received "+code);
                 Thread.sleep(80);
             }
             throw new AssertionError(
-                "expected WebSocket 1008 within 8s: "+closeCode.get());
+                "expected WebSocket "+expected+" within 8s: "+closeCode.get());
         }
     }
 
@@ -82,7 +85,7 @@ public final class GameRoomR3TransportProbe {
         GameClientHttpServer httpServer=null;
         BoardGameWebSocketServer ws=null;
         WebSocket hostSocket=null,guestSocket=null,illegalSocket=null,
-                  recoverySocket=null,boardSocket=null;
+                  recoverySocket=null,boardSocket=null,sqlFailureSocket=null;
         try {
             Path web=root.resolve("web");
             Files.createDirectories(web);
@@ -222,13 +225,44 @@ public final class GameRoomR3TransportProbe {
             check(kickedHistory.statusCode()==403,
                 "kicked member token loses REST replay access");
 
+            // Deliberately make the disposable fixture's session table
+            // unavailable *after* all normal authorization/replay assertions.
+            // The same valid token must get a retryable 1013, never a false
+            // policy-violation 1008. Restore the schema before cleanup.
+            try(var connection=db.open();
+                var statement=connection.createStatement()){
+                statement.execute("ALTER TABLE game_room_session"
+                    +" RENAME TO probe_room_session_unavailable");
+            }
+            try {
+                var sqlFailure=new Observer();
+                sqlFailureSocket=connect(client,socketUri,sqlFailure);
+                sqlFailureSocket.sendText(subscribe(token,-1),true)
+                    .get(3,TimeUnit.SECONDS);
+                sqlFailure.expectCloseCode(1013);
+                check(sqlFailure.noMessage(),
+                    "SQL outage never delivers authenticated room snapshot");
+            } finally {
+                try(var connection=db.open();
+                    var statement=connection.createStatement()){
+                    statement.execute("ALTER TABLE"
+                        +" probe_room_session_unavailable"
+                        +" RENAME TO game_room_session");
+                }
+            }
+            var afterSql=send(client,base.resolve(
+                "/api/v1/room-membership/me"),"GET",null,null,token);
+            check(afterSql.statusCode()==200,
+                "member REST credential remains valid after SQL fixture restore");
+
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
                 +" replay=recovered chat=room-isolated"
                 +" tombstone=redacted prior_channels=unchanged");
         } finally {
             for(var client:new WebSocket[]{hostSocket,guestSocket,illegalSocket,
-                                          recoverySocket,boardSocket}){
+                                          recoverySocket,boardSocket,
+                                          sqlFailureSocket}){
                 if(client!=null)try{client.abort();}catch(RuntimeException ignored){}
             }
             if(httpServer!=null)httpServer.close();

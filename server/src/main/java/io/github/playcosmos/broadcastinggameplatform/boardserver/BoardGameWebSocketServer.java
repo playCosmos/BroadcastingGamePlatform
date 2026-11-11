@@ -575,9 +575,14 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 }
                 publishPresence(principal.roomId(),principal.memberId());
             }
-        } catch (GameRoomAccessService.Forbidden | SQLException
+        } catch (GameRoomAccessService.Forbidden
                  | GameRoomService.RoomConflict invalid) {
             connection.close(1008,"room subscription unauthorized");
+        } catch (SQLException databaseFailure) {
+            // The credential may be valid; transient SQL errors are server
+            // availability failures, not evidence of a revoked member.
+            // No SQL text or member identifiers in the WebSocket close reason.
+            connection.close(1013,"room subscription temporarily unavailable");
         } catch (RuntimeException malformed) {
             connection.close(1008,"room subscription invalid");
         }
