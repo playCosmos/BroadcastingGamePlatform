@@ -354,8 +354,8 @@ public final class GameRoomR3TransportProbe {
                 check(delivered.contains("\"sequence\":"+sequence),
                     "R3 reconnect receives ordered durable event "+i);
             }
-            check(paged.noMessage()==false || paged.closeCode.get()<0,
-                "R3 replay keeps the authenticated socket open for presence");
+            check(paged.closeCode.get()<0 && ws.connectedClients()>=1,
+                "R3 replay preserves the authenticated live member socket");
 
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
