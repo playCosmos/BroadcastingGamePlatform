@@ -510,12 +510,15 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         } catch (SecurityException error) {
             connection.close(1008, "drawing write authorization failed");
         } catch (Exception error) {
-            connection.send(
-                "{\"type\":\"drawing.error\",\"message\":"
-                    + jsonString(error.getMessage())
-                    + "}"
-            );
+            connection.send(safeDrawingErrorFrame(error));
         }
+    }
+
+    // A legacy authorized drawer receives a bounded protocol-level error,
+    // never an exception message (which may contain SQL, paths or tokens).
+    static String safeDrawingErrorFrame(Exception ignored) {
+        return "{\"type\":\"drawing.error\",\"message\":"
+            + "\"drawing request failed\"}";
     }
 
     @Override
@@ -852,13 +855,4 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
             : null;
     }
 
-    private static String jsonString(String value) {
-        if (value == null) return "\"\"";
-        String escaped = value
-            .replace("\\", "\\\\")
-            .replace("\"", "\\\"")
-            .replace("\r", "\\r")
-            .replace("\n", "\\n");
-        return "\"" + escaped + "\"";
-    }
 }
