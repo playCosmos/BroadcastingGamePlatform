@@ -420,14 +420,20 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         String reason,
         boolean remote
     ) {
-        Channel channel = channelByConnection.remove(connection);
-        Subscriber subscriber = roomSubscribers.remove(connection);
-        drawingSubscribers.remove(connection);
-        if (subscriber != null) publishPresence(subscriber.roomId(),subscriber.memberId());
-        drawingWriteRates.remove(connection);
-        int count = connectedClients.get();
-        if (channel != null) {
-            count = Math.max(0, connectedClients.decrementAndGet());
+        // Admission and teardown must observe a consistent channel map and
+        // global count. In particular, release the slot BEFORE presence
+        // fanout: it can wait on memberSendLock / SQLite while a reconnect
+        // is trying to claim the released global admission capacity.
+        Channel channel;
+        Subscriber subscriber;
+        int count;
+        synchronized (this) {
+            channel = channelByConnection.remove(connection);
+            subscriber = roomSubscribers.remove(connection);
+            drawingSubscribers.remove(connection);
+            drawingWriteRates.remove(connection);
+            count = channel == null ? connectedClients.get()
+                : Math.max(0, connectedClients.decrementAndGet());
         }
         System.out.println(
             "[platform-ws] disconnected"
@@ -437,6 +443,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 + " (" + count + ")"
                 + abnormalCloseTelemetry(code, remote)
         );
+        if (subscriber != null) publishPresence(subscriber.roomId(),subscriber.memberId());
     }
 
     // Close codes and initiator direction are safe bounded transport facts.
