@@ -435,7 +435,16 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                     ? ""
                     : " " + channel.kind().name().toLowerCase(Locale.ROOT))
                 + " (" + count + ")"
+                + abnormalCloseTelemetry(code, remote)
         );
+    }
+
+    // Close codes and initiator direction are safe bounded transport facts.
+    // Never log the peer-supplied reason, URL, bearer, room or member ID.
+    static String abnormalCloseTelemetry(int code, boolean remote) {
+        if (code == 1000 || code == 1001) return "";
+        int safeCode = code >= 1000 && code <= 4999 ? code : 0;
+        return " closeCode=" + safeCode + " peerInitiated=" + remote;
     }
 
     @Override
