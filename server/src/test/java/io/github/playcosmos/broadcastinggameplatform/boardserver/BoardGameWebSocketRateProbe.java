@@ -65,6 +65,36 @@ public final class BoardGameWebSocketRateProbe {
                 " closeCode=0 peerInitiated=false"),
             "unbounded close code never reaches the log");
 
+        // Both invalid drawer payloads and internal persistence failures
+        // must return the same constant JSON without echoing private input.
+        String expectedDrawingError =
+            "{\"type\":\"drawing.error\",\"message\":\"drawing request failed\"}";
+        for (Exception secretBearing : new Exception[]{
+            new IllegalArgumentException(
+                "fixture-private-path /tmp/secret/credential"),
+            new java.sql.SQLException(
+                "fixture-private-sql bearer=do-not-echo"),
+            new IllegalStateException(
+                "fixture-private-room-member")
+        }) {
+            String frame = BoardGameWebSocketServer.safeDrawingErrorFrame(
+                secretBearing);
+            require(frame.equals(expectedDrawingError),
+                "legacy drawing error must have fixed protocol JSON");
+            var obj = com.google.gson.JsonParser.parseString(frame)
+                .getAsJsonObject();
+            require(obj.size() == 2 &&
+                "drawing.error".equals(obj.get("type").getAsString()) &&
+                "drawing request failed".equals(
+                    obj.get("message").getAsString()),
+                "legacy error shape remains client compatible");
+            require(!frame.contains("fixture-private"),
+                "legacy drawing response may not echo exception contents");
+        }
+        require(BoardGameWebSocketServer.safeDrawingErrorFrame(null)
+            .equals(expectedDrawingError),
+            "missing exception still has a fixed response frame");
+
         System.out.println(
             "Board websocket rate probe passed."
         );
