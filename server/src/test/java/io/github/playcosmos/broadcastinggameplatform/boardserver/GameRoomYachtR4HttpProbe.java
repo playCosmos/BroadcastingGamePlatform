@@ -238,7 +238,7 @@ public final class GameRoomYachtR4HttpProbe {
             // R15h failure-mode acceptance: every persisted two-phase
             // start boundary must remain recoverable using the same host.
             interruptedYachtStartRecoveryAcceptance(client,base,access,db);
-            sixPlayerCapacityAcceptance(client,base,access);
+            sixPlayerCapacityAcceptance(client,base,access,db);
         } finally {
             if(web!=null)web.close();
             try(var files=Files.walk(baseDir)){
@@ -257,7 +257,7 @@ public final class GameRoomYachtR4HttpProbe {
      * session without injecting game state, dice values or synthetic members.
      */
     private static void sixPlayerCapacityAcceptance(HttpClient client,URI base,
-        GameRoomAccessService access) throws Exception {
+        GameRoomAccessService access,BoardGameDatabase db) throws Exception {
         var created=request(client,base,ROOT+"/hosted","POST", """
             {"gameId":"yacht","name":"R14z six-player full-capacity match",
              "displayName":"R14z Host","hostSeat":"PLAYER",
@@ -385,10 +385,73 @@ public final class GameRoomYachtR4HttpProbe {
             }
             require(selected!=null,
                 "R14z only legal server-authoritative score categories may be selected");
-            var scored=asState(request(client,base,ROOT+"/yacht/score","POST",
-                "{\"commandId\":\"r14z-score-"+turn+
-                    "\",\"expectedVersion\":"+afterRoll.get("version").getAsInt()+
-                    ",\"category\":\""+selected.id()+"\"}",owner,null));
+            String scoreBody="{\"commandId\":\"r14z-score-"+turn+
+                "\",\"expectedVersion\":"+afterRoll.get("version").getAsInt()+
+                ",\"category\":\""+selected.id()+"\"}";
+            com.google.gson.JsonObject scored;
+            if(turn==77){
+                // The native final score commits BEFORE the common room is
+                // transitioned to POST_GAME in a separate SQLite transaction.
+                // Inject a real error only into that second transaction.
+                // Recovery must replay the ORIGINAL command id, not score
+                // an additional turn or create another native match.
+                try(var connection=db.open();
+                    var statement=connection.createStatement()){
+                    statement.execute("""
+                        CREATE TRIGGER probe_yacht_postgame_failure
+                        BEFORE UPDATE OF state ON game_room
+                        WHEN OLD.state='PLAYING' AND NEW.state='POST_GAME'
+                        BEGIN SELECT RAISE(ABORT,'probe final transition failed'); END
+                        """);
+                }
+                try {
+                    var failed=request(client,base,ROOT+"/yacht/score",
+                        "POST",scoreBody,owner,null);
+                    require(failed.statusCode()==500
+                        && failed.body().contains("Yacht server error")
+                        && !failed.body().contains("probe final transition failed"),
+                        "R14z post-commit SQL failure returns generic HTTP 500");
+                    var partial=asState(request(client,base,ROOT+"/yacht",
+                        "GET",null,owner,null));
+                    var partialMatch=partial.getAsJsonObject("yacht")
+                        .getAsJsonObject("match");
+                    require(partialMatch.get("completedTurns").getAsInt()==78
+                        && "FINISHED".equals(partialMatch.get("phase").getAsString())
+                        && matchId.equals(partialMatch.get("id").getAsString())
+                        && partialMatch.get("version").getAsInt()>
+                            afterRoll.get("version").getAsInt()
+                        && "PLAYING".equals(partial.getAsJsonObject("room")
+                            .get("state").getAsString()),
+                        "R14z final score durable while postgame room sync fails");
+                } finally {
+                    try(var connection=db.open();
+                        var statement=connection.createStatement()){
+                        statement.execute(
+                            "DROP TRIGGER IF EXISTS probe_yacht_postgame_failure");
+                    }
+                }
+                var resumed=request(client,base,ROOT+"/yacht/score",
+                    "POST",scoreBody,owner,null);
+                require(resumed.statusCode()==200,
+                    "R14z same final command recovers common postgame state");
+                scored=asState(resumed);
+                var repeated=asState(request(client,base,
+                    ROOT+"/yacht/score","POST",scoreBody,owner,null));
+                var original=scored.getAsJsonObject("yacht")
+                    .getAsJsonObject("match");
+                var replay=repeated.getAsJsonObject("yacht")
+                    .getAsJsonObject("match");
+                require(replay.get("completedTurns").getAsInt()==78
+                    && replay.get("version").getAsLong()==
+                        original.get("version").getAsLong()
+                    && matchId.equals(replay.get("id").getAsString())
+                    && "POST_GAME".equals(repeated.getAsJsonObject("room")
+                        .get("state").getAsString()),
+                    "R14z final score retries cannot double-commit a turn");
+            }else{
+                scored=asState(request(client,base,ROOT+"/yacht/score",
+                    "POST",scoreBody,owner,null));
+            }
             var next=scored.getAsJsonObject("yacht").getAsJsonObject("match");
             require(next.get("completedTurns").getAsInt()==turn+1
                 && next.get("currentPlayer").getAsInt()==(turn+1)%6
