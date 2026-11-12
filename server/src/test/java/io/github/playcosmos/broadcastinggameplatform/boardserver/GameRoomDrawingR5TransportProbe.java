@@ -76,13 +76,17 @@ public final class GameRoomDrawingR5TransportProbe {
             return inbox.poll(300,TimeUnit.MILLISECONDS)==null;
         }
         void expectPolicyClose()throws Exception {
+            expectCloseCode(1008);
+        }
+        void expectCloseCode(int expected)throws Exception {
             for(int n=0;n<40;n++){
-                if(closed.get()==1008)return;
+                if(closed.get()==expected)return;
                 if(closed.get()!=-1)
-                    throw new AssertionError("expected WS 1008, got "+closed.get());
+                    throw new AssertionError("expected WS "+expected+
+                        ", got "+closed.get());
                 Thread.sleep(125);
             }
-            throw new AssertionError("expected WS 1008; got "+closed.get());
+            throw new AssertionError("expected WS "+expected+"; got "+closed.get());
         }
     }
 
@@ -330,6 +334,52 @@ public final class GameRoomDrawingR5TransportProbe {
                 .statusCode()==201,"other members continue chatting after kick");
             check(a.closed.get()==-1,
                 "unaffected host member channel survives spectator kick");
+
+            // Inject a real SQLite membership lookup outage in this
+            // disposable fixture, after positive authorization and Canvas
+            // replay tests. Existing and new valid Canvas spectators must
+            // receive retryable 1013, not a false 1008 revocation.
+            try(var connection=database.open();
+                var statement=connection.createStatement()){
+                statement.execute("ALTER TABLE game_room_session"
+                    +" RENAME TO probe_canvas_session_unavailable");
+            }
+            try {
+                var unavailable=new Observer();
+                var failedSocket=connect(client,
+                    URI.create(wsBase+"drawingCode="+code),unavailable);
+                sockets.add(failedSocket);
+                failedSocket.sendText(drawSubscribe(host),true)
+                    .get(3,TimeUnit.SECONDS);
+                unavailable.expectCloseCode(1013);
+                check(unavailable.noMessage(),
+                    "SQL-failed Canvas subscriber receives no event replay");
+                check(!websocket.broadcastDrawingEvent(code,
+                    "{\"type\":\"test.canvas-unavailable\"}"),
+                    "SQL outage cannot deliver Canvas event to unauthenticated sockets");
+                observer1.expectCloseCode(1013);
+                replay.expectCloseCode(1013);
+            } finally {
+                try(var connection=database.open();
+                    var statement=connection.createStatement()){
+                    statement.execute("ALTER TABLE"
+                        +" probe_canvas_session_unavailable"
+                        +" RENAME TO game_room_session");
+                }
+            }
+            check(send(client,base,API+"/me","GET",null,host).statusCode()==200,
+                "host membership remains valid after Canvas SQL restore");
+            var restored=new Observer();
+            var restoredCanvas=connect(client,
+                URI.create(wsBase+"drawingCode="+code),restored);
+            sockets.add(restoredCanvas);
+            restoredCanvas.sendText(drawSubscribe(host),true)
+                .get(3,TimeUnit.SECONDS);
+            restored.expect("canvas.clear");
+            check(websocket.broadcastDrawingEvent(code,
+                "{\"type\":\"test.canvas-restored\"}"),
+                "restored valid Canvas subscriber receives live delivery");
+            restored.expect("test.canvas-restored");
 
             System.out.println("GAME_ROOM_DRAWING_R5_LIVE_TRANSPORT_PASSED checks="+checks+
                 " participants=3 sockets=concurrent canvas=ordered-replayed"+

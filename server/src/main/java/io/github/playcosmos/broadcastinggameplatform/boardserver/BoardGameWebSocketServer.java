@@ -618,7 +618,11 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 for(String event:drawingSync.history(channel.code()))
                     if(connection.isOpen())connection.send(event);
             }
-        } catch(SQLException | RuntimeException invalid) {
+        } catch (SQLException databaseFailure) {
+            // A valid Canvas member must not be mistaken for revoked during
+            // a temporary database outage. Never expose raw SQL or tokens.
+            connection.close(1013,"Canvas subscription temporarily unavailable");
+        } catch (RuntimeException invalid) {
             connection.close(1008,"Canvas subscription unauthorized");
         }
     }
@@ -769,7 +773,10 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                             socket.close(1008,"Canvas membership changed");
                             continue;
                         }
-                    } catch(SQLException | RuntimeException denied) {
+                    } catch (SQLException databaseFailure) {
+                        socket.close(1013,"Canvas delivery temporarily unavailable");
+                        continue;
+                    } catch (RuntimeException denied) {
                         socket.close(1008,"Canvas membership revoked");
                         continue;
                     }
