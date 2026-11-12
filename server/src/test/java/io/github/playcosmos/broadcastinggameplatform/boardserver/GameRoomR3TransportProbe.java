@@ -271,6 +271,36 @@ public final class GameRoomR3TransportProbe {
                 "restored valid member can receive server room broadcast");
             restored.expect("\"type\":\"room.probe\"");
 
+            // Deterministically keep presence fanout blocked while a REAL
+            // authenticated socket closes. Capacity must be reclaimed before
+            // onClose can acquire memberSendLock, or a reconnect can receive
+            // an artificial 1013 under per-IP/global connection pressure.
+            var lockField=BoardGameWebSocketServer.class
+                .getDeclaredField("memberSendLock");
+            lockField.setAccessible(true);
+            Object presenceLock=lockField.get(ws);
+            var subscribersField=BoardGameWebSocketServer.class
+                .getDeclaredField("roomSubscribers");
+            subscribersField.setAccessible(true);
+            var subscribers=(java.util.Map<?,?>)subscribersField.get(ws);
+            int subscriptionsBefore=subscribers.size();
+            int capacityBefore=ws.connectedClients();
+            check(subscriptionsBefore>=1 && capacityBefore>=1,
+                "R3 has an authenticated active socket before teardown");
+            synchronized(presenceLock){
+                restoredSocket.abort();
+                restoredSocket=null;
+                long deadline=System.nanoTime()+TimeUnit.SECONDS.toNanos(5);
+                while(subscribers.size()>=subscriptionsBefore &&
+                    System.nanoTime()<deadline)Thread.sleep(15);
+                check(subscribers.size()==subscriptionsBefore-1,
+                    "R3 onClose removed the member before presence fanout");
+                while(ws.connectedClients()>=capacityBefore &&
+                    System.nanoTime()<deadline)Thread.sleep(15);
+                check(ws.connectedClients()==capacityBefore-1,
+                    "R3 releases connection capacity despite blocked presence");
+            }
+
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
                 +" replay=recovered chat=room-isolated"
