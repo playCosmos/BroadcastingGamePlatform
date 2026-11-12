@@ -4322,11 +4322,43 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
                     ? snapshot:null;
             },"R15a UI score commits "+index);
         } else {
+            const sqlFailureCountBeforeScore=serverYachtCommandSqlFailureSequence;
             next=await backend(page,"/yacht/score","POST",{
                 commandId:"r15a-browser-score-"+turn,
                 expectedVersion:next.data.yacht.match.version,
                 category:category.toLowerCase()
             },token);
+            if(next.status!==200){
+                // Failure-only read cannot repeat the score mutation.
+                // Capture no member/room IDs, credentials, response body,
+                // SQL text, dice, category choice or raw server logs.
+                await nap(50); // allow JVM stderr line buffering to flush
+                const observed=await backend(page,"/yacht","GET",null,token)
+                    .catch(()=>null);
+                const match=observed?.data?.yacht?.match;
+                const safeInt=value=>Number.isSafeInteger(value)
+                    && value>=0&&value<=999999999?value:null;
+                const safeStatus=value=>Number.isSafeInteger(value)
+                    && value>=100&&value<=599?value:null;
+                throw Error("browser acceptance failed: R15a browser score POST "+
+                    turn+"; sanitizedDiagnostic="+JSON.stringify({
+                        turn,
+                        writeStatus:safeStatus(next.status),
+                        readStatus:safeStatus(observed?.status),
+                        matchPresent:Boolean(match),
+                        activePhase:match?.phase==="ACTIVE",
+                        readTurns:safeInt(match?.completedTurns),
+                        readRolls:safeInt(match?.rolls),
+                        readVersion:safeInt(match?.version),
+                        roomPlaying:observed?.data?.room?.state==="PLAYING",
+                        commandSqlFailureSinceRequest:
+                            serverYachtCommandSqlFailureSequence>
+                                sqlFailureCountBeforeScore?
+                                serverYachtCommandSqlFailure:null,
+                        recentHttpStatuses:cdp.network.slice(-5).map(x=>
+                            safeStatus(x.status))
+                    }));
+            }
             check(next.status===200,"R15a browser score POST "+turn);
         }
         const after=next.data.yacht?.match;
