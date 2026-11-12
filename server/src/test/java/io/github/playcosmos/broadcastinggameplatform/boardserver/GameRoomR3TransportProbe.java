@@ -350,8 +350,8 @@ public final class GameRoomR3TransportProbe {
                 "R3 page replay snapshot exposes the exact durable high-watermark");
             for(int i=1;i<=101;i++){
                 long sequence=beforeReplay+i;
-                String delivered=paged.expect("\"type\":\"room.probe\"");
-                check(delivered.contains("\"sequence\":"+sequence),
+                String replayedFrame=paged.expect("\"type\":\"room.probe\"");
+                check(replayedFrame.contains("\"sequence\":"+sequence),
                     "R3 reconnect receives ordered durable event "+i);
             }
             check(paged.closeCode.get()<0 && ws.connectedClients()>=1,
