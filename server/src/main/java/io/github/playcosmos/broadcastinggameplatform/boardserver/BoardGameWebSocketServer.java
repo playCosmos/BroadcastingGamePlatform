@@ -520,7 +520,18 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
 
     @Override
     public void onError(WebSocket connection, Exception error) {
-        System.err.println("[platform-ws] " + error.getMessage());
+        // Exception messages may contain a request path, remote address,
+        // user-supplied input or a legacy drawer-token query parameter.
+        // Log a fixed allowlisted category, never the raw exception text.
+        System.err.println("[platform-ws] transport_error category="
+            + transportErrorCategory(error));
+    }
+
+    static String transportErrorCategory(Exception error) {
+        if (error instanceof java.io.IOException) return "io";
+        if (error instanceof SQLException) return "database";
+        if (error instanceof IllegalArgumentException) return "protocol";
+        return "other";
     }
 
     @Override
