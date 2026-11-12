@@ -86,7 +86,7 @@ public final class GameRoomR3TransportProbe {
         BoardGameWebSocketServer ws=null;
         WebSocket hostSocket=null,guestSocket=null,illegalSocket=null,
                   recoverySocket=null,boardSocket=null,sqlFailureSocket=null,
-                  restoredSocket=null;
+                  restoredSocket=null,pagedSocket=null;
         try {
             Path web=root.resolve("web");
             Files.createDirectories(web);
@@ -301,6 +301,62 @@ public final class GameRoomR3TransportProbe {
                     "R3 releases connection capacity despite blocked presence");
             }
 
+            // Reconnect after 101 durable room events. A single R3 event
+            // page is 100; the WebSocket transport must not silently omit
+            // event 101. Insert a disposable sequential fixture directly
+            // through real SQLite to avoid the normal five-chat/sec quota.
+            long beforeReplay=realtime.lastSequence(token);
+            var gson=new com.google.gson.Gson();
+            try(var connection=db.open()){
+                connection.setAutoCommit(false);
+                try(var insert=connection.prepareStatement("""
+                    INSERT INTO game_room_event
+                    (room_id,sequence,event_type,payload,created_at)
+                    VALUES(?,?,?,?,?)
+                    """);
+                    var roomVersion=connection.prepareStatement("""
+                    UPDATE game_room SET event_sequence=?
+                    WHERE room_id=?
+                    """)){
+                    for(int i=1;i<=101;i++){
+                        long sequence=beforeReplay+i;
+                        var event=new GameRoomRealtimeService.Event(
+                            "room.probe",roomId,sequence,
+                            first.hostCredential().memberId(),
+                            "replay-page-"+i,null,null,
+                            java.time.Instant.EPOCH.toString());
+                        insert.setString(1,roomId);
+                        insert.setLong(2,sequence);
+                        insert.setString(3,"room.probe");
+                        insert.setString(4,gson.toJson(event));
+                        insert.setString(5,java.time.Instant.EPOCH.toString());
+                        insert.addBatch();
+                    }
+                    insert.executeBatch();
+                    roomVersion.setLong(1,beforeReplay+101);
+                    roomVersion.setString(2,roomId);
+                    check(roomVersion.executeUpdate()==1,
+                        "R3 replay fixture persists room high-watermark");
+                }
+                connection.commit();
+            }
+            var paged=new Observer();
+            pagedSocket=connect(client,socketUri,paged);
+            pagedSocket.sendText(subscribe(token,beforeReplay),true)
+                .get(3,TimeUnit.SECONDS);
+            String pagedSnapshot=paged.expect("\"type\":\"room.snapshot\"");
+            check(pagedSnapshot.contains("\"lastSequence\":"+
+                (beforeReplay+101)),
+                "R3 page replay snapshot exposes the exact durable high-watermark");
+            for(int i=1;i<=101;i++){
+                long sequence=beforeReplay+i;
+                String delivered=paged.expect("\"type\":\"room.probe\"");
+                check(delivered.contains("\"sequence\":"+sequence),
+                    "R3 reconnect receives ordered durable event "+i);
+            }
+            check(paged.noMessage()==false || paged.closeCode.get()<0,
+                "R3 replay keeps the authenticated socket open for presence");
+
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
                 +" replay=recovered chat=room-isolated"
@@ -308,7 +364,8 @@ public final class GameRoomR3TransportProbe {
         } finally {
             for(var client:new WebSocket[]{hostSocket,guestSocket,illegalSocket,
                                           recoverySocket,boardSocket,
-                                          sqlFailureSocket,restoredSocket}){
+                                          sqlFailureSocket,restoredSocket,
+                                          pagedSocket}){
                 if(client!=null)try{client.abort();}catch(RuntimeException ignored){}
             }
             if(httpServer!=null)httpServer.close();
