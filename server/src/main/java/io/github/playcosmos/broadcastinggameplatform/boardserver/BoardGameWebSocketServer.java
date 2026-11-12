@@ -423,7 +423,7 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
         // Admission and teardown must observe a consistent channel map and
         // global count. In particular, release the slot BEFORE presence
         // fanout: it can wait on memberSendLock / SQLite while a reconnect
-        // is trying to claim the freed per-IP or global capacity.
+        // is trying to claim the released global admission capacity.
         Channel channel;
         Subscriber subscriber;
         int count;
