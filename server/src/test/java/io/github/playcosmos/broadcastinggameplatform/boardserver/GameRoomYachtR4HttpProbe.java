@@ -3,6 +3,8 @@ package io.github.playcosmos.broadcastinggameplatform.boardserver;
 import com.google.gson.JsonParser;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.domain.YachtScoring.Category;
 import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRoomService;
+import io.github.playcosmos.broadcastinggameplatform.games.yacht.persistence.YachtRepository;
+import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomService;
 import io.github.playcosmos.broadcastinggameplatform.platform.events.PlatformEventBus;
 import io.github.playcosmos.broadcastinggameplatform.platform.provider.ProviderRegistry;
 import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomAccessService;
@@ -411,17 +413,19 @@ public final class GameRoomYachtR4HttpProbe {
                         && failed.body().contains("Yacht server error")
                         && !failed.body().contains("probe final transition failed"),
                         "R14z post-commit SQL failure returns generic HTTP 500");
-                    var partial=asState(request(client,base,ROOT+"/yacht",
-                        "GET",null,owner,null));
-                    var partialMatch=partial.getAsJsonObject("yacht")
-                        .getAsJsonObject("match");
-                    require(partialMatch.get("completedTurns").getAsInt()==78
-                        && "FINISHED".equals(partialMatch.get("phase").getAsString())
-                        && matchId.equals(partialMatch.get("id").getAsString())
-                        && partialMatch.get("version").getAsInt()>
-                            afterRoll.get("version").getAsInt()
-                        && "PLAYING".equals(partial.getAsJsonObject("room")
-                            .get("state").getAsString()),
+                    // The public GET also tries to reconcile POST_GAME,
+                    // so it legitimately returns 500 while this trigger is
+                    // installed. Read authoritative persisted state without
+                    // triggering the unrelated self-heal write path.
+                    var persisted=new YachtRepository(db).find(matchId);
+                    var partialRoom=new GameRoomService(db).find(
+                        room.get("roomId").getAsString());
+                    require(persisted.completedTurns()==78
+                        && "FINISHED".equals(persisted.phase().name())
+                        && matchId.equals(persisted.id())
+                        && persisted.version()>
+                            afterRoll.get("version").getAsLong()
+                        && "PLAYING".equals(partialRoom.state().name()),
                         "R14z final score durable while postgame room sync fails");
                 } finally {
                     try(var connection=db.open();
