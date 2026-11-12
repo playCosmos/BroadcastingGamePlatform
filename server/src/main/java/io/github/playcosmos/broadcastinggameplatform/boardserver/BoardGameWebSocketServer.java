@@ -593,15 +593,28 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                 roomSubscribers.put(connection,
                     new Subscriber(principal.roomId(),principal.memberId(),token));
                 var room=membership.room(token);
+                long snapshotSequence=realtime.lastSequence(token);
                 connection.send(JSON.toJson(Map.of(
                     "type","room.snapshot",
                     "roomId",principal.roomId(),
                     "memberCount",room.memberCount(),
                     "playerCount",room.playerCount(),
-                    "lastSequence",realtime.lastSequence(token))));
-                var history=realtime.events(token,after);
-                for (var event:history.events()) {
-                    if (connection.isOpen())connection.send(JSON.toJson(event));
+                    "lastSequence",snapshotSequence)));
+                // Durable events are paged 100 at a time. Replay ALL retained
+                // events up to the snapshot cursor, not just the first page.
+                // Later commits wait on memberSendLock to broadcast normally;
+                // including them here too would duplicate the live event.
+                long replayCursor=after;
+                while(connection.isOpen() && replayCursor<snapshotSequence){
+                    var history=realtime.events(token,replayCursor);
+                    long previous=replayCursor;
+                    for(var event:history.events()){
+                        if(event.sequence()>snapshotSequence || !connection.isOpen())
+                            break;
+                        connection.send(JSON.toJson(event));
+                        replayCursor=event.sequence();
+                    }
+                    if(replayCursor<=previous)break;
                 }
                 publishPresence(principal.roomId(),principal.memberId());
             }
