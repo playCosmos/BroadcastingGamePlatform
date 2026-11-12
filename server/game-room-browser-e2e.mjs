@@ -4176,15 +4176,54 @@ async function sixPlayerBrowserCapacityAcceptance(base,ws){
     check(twentyPages.length===20&&
         new Set([...playerTokens,...spectatorTokens]).size===20,
         "R15g twenty independent Chrome contexts have distinct room credentials");
-    await poll(async()=>{
-        const opened=await Promise.all(twentyPages.map(p=>cdp.eval(p,
-            "(()=>{const a=window.__r15fSocketAudit;return a&&"+
-            "a.connections.length===1 &&"+
-            "a.connections[0].kind==='member' &&"+
-            "a.connections[0].opened && !a.connections[0].closed &&"+
-            "a.connections[0].subscriptions.length===1;})()")));
-        return opened.every(Boolean);
-    },"R15g twenty actual Chrome authenticated member WS connections",25000);
+    try {
+        await poll(async()=>{
+            const opened=await Promise.all(twentyPages.map(p=>cdp.eval(p,
+                "(()=>{const a=window.__r15fSocketAudit;return a&&"+
+                "a.connections.length===1 &&"+
+                "a.connections[0].kind==='member' &&"+
+                "a.connections[0].opened && !a.connections[0].closed &&"+
+                "a.connections[0].subscriptions.length===1;})()")));
+            return opened.every(Boolean);
+        },"R15g twenty actual Chrome authenticated member WS connections",25000);
+    } catch {
+        // Failure-only bounded audit of all 20 real isolated browser pages.
+        // Preserve the 25s limit and EXACTLY-ONE active socket contract.
+        // No URLs, room/member IDs, tokens, frames or browser error strings.
+        const auditExpression=[
+            "(()=>{const a=window.__r15fSocketAudit;",
+            "const c=a?.connections||[];",
+            "const members=c.filter(s=>s.kind==='member');",
+            "const live=members.filter(s=>s.opened&&!s.closed&&",
+                "s.socket.readyState===WebSocket.OPEN);",
+            "return {auditPresent:!!a,",
+            "gameVisible:document.getElementById('game')?.hidden===false,",
+            "totalSockets:c.length,memberSockets:members.length,",
+            "activeMembers:live.length,",
+            "openedMembers:members.filter(s=>s.opened).length,",
+            "closedMembers:members.filter(s=>s.closed).length,",
+            "connectingMembers:members.filter(s=>s.socket.readyState===0).length,",
+            "subscribedMembers:members.filter(s=>s.subscriptions.length===1).length,",
+            "closeCodes:members.slice(0,3).map(s=>",
+                "Number.isSafeInteger(s.closeCode)&&s.closeCode>=1000&&",
+                "s.closeCode<=4999?s.closeCode:null)};})()"
+        ].join("");
+        const diagnostics=await Promise.all(twentyPages.map(async(page,index)=>{
+            try {
+                return {index,...await cdp.eval(page,auditExpression)};
+            } catch {
+                return {index,unavailable:true};
+            }
+        }));
+        throw Error("timeout waiting for R15g twenty actual Chrome "+
+            "authenticated member WS connections; sanitizedSocketDiagnostic="+
+            JSON.stringify({
+                pages:diagnostics,
+                recentHttpStatuses:cdp.network.slice(-8).map(x=>
+                    Number.isSafeInteger(x.status)&&x.status>=100&&
+                    x.status<=599?x.status:null)
+            }));
+    }
     const state=await backend(spectator,"/me","GET",null,spectatorToken);
     const members=state.data.room?.members||[];
     check(state.status===200 && state.data.room.playerCount===6
