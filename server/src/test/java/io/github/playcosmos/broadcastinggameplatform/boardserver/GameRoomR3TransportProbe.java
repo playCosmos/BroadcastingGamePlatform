@@ -274,7 +274,7 @@ public final class GameRoomR3TransportProbe {
             // Deterministically keep presence fanout blocked while a REAL
             // authenticated socket closes. Capacity must be reclaimed before
             // onClose can acquire memberSendLock, or a reconnect can receive
-            // an artificial 1013 under per-IP/global connection pressure.
+            // an artificial 1013 if the global 256-connection cap is reached.
             var lockField=BoardGameWebSocketServer.class
                 .getDeclaredField("memberSendLock");
             lockField.setAccessible(true);
