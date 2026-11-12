@@ -52,6 +52,12 @@ const active=[];
 // Fixed labels only: these are safe to emit on CI failure without identities.
 let diagnosticCycle=0;
 let diagnosticPhase="admission";
+// Bounded failure-only values. Never record a socket URL, member token,
+// response payload, remote address or raw WebSocket close reason.
+let diagnosticCloseCode=0;
+let diagnosticSocketIndex=0;
+let diagnosticWasClean=false;
+let diagnosticClosedBeforeClientClose=false;
 const start=performance.now();
 const timeoutMs=12000;
 async function post(path,body,token){
@@ -89,7 +95,7 @@ function waitFor(socket,predicate,label){
 async function connect(token,cursor){
     return await new Promise((resolve,reject)=>{
         const ws=new WebSocket(websocketUrl);
-        const item={ws,frames:[],waiters:[],closed:false,code:-1};
+        const item={ws,frames:[],waiters:[],closed:false,code:-1,wasClean:false};
         let settled=false;
         const timer=setTimeout(()=>stop(Error("WS connect timeout")),timeoutMs);
         function stop(err){
@@ -111,6 +117,7 @@ async function connect(token,cursor){
         });
         ws.addEventListener("close",event=>{
             item.closed=true;item.code=event.code;
+            item.wasClean=event.wasClean===true;
             for(const waiter of item.waiters)waiter.reject(
                 Error("WS unexpectedly closed "+event.code));
             item.waiters.length=0;
@@ -156,9 +163,20 @@ async function matchAll(items,messageId,sequence,label){
     }
 }
 async function shutAll(items){
-    for(const item of items){
+    for(let i=0;i<items.length;i++){
+        const item=items[i];
+        const wasClosed=item.closed;
         const code=await close(item);
-        if(code!==1000&&code!==1001)fail("unexpected normal socket close code "+code);
+        if(code!==1000&&code!==1001){
+            // Numeric status and position within this fixed 12-spectator
+            // fixture only. No member identity or socket URL in CI logs.
+            diagnosticSocketIndex=i+1;
+            diagnosticCloseCode=Number.isInteger(code)
+                && code>=1000 && code<=4999 ? code : 0;
+            diagnosticWasClean=item.wasClean===true;
+            diagnosticClosedBeforeClientClose=wasClosed;
+            fail("unexpected normal socket close code");
+        }
     }
 }
 async function main(){
@@ -262,7 +280,12 @@ catch(error){
         :"other";
     console.error("GAME_ROOM_R14N_PACKAGED_WS_CLIENT_FAILED reason="+reason+
         " phase="+diagnosticPhase+" cycle="+diagnosticCycle+
-        " httpStatus="+(http?Number(http[1]):0));
+        " httpStatus="+(http?Number(http[1]):0)+
+        " closeCode="+(reason==="ws_close_code"?diagnosticCloseCode:0)+
+        " socketIndex="+(reason==="ws_close_code"?diagnosticSocketIndex:0)+
+        " wasClean="+(reason==="ws_close_code"&&diagnosticWasClean?1:0)+
+        " alreadyClosed="+(reason==="ws_close_code"&&
+            diagnosticClosedBeforeClientClose?1:0));
     process.exitCode=1;
 }finally{
     for(const item of active)try{item.ws.close();}catch{}
