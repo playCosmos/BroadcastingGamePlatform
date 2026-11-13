@@ -785,7 +785,11 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private static long durableRoomSequence(String json) {
         try {
             var frame=JsonParser.parseString(json).getAsJsonObject();
-            if(!frame.has("sequence"))return -1;
+            // Native Yacht events share this member WebSocket but use an
+            // independent per-match sequence (not game_room_event.sequence).
+            // Never let yacht.* advance or gap-check the room replay cursor.
+            if(!frame.has("type") || !frame.get("type").getAsString()
+                .startsWith("room.") || !frame.has("sequence"))return -1;
             long sequence=frame.get("sequence").getAsLong();
             return sequence>0?sequence:-1;
         } catch(RuntimeException malformed) {
