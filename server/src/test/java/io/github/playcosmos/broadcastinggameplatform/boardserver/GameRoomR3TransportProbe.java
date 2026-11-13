@@ -448,6 +448,22 @@ public final class GameRoomR3TransportProbe {
                 deliveryGate.set(ignored -> {});
             }
 
+            // Native Yacht Y2 uses its own MATCH version/sequence but shares
+            // this authenticated room socket for its 20-member fanout. It
+            // must not consume the independent durable GAME_ROOM cursor.
+            long beforeNative=realtime.lastSequence(token);
+            String nativeFrame="{\"type\":\"yacht.dice.rolled\",\"sequence\":999999}";
+            check(ws.broadcastRoomEvent(roomId,nativeFrame),
+                "R3 native Yacht frame remains eligible for member fanout");
+            check(ordered.expect("\"type\":\"yacht.dice.rolled\"")
+                .contains("\"sequence\":999999"),
+                "R3 native Yacht sequence bypasses room durable gap checks");
+            var afterNative=realtime.chat(token,"r3racepost003","After native event");
+            check(afterNative.sequence()==beforeNative+1
+                && ordered.expect("\"messageId\":\"r3racepost003\"")
+                .contains("\"sequence\":"+(beforeNative+1)),
+                "R3 room durable cursor remains intact after native Yacht frame");
+
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
                 +" replay=recovered chat=room-isolated"
