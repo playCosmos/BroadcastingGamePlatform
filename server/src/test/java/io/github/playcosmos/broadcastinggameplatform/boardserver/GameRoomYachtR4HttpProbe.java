@@ -240,6 +240,7 @@ public final class GameRoomYachtR4HttpProbe {
             // R15h failure-mode acceptance: every persisted two-phase
             // start boundary must remain recoverable using the same host.
             interruptedYachtStartRecoveryAcceptance(client,base,access,db);
+            sqliteBusyAfterFreezeAcceptance(access,db);
             sixPlayerCapacityAcceptance(client,base,access,db);
         } finally {
             if(web!=null)web.close();
@@ -696,6 +697,139 @@ public final class GameRoomYachtR4HttpProbe {
         }
         System.out.println("GAME_ROOM_R15H_PARTIAL_START_RECOVERY_PASSED"
             +" stages=create,activate,link match=unique auth=host");
+    }
+
+
+    /**
+     * #123: a REAL competing SQLite writer can exhaust busy_timeout
+     * between an already-committed PLAYING freeze and Y2 native creation.
+     * Test-only short busy_timeout and latch; production DB/HTTP unchanged.
+     * This classifies a possible stage=create / SQLITE_BUSY (5) failure,
+     * not the unobserved root cause of the historical browser HTTP 500.
+     */
+    private static void sqliteBusyAfterFreezeAcceptance(
+        GameRoomAccessService access, BoardGameDatabase db) throws Exception {
+        var hosted=access.createHostedRoom("yacht",
+            "R15h SQLite busy after freeze","Host",
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.PLAYER,2,3);
+        String host=hosted.hostCredential().token();
+        String roomId=hosted.room().roomId();
+        String guest=access.join(access.invite(host,
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.PLAYER,1,
+            Duration.ofMinutes(10)).token(),"Guest").token();
+        access.ready(host,true);
+        access.ready(guest,true);
+
+        var armed=new java.util.concurrent.atomic.AtomicBoolean(true);
+        var entered=new java.util.concurrent.CountDownLatch(1);
+        var release=new java.util.concurrent.CountDownLatch(1);
+        // Only the native Yacht service uses this test DB proxy. Lobby
+        // freeze still uses the regular database connection and commits.
+        io.github.playcosmos.broadcastinggameplatform.db.DatabaseAccess
+            gatedNative=new io.github.playcosmos.broadcastinggameplatform
+                .db.DatabaseAccess() {
+            @Override public Path path(){return db.path();}
+            @Override public java.sql.Connection open() throws java.sql.SQLException {
+                if(armed.compareAndSet(true,false)){
+                    entered.countDown();
+                    try {
+                        if(!release.await(12,java.util.concurrent.TimeUnit.SECONDS))
+                            throw new java.sql.SQLException(
+                                "test native open latch expired");
+                    } catch(InterruptedException interrupted){
+                        Thread.currentThread().interrupt();
+                        throw new java.sql.SQLException(
+                            "test native open latch interrupted",interrupted);
+                    }
+                }
+                var connection=db.open();
+                // Shorten only the disposable fixture's writer timeout;
+                // the real BoardGameDatabase keeps its 5000-ms policy.
+                try(var statement=connection.createStatement()){
+                    statement.execute("PRAGMA busy_timeout=200");
+                }
+                return connection;
+            }
+        };
+        var service=new GameRoomYachtService(db,access,
+            new YachtRoomService(gatedNative,(code,json)->{}));
+        var pending=java.util.concurrent.CompletableFuture.supplyAsync(()->{
+            try {
+                service.start(host);
+                return (java.sql.SQLException)null;
+            } catch(java.sql.SQLException sqlFailure){
+                return sqlFailure;
+            }
+        });
+        var originalErr=System.err;
+        var captured=new ByteArrayOutputStream();
+        try {
+            require(entered.await(10,java.util.concurrent.TimeUnit.SECONDS),
+                "R15h native create waits AFTER persisted lobby freeze");
+            require(access.room(host).state()==
+                io.github.playcosmos.broadcastinggameplatform.platform
+                    .rooms.GameRoomModels.RoomState.PLAYING,
+                "R15h native create gate sees committed PLAYING room");
+            try(var capture=new PrintStream(
+                captured,true,StandardCharsets.UTF_8);
+                var competing=db.open();
+                var blocker=competing.createStatement()){
+                blocker.execute("BEGIN IMMEDIATE");
+                System.setErr(capture);
+                try {
+                    release.countDown();
+                    var failed=pending.get(8,java.util.concurrent.TimeUnit.SECONDS);
+                    require(failed!=null && failed.getErrorCode()==5,
+                        "R15h native create with competing SQLite writer"
+                        +" reports SQLITE_BUSY code 5");
+                } finally {
+                    blocker.execute("ROLLBACK");
+                }
+            }
+        } finally {
+            System.setErr(originalErr);
+            release.countDown();
+        }
+        String diagnostic=captured.toString(StandardCharsets.UTF_8);
+        require(diagnostic.lines().filter(line->line.equals(
+            "[game-room-yacht] start_sql_failure stage=create code=5")).count()==1,
+            "R15h writer contention logs fixed create stage and SQLITE_BUSY code");
+        require(!diagnostic.contains(host)
+            && !diagnostic.contains(guest)
+            && !diagnostic.contains(roomId),
+            "R15h writer contention diagnostic excludes credentials and room ID");
+        require(service.state(host).room().state()==
+            io.github.playcosmos.broadcastinggameplatform.platform
+                .rooms.GameRoomModels.RoomState.PLAYING
+            && service.state(host).yacht()==null,
+            "R15h genuine SQLite busy leaves resumable PLAYING without match");
+        var recovered=service.start(host);
+        require(recovered.yacht()!=null && recovered.yacht().match().phase()==
+            io.github.playcosmos.broadcastinggameplatform.games.yacht
+                .domain.YachtMatchState.Phase.ACTIVE,
+            "R15h writer release allows host to recover ACTIVE Yacht match");
+        var duplicate=service.start(host);
+        require(duplicate.yacht().match().id().equals(
+            recovered.yacht().match().id()),
+            "R15h contention recovery reuses exactly one native match");
+        try(var connection=db.open();
+            var nativeCount=connection.prepareStatement(
+                "SELECT COUNT(*) FROM yacht_room WHERE create_key=?");
+            var linkCount=connection.prepareStatement(
+                "SELECT COUNT(*) FROM game_room_yacht_link WHERE room_id=?")){
+            nativeCount.setString(1,"common-yacht-"+roomId);
+            linkCount.setString(1,roomId);
+            try(var one=nativeCount.executeQuery();
+                var two=linkCount.executeQuery()){
+                require(one.next() && one.getInt(1)==1
+                    && two.next() && two.getInt(1)==1,
+                    "R15h real SQLite busy recovery has one match and link");
+            }
+        }
+        System.out.println("GAME_ROOM_R15H_SQLITE_BUSY_CREATE_RECOVERY_PASSED"
+            +" stage=create code=5 recovered=true match=unique");
     }
 
     private static com.google.gson.JsonObject parse(HttpResponse<String> response) {
