@@ -14,6 +14,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Predicate;
 import java.util.regex.Pattern;
 import org.java_websocket.WebSocket;
@@ -111,7 +112,13 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     private final GameRoomAccessService membership;
     private final GameRoomRealtimeService realtime;
     private final Object memberSendLock = new Object();
-    private record Subscriber(String roomId,String memberId,String token) {}
+    // Delivery cursors advance only under memberSendLock.
+    private record Subscriber(String roomId,String memberId,String token,
+                              AtomicLong deliveredSequence) {
+        Subscriber(String roomId,String memberId,String token) {
+            this(roomId,memberId,token,new AtomicLong(-1));
+        }
+    }
     private final Map<WebSocket, Subscriber> roomSubscribers =
         new ConcurrentHashMap<>();
     private final Map<WebSocket, Subscriber> drawingSubscribers =
@@ -590,8 +597,9 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                     connection.close(1008,"room membership invalid");
                     return;
                 }
-                roomSubscribers.put(connection,
-                    new Subscriber(principal.roomId(),principal.memberId(),token));
+                var subscriber=new Subscriber(
+                    principal.roomId(),principal.memberId(),token);
+                roomSubscribers.put(connection,subscriber);
                 var room=membership.room(token);
                 long snapshotSequence=realtime.lastSequence(token);
                 connection.send(JSON.toJson(Map.of(
@@ -616,6 +624,10 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                     }
                     if(replayCursor<=previous)break;
                 }
+                // A snapshot includes committed events even if their live
+                // callbacks have not yet reached the serialized send lock.
+                if(connection.isOpen())
+                    subscriber.deliveredSequence().set(snapshotSequence);
                 publishPresence(principal.roomId(),principal.memberId());
             }
         } catch (GameRoomAccessService.Forbidden
@@ -698,6 +710,9 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
     /** Called after SQLite commit, serialized with subscription+replay. */
     public boolean broadcastRoomEvent(String roomId,String json) {
         boolean sent=false;
+        // Presence updates and transport-only probes do not have a durable
+        // cursor and continue to use best-effort delivery.
+        long eventSequence=durableRoomSequence(json);
         synchronized(memberSendLock) {
             for(var entry:roomSubscribers.entrySet()) {
                 Subscriber subscriber=entry.getValue();
@@ -712,19 +727,74 @@ public final class BoardGameWebSocketServer extends WebSocketServer {
                         socket.close(1008,"member session changed");
                         continue;
                     }
+                    if(eventSequence>0) {
+                        long cursor=subscriber.deliveredSequence().get();
+                        // A delayed post-commit callback can already have
+                        // been delivered in this subscriber's snapshot replay.
+                        if(eventSequence<=cursor)continue;
+                        // A newer callback can outrun an older commit's
+                        // callback. Fetch the missed predecessors from
+                        // bounded SQLite pages before the newer live frame.
+                        while(socket.isOpen() && cursor+1<eventSequence) {
+                            var page=realtime.events(subscriber.token(),cursor);
+                            long previous=cursor;
+                            for(var missing:page.events()) {
+                                if(missing.sequence()>=eventSequence
+                                    || !socket.isOpen())break;
+                                if(missing.sequence()!=cursor+1) {
+                                    socket.close(1013,
+                                        "room delivery cursor gap");
+                                    break;
+                                }
+                                socket.send(JSON.toJson(missing));
+                                cursor=missing.sequence();
+                                subscriber.deliveredSequence().set(cursor);
+                                sent=true;
+                            }
+                            if(!socket.isOpen())break;
+                            if(cursor<=previous) {
+                                socket.close(1013,
+                                    "room delivery cursor unavailable");
+                                break;
+                            }
+                        }
+                        if(!socket.isOpen())continue;
+                        if(cursor+1!=eventSequence) {
+                            socket.close(1013,"room delivery cursor gap");
+                            continue;
+                        }
+                    }
                     socket.send(json);
+                    if(eventSequence>0)
+                        subscriber.deliveredSequence().set(eventSequence);
                     sent=true;
                 } catch (GameRoomAccessService.Forbidden invalid) {
                     socket.close(1008,"room credential expired");
                 } catch (SQLException databaseFailure) {
-                    // A committed member may still be authorized. The
-                    // database is temporarily unavailable, not revoked.
-                    // Never expose exception text, tokens, or room IDs.
+                    // Temporary SQLite unavailability is NOT revocation.
+                    // Never disclose raw SQL, tokens or member identifiers.
                     socket.close(1013,"room delivery temporarily unavailable");
+                } catch (GameRoomService.RoomConflict gap) {
+                    socket.close(1013,"room delivery replay unavailable");
                 }
             }
         }
         return sent;
+    }
+
+    private static long durableRoomSequence(String json) {
+        try {
+            var frame=JsonParser.parseString(json).getAsJsonObject();
+            // Native Yacht events share this member WebSocket but use an
+            // independent per-match sequence (not game_room_event.sequence).
+            // Never let yacht.* advance or gap-check the room replay cursor.
+            if(!frame.has("type") || !frame.get("type").getAsString()
+                .startsWith("room.") || !frame.has("sequence"))return -1;
+            long sequence=frame.get("sequence").getAsLong();
+            return sequence>0?sequence:-1;
+        } catch(RuntimeException malformed) {
+            return -1;
+        }
     }
 
     private void publishPresence(String roomId,String memberId) {

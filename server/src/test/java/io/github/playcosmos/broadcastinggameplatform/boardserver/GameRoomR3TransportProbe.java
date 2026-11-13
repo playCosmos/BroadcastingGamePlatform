@@ -60,6 +60,9 @@ public final class GameRoomR3TransportProbe {
         boolean noMessage()throws Exception {
             return inbox.poll(300,TimeUnit.MILLISECONDS)==null;
         }
+        boolean noMessageFor(long millis)throws Exception {
+            return inbox.poll(millis,TimeUnit.MILLISECONDS)==null;
+        }
         void expectClose()throws Exception {
             expectCloseCode(1008);
         }
@@ -86,7 +89,8 @@ public final class GameRoomR3TransportProbe {
         BoardGameWebSocketServer ws=null;
         WebSocket hostSocket=null,guestSocket=null,illegalSocket=null,
                   recoverySocket=null,boardSocket=null,sqlFailureSocket=null,
-                  restoredSocket=null,pagedSocket=null;
+                  restoredSocket=null,pagedSocket=null,
+                  raceSocket=null,orderedSocket=null;
         try {
             Path web=root.resolve("web");
             Files.createDirectories(web);
@@ -101,7 +105,10 @@ public final class GameRoomR3TransportProbe {
             db.initialize();
             var access=new GameRoomAccessService(db);
             var live=new AtomicReference<BoardGameWebSocketServer>();
+            var deliveryGate=new AtomicReference<java.util.function.Consumer<String>>(
+                ignored -> {});
             var realtime=new GameRoomRealtimeService(db,access,(id,json)->{
+                deliveryGate.get().accept(json);
                 var socket=live.get();
                 if(socket!=null)socket.broadcastRoomEvent(id,json);
             });
@@ -357,6 +364,106 @@ public final class GameRoomR3TransportProbe {
             check(paged.closeCode.get()<0 && ws.connectedClients()>=1,
                 "R3 replay preserves the authenticated live member socket");
 
+
+            // #167: commit can complete before its post-commit live callback.
+            // Subscribe during that deliberate delay: the snapshot replay must
+            // contain the event ONCE, and the late callback must not resend it.
+            long beforeRace=realtime.lastSequence(token);
+            String duplicateId="r3racedup001";
+            var duplicateEntered=new java.util.concurrent.CountDownLatch(1);
+            var duplicateRelease=new java.util.concurrent.CountDownLatch(1);
+            deliveryGate.set(json -> gateDelivery(json,duplicateId,
+                duplicateEntered,duplicateRelease));
+            try {
+                var pending=CompletableFuture.runAsync(() -> {
+                    try { realtime.chat(token,duplicateId,"Race on reconnect"); }
+                    catch(Exception failed) {
+                        throw new java.util.concurrent.CompletionException(failed);
+                    }
+                });
+                check(duplicateEntered.await(10,TimeUnit.SECONDS),
+                    "R3 durable chat committed before blocked live callback");
+                var race=new Observer();
+                raceSocket=connect(client,socketUri,race);
+                raceSocket.sendText(subscribe(token,beforeRace),true)
+                    .get(3,TimeUnit.SECONDS);
+                String raceSnapshot=race.expect("\"type\":\"room.snapshot\"");
+                check(raceSnapshot.contains("\"lastSequence\":"+(beforeRace+1)),
+                    "R3 reconnect captures pending committed durable sequence");
+                check(race.expect("\"messageId\":\""+duplicateId+"\"")
+                    .contains("\"sequence\":"+(beforeRace+1)),
+                    "R3 reconnect replays pending event once");
+                race.expect("\"type\":\"room.presence.changed\"");
+                duplicateRelease.countDown();
+                pending.get(10,TimeUnit.SECONDS);
+                check(race.noMessageFor(1200),
+                    "R3 delayed post-commit broadcast must not duplicate replay");
+            } finally {
+                duplicateRelease.countDown();
+                deliveryGate.set(ignored -> {});
+            }
+            raceSocket.abort();
+            raceSocket=null;
+
+            // #167: two committed durable events may dispatch live callbacks
+            // in reverse order. A subscriber must still see increasing sequence
+            // exactly once, not event N+1 followed by event N.
+            long beforeReverse=realtime.lastSequence(token);
+            var ordered=new Observer();
+            orderedSocket=connect(client,socketUri,ordered);
+            orderedSocket.sendText(subscribe(token,beforeReverse),true)
+                .get(3,TimeUnit.SECONDS);
+            ordered.expect("\"type\":\"room.snapshot\"");
+            ordered.expect("\"type\":\"room.presence.changed\"");
+            String firstId="r3racefirst01",secondId="r3racesecond02";
+            var reverseEntered=new java.util.concurrent.CountDownLatch(1);
+            var reverseRelease=new java.util.concurrent.CountDownLatch(1);
+            deliveryGate.set(json -> gateDelivery(json,firstId,
+                reverseEntered,reverseRelease));
+            try {
+                var pending=CompletableFuture.runAsync(() -> {
+                    try { realtime.chat(token,firstId,"First committed"); }
+                    catch(Exception failed) {
+                        throw new java.util.concurrent.CompletionException(failed);
+                    }
+                });
+                check(reverseEntered.await(10,TimeUnit.SECONDS),
+                    "R3 first durable commit held before live fanout");
+                var secondCommitted=realtime.chat(token,secondId,"Second committed");
+                check(secondCommitted.sequence()==beforeReverse+2,
+                    "R3 later durable event committed after blocked first event");
+                String orderedFirst=ordered.expect("\"type\":\"room.chat.message\"");
+                String orderedSecond=ordered.expect("\"type\":\"room.chat.message\"");
+                check(orderedFirst.contains("\"sequence\":"+(beforeReverse+1))
+                    && orderedFirst.contains("\"messageId\":\""+firstId+"\"")
+                    && orderedSecond.contains("\"sequence\":"+(beforeReverse+2))
+                    && orderedSecond.contains("\"messageId\":\""+secondId+"\""),
+                    "R3 reversed callbacks deliver contiguous ordered durable events");
+                reverseRelease.countDown();
+                pending.get(10,TimeUnit.SECONDS);
+                check(ordered.noMessageFor(1200),
+                    "R3 delayed earlier event callback never delivers a duplicate");
+            } finally {
+                reverseRelease.countDown();
+                deliveryGate.set(ignored -> {});
+            }
+
+            // Native Yacht Y2 uses its own MATCH version/sequence but shares
+            // this authenticated room socket for its 20-member fanout. It
+            // must not consume the independent durable GAME_ROOM cursor.
+            long beforeNative=realtime.lastSequence(token);
+            String nativeFrame="{\"type\":\"yacht.dice.rolled\",\"sequence\":999999}";
+            check(ws.broadcastRoomEvent(roomId,nativeFrame),
+                "R3 native Yacht frame remains eligible for member fanout");
+            check(ordered.expect("\"type\":\"yacht.dice.rolled\"")
+                .contains("\"sequence\":999999"),
+                "R3 native Yacht sequence bypasses room durable gap checks");
+            var afterNative=realtime.chat(token,"r3racepost003","After native event");
+            check(afterNative.sequence()==beforeNative+1
+                && ordered.expect("\"messageId\":\"r3racepost003\"")
+                .contains("\"sequence\":"+(beforeNative+1)),
+                "R3 room durable cursor remains intact after native Yacht frame");
+
             System.out.println("GAME_ROOM_TRANSPORT_R3_PASSED checks="+checks
                 +" http=authenticated websocket=member-only"
                 +" replay=recovered chat=room-isolated"
@@ -365,7 +472,7 @@ public final class GameRoomR3TransportProbe {
             for(var client:new WebSocket[]{hostSocket,guestSocket,illegalSocket,
                                           recoverySocket,boardSocket,
                                           sqlFailureSocket,restoredSocket,
-                                          pagedSocket}){
+                                          pagedSocket,raceSocket,orderedSocket}){
                 if(client!=null)try{client.abort();}catch(RuntimeException ignored){}
             }
             if(httpServer!=null)httpServer.close();
@@ -376,6 +483,20 @@ public final class GameRoomR3TransportProbe {
                     try{Files.deleteIfExists(p);}catch(Exception ignored){}
                 });
             }
+        }
+    }
+
+    private static void gateDelivery(String json,String messageId,
+        java.util.concurrent.CountDownLatch entered,
+        java.util.concurrent.CountDownLatch release) {
+        if(!json.contains("\"messageId\":\""+messageId+"\""))return;
+        entered.countDown();
+        try {
+            if(!release.await(20,TimeUnit.SECONDS))
+                throw new AssertionError("R3 delayed callback release timed out");
+        } catch(InterruptedException interrupted) {
+            Thread.currentThread().interrupt();
+            throw new AssertionError("R3 delayed callback interrupted",interrupted);
         }
     }
 
