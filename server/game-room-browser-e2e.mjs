@@ -3853,6 +3853,139 @@ async function yachtFirstStartFailureBrowserRecoveryAcceptance(base){
         "manualOnly=true match=unique");
 }
 
+// #173: an actual native score can commit while the real Chrome tab loses
+// only its HTTP response. The UI must retain the SAME immutable command ID
+// for a user-triggered retry, without silently sending another score POST.
+async function yachtLostScoreReplyBrowserRecoveryAcceptance(base){
+    const url=base+"/games/yacht/";
+    const host=await cdp.page(url,{auditWebSockets:true});
+    const guest=await cdp.page(url,{auditWebSockets:true});
+    await fill(host,"createRoom",{
+        name:"R15a score response recovery",displayName:"R15a Host",
+        maxPlayers:2,maxRoomMembers:2
+    });
+    const roomCode=await poll(async()=>{
+        const code=await getRoom(host,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(code)?code:null;
+    },"R15a lost-reply room creation");
+    await fill(guest,"publicJoinRoom",{
+        roomCode,displayName:"R15a Guest",seatRole:"PLAYER"
+    });
+    const memberKey="gamecenter.yacht.member-session.v1";
+    const hostToken=await poll(()=>userToken(host,memberKey),
+        "R15a lost-reply host authenticated");
+    const guestToken=await poll(()=>userToken(guest,memberKey),
+        "R15a lost-reply guest authenticated");
+    check(hostToken!==guestToken,
+        "R15a lost-reply two real players have distinct credentials");
+    for(const page of [host,guest]){
+        await waitRoomIdle(page,"game");
+        await poll(()=>cdp.eval(page,
+            "document.getElementById('ready').hidden===false && "+
+            "document.getElementById('ready').disabled===false"),
+            "R15a lost-reply ready control available");
+        await click(page,"ready");
+        await poll(()=>cdp.eval(page,
+            "document.getElementById('ready').textContent.includes('취소')"),
+            "R15a lost-reply real players ready");
+    }
+    await poll(()=>cdp.eval(host,
+        "document.getElementById('start').disabled===false"),
+        "R15a lost-reply host may start");
+    await waitRoomIdle(host,"game");
+    await click(host,"start");
+    await poll(()=>cdp.eval(host,
+        "document.getElementById('roomState').textContent==='PLAYING'"+
+        "&&document.getElementById('roll').disabled===false"),
+        "R15a lost-reply host begins real first turn");
+    await waitRoomIdle(host,"game");
+    await click(host,"roll");
+    await waitRoomIdle(host,"game");
+    await poll(()=>cdp.eval(host,
+        "document.getElementById('turnDetail').textContent.includes('굴림 1 / 3')"+
+        "&&document.querySelector('#scoreGrid button:not([disabled])')!==null"),
+        "R15a lost-reply score choice is enabled");
+    const before=await backend(host,"/yacht","GET",null,hostToken);
+    check(before.status===200&&before.data.yacht?.match?.completedTurns===0
+        &&before.data.yacht?.match?.rolls===1,
+        "R15a lost-reply starts after exactly one real roll");
+
+    // Intercept only the first native score RESPONSE: send the genuine
+    // authenticated POST and let SQLite commit; then reject the JS promise
+    // locally as a simulated lost response. Never expose command IDs,
+    // request bodies or credentials in test output.
+    await cdp.eval(host,`(()=>{
+        const actualFetch=window.fetch.bind(window);
+        const audit={posts:0,originalStatus:null,retryStatus:null,
+            sameCommand:true};
+        let firstCommandId=null;
+        window.__r15aLostScoreReply=audit;
+        window.fetch=async(input,options)=>{
+            const target=typeof input==="string"?input:input?.url;
+            if(target==="/api/v1/room-membership/yacht/score"
+                &&options?.method==="POST"){
+                const commandId=JSON.parse(options.body).commandId;
+                if(firstCommandId===null)firstCommandId=commandId;
+                else if(commandId!==firstCommandId)audit.sameCommand=false;
+                const response=await actualFetch(input,options);
+                audit.posts++;
+                if(audit.posts===1){
+                    audit.originalStatus=response.status;
+                    throw new TypeError("fixture simulated lost score response");
+                }
+                audit.retryStatus=response.status;
+                return response;
+            }
+            return actualFetch(input,options);
+        };
+        return true;
+    })()`);
+    await cdp.eval(host,`(()=>{
+        window.confirm=()=>true;
+        document.querySelector('#scoreGrid button:not([disabled])').click();
+        return true;
+    })()`);
+    await poll(()=>cdp.eval(host,
+        "window.__r15aLostScoreReply?.posts===1"+
+        "&&document.getElementById('commandRecovery').hidden===false"+
+        "&&document.getElementById('retryCommand').disabled===false"+
+        "&&document.getElementById('roll').disabled===true"),
+        "R15a lost-reply exposes manual same-command recovery");
+    const committed=await backend(host,"/yacht","GET",null,hostToken);
+    const match=committed.data.yacht?.match;
+    check(committed.status===200&&match?.completedTurns===1
+        &&match?.version===before.data.yacht.match.version+1
+        &&committed.data.currentPlayer===false,
+        "R15a missing response followed one authoritative committed score");
+    await nap(500);
+    check(await cdp.eval(host,"window.__r15aLostScoreReply.posts")===1,
+        "R15a UI never silently retries failed score mutation");
+    await click(host,"retryCommand");
+    await poll(()=>cdp.eval(host,
+        "window.__r15aLostScoreReply.posts===2"+
+        "&&document.getElementById('commandRecovery').hidden===true"+
+        "&&document.getElementById('game').getAttribute('aria-busy')!=='true'"),
+        "R15a explicit same-ID score retry completes in Chrome");
+    const evidence=await cdp.eval(host,
+        "({posts:window.__r15aLostScoreReply.posts,"+
+        "originalStatus:window.__r15aLostScoreReply.originalStatus,"+
+        "retryStatus:window.__r15aLostScoreReply.retryStatus,"+
+        "sameCommand:window.__r15aLostScoreReply.sameCommand})");
+    check(evidence.posts===2&&evidence.originalStatus===200
+        &&evidence.retryStatus===200&&evidence.sameCommand===true,
+        "R15a UI replay uses exact first command ID and 200 response");
+    const after=await backend(guest,"/yacht","GET",null,guestToken);
+    check(after.status===200
+        &&after.data.yacht?.match?.id===match.id
+        &&after.data.yacht.match.version===match.version
+        &&after.data.yacht.match.completedTurns===1
+        &&after.data.currentPlayer===true,
+        "R15a real guest sees one committed score and no extra version");
+    console.log("GAME_ROOM_R15A_BROWSER_LOST_SCORE_REPLY_RECOVERY_PASSED"+
+        " firstRealStatus=200 simulatedLost=true retryStatus=200"+
+        " manualOnly=true sameCommand=true score=unique");
+}
+
 // R15h: 24 real browser member connections from TWO independent game rooms
 // on the SAME loopback IP. Test isolation for committed chat + native Yacht
 // events, capacity denial at 25 sockets, kick 1008 and slot reclamation.
@@ -4984,6 +5117,11 @@ async function run(){
     server.kill();
     await poll(()=>server.exitCode!==null || server.signalCode!==null,
         "R15h injected browser startup fixture shutdown");
+    const lostScoreFixture=await launchServer();
+    await yachtLostScoreReplyBrowserRecoveryAcceptance(lostScoreFixture.base);
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "R15a lost-score-response browser fixture shutdown");
     // The earlier scenarios' tabs are no longer used. Without this teardown,
     // their renderer contexts remain resident even after the Java fixtures
     // stop and can compete with the next 20-real-browser stress scenario.
