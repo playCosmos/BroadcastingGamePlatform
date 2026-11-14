@@ -71,6 +71,12 @@
               <button id="copyInvite" type="button" class="secondary" hidden>초대 링크 복사</button>
             </section>
           </section>
+          <section id="commandRecovery" class="panel" hidden>
+            <h3>명령 응답 확인 필요</h3>
+            <p class="muted">명령은 서버에 반영됐지만 응답만 유실됐을 수 있습니다. 원래 명령 ID로 직접 재전송하면 중복 점수나 주사위 조작 없이 결과를 확인할 수 있습니다. 자동 재전송하지 않습니다.</p>
+            <div class="toolbar"><button id="retryCommand" type="button" class="primary">이전 명령 결과 확인</button>
+              <button id="dismissCommand" type="button" class="secondary">재전송하지 않고 닫기</button></div>
+          </section>
           <section id="playfield" class="panel" hidden>
             <div class="section-title"><h2 id="turnHeadline">Yacht</h2><p id="turnDetail" class="muted">게임 상태를 읽는 중입니다.</p></div>
             <div id="dice" class="dice" aria-label="주사위 5개"></div>
