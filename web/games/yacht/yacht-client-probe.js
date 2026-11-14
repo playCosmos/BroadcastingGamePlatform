@@ -141,13 +141,12 @@ check(html.includes('id="commandRecovery"')
 check(!js.includes("sessionStorage.setItem(\"pendingCommand\"")
   &&!js.includes("localStorage.setItem(\"pendingCommand\""),
   "pending command must not persist across browser sessions");
-check(/pendingCommand=null;\\s*state=next;/.test(js),
+check(js.includes("pendingCommand=null;\\n      state=next;"),
   "successful manual recovery clears the pending command before rendering");
 // Only a dedicated user click may send the exact saved payload.
-// The regular command() path sends only its one freshly generated ID.
-check((js.match(/send\(\"\\/yacht\\/\"\+previous\.action,\"POST\",previous\.body\)/g)||[])
-  .length===1,
-  "saved command must be replayed once from the explicit handler");
+const originalReplay='next=await send("/yacht/"+previous.action,"POST",previous.body);';
+check(js.split(originalReplay).length===2,
+  "saved command must be replayed exactly once from the explicit handler");
 // R15e: one authenticated member socket per browser tab also receives native
 // Yacht events; game version numbers cannot corrupt room chat replay cursors.
 check(!js.includes("gameSocket") && !js.includes("configuredYacht")
