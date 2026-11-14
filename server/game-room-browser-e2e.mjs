@@ -28,6 +28,17 @@ const safeYachtCommandSqlFailure=line=>{
     const code=Number(match[1]);
     return Number.isSafeInteger(code)?{code}:null;
 };
+// Only an exact Yacht start endpoint and a numeric HTTP code are retained.
+// Neither URL/query, bearer, room/member ID nor response body is persisted.
+const safeYachtStartHttpStatus=(response,sessionId)=>{
+    if(typeof sessionId!=="string" || !Number.isSafeInteger(response?.status)
+        ||response.status<100 || response.status>599)return null;
+    try {
+        if(new URL(response.url).pathname!==
+            "/api/v1/room-membership/yacht/start")return null;
+        return {sessionId,status:response.status};
+    } catch {return null;}
+};
 const safeYachtStartSqlFailure=line=>{
     const match=/^\[game-room-yacht\] start_sql_failure stage=(authenticate|freeze|lookup|create|activate|link|verify|state) code=(-?\d{1,10})$/.exec(line);
     if(!match)return null;
@@ -35,6 +46,20 @@ const safeYachtStartSqlFailure=line=>{
     return Number.isSafeInteger(code)?
         {stage:match[1],code}:null;
 };
+const yachtStartHttpExample=safeYachtStartHttpStatus({
+    url:"https://localhost/api/v1/room-membership/yacht/start?secret=discard",
+    status:500
+},"test-session");
+check(yachtStartHttpExample?.status===500
+    &&Object.keys(yachtStartHttpExample).sort().join(",")==="sessionId,status",
+    "R15h keeps only numeric start HTTP status and internal tab session");
+check(safeYachtStartHttpStatus({url:"https://localhost/api/v1/room-membership/yacht",
+    status:500},"test-session")===null
+    &&safeYachtStartHttpStatus({url:"not a URL",status:500},
+        "test-session")===null
+    &&safeYachtStartHttpStatus({url:"https://localhost/api/v1/room-membership/yacht/start",
+        status:"500"},"test-session")===null,
+    "R15h rejects unrelated endpoints, invalid URLs and nonnumeric statuses");
 const tlsConnections=new Set();
 const upgradedSockets=new Map();
 let nextUpgradeId=0;
@@ -207,6 +232,7 @@ const R15F_SOCKET_AUDIT_SCRIPT = String.raw`(()=>{
 class CDP{
     constructor(url){
         this.nextId=0;this.pending=new Map();this.exceptions=[];this.network=[];
+        this.yachtStartResponses=[];this.yachtStartResponseSequence=0;
         this.browserContexts=new Set();
         this.socket=new WebSocket(url);
         this.ready=new Promise((resolve,reject)=>{
@@ -227,6 +253,14 @@ class CDP{
                 this.exceptions.push(detail?.text+" "+detail?.exception?.description);
             }else if(msg.method==="Network.responseReceived") {
                 const response=msg.params?.response;
+                const yachtStart=safeYachtStartHttpStatus(response,msg.sessionId);
+                if(yachtStart){
+                    this.yachtStartResponses.push({
+                        ...yachtStart,sequence:++this.yachtStartResponseSequence
+                    });
+                    if(this.yachtStartResponses.length>64)
+                        this.yachtStartResponses.shift();
+                }
                 if(response?.status>=400)
                     this.network.push({status:response.status,url:response.url});
             }else if(msg.method==="Network.loadingFailed") {
@@ -3841,25 +3875,10 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
             "document.getElementById('start').disabled===false"),
             "R15h room B can start two-player Yacht");
         const sqlFailureCountBeforeStart=serverYachtStartSqlFailureSequence;
-        await click(host,"start");
-        await poll(async()=>await cdp.eval(host,
-            "document.getElementById('roomState').textContent==='PLAYING'"),
-            "R15h room B match starts");
-        // A PLAYING room label is not enough: the browser may still be
-        // processing the host's Start action when this real HTTP client rolls.
-        // Synchronize the actual current-turn UI without weakening server
-        // version checks or retrying any write.
-        await waitRoomIdle(host,"game");
-        try {
-            await poll(async()=>await cdp.eval(host,
-                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
-                " && document.getElementById('roomState').textContent==='PLAYING'"+
-                " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
-                " && document.getElementById('roll').disabled===false"),
-                "R15h B host UI is idle and on current turn",20000);
-        } catch {
-            // Diagnose current-turn timeout without exposing member
-            // credentials, room IDs, response bodies, chat or dice.
+        const httpStartSequenceBeforeClick=cdp.yachtStartResponseSequence;
+        // Reuse one sanitized diagnostic for both a failed lobby transition
+        // and a PLAYING room without an active Yacht match.
+        const diagnoseStart=async()=>{
             const [view,serverRead]=await Promise.allSettled([
                 cdp.eval(host,`(()=>{
                     const game=document.getElementById("game");
@@ -3882,27 +3901,62 @@ async function twoRoomBrowserIsolationAcceptance(base,ws,roomAPages,
             const read=serverRead.status==="fulfilled"?serverRead.value:null;
             const match=read?.data?.yacht?.match;
             const safeInt=value=>Number.isSafeInteger(value)&&value>=0?value:null;
-            throw Error("timeout waiting for R15h B host UI is idle and on current turn; "+
-                "sanitizedDiagnostic="+JSON.stringify({
-                    ui:view.status==="fulfilled"?view.value:null,
-                    httpStatus:safeInt(read?.status),
-                    matchPresent:Boolean(match),
-                    phaseActive:match?.phase==="ACTIVE",
-                    currentPlayer:read?.data?.currentPlayer===true,
-                    version:safeInt(match?.version),
-                    round:safeInt(match?.round),
-                    completedTurns:safeInt(match?.completedTurns),
-                    rolls:safeInt(match?.rolls),
-                    // Fresh server-local, bounded stage and numeric code ONLY.
-                    // null means no captured SQLException stage, not that
-                    // the HTTP 500 has been explained or made harmless.
-                    startSqlFailureSinceClick:
-                        serverYachtStartSqlFailureSequence>sqlFailureCountBeforeStart?
-                            serverYachtStartSqlFailure:null,
-                    recentHttpStatuses:cdp.network.slice(-5).map(x=>
-                        safeInt(x.status))
-                }));
+            // Only this exact browser tab's /yacht/start status after click.
+            // The CDP session/URL never appears in the diagnostic.
+            const startHttpStatuses=cdp.yachtStartResponses.filter(x=>
+                x.sequence>httpStartSequenceBeforeClick
+                &&x.sessionId===host.sessionId).map(x=>safeInt(x.status));
+            return {
+                ui:view.status==="fulfilled"?view.value:null,
+                httpStatus:safeInt(read?.status),
+                startHttpStatuses,
+                matchPresent:Boolean(match),
+                phaseActive:match?.phase==="ACTIVE",
+                currentPlayer:read?.data?.currentPlayer===true,
+                version:safeInt(match?.version),
+                round:safeInt(match?.round),
+                completedTurns:safeInt(match?.completedTurns),
+                rolls:safeInt(match?.rolls),
+                // Fixed stage and numeric SQL error only; null does not
+                // establish that the HTTP 500 was harmless or non-SQL.
+                startSqlFailureSinceClick:
+                    serverYachtStartSqlFailureSequence>sqlFailureCountBeforeStart?
+                        serverYachtStartSqlFailure:null,
+                recentHttpStatuses:cdp.network.slice(-5).map(x=>
+                    safeInt(x.status))
+            };
+        };
+        await click(host,"start");
+        try {
+            await poll(async()=>await cdp.eval(host,
+                "document.getElementById('roomState').textContent==='PLAYING'"),
+                "R15h room B match starts");
+        } catch {
+            throw Error("timeout waiting for R15h room B match starts; "+
+                "sanitizedDiagnostic="+JSON.stringify(await diagnoseStart()));
         }
+        // A PLAYING room label is not enough: the browser may still be
+        // processing the host's Start action when this real HTTP client rolls.
+        // Synchronize the actual current-turn UI without weakening server
+        // version checks or retrying any write.
+        await waitRoomIdle(host,"game");
+        try {
+            await poll(async()=>await cdp.eval(host,
+                "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+                " && document.getElementById('roomState').textContent==='PLAYING'"+
+                " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+                " && document.getElementById('roll').disabled===false"),
+                "R15h B host UI is idle and on current turn",20000);
+        } catch {
+            throw Error("timeout waiting for R15h B host UI is idle and on current turn; "+
+                "sanitizedDiagnostic="+JSON.stringify(await diagnoseStart()));
+        }
+        // Validate CDP's real per-tab status capture on the success path,
+        // so a green run cannot leave the failure-only reporter untested.
+        await poll(()=>cdp.yachtStartResponses.some(x=>
+            x.sequence>httpStartSequenceBeforeClick
+            &&x.sessionId===host.sessionId &&x.status===200),
+            "R15h captures host start HTTP 200 in its own tab",5000);
         const before=await backend(host,"/yacht","GET",null,tokens[0]);
         const match=before.data.yacht?.match;
         check(before.status===200&&before.data.currentPlayer===true
