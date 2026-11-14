@@ -393,7 +393,82 @@ public final class GameRoomYachtR4HttpProbe {
                 "\",\"expectedVersion\":"+afterRoll.get("version").getAsInt()+
                 ",\"category\":\""+selected.id()+"\"}";
             com.google.gson.JsonObject scored;
-            if(turn==77){
+            if(turn==42){
+                // #173: unlike a failed final-room transition, a midgame
+                // native score must roll back its own SQLite transaction.
+                // Fail the real score UPDATE once, keep this test-only
+                // trigger scoped to the disposable HTTP fixture, and
+                // preserve the exact commandId/version for manual replay.
+                try(var connection=db.open();
+                    var statement=connection.createStatement()){
+                    statement.execute("""
+                        CREATE TRIGGER probe_yacht_midturn_score_failure
+                        BEFORE UPDATE OF state_json ON yacht_match
+                        BEGIN SELECT RAISE(ABORT,'probe midgame score failed'); END
+                        """);
+                }
+                try {
+                    var failed=request(client,base,ROOT+"/yacht/score",
+                        "POST",scoreBody,owner,null);
+                    require(failed.statusCode()==500
+                        && failed.body().contains("Yacht server error")
+                        && !failed.body().contains("probe midgame score failed"),
+                        "R15a midturn native score failure returns generic 500");
+                    var persisted=new YachtRepository(db).find(matchId);
+                    require(persisted.completedTurns()==turn
+                        && persisted.version()==
+                            afterRoll.get("version").getAsLong()
+                        && persisted.rolls()==1
+                        && "ACTIVE".equals(persisted.phase().name()),
+                        "R15a failed score does not commit a turn or version");
+                } finally {
+                    try(var connection=db.open();
+                        var statement=connection.createStatement()){
+                        statement.execute(
+                            "DROP TRIGGER IF EXISTS probe_yacht_midturn_score_failure");
+                    }
+                }
+                var resumed=request(client,base,ROOT+"/yacht/score",
+                    "POST",scoreBody,owner,null);
+                require(resumed.statusCode()==200,
+                    "R15a original score command commits after SQL failure clears");
+                scored=asState(resumed);
+                var repeated=asState(request(client,base,
+                    ROOT+"/yacht/score","POST",scoreBody,owner,null));
+                var original=scored.getAsJsonObject("yacht")
+                    .getAsJsonObject("match");
+                var replay=repeated.getAsJsonObject("yacht")
+                    .getAsJsonObject("match");
+                require(replay.get("completedTurns").getAsInt()==turn+1
+                    && replay.get("version").getAsLong()==
+                        original.get("version").getAsLong()
+                    && matchId.equals(replay.get("id").getAsString()),
+                    "R15a same commandId replay never double-scores turn 42");
+                try(var connection=db.open();
+                    var eventCount=connection.prepareStatement("""
+                        SELECT COUNT(*) FROM yacht_event
+                        WHERE match_id=? AND event_type='yacht.score.committed'
+                        """);
+                    var commandCount=connection.prepareStatement("""
+                        SELECT COUNT(*) FROM yacht_command
+                        WHERE match_id=? AND command_id=?
+                        """)){
+                    eventCount.setString(1,matchId);
+                    commandCount.setString(1,matchId);
+                    commandCount.setString(2,"r14z-score-"+turn);
+                    try(var events=eventCount.executeQuery();
+                        var commands=commandCount.executeQuery()){
+                        require(events.next() && events.getInt(1)==turn+1
+                            && commands.next() && commands.getInt(1)==1,
+                            "R15a score failure/replay yields one score event"
+                                +" and one idempotency command row");
+                    }
+                }
+                System.out.println(
+                    "GAME_ROOM_R15A_MIDTURN_SCORE_SQL_RECOVERY_PASSED"
+                    +" turn=42 firstStatus=500 retryStatus=200"
+                    +" sameCommand=true score=unique version=stable");
+            }else if(turn==77){
                 // The native final score commits BEFORE the common room is
                 // transitioned to POST_GAME in a separate SQLite transaction.
                 // Inject a real error only into that second transaction.
