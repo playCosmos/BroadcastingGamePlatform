@@ -48,6 +48,13 @@ public final class YachtRoomService {
     public record Command(String commandId, long expectedVersion,
                           List<Boolean> held, String category) {}
 
+    /** Shared GameRoom-only player authorization failure (mapped to HTTP 403). */
+    public static final class PlayerActionDenied extends SecurityException {
+        public PlayerActionDenied() {
+            super("Yacht player permission denied");
+        }
+    }
+
     public YachtRoomService(DatabaseAccess database, Broadcast broadcast) {
         this(database, new YachtMatchState.SecureDiceRandomSource(), broadcast);
     }
@@ -170,6 +177,26 @@ public final class YachtRoomService {
 
     public RoomState command(String code, String action, Command command)
         throws SQLException {
+        return commandInternal(code,action,command,null);
+    }
+
+    /**
+     * Common GameRoom membership commands: authorize a new action by the
+     * current turn, but authorize a committed replay by its ORIGINAL actor.
+     * Both checks run under the same SQLite writer transaction as mutation.
+     * The legacy native Yacht API retains its separate caller authorization.
+     */
+    public RoomState commandForPlayer(String code, String action, Command command,
+                                      String playerId) throws SQLException {
+        if (playerId == null || playerId.isBlank()
+            || !List.of("roll","hold","score").contains(action)) {
+            throw new IllegalArgumentException("player action and ID required");
+        }
+        return commandInternal(code,action,command,playerId);
+    }
+
+    private RoomState commandInternal(String code, String action, Command command,
+                                      String playerId) throws SQLException {
         String normalized = validCode(code);
         Objects.requireNonNull(command, "command");
         String commandId = requireId(command.commandId());
@@ -203,10 +230,23 @@ public final class YachtRoomService {
                     RoomState replayed = findCommand(connection, normalized,
                         matchId, commandId, hash);
                     if (replayed != null) {
+                        if (playerId != null
+                            && !replayedByOriginalPlayer(replayed.match(),
+                                action,playerId)) {
+                            throw new PlayerActionDenied();
+                        }
                         return replayed;
                     }
                     RoomState prior = roomState(connection, normalized);
                     YachtMatchState previous = prior.match();
+                    if (playerId != null) {
+                        if (previous.phase() != YachtMatchState.Phase.ACTIVE) {
+                            throw new IllegalStateException("Yacht match not active");
+                        }
+                        if (!previous.activePlayer().id().equals(playerId)) {
+                            throw new PlayerActionDenied();
+                        }
+                    }
                     if (previous.version() != command.expectedVersion()) {
                         throw new ConcurrentModificationException("Yacht stale command version");
                     }
@@ -274,6 +314,26 @@ public final class YachtRoomService {
                 }
             }
         }
+    }
+
+    /**
+     * The command's committed response is immutable. Roll and hold keep the
+     * acting player; score advances the turn, including the FINISHED state.
+     * This ownership check cannot grant a new out-of-turn mutation.
+     */
+    private static boolean replayedByOriginalPlayer(
+        YachtMatchState recorded, String action, String playerId) {
+        int seats=recorded.players().size();
+        if (seats==0) return false;
+        int actorIndex;
+        if ("score".equals(action)) {
+            if (recorded.completedTurns()<=0) return false;
+            actorIndex=(recorded.completedTurns()-1)%seats;
+        } else {
+            actorIndex=recorded.currentPlayer();
+        }
+        return actorIndex>=0 && actorIndex<seats
+            && recorded.players().get(actorIndex).id().equals(playerId);
     }
 
     private static RoomState findCreated(
