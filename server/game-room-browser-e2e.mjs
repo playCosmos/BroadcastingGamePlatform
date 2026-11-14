@@ -116,12 +116,13 @@ check(safeYachtCommandSqlFailure(
     && safeYachtCommandSqlFailure(
         "[game-room-yacht] api_sql_failure operation=command code=not-a-number")===null,
     "R15a rejects unrelated or secret-bearing command diagnostic");
-async function launchServer(){
+async function launchServer({failFirstYachtCreate=false}={}){
     let output="";
     serverYachtStartSqlFailure=null;serverYachtStartSqlFailureSequence=0;
     serverYachtCommandSqlFailure=null;serverYachtCommandSqlFailureSequence=0;
     server=spawn("java",["-cp",cp,
-        "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomBrowserE2EServer"],
+        "io.github.playcosmos.broadcastinggameplatform.boardserver.GameRoomBrowserE2EServer",
+        ...(failFirstYachtCreate?["--fail-first-yacht-create"]:[])],
         {cwd:process.cwd(),stdio:["ignore","pipe","pipe"],windowsHide:true});
     const fixtureServer=server;
     for(const stream of [server.stdout,server.stderr]){
@@ -3752,6 +3753,105 @@ async function commonRoomLifecycleAcceptance(base,game){
         game+" closed room rejects a new anonymous spectator");
 }
 
+// #123: exercise the actual production Yacht page and real HTTP/SQLite
+// error recovery, rather than testing only the Java host-retry service.
+// The disposable Java fixture places a one-shot TEMP SQLite abort trigger
+// on its first native create connection; the next connection has no trigger.
+async function yachtFirstStartFailureBrowserRecoveryAcceptance(base){
+    const gameUrl=base+"/games/yacht/";
+    const host=await cdp.page(gameUrl,{auditWebSockets:true});
+    const guest=await cdp.page(gameUrl,{auditWebSockets:true});
+    await fill(host,"createRoom",{
+        name:"R15h one-shot browser recovery",displayName:"R15h Host",
+        maxPlayers:2,maxRoomMembers:2
+    });
+    const code=await poll(async()=>{
+        const value=await getRoom(host,"#roomCode");
+        return /^[A-HJ-NP-Z2-9]{6}$/.test(value)?value:null;
+    },"R15h recovery browser creates room");
+    await fill(guest,"publicJoinRoom",{
+        roomCode:code,displayName:"R15h Guest",seatRole:"PLAYER"
+    });
+    await poll(async()=>await cdp.eval(guest,
+        "document.getElementById('game').hidden===false"),
+        "R15h recovery guest joins as real browser player");
+    const credentialKey="gamecenter.yacht.member-session.v1";
+    const hostToken=await poll(()=>userToken(host,credentialKey),
+        "R15h recovery host bearer present");
+    const guestToken=await poll(()=>userToken(guest,credentialKey),
+        "R15h recovery guest bearer present");
+    check(hostToken!==guestToken,
+        "R15h recovery host and guest have isolated credentials");
+    for(const page of [host,guest]){
+        await waitRoomIdle(page,"game");
+        await poll(()=>cdp.eval(page,
+            "document.getElementById('ready').hidden===false && "+
+            "document.getElementById('ready').disabled===false"),
+            "R15h recovery ready controls available");
+        await click(page,"ready");
+        await poll(()=>cdp.eval(page,
+            "document.getElementById('ready').textContent.includes('취소')"),
+            "R15h recovery both participants ready");
+    }
+    await poll(()=>cdp.eval(host,
+        "document.getElementById('start').hidden===false && "+
+        "document.getElementById('start').disabled===false"),
+        "R15h recovery initial host start enabled");
+    const sqlBefore=serverYachtStartSqlFailureSequence;
+    const httpBefore=cdp.yachtStartResponseSequence;
+    const hostStartStatuses=()=>cdp.yachtStartResponses.filter(x=>
+        x.sequence>httpBefore && x.sessionId===host.sessionId)
+        .map(x=>x.status);
+    await click(host,"start");
+    await poll(()=>hostStartStatuses().length>=1,
+        "R15h one-shot browser captures actual first start response",15000);
+    check(hostStartStatuses().length===1 && hostStartStatuses()[0]===500,
+        "R15h real host start returns genuine HTTP 500 on SQLite abort");
+    await poll(()=>serverYachtStartSqlFailureSequence>sqlBefore,
+        "R15h first failed start produces bounded SQL stage diagnostic",5000);
+    check(serverYachtStartSqlFailure?.stage==="create"
+        &&serverYachtStartSqlFailure?.code===19,
+        "R15h actual server diagnoses SQLite create constraint code 19");
+    const partial=await backend(host,"/yacht","GET",null,hostToken);
+    check(partial.status===200&&partial.data.room?.state==="PLAYING"
+        &&!partial.data.yacht,
+        "R15h failed start freezes shared room without native match");
+    await poll(()=>cdp.eval(host,
+        "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+        " && document.getElementById('roomState').textContent==='PLAYING'"+
+        " && document.getElementById('start').hidden===false"+
+        " && document.getElementById('start').disabled===false"),
+        "R15h real browser exposes host recovery button after HTTP 500");
+    await nap(500);
+    check(hostStartStatuses().length===1,
+        "R15h rejected start does not automatically retry state-changing POST");
+    await click(host,"start");
+    await poll(()=>hostStartStatuses().length===2,
+        "R15h explicit host browser retry captures second start response",15000);
+    check(hostStartStatuses().join(",")==="500,200",
+        "R15h manual browser retry recovers with HTTP 200");
+    await poll(()=>cdp.eval(host,
+        "document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+        " && document.getElementById('turnDetail').textContent.includes('나의 턴입니다.')"+
+        " && document.getElementById('roll').disabled===false"),
+        "R15h recovered host has active first turn");
+    const recovered=await backend(host,"/yacht","GET",null,hostToken);
+    const match=recovered.data.yacht?.match;
+    check(recovered.status===200&&match?.phase==="ACTIVE"
+        &&match.players?.length===2
+        &&recovered.data.currentPlayer===true,
+        "R15h host recovers one authoritative active two-player match");
+    const replay=await backend(host,"/yacht/start","POST",{},hostToken);
+    const guestRead=await backend(guest,"/yacht","GET",null,guestToken);
+    check(replay.status===200&&guestRead.status===200
+        &&replay.data.yacht?.match?.id===match.id
+        &&guestRead.data.yacht?.match?.id===match.id,
+        "R15h host repeat and guest both observe same unique recovered match");
+    console.log("GAME_ROOM_R15H_BROWSER_START_500_RECOVERY_PASSED "+
+        "firstStatus=500 retryStatus=200 stage=create code=19 "+
+        "manualOnly=true match=unique");
+}
+
 // R15h: 24 real browser member connections from TWO independent game rooms
 // on the SAME loopback IP. Test isolation for committed chat + native Yacht
 // events, capacity denial at 25 sockets, kick 1008 and slot reclamation.
@@ -4878,6 +4978,11 @@ async function run(){
     server.kill();
     await poll(()=>server.exitCode!==null || server.signalCode!==null,
         "R14c Yacht lifecycle fixture shutdown");
+    const failedStartFixture=await launchServer({failFirstYachtCreate:true});
+    await yachtFirstStartFailureBrowserRecoveryAcceptance(failedStartFixture.base);
+    server.kill();
+    await poll(()=>server.exitCode!==null || server.signalCode!==null,
+        "R15h injected browser startup fixture shutdown");
     // The earlier scenarios' tabs are no longer used. Without this teardown,
     // their renderer contexts remain resident even after the Java fixtures
     // stop and can compete with the next 20-real-browser stress scenario.
