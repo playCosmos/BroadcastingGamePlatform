@@ -428,17 +428,43 @@ public final class GameRoomYachtR4HttpProbe {
                             "DROP TRIGGER IF EXISTS probe_yacht_midturn_score_failure");
                     }
                 }
-                var resumed=request(client,base,ROOT+"/yacht/score",
-                    "POST",scoreBody,owner,null);
-                require(resumed.statusCode()==200,
-                    "R15a original score command commits after SQL failure clears");
+                // Concurrent duplicate delivery is realistic after a failed
+                // POST. Both requests use the exact same idempotency command,
+                // authenticated original actor and immutable request payload.
+                // One commits; the other must replay across the turn rotation.
+                var retryRequest=HttpRequest.newBuilder(
+                        base.resolve(ROOT+"/yacht/score"))
+                    .header("Accept","application/json")
+                    .header("Authorization","Bearer "+owner)
+                    .header("Origin",base.toString())
+                    .header("Content-Type","application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(scoreBody))
+                    .build();
+                var retryA=client.sendAsync(retryRequest,
+                    HttpResponse.BodyHandlers.ofString());
+                var retryB=client.sendAsync(retryRequest,
+                    HttpResponse.BodyHandlers.ofString());
+                java.util.concurrent.CompletableFuture.allOf(retryA,retryB)
+                    .get(20,java.util.concurrent.TimeUnit.SECONDS);
+                var resumed=retryA.get();
+                var overlapped=retryB.get();
+                require(resumed.statusCode()==200&&overlapped.statusCode()==200,
+                    "R15a two concurrent original-actor score retries return HTTP 200");
                 scored=asState(resumed);
+                var parallel=asState(overlapped);
                 var repeated=asState(request(client,base,
                     ROOT+"/yacht/score","POST",scoreBody,owner,null));
                 var original=scored.getAsJsonObject("yacht")
                     .getAsJsonObject("match");
+                var parallelMatch=parallel.getAsJsonObject("yacht")
+                    .getAsJsonObject("match");
                 var replay=repeated.getAsJsonObject("yacht")
                     .getAsJsonObject("match");
+                require(parallelMatch.get("version").getAsLong()==
+                        original.get("version").getAsLong()
+                    && parallelMatch.get("completedTurns").getAsInt()==turn+1
+                    && matchId.equals(parallelMatch.get("id").getAsString()),
+                    "R15a parallel original-actor retry preserves one committed score");
                 require(replay.get("completedTurns").getAsInt()==turn+1
                     && replay.get("version").getAsLong()==
                         original.get("version").getAsLong()
@@ -479,6 +505,9 @@ public final class GameRoomYachtR4HttpProbe {
                     "GAME_ROOM_R15A_MIDTURN_SCORE_SQL_RECOVERY_PASSED"
                     +" turn=42 firstStatus=500 retryStatus=200"
                     +" sameCommand=true score=unique version=stable");
+                System.out.println(
+                    "GAME_ROOM_R15A_PARALLEL_SCORE_REPLAY_PASSED"
+                    +" requests=2 status=200 score=unique actor=original");
             }else if(turn==77){
                 // The native final score commits BEFORE the common room is
                 // transitioned to POST_GAME in a separate SQLite transaction.
