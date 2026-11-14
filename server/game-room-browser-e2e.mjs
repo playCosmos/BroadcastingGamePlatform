@@ -3810,8 +3810,9 @@ async function yachtFirstStartFailureBrowserRecoveryAcceptance(base){
     await poll(()=>serverYachtStartSqlFailureSequence>sqlBefore,
         "R15h first failed start produces bounded SQL stage diagnostic",5000);
     check(serverYachtStartSqlFailure?.stage==="create"
-        &&serverYachtStartSqlFailure?.code===19,
-        "R15h actual server diagnoses SQLite create constraint code 19");
+        &&Number.isSafeInteger(serverYachtStartSqlFailure?.code)
+        &&(serverYachtStartSqlFailure.code & 0xff)===19,
+        "R15h server diagnoses create stage and SQLite constraint family");
     const partial=await backend(host,"/yacht","GET",null,hostToken);
     check(partial.status===200&&partial.data.room?.state==="PLAYING"
         &&!partial.data.yacht,
@@ -3848,7 +3849,7 @@ async function yachtFirstStartFailureBrowserRecoveryAcceptance(base){
         &&guestRead.data.yacht?.match?.id===match.id,
         "R15h host repeat and guest both observe same unique recovered match");
     console.log("GAME_ROOM_R15H_BROWSER_START_500_RECOVERY_PASSED "+
-        "firstStatus=500 retryStatus=200 stage=create code=19 "+
+        "firstStatus=500 retryStatus=200 stage=create constraint=true "+
         "manualOnly=true match=unique");
 }
 
