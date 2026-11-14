@@ -13,6 +13,9 @@ import io.github.playcosmos.broadcastinggameplatform.platform.rooms.GameRoomYach
 import io.github.playcosmos.broadcastinggameplatform.room.BoardGameRuntimeEngine;
 import io.github.playcosmos.broadcastinggameplatform.room.RoomService;
 import java.net.ServerSocket;
+import java.sql.SQLException;
+import java.sql.Connection;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -51,6 +54,35 @@ public final class GameRoomBrowserE2EServer {
             new BoardServerConfig.Soop(false,30)).normalized();
         var database=new BoardGameDatabase(root.resolve("data/game.db"));
         database.initialize();
+        // Test-fixture ONLY: a TEMP trigger on the first native connection
+        // aborts one real SQLite INSERT. Closing that JDBC connection removes
+        // the trigger, so the host's subsequent explicit retry can recover.
+        // This switch is never exposed by the production server.
+        boolean failFirstNativeCreate=args.length==1
+            && "--fail-first-yacht-create".equals(args[0]);
+        var firstNativeOpen=new AtomicBoolean(failFirstNativeCreate);
+        io.github.playcosmos.broadcastinggameplatform.db.DatabaseAccess
+            nativeDatabase=new io.github.playcosmos.broadcastinggameplatform
+                .db.DatabaseAccess() {
+            @Override public Path path(){return database.path();}
+            @Override public Connection open()throws SQLException {
+                var connection=database.open();
+                if(firstNativeOpen.compareAndSet(true,false)) {
+                    try(var statement=connection.createStatement()) {
+                        statement.execute("""
+                            CREATE TEMP TRIGGER fixture_first_yacht_create_fails
+                            BEFORE INSERT ON yacht_match
+                            BEGIN SELECT RAISE(ABORT,
+                                'fixture-only native create abort'); END
+                            """);
+                    } catch(SQLException error) {
+                        connection.close();
+                        throw error;
+                    }
+                }
+                return connection;
+            }
+        };
         var access=new GameRoomAccessService(database);
         var canvas=new DrawingSyncService(database);
         var repository=new DrawingGuessRepository(database);
@@ -60,7 +92,7 @@ public final class GameRoomBrowserE2EServer {
         // previous browser fixture silently discarded every native event.
         // Keep legacy code-channel compatibility AND the authenticated
         // common-room member channel to test the production browser path.
-        var yacht=new YachtRoomService(database,()->1,(code,json)->{
+        var yacht=new YachtRoomService(nativeDatabase,()->1,(code,json)->{
             var ws=active.get();
             if(ws==null)return;
             ws.broadcastYacht(code,json);
