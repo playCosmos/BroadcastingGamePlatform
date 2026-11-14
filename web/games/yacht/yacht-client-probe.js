@@ -14,7 +14,8 @@ for (const field of ["createRoom","joinRoom","publicJoinRoom",
   "refreshPublicRooms","publicRooms","admission","game","lobby",
   "roster","ready","changeSeat","inviteControls","newInvite","copyInvite",
   "start","dice","roll","applyHolds","scoreGrid","standings",
-  "chatMessages","chatForm","closeRoom","leaveRoom"]) {
+  "chatMessages","chatForm","closeRoom","leaveRoom",
+  "commandRecovery","retryCommand","dismissCommand"]) {
   check(html.includes('id="' + field + '"'), "missing field #" + field);
 }
 check(html.includes('href="./yacht.css"')
@@ -78,7 +79,7 @@ for (const clause of [
   "if(epoch===publicRoomsEpoch)throw error;",
   "const next=await request(\"/yacht\",\"GET\",null,credential);",
   "const page=await request(\"/chat?after=-1\",\"GET\",null,credential);",
-  "const next=await send(\"/yacht/\"+action,\"POST\",",
+  "next=await send(\"/yacht/\"+action,\"POST\",body);",
   "type:\"room.subscribe\",token:credential,afterSequence:lastMemberSequence",
   'for (const id of ["roster","standings","dice","scoreGrid","chatMessages"])',
   'text("inviteLink",link);',
@@ -113,6 +114,40 @@ check(/if\(!current\(\)\)return;\s*state=next;/.test(js),
   "old member state commits only after ownership check");
 check(/if\(!current\(\)\)return;\s*running=false;runningGeneration=-1;/.test(js),
   "old read finally cannot unlock a new refresh");
+// R15a: a native write can commit before an HTTP 5xx/network reply is lost.
+// Keep its exact idempotency command for a USER-triggered replay only.
+// Never auto-resubmit an uncertain mutation, cross a member/room boundary,
+// or let the user issue a different write while the outcome is unknown.
+for(const clause of [
+  "let pendingCommand = null;",
+  "pendingCommand = null;",
+  "function pendingMatchesCurrentRoom(command)",
+  "state?.room?.roomId === command.roomId",
+  "state?.memberId === command.memberId",
+  "state?.yacht?.match?.id === command.matchId",
+  "visible(\"commandRecovery\",Boolean(pendingCommand));",
+  "if(pendingCommand)",
+  "pendingCommand={action,body,...scope};",
+  "if(!Number.isInteger(error.status)||error.status>=500)",
+  "next=await send(\"/yacht/\"+previous.action,\"POST\",previous.body);",
+  "if(Number.isInteger(error.status)&&error.status<500)",
+  "$(\"retryCommand\").addEventListener(\"click\",retryPendingCommand);",
+  "$(\"dismissCommand\").addEventListener(\"click\",()=>operation(",
+])check(js.includes(clause),"Yacht manual uncertain-write recovery missing: "+clause);
+check(html.includes('id="commandRecovery"')
+  &&html.includes('id="retryCommand"')
+  &&html.includes('id="dismissCommand"'),
+  "uncertain-write controls must provide explicit retry and dismiss");
+check(!js.includes("sessionStorage.setItem(\"pendingCommand\"")
+  &&!js.includes("localStorage.setItem(\"pendingCommand\""),
+  "pending command must not persist across browser sessions");
+check(/pendingCommand=null;\\s*state=next;/.test(js),
+  "successful manual recovery clears the pending command before rendering");
+// Only a dedicated user click may send the exact saved payload.
+// The regular command() path sends only its one freshly generated ID.
+check((js.match(/send\(\"\\/yacht\\/\"\+previous\.action,\"POST\",previous\.body\)/g)||[])
+  .length===1,
+  "saved command must be replayed once from the explicit handler");
 // R15e: one authenticated member socket per browser tab also receives native
 // Yacht events; game version numbers cannot corrupt room chat replay cursors.
 check(!js.includes("gameSocket") && !js.includes("configuredYacht")
