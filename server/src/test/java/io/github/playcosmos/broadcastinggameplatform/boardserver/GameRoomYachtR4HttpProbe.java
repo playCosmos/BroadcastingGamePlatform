@@ -241,6 +241,7 @@ public final class GameRoomYachtR4HttpProbe {
             // start boundary must remain recoverable using the same host.
             interruptedYachtStartRecoveryAcceptance(client,base,access,db);
             sqliteBusyAfterFreezeAcceptance(access,db);
+            concurrentYachtStartHttpAcceptance(client,base,access,db);
             sixPlayerCapacityAcceptance(client,base,access,db);
         } finally {
             if(web!=null)web.close();
@@ -830,6 +831,94 @@ public final class GameRoomYachtR4HttpProbe {
         }
         System.out.println("GAME_ROOM_R15H_SQLITE_BUSY_CREATE_RECOVERY_PASSED"
             +" stage=create code=5 recovered=true match=unique");
+    }
+
+
+    /**
+     * #123: four simultaneous real authenticated HTTP start submissions from
+     * one host must all converge on the one immutable frozen player roster.
+     * Sequential replay, injected SQL abort and browser manual recovery are
+     * covered separately; this exercises multiple request handler threads
+     * competing for the actual SQLite writer/unique native-create key.
+     */
+    private static void concurrentYachtStartHttpAcceptance(
+        HttpClient client, URI base, GameRoomAccessService access,
+        BoardGameDatabase db) throws Exception {
+        var hosted=access.createHostedRoom("yacht",
+            "R15h concurrent host start", "Host",
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.PLAYER,2,3);
+        String host=hosted.hostCredential().token();
+        String roomId=hosted.room().roomId();
+        String guest=access.join(access.invite(host,
+            io.github.playcosmos.broadcastinggameplatform.platform.rooms
+                .GameRoomModels.SeatRole.PLAYER,1,
+                Duration.ofMinutes(10)).token(),"Guest").token();
+        access.ready(host,true);
+        access.ready(guest,true);
+
+        var inFlight=new java.util.ArrayList<
+            java.util.concurrent.CompletableFuture<HttpResponse<String>>>();
+        for(int i=0;i<4;i++){
+            var request=HttpRequest.newBuilder(base.resolve(ROOT+"/yacht/start"))
+                .header("Accept","application/json")
+                .header("Authorization","Bearer "+host)
+                .header("Origin",base.toString())
+                .header("Content-Type","application/json")
+                .POST(HttpRequest.BodyPublishers.ofString("{}")).build();
+            inFlight.add(client.sendAsync(request,
+                HttpResponse.BodyHandlers.ofString()));
+        }
+        java.util.concurrent.CompletableFuture.allOf(
+            inFlight.toArray(new java.util.concurrent.CompletableFuture<?>[0])
+        ).get(20,java.util.concurrent.TimeUnit.SECONDS);
+
+        var matchIds=new HashSet<String>();
+        for(var result:inFlight){
+            var response=result.get();
+            require(response.statusCode()==200,
+                "R15h concurrent authenticated host start returns HTTP 200"
+                    +" status="+response.statusCode());
+            var match=parse(response).getAsJsonObject("yacht")
+                .getAsJsonObject("match");
+            require("ACTIVE".equals(match.get("phase").getAsString())
+                && match.getAsJsonArray("players").size()==2,
+                "R15h each concurrent start sees same ACTIVE two-player game");
+            matchIds.add(match.get("id").getAsString());
+        }
+        require(matchIds.size()==1,
+            "R15h concurrent HTTP starts resolve to a single match identity");
+        var current=asState(request(client,base,ROOT+"/yacht","GET",
+            null,guest,null));
+        require("PLAYING".equals(current.getAsJsonObject("room")
+            .get("state").getAsString())
+            &&matchIds.contains(current.getAsJsonObject("yacht")
+                .getAsJsonObject("match").get("id").getAsString()),
+            "R15h second player reads the same durable concurrent match");
+
+        String matchId=matchIds.iterator().next();
+        try(var connection=db.open();
+            var nativeCount=connection.prepareStatement(
+                "SELECT COUNT(*) FROM yacht_room WHERE create_key=?");
+            var linkCount=connection.prepareStatement(
+                "SELECT COUNT(*) FROM game_room_yacht_link WHERE room_id=?");
+            var eventCount=connection.prepareStatement(
+                "SELECT COUNT(*) FROM yacht_event WHERE match_id=?")) {
+            nativeCount.setString(1,"common-yacht-"+roomId);
+            linkCount.setString(1,roomId);
+            eventCount.setString(1,matchId);
+            try(var n=nativeCount.executeQuery();
+                var l=linkCount.executeQuery();
+                var e=eventCount.executeQuery()) {
+                require(n.next() && n.getInt(1)==1
+                    && l.next() && l.getInt(1)==1
+                    && e.next() && e.getInt(1)==2,
+                    "R15h concurrent HTTP starts commit exactly one match,"
+                        +" one binding and one pair of native start events");
+            }
+        }
+        System.out.println("GAME_ROOM_R15H_CONCURRENT_HTTP_START_PASSED"
+            +" requests=4 http=200 match=unique link=unique events=2");
     }
 
     private static com.google.gson.JsonObject parse(HttpResponse<String> response) {
