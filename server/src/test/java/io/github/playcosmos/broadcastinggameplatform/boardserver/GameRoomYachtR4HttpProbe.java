@@ -508,6 +508,83 @@ public final class GameRoomYachtR4HttpProbe {
                 System.out.println(
                     "GAME_ROOM_R15A_PARALLEL_SCORE_REPLAY_PASSED"
                     +" requests=2 status=200 score=unique actor=original");
+            }else if(turn==43){
+                // Different command IDs are NOT replays. A double click
+                // must never commit two scores or allow the original actor
+                // to mutate the next player's turn, even if both requests
+                // were in flight before the first score committed.
+                String alternateBody=scoreBody.replace(
+                    "r14z-score-"+turn,"r14z-score-"+turn+"-second");
+                var firstRequest=HttpRequest.newBuilder(
+                        base.resolve(ROOT+"/yacht/score"))
+                    .header("Accept","application/json")
+                    .header("Authorization","Bearer "+owner)
+                    .header("Origin",base.toString())
+                    .header("Content-Type","application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(scoreBody))
+                    .build();
+                var secondRequest=HttpRequest.newBuilder(
+                        base.resolve(ROOT+"/yacht/score"))
+                    .header("Accept","application/json")
+                    .header("Authorization","Bearer "+owner)
+                    .header("Origin",base.toString())
+                    .header("Content-Type","application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(alternateBody))
+                    .build();
+                var firstPending=client.sendAsync(firstRequest,
+                    HttpResponse.BodyHandlers.ofString());
+                var secondPending=client.sendAsync(secondRequest,
+                    HttpResponse.BodyHandlers.ofString());
+                java.util.concurrent.CompletableFuture.allOf(
+                    firstPending,secondPending)
+                    .get(20,java.util.concurrent.TimeUnit.SECONDS);
+                var firstResponse=firstPending.get();
+                var secondResponse=secondPending.get();
+                int firstStatus=firstResponse.statusCode();
+                int secondStatus=secondResponse.statusCode();
+                require((firstStatus==200&&secondStatus==403)
+                    ||(firstStatus==403&&secondStatus==200),
+                    "R15a distinct concurrent score IDs must have one 200"
+                        +" and one rejected out-of-turn 403"
+                        +" first="+firstStatus+" second="+secondStatus);
+                scored=asState(firstStatus==200
+                    ?firstResponse:secondResponse);
+                var committed=scored.getAsJsonObject("yacht")
+                    .getAsJsonObject("match");
+                var persisted=new YachtRepository(db).find(matchId);
+                require(committed.get("completedTurns").getAsInt()==turn+1
+                    && committed.get("version").getAsLong()==
+                        afterRoll.get("version").getAsLong()+1
+                    && persisted.completedTurns()==turn+1
+                    && persisted.version()==
+                        committed.get("version").getAsLong()
+                    && persisted.rolls()==0,
+                    "R15a distinct-ID requests persist only one score/version");
+                try(var connection=db.open();
+                    var events=connection.prepareStatement("""
+                        SELECT COUNT(*) FROM yacht_event
+                        WHERE match_id=? AND event_type='yacht.score.committed'
+                        """);
+                    var commands=connection.prepareStatement("""
+                        SELECT COUNT(*) FROM yacht_command
+                        WHERE match_id=? AND command_id IN (?,?)
+                        """)){
+                    events.setString(1,matchId);
+                    commands.setString(1,matchId);
+                    commands.setString(2,"r14z-score-"+turn);
+                    commands.setString(3,"r14z-score-"+turn+"-second");
+                    try(var e=events.executeQuery();
+                        var c=commands.executeQuery()){
+                        require(e.next()&&e.getInt(1)==turn+1
+                            &&c.next()&&c.getInt(1)==1,
+                            "R15a different score command IDs commit one event"
+                                +" and one idempotency record");
+                    }
+                }
+                System.out.println(
+                    "GAME_ROOM_R15A_DISTINCT_SCORE_IDS_CONFLICT_PASSED"
+                    +" requests=2 success=1 denied=1 score=unique"
+                    +" command=unique");
             }else if(turn==77){
                 // The native final score commits BEFORE the common room is
                 // transitioned to POST_GAME in a separate SQLite transaction.
