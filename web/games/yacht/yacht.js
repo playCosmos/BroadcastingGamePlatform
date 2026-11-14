@@ -18,6 +18,9 @@
   let memberSocket = null, websocketUrl = "";
   let lastMemberSequence = -1, configuredRoom = "";
   let busy = false, admissionBusy = false, running = false;
+  // In-memory only: never silently resend an uncertain mutation.
+  // Clear on every membership/session transition; never reuse across rooms.
+  let pendingCommand = null;
   let refreshRequested = false, runningGeneration = -1;
   let membershipGeneration = 0, publicRoomsEpoch = 0, chatReadEpoch = 0;
   const currentMembership = (generation, credential) =>
@@ -69,7 +72,8 @@
       "playerPopulation","lobbyHint","turnHeadline","turnDetail","inviteLink"]) {
       text(id,"");
     }
-    for (const id of ["closeRoom","lobby","playfield","inviteControls","copyInvite"]) {
+    for (const id of ["closeRoom","lobby","playfield","inviteControls","copyInvite",
+      "commandRecovery"]) {
       visible(id,false);
     }
     $("chatForm").reset();
@@ -83,6 +87,7 @@
     membershipGeneration++;
     chatReadEpoch++;
     busy = false;admissionBusy = false;running = false;
+    pendingCommand = null;
     runningGeneration = -1;refreshRequested = false;
     $("game").removeAttribute("aria-busy");
     state = null;
@@ -355,11 +360,29 @@
     });
   }
 
+  function pendingMatchesCurrentRoom(command) {
+    return Boolean(command && state?.room?.roomId === command.roomId
+      && state?.memberId === command.memberId
+      && state?.yacht?.match?.id === command.matchId);
+  }
+  function renderCommandRecovery() {
+    // A previous room's command must never be applied to another room/game.
+    if (pendingCommand && !pendingMatchesCurrentRoom(pendingCommand))
+      pendingCommand = null;
+    visible("commandRecovery",Boolean(pendingCommand));
+    if (!pendingCommand) return;
+    // An unknown write result must be resolved or explicitly dismissed
+    // before the user can create a new mutation with a different command ID.
+    for (const button of document.querySelectorAll(
+      "#roll,#applyHolds,#dice button,#scoreGrid button"))
+      button.disabled = true;
+  }
   function render() {
     if (!state) return;
     visible("admission", false); visible("game", true);
     renderRoom(state.room);
     renderMatch(state.yacht);
+    renderCommandRecovery();
   }
 
   async function refresh() {
@@ -400,15 +423,68 @@
 
   async function command(action,args) {
     await operation(async ({send,current})=>{
+      if(pendingCommand)
+        throw new Error("이전 명령의 결과를 확인하거나 재전송하지 않고 닫아야 합니다.");
       if(!state?.yacht)throw new Error("게임이 시작되지 않았습니다.");
-      const expectedVersion=state.yacht.match.version;
-      const commandId=newCommandId("y4-");
-      const next=await send("/yacht/"+action,"POST",
-        {commandId,expectedVersion,...args});
+      const body={commandId:newCommandId("y4-"),
+        expectedVersion:state.yacht.match.version,...args};
+      const scope={roomId:state.room.roomId,memberId:state.memberId,
+        matchId:state.yacht.match.id};
+      let next;
+      try {
+        next=await send("/yacht/"+action,"POST",body);
+      } catch(error) {
+        if(!current())return;
+        // HTTP 5xx, lost response or network error: the mutation might
+        // already have committed. Preserve its EXACT original ID/payload.
+        // Never auto-retry or issue a new command with a different ID.
+        if(!Number.isInteger(error.status)||error.status>=500){
+          pendingCommand={action,body,...scope};
+          render();
+          await refresh().catch(()=>{});
+          notice("명령 응답을 확인하지 못했습니다. 동일 명령으로 수동 복구하거나 닫으세요.",true);
+          return;
+        }
+        if(error.status===409)await refresh().catch(()=>{});
+        throw error;
+      }
       if(!current())return;
       state=next;
       if(state.yacht?.match?.held)held=state.yacht.match.held.slice();
       render();notice(action+" 명령이 적용됐습니다.");
+      await refresh();
+    });
+  }
+
+  async function retryPendingCommand() {
+    await operation(async ({send,current})=>{
+      const previous=pendingCommand;
+      if(!pendingMatchesCurrentRoom(previous)){
+        pendingCommand=null;
+        render();
+        throw new Error("이전 명령의 룸 또는 경기 정보가 변경됐습니다.");
+      }
+      let next;
+      try {
+        // No new command ID, version or dice/category payload, even when
+        // the scoreboard has advanced since the original response was lost.
+        next=await send("/yacht/"+previous.action,"POST",previous.body);
+      } catch(error) {
+        if(!current())return;
+        // Explicit 4xx rejection is not an uncertain committed response.
+        if(Number.isInteger(error.status)&&error.status<500){
+          pendingCommand=null;
+          render();
+        }
+        await refresh().catch(()=>{});
+        throw error;
+      }
+      if(!current())return;
+      pendingCommand=null;
+      state=next;
+      if(state.yacht?.match?.held)held=state.yacht.match.held.slice();
+      render();
+      notice("이전 명령의 결과를 확인했습니다.");
       await refresh();
     });
   }
@@ -534,6 +610,14 @@
     if(!current())return;
     state=next;
     notice("경기가 시작됐습니다.");render();await refresh();
+  }));
+  $("retryCommand").addEventListener("click",retryPendingCommand);
+  $("dismissCommand").addEventListener("click",()=>operation(async({current})=>{
+    if(!current())return;
+    pendingCommand=null;
+    render();
+    notice("이전 명령을 재전송하지 않았습니다. 최신 서버 상태를 확인하세요.");
+    await refresh();
   }));
   $("roll").addEventListener("click",()=>command("roll",{}));
   $("applyHolds").addEventListener("click",()=>command("hold",{held:held.slice()}));
