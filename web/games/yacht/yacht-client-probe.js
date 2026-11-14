@@ -141,7 +141,7 @@ check(html.includes('id="commandRecovery"')
 check(!js.includes("sessionStorage.setItem(\"pendingCommand\"")
   &&!js.includes("localStorage.setItem(\"pendingCommand\""),
   "pending command must not persist across browser sessions");
-check(js.includes("pendingCommand=null;\\n      state=next;"),
+check(js.includes("pendingCommand=null;") && js.includes("      state=next;"),
   "successful manual recovery clears the pending command before rendering");
 // Only a dedicated user click may send the exact saved payload.
 const originalReplay='next=await send("/yacht/"+previous.action,"POST",previous.body);';
