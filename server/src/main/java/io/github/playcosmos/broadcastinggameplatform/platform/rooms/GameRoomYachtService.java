@@ -175,18 +175,15 @@ public final class GameRoomYachtService {
         }
         String code=linkedCode(room.roomId());
         if (code==null) throw new GameRoomService.RoomConflict("Yacht not started");
-        var before=yacht.state(code);
-        // A duplicate score request can be delivered after FINISHED; the
-        // Y2 command service checks and replays its original command ID.
-        if (before.match().phase()==YachtMatchState.Phase.ACTIVE) {
-            if (!before.match().activePlayer().id().equals(principal.memberId())) {
-                throw new GameRoomAccessService.Forbidden("not your Yacht turn");
-            }
-        } else if (before.match().phase()!=YachtMatchState.Phase.FINISHED
-            || !"score".equals(action)) {
-            throw new GameRoomService.RoomConflict("Yacht match not active");
+        // The turn can rotate between the authorization read and the Y2
+        // commit. New-action ownership and original-actor replay ownership
+        // must be checked INSIDE the native SQLite command transaction.
+        YachtRoomService.RoomState after;
+        try {
+            after=yacht.commandForPlayer(code,action,command,principal.memberId());
+        } catch (YachtRoomService.PlayerActionDenied denied) {
+            throw new GameRoomAccessService.Forbidden("not your Yacht turn");
         }
-        var after=yacht.command(code,action,command);
         synchronizeFinished(room.roomId(),after.match().phase());
         return new State(access.room(token),after,principal.memberId(),
             after.match().phase()==YachtMatchState.Phase.ACTIVE
