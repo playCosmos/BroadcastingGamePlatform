@@ -444,6 +444,17 @@ public final class GameRoomYachtR4HttpProbe {
                         original.get("version").getAsLong()
                     && matchId.equals(replay.get("id").getAsString()),
                     "R15a same commandId replay never double-scores turn 42");
+                // Replays are permitted only to the ORIGINAL actor. The
+                // newly active player cannot claim the old score's ID, and
+                // the previous actor cannot invent a fresh out-of-turn score.
+                require(request(client,base,ROOT+"/yacht/score","POST",
+                    scoreBody,tokens.get((playerIndex+1)%6),null).statusCode()==403,
+                    "R15a next player cannot replay the previous player's score");
+                require(request(client,base,ROOT+"/yacht/score","POST",
+                    scoreBody.replace("r14z-score-"+turn,
+                        "r14z-score-"+turn+"-unauthorized"),
+                    owner,null).statusCode()==403,
+                    "R15a previous player cannot create another score action");
                 try(var connection=db.open();
                     var eventCount=connection.prepareStatement("""
                         SELECT COUNT(*) FROM yacht_event
