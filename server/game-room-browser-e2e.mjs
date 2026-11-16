@@ -4122,6 +4122,89 @@ async function yachtLostScoreReplyBrowserRecoveryAcceptance(base){
     console.log("GAME_ROOM_R15A_BROWSER_HTTP_409_NONJSON_NO_RECOVERY_PASSED"+
         " status=409 pending=false holdCommitted=false");
 
+
+    // Unlike a confirmed 4xx rejection, HTTP 200 with malformed JSON can
+    // indicate an already committed roll. The client must keep exactly the
+    // original command for an explicit user-triggered replay.
+    await waitRoomIdle(guest,"game");
+    await poll(()=>cdp.eval(guest,
+        "document.getElementById('roll').disabled===false"+
+        "&&document.getElementById('commandRecovery').hidden===true"),
+        "R15a second roll available before malformed 200 fixture");
+    const beforeMalformed200=await backend(guest,"/yacht","GET",null,guestToken);
+    check(beforeMalformed200.status===200
+        &&beforeMalformed200.data.yacht?.match?.rolls===1,
+        "R15a malformed 200 fixture starts at exactly one roll");
+    await cdp.eval(guest,`(()=>{
+        const previousFetch=window.fetch.bind(window);
+        const audit={posts:0,firstRealStatus:null,retryStatus:null,
+            sameCommand:true};
+        let firstCommandId=null;
+        window.__r15aMalformed200Roll=audit;
+        window.fetch=async(input,options)=>{
+            const target=typeof input==="string"?input:input?.url;
+            if(target==="/api/v1/room-membership/yacht/roll"
+                &&options?.method==="POST"){
+                const commandId=JSON.parse(options.body).commandId;
+                if(firstCommandId===null)firstCommandId=commandId;
+                else if(commandId!==firstCommandId)audit.sameCommand=false;
+                const response=await previousFetch(input,options);
+                audit.posts++;
+                if(audit.posts===1){
+                    audit.firstRealStatus=response.status;
+                    // Keep HTTP success but deliberately corrupt only the
+                    // client-visible response, after real SQLite commit.
+                    return new Response("fixture-not-json",
+                        {status:200,headers:{"Content-Type":"application/json"}});
+                }
+                audit.retryStatus=response.status;
+                return response;
+            }
+            return previousFetch(input,options);
+        };
+        return true;
+    })()`);
+    await click(guest,"roll");
+    await poll(()=>cdp.eval(guest,
+        "window.__r15aMalformed200Roll?.posts===1"+
+        "&&document.getElementById('commandRecovery').hidden===false"+
+        "&&document.getElementById('roll').disabled===true"),
+        "R15a malformed HTTP 200 retains original pending roll");
+    const committedMalformed200=await backend(guest,"/yacht","GET",null,guestToken);
+    check(committedMalformed200.status===200
+        &&committedMalformed200.data.yacht?.match?.rolls===2
+        &&committedMalformed200.data.yacht.match.version
+          ===beforeMalformed200.data.yacht.match.version+1
+        &&committedMalformed200.data.yacht.match.completedTurns===1,
+        "R15a malformed 200 followed exactly one committed second roll");
+    await nap(500);
+    check(await cdp.eval(guest,"window.__r15aMalformed200Roll.posts")===1,
+        "R15a malformed HTTP 200 must never trigger automatic replay");
+    await click(guest,"retryCommand");
+    await poll(()=>cdp.eval(guest,
+        "window.__r15aMalformed200Roll.posts===2"+
+        "&&document.getElementById('commandRecovery').hidden===true"+
+        "&&document.getElementById('game').getAttribute('aria-busy')!=='true'"),
+        "R15a manual same-ID replay after malformed HTTP 200 completes");
+    const malformed200Evidence=await cdp.eval(guest,
+        "({posts:window.__r15aMalformed200Roll.posts,"+
+        "firstRealStatus:window.__r15aMalformed200Roll.firstRealStatus,"+
+        "retryStatus:window.__r15aMalformed200Roll.retryStatus,"+
+        "sameCommand:window.__r15aMalformed200Roll.sameCommand})");
+    const recoveredMalformed200=await backend(guest,"/yacht","GET",null,guestToken);
+    check(malformed200Evidence.posts===2
+        &&malformed200Evidence.firstRealStatus===200
+        &&malformed200Evidence.retryStatus===200
+        &&malformed200Evidence.sameCommand===true
+        &&recoveredMalformed200.status===200
+        &&recoveredMalformed200.data.yacht?.match?.rolls===2
+        &&recoveredMalformed200.data.yacht.match.version
+          ===committedMalformed200.data.yacht.match.version,
+        "R15a malformed-200 replay commits no second version or extra roll");
+    console.log("GAME_ROOM_R15A_BROWSER_HTTP_200_NONJSON_ROLL_RECOVERY_PASSED"+
+        " firstRealStatus=200 malformed=true retryStatus=200"+
+        " manualOnly=true sameCommand=true roll=unique");
+
     console.log("GAME_ROOM_R15A_BROWSER_LOST_SCORE_REPLY_RECOVERY_PASSED"+
         " firstRealStatus=200 simulatedLost=true retryStatus=200"+
         " manualOnly=true sameCommand=true score=unique");
