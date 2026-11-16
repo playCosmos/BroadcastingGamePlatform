@@ -55,9 +55,16 @@
     const response = await fetch(API + path, options);
     let result;
     try { result = await response.json(); }
-    catch { throw new Error("서버 응답을 읽을 수 없습니다."); }
+    catch {
+      const error = new Error("서버 응답을 읽을 수 없습니다.");
+      // The HTTP response itself definitively rejected the write, even
+      // when the error body is empty/malformed. A successful but unreadable
+      // response remains uncertain and must retain its original command ID.
+      if (!response.ok) error.status = response.status;
+      throw error;
+    }
     if (!response.ok) {
-      const error = new Error(result.error || "요청 실패 (HTTP " + response.status + ")");
+      const error = new Error(result?.error || "요청 실패 (HTTP " + response.status + ")");
       error.status = response.status;
       throw error;
     }
