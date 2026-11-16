@@ -4074,9 +4074,13 @@ async function yachtLostScoreReplyBrowserRecoveryAcceptance(base){
             if(target==="/api/v1/room-membership/yacht/hold"
                 &&options?.method==="POST"){
                 window.__r15aHold409.requests++;
-                return Promise.resolve(new Response(JSON.stringify({
-                    error:"fixture explicit version conflict"
-                }),{status:409,headers:{"Content-Type":"application/json"}}));
+                // The second reply has malformed JSON but the HTTP 409 is
+                // authoritative: it is not an uncertain committed mutation.
+                const reply=window.__r15aHold409.requests===2
+                    ? "fixture-not-json"
+                    : JSON.stringify({error:"fixture explicit version conflict"});
+                return Promise.resolve(new Response(reply,
+                    {status:409,headers:{"Content-Type":"application/json"}}));
             }
             return priorFetch(input,options);
         };
@@ -4097,6 +4101,25 @@ async function yachtLostScoreReplyBrowserRecoveryAcceptance(base){
         &&rejected409.data.yacht.match.rolls===1,
         "R15a rejected HTTP 409 hold does not mutate authoritative state");
     console.log("GAME_ROOM_R15A_BROWSER_HTTP_409_NO_RECOVERY_PASSED"+
+        " status=409 pending=false holdCommitted=false");
+
+    // If the server's JSON error body is malformed, the browser must
+    // classify the known HTTP 409 status rather than keep a pending command.
+    await waitRoomIdle(guest,"game");
+    await click(guest,"applyHolds");
+    await poll(()=>cdp.eval(guest,
+        "window.__r15aHold409?.requests===2"+
+        "&&document.getElementById('commandRecovery').hidden===true"+
+        "&&document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+        "&&document.getElementById('applyHolds').disabled===false"),
+        "R15a non-JSON HTTP 409 remains definitively rejected");
+    const malformed409=await backend(guest,"/yacht","GET",null,guestToken);
+    check(malformed409.status===200
+        &&malformed409.data.yacht?.match?.version
+          ===rejected409.data.yacht.match.version
+        &&malformed409.data.yacht.match.rolls===1,
+        "R15a non-JSON HTTP 409 changes no server game state");
+    console.log("GAME_ROOM_R15A_BROWSER_HTTP_409_NONJSON_NO_RECOVERY_PASSED"+
         " status=409 pending=false holdCommitted=false");
 
     console.log("GAME_ROOM_R15A_BROWSER_LOST_SCORE_REPLY_RECOVERY_PASSED"+
