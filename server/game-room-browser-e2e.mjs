@@ -3981,6 +3981,124 @@ async function yachtLostScoreReplyBrowserRecoveryAcceptance(base){
         &&after.data.yacht.match.completedTurns===1
         &&after.data.currentPlayer===true,
         "R15a real guest sees one committed score and no extra version");
+
+    // The next genuine player turn exercises the distinct HTTP 5xx branch:
+    // SQLite commits an actual roll, while the browser receives synthetic 503.
+    // The original command ID must be reused only on explicit user action.
+    await poll(()=>cdp.eval(guest,
+        "document.getElementById('roll').disabled===false"+
+        "&&document.getElementById('commandRecovery').hidden===true"),
+        "R15a guest roll enabled after recovered first score");
+    await waitRoomIdle(guest,"game");
+    const before503=await backend(guest,"/yacht","GET",null,guestToken);
+    check(before503.status===200&&before503.data.currentPlayer===true
+        &&before503.data.yacht?.match?.rolls===0,
+        "R15a HTTP 503 fixture begins before guest roll");
+    await cdp.eval(guest,`(()=>{
+        const actualFetch=window.fetch.bind(window);
+        const audit={posts:0,firstRealStatus:null,retryStatus:null,
+            sameCommand:true};
+        let firstCommandId=null;
+        window.__r15aRoll503=audit;
+        window.fetch=async(input,options)=>{
+            const target=typeof input==="string"?input:input?.url;
+            if(target==="/api/v1/room-membership/yacht/roll"
+                &&options?.method==="POST"){
+                const commandId=JSON.parse(options.body).commandId;
+                if(firstCommandId===null)firstCommandId=commandId;
+                else if(commandId!==firstCommandId)audit.sameCommand=false;
+                const response=await actualFetch(input,options);
+                audit.posts++;
+                if(audit.posts===1){
+                    audit.firstRealStatus=response.status;
+                    return new Response(JSON.stringify({
+                        error:"fixture 503 after committed roll"
+                    }),{status:503,headers:{"Content-Type":"application/json"}});
+                }
+                audit.retryStatus=response.status;
+                return response;
+            }
+            return actualFetch(input,options);
+        };
+        return true;
+    })()`);
+    await click(guest,"roll");
+    await poll(()=>cdp.eval(guest,
+        "window.__r15aRoll503?.posts===1"+
+        "&&document.getElementById('commandRecovery').hidden===false"+
+        "&&document.getElementById('roll').disabled===true"),
+        "R15a committed roll HTTP 503 offers manual-only recovery");
+    const committed503=await backend(guest,"/yacht","GET",null,guestToken);
+    check(committed503.status===200
+        &&committed503.data.yacht?.match?.rolls===1
+        &&committed503.data.yacht.match.version
+          ===before503.data.yacht.match.version+1
+        &&committed503.data.yacht.match.completedTurns===1,
+        "R15a synthetic HTTP 503 still committed exactly one native roll");
+    await nap(500);
+    check(await cdp.eval(guest,"window.__r15aRoll503.posts")===1,
+        "R15a HTTP 503 must not cause an automatic second roll POST");
+    await click(guest,"retryCommand");
+    await poll(()=>cdp.eval(guest,
+        "window.__r15aRoll503.posts===2"+
+        "&&document.getElementById('commandRecovery').hidden===true"+
+        "&&document.getElementById('game').getAttribute('aria-busy')!=='true'"),
+        "R15a explicit same-command roll retry completes");
+    const rollEvidence=await cdp.eval(guest,
+        "({posts:window.__r15aRoll503.posts,"+
+        "firstRealStatus:window.__r15aRoll503.firstRealStatus,"+
+        "retryStatus:window.__r15aRoll503.retryStatus,"+
+        "sameCommand:window.__r15aRoll503.sameCommand})");
+    const recovered503=await backend(guest,"/yacht","GET",null,guestToken);
+    check(rollEvidence.posts===2&&rollEvidence.firstRealStatus===200
+        &&rollEvidence.retryStatus===200&&rollEvidence.sameCommand===true
+        &&recovered503.status===200
+        &&recovered503.data.yacht?.match?.version
+          ===committed503.data.yacht.match.version
+        &&recovered503.data.yacht.match.rolls===1,
+        "R15a HTTP 503 replay preserves original ID and unique roll");
+    console.log("GAME_ROOM_R15A_BROWSER_HTTP_503_ROLL_RECOVERY_PASSED"+
+        " firstRealStatus=200 syntheticStatus=503 retryStatus=200"+
+        " manualOnly=true sameCommand=true roll=unique");
+
+    // A definitive HTTP 409 must NOT be classified as an uncertain write.
+    // Mock only the browser's rejected response; send no hold POST to SQLite.
+    await poll(()=>cdp.eval(guest,
+        "document.getElementById('applyHolds').disabled===false"),
+        "R15a post-recovery hold control enabled");
+    await cdp.eval(guest,`(()=>{
+        const priorFetch=window.fetch.bind(window);
+        window.__r15aHold409={requests:0};
+        window.fetch=(input,options)=>{
+            const target=typeof input==="string"?input:input?.url;
+            if(target==="/api/v1/room-membership/yacht/hold"
+                &&options?.method==="POST"){
+                window.__r15aHold409.requests++;
+                return Promise.resolve(new Response(JSON.stringify({
+                    error:"fixture explicit version conflict"
+                }),{status:409,headers:{"Content-Type":"application/json"}}));
+            }
+            return priorFetch(input,options);
+        };
+        return true;
+    })()`);
+    await waitRoomIdle(guest,"game");
+    await click(guest,"applyHolds");
+    await poll(()=>cdp.eval(guest,
+        "window.__r15aHold409?.requests===1"+
+        "&&document.getElementById('commandRecovery').hidden===true"+
+        "&&document.getElementById('game').getAttribute('aria-busy')!=='true'"+
+        "&&document.getElementById('applyHolds').disabled===false"),
+        "R15a explicit HTTP 409 remains rejected without recovery lock");
+    const rejected409=await backend(guest,"/yacht","GET",null,guestToken);
+    check(rejected409.status===200
+        &&rejected409.data.yacht?.match?.version
+          ===recovered503.data.yacht.match.version
+        &&rejected409.data.yacht.match.rolls===1,
+        "R15a rejected HTTP 409 hold does not mutate authoritative state");
+    console.log("GAME_ROOM_R15A_BROWSER_HTTP_409_NO_RECOVERY_PASSED"+
+        " status=409 pending=false holdCommitted=false");
+
     console.log("GAME_ROOM_R15A_BROWSER_LOST_SCORE_REPLY_RECOVERY_PASSED"+
         " firstRealStatus=200 simulatedLost=true retryStatus=200"+
         " manualOnly=true sameCommand=true score=unique");
